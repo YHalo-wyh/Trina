@@ -170,7 +170,7 @@ flowchart TB
 | 离线可复现 | `trina run --record … ` → `--replay …` | 两次运行决策序列完全一致；录制物是合法 JSON |
 | 评测链路（零成本） | `bundle://tsecbench/web-0001` + replay | 8 步完成 → GT 命中 1/1、precision=recall=1.0、范围外发现 4 条单独计数 |
 | Web 专项评测 | `python3 -m trina eval run --suite web` | 通过率 87.5%、precision 100%、recall 88.9%、误报率 0%、遗漏率 11.1% |
-| 主机专项评测 | `python3 -m trina eval run --suite host` | 通过率 66.7%、precision 100%、recall 80%、端口覆盖率 260%、服务识别准确率 100% |
+| 主机专项评测 | `python3 -m trina eval run --suite host` | 两次实测 2/3 与 1/3 通过（合计 3/6）；precision 100%、误报率 0%、服务识别准确率 100%；结果随 LLM 扫描策略波动（详见 docs/EVAL.md §4.2） |
 | 蓝队对抗 | `web` 套件中的对抗场景（WAF/封禁/限速/篡改/蜜罐） | 12 步内命中 /sqli 与 /lfi；代理统计 blocked=2、tampered=1，**未被假 flag 误导**、未踩蜜罐 |
 | 单元测试 | `python3 -m unittest discover -s tests` | 128 个测试全部通过 |
 

@@ -63,7 +63,7 @@ python3 -m trina ranges list                              # 靶场适配器状�
 python3 -m trina eval run --suite web                     # 跑评测套件（指标 + 报告）
 python3 -m trina eval adversarial --port 9100             # 蓝队对抗代理（WAF/封禁/限速/篡改/蜜罐）
 python3 -m trina lab --http --ssh                         # 本地靶机（HTTP + 弱口令 SSH）
-python3 -m unittest discover -s tests                   # 125 个单元测试
+python3 -m unittest discover -s tests                   # 128 个单元测试
 ```
 
 ## omp 二开（在本目录里开 omp 会话即生效）
