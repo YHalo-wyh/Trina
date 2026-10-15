@@ -77,23 +77,36 @@ python3 -m trina play --keep-lab                         # 结束后保留自动
 输出要点（P3 语言）：**结论状态**（CONFIRMED / NOT_CONFIRMED / INCONCLUSIVE）、**已测/未测检查项**、
 **停止原因**、被拒动作数、审计文件路径。自动拉起的靶机在任务结束时回收（`--keep-lab` 可保留）。
 
-## 2.2 交互控制台（人工可实时介入）
+## 2.2 交互控制台（对话式，人工可实时介入）
 
 ```bash
-python3 -m trina console --approve exploit      # 默认模式：只审命令执行/爆破
-python3 -m trina                                # 等价：裸命令直接进控制台
+trina                          # 直接进控制台（默认审批模式 exploit）
+trina --api omp                # 临时切回 omp 后端
 ```
+
+**两种入口，同一套安全机制**：
+
+| 你输入 | 发生什么 |
+|---|---|
+| 自然语言（`你好`、`帮我看看 127.0.0.1:9099 有什么漏洞`、`能读到 flag 吗`） | 交给对话大脑：它回答，或在需要时**自己调工具执行**（结果回灌后继续对话） |
+| 以 `/` 开头（`/play --goal "拿到 flag"`、`/status`、`/review`） | 一律当命令执行 |
+| 已知命令名（`play`、`status`、`tools`…） | 当命令执行（不加 `/` 也可以） |
+| 运行中说人话 | 作为**人工介入提示**注入到正在跑的 Agent（下一步生效） |
+
+控制台内可用命令：
 
 | 时点 | 命令 | 作用 |
 |---|---|---|
-| 空闲 | `play [--target T] [--range N] [--goal G] [--max-steps N] [--approve MODE]` | 一条命令开打 |
-| 空闲 | `run <target> [--goal G] ...` | 对指定目标跑一轮 |
-| 空闲 | `tools` / `tool <name> --params '<json>'` / `guard check <t>` / `ranges` / `report` / `audit verify` | 复用 CLI 同一实现 |
-| 空闲 | `approve off\|exploit\|verify\|all` | 调整审批闸门 |
-| 空闲 | `revoke <target_id>` / `grant <target_id>` | 撤权 / 恢复（撤权后该目标的一切检查被拒） |
+| 空闲 | `/play [--target T] [--range N] [--goal G] [--max-steps N] [--approve MODE]` | 一条命令开打（完整任务模式） |
+| 空闲 | `/run <target> ...` | 对指定目标跑一轮完整任务 |
+| 空闲 | `/tools` `/tool <name> --params '<json>'` `/guard check <t>` `/ranges` `/report` `/audit verify` `/review` | 复用 CLI 同一实现 |
+| 空闲 | `/approve off\|exploit\|verify\|all` | 调整审批闸门 |
+| 空闲 | `/revoke <target_id>` / `/grant <target_id>` | 撤权 / 恢复（撤权后该目标的一切检查被拒） |
 | 运行中 | `y` / `n` | 批准 / 拒绝当前挂起的高危动作（超时＝拒绝） |
-| 运行中 | `hint <文本>`（或 `!<文本>`） | 给 Agent 注入提示，下一步生效 |
+| 运行中 | `hint <文本>` 或直接说人话 | 注入提示，下一步生效 |
 | 运行中 | `pause` / `resume` / `stop` / `status` | 暂停 / 继续 / 停止 / 看状态 |
+
+对话模式的审计：每次会话写一个 `logs/chat-<ts>.jsonl`（同样是哈希链），每轮的问答与工具动作都在里面。
 
 ## 3. 单步操作（排障/精确控制）
 

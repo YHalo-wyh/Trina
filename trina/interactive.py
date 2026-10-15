@@ -23,27 +23,37 @@ from typing import Any, Callable
 from .config import TrinaConfig
 from .session import APPROVAL_MODES, Session
 
-HELP_TEXT = """可用命令（空闲时）:
-  play [--target T] [--range NAME] [--goal G] [--max-steps N] [--approve MODE]
-        直接开打：自动准备靶场（默认起本地 lab）→ 全自动渗透 → 出报告
-  run <target> [--goal G] [--max-steps N] [--approve MODE]
-        对指定目标跑一轮（等价于 CLI 的 run，但支持运行中介入）
-  status              当前状态；  approve <off|exploit|verify|all> 调整审批模式
-  hint <文本>         给运行中的 Agent 注入提示（下一步生效）
-  pause / resume      暂停 / 继续；  stop  停止当前任务
-  y / n               批准 / 拒绝当前挂起的动作审批
-  revoke <target_id>  撤销某注册目标的授权（P3 撤权演练）；grant <target_id> 恢复
-  tools               工具清单；      tool <name> --params '<json>'  单工具执行
-  guard check <target>                 授权范围校验
-  ranges [list|status <name>]          靶场适配器状态
-  report [--state <f>]                 由状态重建报告；  review [--state <f>]  评价 Agent 复核（省略则复核最近一次）
-  audit verify <logs/*.jsonl>          校验审计哈希链
-  help / quit                          帮助 / 退出
-运行中可用: y / n · hint <文本> · status · pause · resume · stop"""
+HELP_TEXT = """这是**对话式**控制台：直接说人话即可（例如「你好」「帮我看看 127.0.0.1:9099 有什么漏洞」「验证一下 /sqli 的注入」），
+Trina 会回答你；需要动手时它会自己调用工具执行（照样过授权控制器、护栏与审计）。以 / 开头的输入一律当命令。
+
+常用命令（也可不加 /）:
+  /play [--target T] [--range NAME] [--goal G] [--max-steps N] [--approve MODE]
+        一条命令开打：自动准备靶场（默认起本地 lab）→ 全自动渗透 → 出报告
+  /run <target> [--goal G] [--max-steps N] [--approve MODE]
+        对指定目标跑一轮完整任务（含阶段机与结论/覆盖统计）
+  /status              当前状态；  /approve <off|exploit|verify|all> 调整审批模式
+  /hint <文本>         给运行中的 Agent 注入提示（下一步生效）
+  /pause /resume       暂停 / 继续；  /stop  停止当前任务
+  /y /n                批准 / 拒绝当前挂起的动作审批
+  /revoke <target_id>  撤销某注册目标的授权（P3 撤权演练）；/grant <target_id> 恢复
+  /tools               工具清单；      /tool <name> --params '<json>'  单工具执行
+  /guard check <target>                授权范围校验
+  /ranges [list|status <name>]         靶场适配器状态
+  /report [--state <f>]                由状态重建报告；  /review [--state <f>]  评价 Agent 复核
+  /audit verify <logs/*.jsonl>         校验审计哈希链
+  /help /quit                          帮助 / 退出
+运行中可用: y / n · hint <文本>（或直接说人话＝介入提示）· status · pause · resume · stop"""
+
+#: 已知命令名（用于区分"命令"与"对 Agent 说话"）
+COMMAND_NAMES = {
+    "help", "?", "play", "run", "status", "approve", "hint", "pause", "resume", "stop",
+    "revoke", "grant", "y", "yes", "n", "no", "deny", "tools", "tool", "guard", "ranges",
+    "report", "review", "audit", "lab", "quit", "exit", "q",
+}
 
 
 class Console:
-    """行式交互控制台（无 TUI 依赖，WSL/SSH 环境都能用）。"""
+    """对话式控制台：自然语言对话 + 命令两种入口，共用同一套护栏/控制器/审计。"""
 
     def __init__(
         self,
@@ -66,6 +76,7 @@ class Console:
         self._last_state: Any = None
         self._plan: Any = None
         self._controller: Any = None
+        self.chat: Any = None
         self.session = Session(approval_mode=approval_mode, emit=self._emit)
         self.exit_requested = False
 
@@ -83,7 +94,8 @@ class Console:
 
     # ------------------------------------------------------------------ 主循环
     def run(self) -> int:
-        self._emit("Trina 交互控制台。输入 help 查看命令；play 一条命令直接开打。")
+        self._emit("Trina 交互控制台（**对话式**）：直接说人话即可，例如「你好」「帮我看看 127.0.0.1:9099 有什么漏洞」；")
+        self._emit("需要动手时我会自己调用工具（照过授权控制器与护栏）。命令仍可用，见 /help。")
         self._banner()
         while not self.exit_requested:
             try:
@@ -122,15 +134,26 @@ class Console:
                     return True
             return False
         self._quit_warned = False
+
+        # 以 / 开头的一律当命令；否则先按命令名匹配，匹配不到就交给对话
+        forced = line.startswith("/")
+        if forced:
+            line = line[1:].strip()
+        if not line:
+            self.output(HELP_TEXT)
+            return True
         try:
             argv = shlex.split(line)
-        except ValueError as exc:
-            self._emit(f"命令解析失败: {exc}")
+        except ValueError:
+            self._emit(f"命令解析失败，按对话处理: {line[:60]}")
+            if forced:
+                return True
+            self._start_chat_turn(line)
             return True
         command, args = argv[0], argv[1:]
 
         if self.session.running:
-            return self._handle_running(command, args, line)
+            return self._handle_running(command, args, line, forced=forced)
 
         handler = {
             "help": lambda: self.output(HELP_TEXT),
@@ -157,7 +180,10 @@ class Console:
             "lab": lambda: self._delegate(["lab", *args]),
         }.get(command)
         if handler is None:
-            self._emit(f"未知命令 {command!r}；输入 help 查看可用命令。")
+            if forced:
+                self._emit(f"未知命令 {command!r}；输入 /help 查看可用命令（不加 / 时按对话处理）。")
+                return True
+            self._start_chat_turn(line)
             return True
         try:
             handler()
@@ -165,8 +191,8 @@ class Console:
             self._emit(f"命令执行失败: {type(exc).__name__}: {exc}")
         return True
 
-    def _handle_running(self, command: str, args: list[str], line: str) -> bool:
-        if command in ("y", "yes", "approve") and (command != "approve" or not args):
+    def _handle_running(self, command: str, args: list[str], line: str, *, forced: bool = False) -> bool:
+        if command in ("y", "yes", "approve") and (command != "approve" or not args or forced):
             if not self.session.answer(True):
                 self._emit("当前没有待审批的动作")
             return True
@@ -196,10 +222,78 @@ class Console:
         if command == "quit":
             self._emit("任务运行中：先 stop 再退出。")
             return True
-        self._emit("任务运行中，可用命令：y / n · hint <文本> · status · pause · resume · stop")
+        if command in ("help", "?"):
+            self.output(HELP_TEXT)
+            return True
+        if not forced and command not in COMMAND_NAMES:
+            # 运行中说人话 = 人工介入提示（最自然的交互）；已知命令名仍按命令处理
+            self.session.steer(line)
+            return True
+        self._emit("任务运行中，可用命令：y / n · hint <文本> · status · pause · resume · stop（也可直接说人话＝介入提示）")
         return True
 
     # ------------------------------------------------------------------ 子命令
+    # ------------------------------------------------------------------ 对话
+    def _ensure_chat(self) -> Any:
+        if self.chat is None:
+            from .brain.chat import ChatAgent
+
+            self.chat = ChatAgent(
+                self.config,
+                registry=self.registry,
+                backend=self.backend,
+                approval=self.session.request_approval,
+                steer_queue=self.session.steers,
+                stop_event=self.session.stop_event,
+                pause_event=self.session.pause_event,
+                logger=self._agent_log,
+                on_tool=self._on_tool_result,
+            )
+            self._emit(f"对话会话已建立（审计：{self.chat.audit.path.name}）")
+        return self.chat
+
+    def _on_tool_result(self, result: Any) -> None:
+        """把工具产出的关键事实回显（发现/凭据/flag/路径），让用户看得见"它在干什么"。"""
+        facts = result.facts or {}
+        for finding in facts.get("findings", []) or []:
+            sev = finding.get("severity", "?")
+            self._emit(f"[发现] [{sev}] {finding.get('vuln_class')} {finding.get('url') or finding.get('target')}", prefix="[Trina]")
+        for flag in facts.get("flags", []) or []:
+            self._emit(f"[flag] {str(flag.get('value'))[:60]}", prefix="[Trina]")
+        for cred in facts.get("credentials", []) or []:
+            self._emit(f"[凭据] {cred.get('service')}@{cred.get('target')} 用户 {cred.get('username')}", prefix="[Trina]")
+
+    def _start_chat_turn(self, text: str) -> None:
+        if self.session.running:
+            self._emit("有任务在跑：先 stop，或直接把这句话作为介入提示（无需命令前缀）")
+            return
+        chat = self._ensure_chat()
+        self.session.reset_for_run()
+        self.session.state = chat.state
+        self.session.started_at = time.monotonic()
+
+        def _worker() -> None:
+            try:
+                reply = chat.ask(text)
+                self._emit("—" * 28, prefix="[Trina]")
+                for line in (reply or "").splitlines() or ["(空回复)"]:
+                    self._emit(line, prefix="[Trina]")
+                self._emit(self._chat_digest(chat), prefix="[Trina]")
+                self._last_state = chat.state
+            except Exception as exc:  # noqa: BLE001 - 对话异常不能杀掉控制台
+                self._emit(f"对话出错: {type(exc).__name__}: {exc}", prefix="[错误]")
+
+        self.session.thread = threading.Thread(target=_worker, name="trina-chat", daemon=True)
+        self.session.thread.start()
+
+    def _chat_digest(self, chat: Any) -> str:
+        snap = chat.snapshot()
+        executed = "、".join(snap.get("executed") or []) or "—"
+        return (
+            f"会话 {snap['run_id']}｜轮次 {snap['turns']}｜目标 {snap['target'] or '未指定'}｜"
+            f"发现 {snap['findings']}｜flag {snap['flags']}｜已用检查 {snap['checks_used']}（{executed}）"
+        )
+
     def _show_status(self) -> None:
         self._emit(f"状态: {self.session.status_line()}")
         if not self.session.running and self._last_state is not None:

@@ -161,18 +161,107 @@ class TestPlayPlan(unittest.TestCase):
         self.assertFalse(plan.started_fixtures)
 
     def test_plan_autostarts_lab_and_reuses_existing(self):
+        from trina.play import _port_open
+
+        already_running = _port_open("127.0.0.1", 9099)
         first = build_plan(TrinaConfig.load(), autostart_lab=True, log=lambda _m: None)
         try:
-            self.assertTrue(first.started_fixtures, "空环境下应自动拉起 lab")
+            if already_running:
+                self.assertFalse(first.started_fixtures, "已有靶机在跑时应复用而不是重复拉起")
+            else:
+                self.assertTrue(first.started_fixtures, "空环境下应自动拉起 lab")
             self.assertIn("127.0.0.1:9099", first.target)
             second = build_plan(TrinaConfig.load(), autostart_lab=True, log=lambda _m: None)
-            self.assertFalse(second.started_fixtures, "已有靶机时应复用而不是重复拉起")
+            self.assertFalse(second.started_fixtures, "第二次调用一定走复用分支")
         finally:
             first.teardown()
 
     def test_plan_requires_something_to_attack(self):
         with self.assertRaises(RuntimeError):
             build_plan(TrinaConfig.load(), autostart_lab=False, log=lambda _m: None)
+
+
+class TestChatAgent(unittest.TestCase):
+    """对话式大脑：说人话→回答；需要动手→自己调工具（仍过护栏/控制器/审批）。"""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.cfg = TrinaConfig.load().with_overrides(
+            run__workspace=str(Path(self.tmp.name) / "runs"),
+            audit__dir=str(Path(self.tmp.name) / "logs"),
+            policy__mode="guided",
+        )
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _chat(self, script: list[dict], **kwargs):
+        from trina.brain.chat import ChatAgent
+
+        path = Path(self.tmp.name) / "chat-replay.json"
+        path.write_text(json.dumps({"steps": script}, ensure_ascii=False), encoding="utf-8")
+        backend = ReplayBackend(LLMConfig(backend="replay", replay_script=str(path)))
+        return ChatAgent(self.cfg, registry=ToolRegistry([_EchoTool()]), backend=backend, **kwargs)
+
+    def test_plain_reply_does_not_call_tools(self):
+        chat = self._chat([{"response": "你好，我是 Trina。告诉我目标就可以开始。"}])
+        reply = chat.ask("你好")
+        self.assertIn("Trina", reply)
+        self.assertEqual(chat.state.counters.get("tool_calls", 0), 0)
+
+    def test_tool_action_then_reply(self):
+        chat = self._chat(
+            [
+                {"response": '{"thought": "先探一下", "action": "echo_probe", "params": {"target": "127.0.0.1"}}'},
+                {"response": "探完了：127.0.0.1 的 80 端口是开的。"},
+            ]
+        )
+        reply = chat.ask("帮我看看 127.0.0.1")
+        self.assertIn("80", reply)
+        self.assertIn(80, chat.state.hosts["127.0.0.1"].ports)
+        self.assertGreaterEqual(chat.state.counters.get("tool_calls", 0), 1)
+
+    def test_prose_plus_action_is_executed(self):
+        """模型常写「一句解释 + JSON 动作」：必须识别动作并执行，而不是当成纯文本回答。"""
+        chat = self._chat(
+            [
+                {
+                    "response": '我先做只读侦察。\n'
+                    '{"thought": "扫端口", "action": "echo_probe", "params": {"target": "127.0.0.1"}}\n'
+                    '{"thought": "顺便指纹", "action": "echo_probe", "params": {"target": "127.0.0.1"}}'
+                },
+                {"response": "侦察完成：80 端口开放。"},
+            ]
+        )
+        reply = chat.ask("看看 127.0.0.1")
+        self.assertIn("80", reply)
+        self.assertEqual(chat.state.counters.get("tool_calls", 0), 1, "只执行第一个动作")
+        self.assertIn(80, chat.state.hosts["127.0.0.1"].ports)
+
+    def test_controller_denial_is_surfaced_to_model_and_user(self):
+        self.cfg.policy.mode = "strict"
+        chat = self._chat(
+            [
+                {"response": '{"thought": "直接扫", "action": "echo_probe", "params": {"target": "127.0.0.1"}}'},
+                {"response": "抱歉，控制器没批准这个动作，我换个注册检查项试试。"},
+            ]
+        )
+        reply = chat.ask("扫一下 127.0.0.1")
+        self.assertIn("控制器", reply)
+        self.assertTrue(chat.state.boundary_events, "越界请求要留痕")
+        self.assertEqual(chat.controller.coverage()["executed"], [], "未注册动作不应计入已测")
+
+    def test_human_rejection_blocks_tool(self):
+        chat = self._chat(
+            [
+                {"response": '{"thought": "探一下", "action": "echo_probe", "params": {"target": "127.0.0.1"}}'},
+                {"response": "好的，我先不动手。"},
+            ],
+            approval=lambda request: False,
+        )
+        reply = chat.ask("探一下 127.0.0.1")
+        self.assertIn("不动手", reply)
+        self.assertFalse(chat.state.hosts.get("127.0.0.1") and chat.state.hosts["127.0.0.1"].ports)
 
 
 class TestConsole(unittest.TestCase):
@@ -203,12 +292,41 @@ class TestConsole(unittest.TestCase):
         console, output = self._console(["help", "status", "approve verify", "quit"])
         self.assertEqual(console.run(), 0)
         blob = "\n".join(output)
-        self.assertIn("可用命令", blob)
+        self.assertIn("常用命令", blob)
+        self.assertIn("/play", blob)
         self.assertIn("审批模式已切换为 verify", blob)
         self.assertEqual(console.session.approval_mode, "verify")
 
-    def test_unknown_command_is_reported(self):
-        console, output = self._console(["nope", "quit"])
+    def test_free_text_goes_to_chat(self):
+        """非命令的自然语言应进入对话，而不是报"未知命令"。"""
+        import json as _json
+        import tempfile as _tempfile
+        from pathlib import Path as _Path
+
+        from trina.brain.chat import ChatAgent
+        from trina.config import LLMConfig as _LLMConfig
+        from trina.llm.replay_backend import ReplayBackend as _Replay
+
+        with _tempfile.TemporaryDirectory() as tmp:
+            script = _Path(tmp) / "r.json"
+            script.write_text(_json.dumps({"steps": [{"response": "你好！我是 Trina，说个目标我就开工。"}]}), encoding="utf-8")
+            console, output = self._console(["你好", "quit"])
+            console.chat = ChatAgent(
+                console.config.with_overrides(
+                    run__workspace=str(_Path(tmp) / "runs"), audit__dir=str(_Path(tmp) / "logs"), policy__mode="free"
+                ),
+                registry=ToolRegistry([_EchoTool()]),
+                backend=_Replay(_LLMConfig(backend="replay", replay_script=str(script))),
+                logger=console._agent_log,
+            )
+            console.run()
+            console.session.thread.join(timeout=5) if console.session.thread else None
+            blob = "\n".join(output)
+            self.assertIn("[Trina]", blob)
+            self.assertNotIn("未知命令", blob)
+
+    def test_unknown_slash_command_is_reported(self):
+        console, output = self._console(["/nope", "quit"])
         console.run()
         self.assertTrue(any("未知命令" in line for line in output))
 

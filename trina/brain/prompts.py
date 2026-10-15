@@ -127,11 +127,14 @@ def build_step_prompt(
     return "\n".join(lines)
 
 
-def parse_action(text: str) -> dict:
+def parse_action(text: str, *, prefer: str = "last") -> dict:
     """从模型输出中提取动作 JSON。
 
     容错层级：整段解析 → 逐个平衡括号候选（取最后一个合法且含 action/final 的）→
     代码块内解析 → 失败返回 {"error": ...}。
+
+    `prefer="first"` 用于对话场景：模型可能把动作夹在解释文字里、甚至一口气给多个动作，
+    这时应执行**第一个**（意图最明确），而不是最后那个。
     """
     text = (text or "").strip()
     if not text:
@@ -145,15 +148,16 @@ def parse_action(text: str) -> dict:
             stripped = stripped[4:]
     candidates.append(stripped)
     candidates.extend(_balanced_objects(text))
+    ordered = candidates if prefer == "first" else list(reversed(candidates))
 
-    for candidate in reversed(candidates):
+    for candidate in ordered:
         try:
             data = json.loads(candidate)
         except (json.JSONDecodeError, TypeError):
             continue
         if isinstance(data, dict) and ("action" in data or "final" in data):
             return data
-    for candidate in candidates:
+    for candidate in ordered:
         try:
             data = json.loads(candidate)
         except (json.JSONDecodeError, TypeError):

@@ -67,10 +67,13 @@ scripts/dev.sh play --api deepseek --goal "拿到 flag 并验证 SQL 注入" --m
 
 | 能力 | 命令 | 说明 |
 |---|---|---|
-| 一条命令开打 | `trina play [--target T] [--range NAME] [--goal G] [--approve MODE]` | 自动准备靶场（默认内置 lab）→ 跑 → 出报告；`--approve` 非 off 时逐个高危动作要人工批准 |
-| 交互控制台 | `trina console`（或直接 `trina`） | 运行中可用 `y/n` 审批、`hint <文本>` 介入、`pause/resume`、`stop`、`status`、`revoke <target_id>` 撤权 |
-| 审批闸门 | `--approve off\|exploit\|verify\|all` | 默认 `exploit`：只有命令执行/爆破这类高危动作需要点击批准；**超时未答复按拒绝处理**（fail-closed） |
-| 评价 Agent | `trina review --state runs/<id>/state.json [--save review/]` | 只读复核：缺证据的声明、结论一致性、覆盖缺口、越界请求、审计链；生成复核记录初稿供人签署 |
+| **对话式控制台** | `trina`（或 `trina console`） | **直接说人话**：`你好` / `帮我看看 127.0.0.1:9099 有什么漏洞` → Trina 回答；需要动手时它自己调工具（照样过授权控制器、护栏、审批与审计）。命令仍可用，见 `/help` |
+| 一条命令开打 | `trina play [--target T] [--range NAME] [--goal G] [--approve MODE]` | 自动准备靶场（默认内置 lab）→ 跑完整任务（含阶段机与结论/覆盖统计）→ 出报告 |
+| 运行中介入 | `hint <文本>`（或直接说人话）· `pause/resume` · `stop` · `status` · `/revoke <target_id>` 撤权 | 运行中说人话＝介入提示；审批 `y/n`，**超时即拒绝** |
+| 评价 Agent | `trina review [--state runs/<id>/state.json]` | 只读复核：缺证据的声明、结论一致性、覆盖缺口、边界事件、审计链 |
+
+> 对话模式与任务模式共用同一套安全机制：`ToolRegistry`（护栏+审计收口）、`AuthorizationController`（注册表/预算/撤权）、
+> 人工审批闸门。模型在对话里同样**不能**扩大范围，也不能把工具输出当指令。
 
 ## 授权策略：计划器提出，控制器批准
 
