@@ -1,0 +1,17 @@
+# 项目级 omp 配置覆盖（仅在 cwd = 本项目时生效）
+#
+# 扩展与技能都是**自动发现**的，这里通常不需要写任何东西：
+#   .omp/extensions/*.ts        → 扩展模块（本项目提供 trina.ts：Trina 工具 + bash 护栏）
+#   .omp/skills/<name>/SKILL.md → 技能（本项目提供 pentest-agent）
+#
+# 下面给出常用覆盖示例，需要时取消注释。注意：数组型设置是**替换**而非追加。
+#
+# 收紧/放开工具审批（自动渗透需要少打扰，但请自行评估风险后再改）：
+# tools:
+#   approvalMode: yolo
+#
+# 只在渗透会话里使用更便宜的模型：
+# modelRoles:
+#   task: deepseek/deepseek-v4-flash
+#
+# 用 --config 叠加本文件：omp --config .omp/config.yml

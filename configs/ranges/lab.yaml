@@ -1,0 +1,89 @@
+# Trina 自带 lab（故意脆弱的本地靶机，stdlib 实现）—— 端到端自证用
+# 启动方式：
+#   python3 -m trina.lab.run --http --port 9099
+#   （可选）python3 -m trina.lab.run --ssh --port 2222     # SSH 弱口令靶机 trina/trina123
+name: lab
+kind: mixed
+adapter: http_range
+description: "Trina 内置故意脆弱靶机：SQLi / LFI / RCE / 任意文件上传 / 弱口令 / flag"
+source: "trina/lab/run.py"
+base_url: "http://127.0.0.1:9099"
+probe_path: "/"
+timeout: 5
+
+# 附带主机维度目标（SSH 弱口令靶机），local 侧由 Agent 用内置凭据引擎验证。
+targets:
+  - host: "127.0.0.1"
+    port: 2222
+    service: "ssh"
+    url: "ssh://127.0.0.1:2222"
+    notes: "lab SSH 靶机：用户 trina / 口令 trina123（单次凭据验证，禁止爆破）"
+
+# 靶场自带凭据登录（弱口令验证）：POST /login 表单字段 username/password，admin/admin123
+login:
+  url: "/login"
+  method: POST
+  username: "admin"
+  password: "admin123"
+  user_field: username
+  pass_field: password
+  success_marker: "欢迎"
+  auto: true
+
+flag_patterns:
+  - 'flag\{trina_lab_[0-9a-f]{4,64}\}'
+  - 'flag\{[^}]{1,120}\}'
+
+ground_truth:
+  - vuln_class: sqli
+    target: "127.0.0.1:9099"
+    url: "http://127.0.0.1:9099/sqli"
+    parameter: id
+    severity: high
+    note: "错误型/布尔型/时间型注入：id=1' / id=1 AND 1=1 / id=1 AND sleep(2)"
+  - vuln_class: lfi
+    target: "127.0.0.1:9099"
+    url: "http://127.0.0.1:9099/lfi"
+    parameter: file
+    severity: high
+    note: "file=../../../../etc/passwd；php://filter/convert.base64-encode 变体也可读"
+  - vuln_class: rce
+    target: "127.0.0.1:9099"
+    url: "http://127.0.0.1:9099/rce"
+    parameter: cmd
+    severity: critical
+    note: "cmd=id；支持 ; | $() ，且 cmd=cat /flag 可回显 flag"
+  - vuln_class: file_upload
+    target: "127.0.0.1:9099"
+    url: "http://127.0.0.1:9099/upload"
+    parameter: file
+    severity: critical
+    note: "multipart 字段名 file，任意扩展名；仅上传无害探测文件（返回 {\"url\":\"/uploads/<name>\"}）"
+  - vuln_class: weak_password
+    target: "127.0.0.1:9099"
+    url: "http://127.0.0.1:9099/login"
+    parameter: password
+    severity: high
+    note: "POST /login 弱口令 admin/admin123，成功正文含「欢迎」"
+  - vuln_class: weak_password
+    target: "127.0.0.1:2222"
+    url: "ssh://127.0.0.1:2222"
+    parameter: password
+    severity: high
+    note: "SSH 靶机 trina/trina123（单次验证）"
+  - vuln_class: flag
+    target: "127.0.0.1:9099"
+    url: "http://127.0.0.1:9099/flag"
+    parameter: ""
+    severity: medium
+    note: "GET /flag 直接返回 flag（形态 flag{trina_lab_<hex>}）；/rce?cmd=cat /flag 同源"
+  - vuln_class: info_disclosure
+    target: "127.0.0.1:9099"
+    url: "http://127.0.0.1:9099/.git/HEAD"
+    parameter: ""
+    severity: medium
+    note: "敏感文件暴露：/.git/HEAD、/robots.txt；/admin 缺安全响应头"
+
+notes: >
+  lab 是端到端自证靶场（无需 docker / 外网）。ground truth 由 trina/eval 直接消费：
+  TP/FP/FN 口径以本文件的 vuln_class + url 为准。flag 校验用 flag_patterns。

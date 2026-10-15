@@ -1,0 +1,77 @@
+# Vulhub 一键漏洞靶场（docker compose 模式）
+# ⚠ 需要 docker：本仓库默认工作环境（WSL）通常没有 docker；
+#   补齐方式见 notes / adapter.prepare() 的 detail —— 无 docker 时 prepare() 不抛异常，
+#   只返回空 targets + 补齐说明。
+#
+# 目录约定：把 vulhub 仓库克隆到项目根下的 third_party/vulhub，
+#   git clone --depth 1 https://github.com/vulhub/vulhub third_party/vulhub
+# compose_file 是相对项目根的路径，也可改成绝对路径。
+name: vulhub
+kind: mixed
+adapter: docker
+description: "Vulhub 常见 CVE 一键靶场（Log4Shell / Tomcat PUT / WebLogic 反序列化）"
+source: "https://github.com/vulhub/vulhub"
+startup_timeout: 120
+poll_interval: 2
+# 起容器属于 host 级状态变更，声明为 verify 级（detect 级配置下会被护栏拒绝并如实上报）
+action_level: verify
+
+flag_patterns:
+  - 'flag\{[^}]{1,120}\}'
+
+instances:
+  - name: cve-2021-44228-log4j2
+    description: "Apache Log4j2 JNDI 注入（CVE-2021-44228）→ 通过 Solr 8983 走 log4j RCE"
+    compose_file: "third_party/vulhub/log4j/CVE-2021-44228/docker-compose.yml"
+    targets:
+      - host: "127.0.0.1"
+        port: 8983
+        service: "http-solr"
+        url: "http://127.0.0.1:8983/solr/admin/cores"
+    wait_ports: ["127.0.0.1:8983"]
+
+  - name: cve-2017-12615-tomcat
+    description: "Tomcat PUT 任意文件写入（CVE-2017-12615）"
+    compose_file: "third_party/vulhub/tomcat/CVE-2017-12615/docker-compose.yml"
+    targets:
+      - host: "127.0.0.1"
+        port: 8080
+        service: "http-tomcat"
+        url: "http://127.0.0.1:8080/"
+    wait_ports: ["127.0.0.1:8080"]
+
+  - name: cve-2019-2725-weblogic
+    description: "WebLogic wls9-async 反序列化（CVE-2019-2725）"
+    compose_file: "third_party/vulhub/weblogic/CVE-2019-2725/docker-compose.yml"
+    targets:
+      - host: "127.0.0.1"
+        port: 7001
+        service: "http-weblogic"
+        url: "http://127.0.0.1:7001/"
+    wait_ports: ["127.0.0.1:7001"]
+
+ground_truth:
+  - vuln_class: rce
+    target: "127.0.0.1:8983"
+    url: "http://127.0.0.1:8983/solr/admin/cores"
+    parameter: "params"
+    severity: critical
+    note: "CVE-2021-44228：注入 ${jndi:ldap://...} 触发 JNDI 外连；验证用 DNS/HTTP 回连即可，禁止反弹 shell"
+  - vuln_class: file_upload
+    target: "127.0.0.1:8080"
+    url: "http://127.0.0.1:8080/paifile.txt"
+    parameter: "filename"
+    severity: high
+    note: "CVE-2017-12615：PUT /x.jsp/ 写文件；验证只用无害 txt，禁止写 webshell"
+  - vuln_class: rce
+    target: "127.0.0.1:7001"
+    url: "http://127.0.0.1:7001/_async/AsyncResponseService"
+    parameter: "xml"
+    severity: critical
+    note: "CVE-2019-2725：T3/XMLDecoder 反序列化；无回显时按「疑似」记录"
+
+notes: >
+  需 docker：① 宿主机/Docker Desktop 里 cd third_party/vulhub/<cve-dir> && docker compose up -d，
+  再把 targets 的 127.0.0.1 换成宿主可达地址；② WSL 启用 Docker Desktop 的 WSL Integration，
+  或在 WSL 内装 docker 引擎后 sudo service docker start。端口冲突时改动 targets/wait_ports
+  （compose 默认：solr 8983、tomcat 8080、weblogic 7001）。

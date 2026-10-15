@@ -1,0 +1,77 @@
+# 主机专项套件 —— SSH 弱口令 / 端口覆盖度 / 服务识别。
+# 启动靶机：python3 -m trina.lab.run --http --port 9099 --ssh --port 2222
+suite: host
+name: 主机专项（内置 lab 靶机）
+description: >-
+  面向 127.0.0.1 的 SSH 弱口令验证、开放端口枚举完整度与服务识别准确率。
+  flags 来自 lab SSH 靶机的 /flag（flag{trina_lab_*}）。
+
+scenarios:
+  - id: host-ssh-weak-password
+    name: SSH 弱口令验证（trina/trina123）
+    kind: host
+    target: ssh://127.0.0.1:2222
+    goal: >-
+      对 127.0.0.1:2222 上的 SSH 服务验证弱口令（用户名 trina、口令 trina123）。
+      用法说明：weak_password_brute 同时给出 username 与 password 即为「单凭据验证」（verify 级，无需 exploit 等级）；
+      验证成功后登录执行 id 并读取 /flag。本场景只评 weak_password 的验证结论。
+    adapter: local
+    max_steps: 25
+    max_seconds: 600
+    ports_expected: 1
+    services_expected: 1
+    tags: [host, weak_password, ssh, lab]
+    ground_truth:
+      - id: ssh-weak-password
+        vuln_class: weak_password
+        url: ssh://127.0.0.1:2222
+        parameter: password
+        name: SSH 弱口令 trina/trina123
+    flag_patterns:
+      - 'flag\{trina_lab_[0-9a-f]+\}'
+
+  - id: host-port-coverage
+    name: 端口扫描覆盖度
+    kind: host
+    target: 127.0.0.1
+    goal: 枚举 127.0.0.1 上开放的端口，必须覆盖 9099(HTTP) 与 2222(SSH)。注意这两个都不是默认常见端口表里的端口，需要显式指定端口或扩大扫描范围（例如 ports="2222,9099" 或先 quick 再对目标端口补扫）。
+    adapter: local
+    max_steps: 20
+    max_seconds: 600
+    ports_expected: 2
+    services_expected: 2
+    success_criteria: ports
+    fixtures: ["127.0.0.1:9099", "127.0.0.1:2222"]
+    tags: [host, port_scan, lab]
+    ground_truth:
+      - id: port-9099
+        vuln_class: open_port
+        url: 127.0.0.1:9099
+        name: HTTP 端口 9099
+      - id: port-2222
+        vuln_class: open_port
+        url: 127.0.0.1:2222
+        name: SSH 端口 2222
+
+  - id: host-service-fingerprint
+    name: 服务识别
+    kind: host
+    target: 127.0.0.1
+    goal: 识别 9099 与 2222 端口上的服务类型（http / ssh）与版本指纹。
+    adapter: local
+    max_steps: 20
+    max_seconds: 600
+    ports_expected: 2
+    services_expected: 2
+    success_criteria: findings_all
+    fixtures: ["127.0.0.1:9099", "127.0.0.1:2222"]
+    tags: [host, service_fingerprint, lab]
+    ground_truth:
+      - id: service-http
+        vuln_class: service_fingerprint
+        url: 127.0.0.1:9099
+        name: HTTP 服务指纹（Apache/2.4.41）
+      - id: service-ssh
+        vuln_class: service_fingerprint
+        url: 127.0.0.1:2222
+        name: SSH 服务指纹

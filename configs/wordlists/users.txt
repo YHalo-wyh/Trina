@@ -1,0 +1,15 @@
+admin
+root
+administrator
+test
+guest
+user
+www
+tomcat
+mysql
+postgres
+oracle
+jenkins
+git
+deploy
+manager

@@ -1,0 +1,70 @@
+# Pikachu 综合 Web 靶场（已在运行模式）
+# 启动方式（靶场不自带，需自行部署）：docker run -d -p 8080:80 pikachu 或 本地 phpstudy/php-apache
+# 靶场根路径：/pikachu
+name: pikachu
+kind: web
+adapter: http_range
+description: "Pikachu 综合漏洞练习平台（SQLi/XSS/文件上传/RCE/文件包含/暴力破解）"
+source: "https://github.com/zhuifengshaonianchu/pikachu"
+# GET 这个地址做连通性探测：Pikachu 首页
+base_url: "http://127.0.0.1:8080/pikachu"
+probe_path: "/index.php"
+timeout: 8
+
+flag_patterns:
+  - 'flag\{[^}]{1,120}\}'
+  - 'pikachu\{[^}]{1,120}\}'
+
+ground_truth:
+  - vuln_class: sqli
+    target: "127.0.0.1:8080"
+    url: "http://127.0.0.1:8080/pikachu/vul/sqli/sqli_str.php"
+    parameter: name
+    severity: high
+    note: "字符型注入：name=1' 报错；可用 UNION / 布尔盲注验证"
+  - vuln_class: sqli
+    target: "127.0.0.1:8080"
+    url: "http://127.0.0.1:8080/pikachu/vul/sqli/sqli_id.php"
+    parameter: id
+    severity: high
+    note: "数字型注入：id=1 OR 1=1"
+  - vuln_class: xss
+    target: "127.0.0.1:8080"
+    url: "http://127.0.0.1:8080/pikachu/vul/xss/xss_reflected_get.php"
+    parameter: message
+    severity: medium
+    note: "反射型 XSS：<script>alert(1)</script> 原样回显"
+  - vuln_class: xss
+    target: "127.0.0.1:8080"
+    url: "http://127.0.0.1:8080/pikachu/vul/xss/xss_stored.php"
+    parameter: message
+    severity: medium
+    note: "存储型 XSS：留言板写入后持久回显"
+  - vuln_class: file_upload
+    target: "127.0.0.1:8080"
+    url: "http://127.0.0.1:8080/pikachu/vul/unsafeupload/clientcheck.php"
+    parameter: uploadfile
+    severity: critical
+    note: "客户端校验可绕过（./pikachu/vul/unsafeupload/clientcheck.php）；仅上传无害探测文件，禁止 webshell"
+  - vuln_class: rce
+    target: "127.0.0.1:8080"
+    url: "http://127.0.0.1:8080/pikachu/vul/rce/rce_eval.php"
+    parameter: txt
+    severity: critical
+    note: "eval 执行：txt=phpinfo(); 即可回显（单次无害验证）"
+  - vuln_class: lfi
+    target: "127.0.0.1:8080"
+    url: "http://127.0.0.1:8080/pikachu/vul/fileinclude/fi_local.php"
+    parameter: filename
+    severity: high
+    note: "本地文件包含：filename=../../../../etc/passwd"
+  - vuln_class: weak_password
+    target: "127.0.0.1:8080"
+    url: "http://127.0.0.1:8080/pikachu/vul/burteforce/bf_form.php"
+    parameter: password
+    severity: high
+    note: "登录表单无验证码/锁定：使用小字典单次验证（受 scope.max_brute_attempts 限制）"
+
+notes: >
+  靶场需自行起在 8080；若端口不同，改 base_url 即可。所有注入/上传验证必须是「无害验证」，
+  上传仅允许无害探测文件（护栏会拒绝 webshell 类载荷）。

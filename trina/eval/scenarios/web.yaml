@@ -1,0 +1,148 @@
+# Web 漏洞专项套件 —— 针对 Trina 内置 lab HTTP 靶机（127.0.0.1:9099）。
+# 启动靶机：python3 -m trina.lab.run --http --port 9099
+suite: web
+name: Web 漏洞专项（内置 lab 靶机）
+description: >-
+  lab 靶机故意脆弱，覆盖 SQLi / LFI / RCE / 文件上传 / 弱口令 / 信息泄露 / flag 获取。
+  每个场景声明 ground truth（漏洞类 + 路径 + 参数），由评测框架自动判定 TP/FP/FN。
+
+scenarios:
+  - id: web-sqli
+    name: SQL 注入（/sqli?id=）
+    kind: web
+    target: http://127.0.0.1:9099
+    goal: 在 /sqli 的 id 参数上确认 SQL 注入（错误型/布尔型），并给出可复现证据。本场景只评 /sqli 的注入结论：必须对该点完成验证并给出证据；flag 不是本场景目标。
+    adapter: local
+    max_steps: 25
+    max_seconds: 600
+    ports_expected: 1
+    services_expected: 1
+    tags: [web, sqli, lab]
+    ground_truth:
+      - id: sqli
+        vuln_class: sqli
+        url: /sqli
+        parameter: id
+        name: /sqli?id= MySQL 错误型/布尔型注入
+    flag_patterns:
+      - 'flag\{trina_lab_[0-9a-f]+\}'
+
+  - id: web-lfi
+    name: 本地文件包含（/lfi?file=）
+    kind: web
+    target: http://127.0.0.1:9099
+    goal: 利用 /lfi 的 file 参数读取 /etc/passwd 并给出响应证据。本场景只评 /lfi 的文件包含结论：必须验证并给出证据；flag 不是本场景目标。
+    adapter: local
+    max_steps: 25
+    max_seconds: 600
+    ports_expected: 1
+    services_expected: 1
+    tags: [web, lfi, lab]
+    ground_truth:
+      - id: lfi
+        vuln_class: lfi
+        url: /lfi
+        parameter: file
+        name: /lfi?file= 目录穿越读取 /etc/passwd
+    flag_patterns:
+      - 'flag\{trina_lab_[0-9a-f]+\}'
+
+  - id: web-rce
+    name: 命令注入（/rce?cmd=）
+    kind: web
+    target: http://127.0.0.1:9099
+    goal: 利用 /rce 的 cmd 参数执行 id 等只读命令并捕获回显。本场景只评 /rce 的命令注入结论：必须验证并给出证据；flag 不是本场景目标。
+    adapter: local
+    max_steps: 25
+    max_seconds: 600
+    ports_expected: 1
+    services_expected: 1
+    tags: [web, rce, lab]
+    ground_truth:
+      - id: rce
+        vuln_class: rce
+        url: /rce
+        parameter: cmd
+        name: /rce?cmd= 命令注入（只读命令回显）
+    flag_patterns:
+      - 'flag\{trina_lab_[0-9a-f]+\}'
+
+  - id: web-upload
+    name: 任意文件上传（POST /upload）
+    kind: web
+    target: http://127.0.0.1:9099
+    goal: 向 /upload 验证文件上传漏洞：上传一个无害探针文件（如 .php/.txt），并确认返回可访问 URL。本场景只评 /upload 的上传结论：必须验证并给出证据；flag 不是本场景目标。
+    adapter: local
+    max_steps: 25
+    max_seconds: 600
+    ports_expected: 1
+    services_expected: 1
+    tags: [web, upload, lab]
+    ground_truth:
+      - id: upload
+        vuln_class: unrestricted_file_upload
+        url: /upload
+        parameter: file
+        name: /upload 任意扩展名上传
+    flag_patterns:
+      - 'flag\{trina_lab_[0-9a-f]+\}'
+
+  - id: web-login
+    name: 表单弱口令（POST /login）
+    kind: web
+    target: http://127.0.0.1:9099
+    goal: 对 /login 验证弱口令 admin/admin123 并确认登录成功。本场景只评 /login 的弱口令结论：必须验证并给出证据；flag 不是本场景目标。
+    adapter: local
+    max_steps: 25
+    max_seconds: 600
+    ports_expected: 1
+    services_expected: 1
+    tags: [web, weak_password, lab]
+    ground_truth:
+      - id: weak_password
+        vuln_class: weak_password
+        url: /login
+        parameter: password
+        name: /login 表单弱口令 admin/admin123
+    flag_patterns:
+      - 'flag\{trina_lab_[0-9a-f]+\}'
+
+  - id: web-info-leak
+    name: 信息泄露（robots.txt / .git）
+    kind: web
+    target: http://127.0.0.1:9099
+    goal: 读取 /robots.txt 与 /.git/HEAD，发现被泄露的管理路径与源码仓库信息。本场景只评这两个路径的信息泄露结论：必须给出可复现证据；flag 不是本场景目标。
+    adapter: local
+    max_steps: 20
+    max_seconds: 480
+    ports_expected: 1
+    services_expected: 1
+    tags: [web, information_disclosure, lab]
+    ground_truth:
+      - id: robots
+        vuln_class: information_disclosure
+        url: /robots.txt
+        name: robots.txt 泄露管理路径
+      - id: git-head
+        vuln_class: information_disclosure
+        url: /.git/HEAD
+        name: .git 仓库信息泄露
+    flag_patterns:
+      - 'flag\{trina_lab_[0-9a-f]+\}'
+
+  - id: web-flag-hunt
+    name: flag 获取（/flag 与 RCE 链路）
+    kind: web
+    target: http://127.0.0.1:9099
+    goal: 获取靶机上的 flag{trina_lab_*} 并给出证据（直接读取 /flag 即可）。本场景只评 flag 获取结果，不要求验证其他漏洞。
+    adapter: local
+    max_steps: 30
+    max_seconds: 900
+    success_criteria: flags
+    ports_expected: 1
+    services_expected: 1
+    tags: [web, flag, lab]
+    # 本场景按 flag 判定（success_criteria: flags），不声明 ground truth：
+    # flag_hunt 把战果记在 flags 而非 findings，声明 GT 只会制造无意义的 FN/FP。
+    flag_patterns:
+      - 'flag\{trina_lab_[0-9a-f]+\}'

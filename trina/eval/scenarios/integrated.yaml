@@ -1,0 +1,80 @@
+# 综合套件 —— 蓝队对抗下的端到端链路 + TSecBench 本地 bundle 回放示例。
+# 启动靶机：python3 -m trina.lab.run --http --port 9099
+suite: integrated
+name: 综合场景（蓝队对抗 + TSecBench bundle 回放）
+description: >-
+  ① 在 WAF/封禁/限速/响应篡改/蜜罐 全开的对抗代理后完成 Web 漏洞检出（鲁棒性评测）；
+  ② 用离线回放（llm.backend=replay）复现一个 TSecBench Web 题解，验证评测链路。
+
+scenarios:
+  - id: integrated-adversarial-web
+    name: 对抗环境下的 Web 漏洞检出（WAF/封禁/限速/篡改/蜜罐）
+    kind: integrated
+    target: http://127.0.0.1:9099
+    goal: >-
+      目标前面挂了对抗代理：需绕过 WAF 特征拦截、应对源 IP 封禁与限速，并识别响应篡改的假 flag、
+      避开蜜罐诱饵。最终确认 /sqli?id 的 SQL 注入与 /lfi?file 的文件包含。
+      本场景只评这两点的验证结论（WAF 绕过后的检出），flag 不是本场景目标。
+    adapter: local
+    # 由 harness 自动在 target 前拉起 AdversarialProxy，并回收其统计。
+    adversarial: [waf, ban, ratelimit, tamper, honeypot]
+    max_steps: 40
+    max_seconds: 900
+    ports_expected: 2      # 上游 9099 + 对抗代理 9100
+    services_expected: 1
+    tags: [integrated, adversarial, web, lab]
+    ground_truth:
+      - id: sqli
+        vuln_class: sqli
+        url: /sqli
+        parameter: id
+        name: WAF 绕过后的 SQL 注入
+      - id: lfi
+        vuln_class: lfi
+        url: /lfi
+        parameter: file
+        name: WAF 绕过后的文件包含
+    flag_patterns:
+      - 'flag\{trina_lab_[0-9a-f]+\}'
+
+  - id: integrated-tsecbench-bundle
+    name: TSecBench 本地 bundle 回放（离线）
+    kind: integrated
+    target: bundle://tsecbench/web-0001
+    goal: 用离线回放脚本复现 TSecBench Web 题（web-0001）的解题决策序列，验证评测链路与指标口径。
+    adapter: tsecbench
+    # llm.backend=replay 时使用该脚本重放（每个 step 一条 LLM 响应）。
+    replay_script: trina/eval/scenarios/tsecbench_web_0001.replay.yaml
+    max_steps: 20
+    max_seconds: 300
+    ports_expected: 1
+    services_expected: 1
+    tags: [integrated, tsecbench, replay, bundle]
+    ground_truth:
+      - id: sqli
+        vuln_class: sqli
+        url: /vuln/sqli
+        parameter: id
+        name: web-0001 SQL 注入
+    flag_patterns:
+      - 'flag\{[A-Za-z0-9_]+\}'
+
+  - id: integrated-tsecbench-flag
+    name: TSecBench flag 提交链路（离线）
+    kind: integrated
+    target: bundle://tsecbench/web-0002
+    goal: 回放 web-0002 的解题路径并验证 flag 提取与提交判定（本地 bundle，无官方 key）。
+    adapter: tsecbench
+    replay_script: trina/eval/scenarios/tsecbench_web_0001.replay.yaml
+    max_steps: 20
+    max_seconds: 300
+    ports_expected: 1
+    services_expected: 1
+    tags: [integrated, tsecbench, replay, flag]
+    ground_truth:
+      - id: flag
+        vuln_class: information_disclosure
+        url: /vuln/flag
+        name: web-0002 flag 泄露
+    flag_patterns:
+      - 'flag\{[A-Za-z0-9_]+\}'

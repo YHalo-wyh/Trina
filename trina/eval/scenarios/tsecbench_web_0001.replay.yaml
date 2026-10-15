@@ -1,0 +1,16 @@
+# TSecBench 本地 bundle 回放样张（离线评测用，零 LLM 成本）。
+# 由 llm.backend=replay 的 ReplayBackend 读取：先按 match 正则挑，再按顺序消费无 match 的步骤。
+# 用途：无官方 key 时复现一道 TSecBench Web 题的解题决策序列，验证评测链路与指标口径。
+#
+# 工具名与参数必须与 trina tools 中的真实契约一致（action/params 协议）。
+# 注意：本文件不是场景套件（没有 scenarios 键），评测加载器会忽略它。
+steps:
+  - match: "阶段: recon"
+    response: '{"thought": "先做只读侦察，确认目标 Web 服务与端口", "action": "port_scan", "params": {"target": "127.0.0.1", "ports": "quick"}}'
+  - match: "阶段: enum"
+    response: '{"thought": "识别 Web 技术栈与暴露路径", "action": "http_fingerprint", "params": {"url": "http://127.0.0.1:9099"}}'
+  - match: "阶段: vuln"
+    response: '{"thought": "对 /sqli?id 做注入验证（错误型/布尔型）", "action": "sqli_test", "params": {"url": "http://127.0.0.1:9099/sqli", "param": "id", "method": "GET"}}'
+  - response: '{"thought": "提取 flag", "action": "flag_hunt", "params": {"target": "127.0.0.1", "base_url": "http://127.0.0.1:9099"}}'
+  - response: '{"thought": "已确认注入并取得 flag，结束", "final": {"status": "success", "summary": "web-0001 完成：SQL 注入已验证并提取 flag"}}'
+default: '{"thought": "回放脚本已耗尽", "final": {"status": "partial", "summary": "REPLAY_EXHAUSTED"}}'

@@ -1,0 +1,76 @@
+# VulnStack 内网靶场（本机手工搭建 / VM 内网），local 模式
+# 只做 TCP 连通性检查（每个 target 3s 超时），不起任何服务。
+# 目标落在 192.168.0.0/16 → 在默认授权网段内（configs/trina.yaml#scope.authorized_cidrs）。
+name: vulnstack
+kind: mixed
+adapter: local
+connect_timeout: 3
+description: "VulnStack 内网渗透靶场（典型拓扑：DMZ Web + 内网域控/数据库/文件共享/远程桌面）"
+source: "https://github.com/vulhub/vulnstack"
+
+flag_patterns:
+  - 'flag\{[^}]{1,120}\}'
+
+targets:
+  - host: "192.168.1.10"
+    port: 22
+    service: "ssh"
+    url: "ssh://192.168.1.10:22"
+    notes: "Linux 跳板机（SSH 弱口令常见）"
+  - host: "192.168.1.20"
+    port: 3306
+    service: "mysql"
+    url: "mysql://192.168.1.20:3306"
+    notes: "MySQL 数据库（弱口令 / root 空口令）"
+  - host: "192.168.1.30"
+    port: 445
+    service: "smb"
+    url: "smb://192.168.1.30:445"
+    notes: "Windows 文件共享（MS17-010 / 共享枚举）"
+  - host: "192.168.1.40"
+    port: 3389
+    service: "rdp"
+    url: "rdp://192.168.1.40:3389"
+    notes: "Windows 远程桌面（弱口令 / NLA 探测）"
+
+ground_truth:
+  - vuln_class: weak_password
+    target: "192.168.1.10:22"
+    url: "ssh://192.168.1.10:22"
+    parameter: password
+    severity: high
+    note: "SSH 弱口令：单次验证（max_brute_attempts 上限内的小字典），禁止批量爆破"
+  - vuln_class: weak_password
+    target: "192.168.1.20:3306"
+    url: "mysql://192.168.1.20:3306"
+    parameter: password
+    severity: high
+    note: "MySQL 弱口令/空口令：单次连接验证，禁止拖库导出"
+  - vuln_class: weak_password
+    target: "192.168.1.40:3389"
+    url: "rdp://192.168.1.40:3389"
+    parameter: password
+    severity: high
+    note: "RDP 弱口令：仅做单次凭据验证"
+  - vuln_class: service_exploit
+    target: "192.168.1.30:445"
+    url: "smb://192.168.1.30:445"
+    parameter: ""
+    severity: critical
+    note: "SMB 服务漏洞（如 MS17-010）：只做漏洞存在性检测，不执行实际利用/植入"
+  - vuln_class: service_exploit
+    target: "192.168.1.10:22"
+    url: "ssh://192.168.1.10:22"
+    parameter: ""
+    severity: medium
+    note: "SSH 版本/配置缺陷（旧版 OpenSSH、允许口令登录）暴露面确认"
+  - vuln_class: flag
+    target: "192.168.1.30:445"
+    url: "smb://192.168.1.30:445"
+    parameter: ""
+    severity: medium
+    note: "靶机内预置 flag（flag{...}），需在取得只读访问的前提下读取"
+
+notes: >
+  把 IP 换成你实际内网靶机的地址；不在授权网段的目标会在 notes 里被点名，且护栏会拒绝实际发包。
+  本适配器只做 TCP connect 连通性检查，不发送任何应用层载荷。

@@ -1,0 +1,23 @@
+# ---- 运行产物（本地产物，不入库）----
+runs/
+logs/
+reports/
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# ---- 编辑器 / 系统 ----
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# ---- 临时录制（保留 trina/eval/scenarios 下的回放样张）----
+*.replay.local.yaml
+/tmp/

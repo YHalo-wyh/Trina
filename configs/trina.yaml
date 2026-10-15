@@ -1,0 +1,95 @@
+# Trina 主配置 —— 本文件同时是「合规护栏」的数据源。
+# 修改 scope 段等于修改授权边界，请谨慎并保留变更记录。
+
+scope:
+  # 授权网段白名单（硬边界）：目标解析出的每个 IP 都必须落在其中。
+  # 默认只放行回环 + RFC1918 私网，即实训环境的典型网段。
+  authorized_cidrs:
+    - 127.0.0.0/8
+    - 10.0.0.0/8
+    - 172.16.0.0/12
+    - 192.168.0.0/16
+  # 精确主机白名单（域名/IP，端口无关），优先级高于网段，用于放行特例。
+  authorized_hosts: []
+  # 显式拒绝网段，即使落在 authorized_cidrs 内也会被拒（如隔离某台机器）。
+  deny_cidrs: []
+  # 允许公网目标：默认关闭。开启会写入审计并在报告中标注。
+  allow_public: false
+  # 允许回环地址（本地 lab 靶机需要）。
+  allow_loopback: true
+  # 允许的最大动作等级：detect(只读) < verify(可验证) < exploit(命令执行/批量爆破)
+  exploit_level: verify
+  # 破坏性动作总开关，默认关闭；即使开启也只对 destructive_hosts 生效。
+  destructive: false
+  destructive_hosts: []
+  # 限速与规模上限：防止把实训靶机打成 DoS。
+  max_qps: 20.0
+  max_host_concurrency: 8
+  # 单次爆破尝试上限：默认词表 15 用户 × 45 口令 = 675，留出余量；仍远低于会打死服务的量级
+  max_brute_attempts: 800
+  # 解析域名（关闭则只接受 IP 字面量）。
+  resolve_dns: true
+
+llm:
+  # omp: 复用 omp 已配置的模型与鉴权（推荐）；openai: OpenAI 兼容端点；replay: 离线回放（测试）
+  backend: omp
+  model: deepseek/deepseek-v4-flash
+  timeout: 180
+  temperature: 0.2
+  max_tokens: 4096
+  # 单次任务的决策步数上限与总时长上限
+  max_steps: 40
+  max_seconds: 1800
+  # 连续 N 步动作完全重复则注入纠正提示
+  stall_limit: 3
+  # OpenAI 兼容后端参数（backend=openai 时生效）
+  base_url: ""
+  api_key_env: "TRINA_LLM_API_KEY"
+
+run:
+  workspace: "runs"
+  # 单条工具调用超时（秒）
+  tool_timeout: 300
+  # 每个目标最多保留的证据条数
+  max_evidence: 200
+  phases: ["recon", "enum", "vuln", "exploit", "post", "report"]
+
+tools:
+  # 外部二进制优先；缺失时自动降级到内置 Python 引擎
+  prefer_external: true
+  # 字典文件（目录爆破 / 弱口令）
+  wordlists:
+    dirs: "configs/wordlists/dirs.txt"
+    users: "configs/wordlists/users.txt"
+    passwords: "configs/wordlists/passwords.txt"
+  port_ranges:
+    quick: "21,22,23,25,53,80,110,135,139,143,443,445,993,995,1433,1521,2222,3306,3389,5432,6379,7001,8000,8080,8081,8443,8888,9000,9090,9200,11211,27017"
+    full: "1-65535"
+
+report:
+  output_dir: "reports"
+  formats: ["markdown", "html"]
+  title: "Trina 自动渗透测试报告"
+  include_timeline: true
+  include_raw_audit: false
+  cvss_version: "3.1"
+
+audit:
+  dir: "logs"
+  # 记录完整的工具输出摘要（关闭可减小体积）
+  record_output_digest: true
+  # 审计记录中脱敏的字段名
+  redact_keys: ["password", "passwd", "pwd", "token", "secret", "api_key", "cookie", "authorization"]
+
+eval:
+  # 场景库目录与报告输出
+  scenarios_dir: "trina/eval/scenarios"
+  ranges_dir: "configs/ranges"
+  output_dir: "reports/eval"
+  repeat: 1
+  tsecbench:
+    base_url: "https://tsecbench.zc.tencent.com"
+    api_key_env: "TRINA_TSECBENCH_KEY"
+    per_task_timeout: 3600
+    # 无官方 key 时使用本地 bundle 回放
+    mode: "local"

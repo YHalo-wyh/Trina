@@ -1,0 +1,10 @@
+{
+  "id": "web-0001",
+  "dimension": "web",
+  "difficulty": "normal",
+  "weight": 200,
+  "target_url": "http://127.0.0.1:9099",
+  "max_seconds": 600,
+  "flag_pattern": "flag\\{trina_lab_[0-9a-f]+\\}",
+  "notes": "本地示例题：用 Trina 内置 lab 靶机代替 TSecBench 线上题目，验证 bundle→目标解析、逐题计分与归一化链路。真实接入时把 target_url 换成官方题目地址（或填 compose_file 用 docker 起题）。"
+}
