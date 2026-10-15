@@ -11,7 +11,7 @@ from trina.audit import AuditLog
 from trina.brain.agent import PentestAgent
 from trina.brain.planner import Planner
 from trina.brain.prompts import build_system_prompt, parse_action
-from trina.config import PAIConfig, LLMConfig
+from trina.config import TrinaConfig, LLMConfig
 from trina.llm.replay_backend import ReplayBackend
 from trina.scope import ScopeGuard
 from trina.state import Finding, RunState
@@ -299,7 +299,7 @@ class _SqliTool(Tool):
 class TestReActLoop(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        self.cfg = PAIConfig.load()
+        self.cfg = TrinaConfig.load()
         self.cfg.run.workspace = str(Path(self.tmp.name) / "runs")
         self.cfg.audit.dir = str(Path(self.tmp.name) / "logs")
         self.cfg.llm.max_steps = 8

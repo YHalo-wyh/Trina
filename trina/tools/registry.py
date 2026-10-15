@@ -36,7 +36,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterable
 
 from ..audit import AuditLog, sha256_text
-from ..config import ACTION_LEVELS, PAIConfig
+from ..config import ACTION_LEVELS, TrinaConfig
 from ..scope import Decision, ScopeGuard, ScopeViolation
 from ..state import RunState
 
@@ -175,7 +175,7 @@ class ToolContext:
     def __init__(
         self,
         *,
-        config: PAIConfig,
+        config: TrinaConfig,
         guard: ScopeGuard,
         audit: AuditLog,
         state: RunState,

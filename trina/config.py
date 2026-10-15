@@ -4,7 +4,7 @@
 --------
 * 配置是**唯一**的可变输入面：护栏边界（授权网段/动作等级）只来自这里。
 * 任何字段都可用 `TRINA_<SECTION>_<KEY>` 环境变量覆盖（如 `TRINA_SCOPE_EXPLOIT_LEVEL=detect`）。
-* 上下文管理器 `PAIConfig.load()` 返回不可变语义的对象，调用方不应就地改字段
+* 上下文管理器 `TrinaConfig.load()` 返回不可变语义的对象，调用方不应就地改字段
   （需要临时覆盖请用 `dataclasses.replace` 或 `with_overrides`）。
 """
 
@@ -153,6 +153,32 @@ class AuditConfig:
 
 
 @dataclass
+class PolicyConfig:
+    """授权策略（计划器提出、控制器批准）的配置。
+
+    * `mode`: `free`（只看护栏）/ `guided`（注册表是提示，未注册目标拒绝）/ `strict`（只接受注册 target_id + test_id）
+    * `max_checks` / `logic_seconds` / `stop_on_no_new_evidence`: 预算与停止合同
+    * `registry_dirs`: 注册表来源目录（靶场 yaml 里的 targets/tests 段）
+    """
+
+    mode: str = "guided"
+    max_checks: int = 40
+    logic_seconds: int = 900
+    stop_on_no_new_evidence: int = 4
+    registry_dirs: list[str] = field(default_factory=lambda: ["configs/ranges"])
+
+    def validate(self) -> None:
+        from .policy import POLICY_MODES
+
+        if self.mode not in POLICY_MODES:
+            raise ConfigError(f"policy.mode 必须是 {POLICY_MODES} 之一，得到 {self.mode!r}")
+        if self.max_checks <= 0:
+            raise ConfigError("policy.max_checks 必须为正整数")
+        if self.logic_seconds <= 0:
+            raise ConfigError("policy.logic_seconds 必须为正整数")
+
+
+@dataclass
 class TSecBenchConfig:
     base_url: str = "https://tsecbench.zc.tencent.com"
     api_key_env: str = "TRINA_TSECBENCH_KEY"
@@ -170,19 +196,20 @@ class EvalConfig:
 
 
 @dataclass
-class PAIConfig:
+class TrinaConfig:
     scope: ScopeConfig = field(default_factory=ScopeConfig)
     llm: LLMConfig = field(default_factory=LLMConfig)
     run: RunConfig = field(default_factory=RunConfig)
     tools: ToolsConfig = field(default_factory=ToolsConfig)
     report: ReportConfig = field(default_factory=ReportConfig)
     audit: AuditConfig = field(default_factory=AuditConfig)
+    policy: PolicyConfig = field(default_factory=PolicyConfig)
     eval: EvalConfig = field(default_factory=EvalConfig)
     path: Path | None = None
 
     # ------------------------------------------------------------------ 载入
     @classmethod
-    def load(cls, path: str | Path | None = None, overrides: dict[str, Any] | None = None) -> "PAIConfig":
+    def load(cls, path: str | Path | None = None, overrides: dict[str, Any] | None = None) -> "TrinaConfig":
         """载入配置：默认配置 → YAML → 环境变量 → 显式 overrides。"""
         raw: dict[str, Any] = {}
         cfg_path = Path(path) if path else DEFAULT_CONFIG_PATH
@@ -203,7 +230,7 @@ class PAIConfig:
         return cfg
 
     @classmethod
-    def _from_mapping(cls, raw: dict[str, Any]) -> "PAIConfig":
+    def _from_mapping(cls, raw: dict[str, Any]) -> "TrinaConfig":
         sections = {
             "scope": ScopeConfig,
             "llm": LLMConfig,
@@ -211,6 +238,7 @@ class PAIConfig:
             "tools": ToolsConfig,
             "report": ReportConfig,
             "audit": AuditConfig,
+            "policy": PolicyConfig,
             "eval": EvalConfig,
         }
         kwargs: dict[str, Any] = {}
@@ -231,9 +259,9 @@ class PAIConfig:
         return cls(**kwargs)
 
     @classmethod
-    def _apply_env(cls, cfg: "PAIConfig") -> "PAIConfig":
+    def _apply_env(cls, cfg: "TrinaConfig") -> "TrinaConfig":
         """`TRINA_SCOPE_EXPLOIT_LEVEL=detect` 形式的覆盖（只处理标量字段）。"""
-        for section in ("scope", "llm", "run", "report", "audit"):
+        for section in ("scope", "llm", "run", "report", "audit", "policy"):
             obj = getattr(cfg, section)
             for fname, fdef in obj.__dataclass_fields__.items():
                 env_key = f"TRINA_{section.upper()}_{fname.upper()}"
@@ -244,7 +272,7 @@ class PAIConfig:
         return cfg
 
     @classmethod
-    def _apply_overrides(cls, cfg: "PAIConfig", overrides: dict[str, Any]) -> "PAIConfig":
+    def _apply_overrides(cls, cfg: "TrinaConfig", overrides: dict[str, Any]) -> "TrinaConfig":
         """点号路径覆盖：`{"scope.destructive": True, "llm.model": "x"}`。"""
         for dotted, value in overrides.items():
             if value is None:
@@ -265,13 +293,14 @@ class PAIConfig:
     def validate(self) -> None:
         self.scope.validate()
         self.llm.validate()
+        self.policy.validate()
         if self.audit.dir == "":
             raise ConfigError("audit.dir 不能为空")
         if not self.report.formats:
             raise ConfigError("report.formats 不能为空")
 
     # ------------------------------------------------------------------ 派生
-    def with_overrides(self, **overrides: Any) -> "PAIConfig":
+    def with_overrides(self, **overrides: Any) -> "TrinaConfig":
         """返回副本并应用 `section__field=value` 形式的覆盖。"""
         cfg = copy.deepcopy(self)
         for key, value in overrides.items():

@@ -22,6 +22,13 @@ from dataclasses import dataclass, field
 from typing import Any
 
 SEVERITIES = ("critical", "high", "medium", "low", "info")
+#: 三类结论状态（P3 要求）：有证据确认 / 范围内未确认 / 无法形成判断
+VERDICTS = ("CONFIRMED", "NOT_CONFIRMED", "INCONCLUSIVE")
+VERDICT_CN = {
+    "CONFIRMED": "已确认（有可复现证据）",
+    "NOT_CONFIRMED": "范围内未确认（仅限已执行检查，不代表全系统安全）",
+    "INCONCLUSIVE": "无法形成判断（存在未覆盖项/工具失败/授权受限）",
+}
 SEVERITY_CN = {
     "critical": "严重",
     "high": "高危",
@@ -136,9 +143,22 @@ class RunState:
     steps: list[dict[str, Any]] = field(default_factory=list)
     ledger: dict[str, Any] = field(default_factory=dict)
     counters: dict[str, int] = field(
-        default_factory=lambda: {"steps": 0, "llm_calls": 0, "tool_calls": 0, "denied": 0, "errors": 0}
+        default_factory=lambda: {
+            "steps": 0,
+            "llm_calls": 0,
+            "tool_calls": 0,
+            "denied": 0,
+            "errors": 0,
+            "failures": 0,
+        }
     )
     artifacts: dict[str, str] = field(default_factory=dict)
+    #: 三类结论状态（P3）：CONFIRMED / NOT_CONFIRMED / INCONCLUSIVE
+    verdict: str = ""
+    #: 覆盖说明：已测 / 未测 / 原因（停止时必须能回答）
+    coverage: dict[str, Any] = field(default_factory=dict)
+    #: 边界事件：模型"请求越界"与"被控制器/护栏阻断"的记录（用于区分建议/请求/实际越界）
+    boundary_events: list[dict[str, Any]] = field(default_factory=list)
     max_evidence: int = 200
 
     # ------------------------------------------------------------------ 基础
@@ -159,6 +179,24 @@ class RunState:
         entry = {"ts": _now(), "clock": _clock(time.time()), "kind": kind, "text": text}
         entry.update(extra)
         self.timeline.append(entry)
+
+    def note_boundary(self, *, tool: str, reason: str, kind: str = "policy", stage: str = "request",
+                      target: str = "", result: str = "blocked", **extra: Any) -> dict[str, Any]:
+        """记录一次越界请求（P3：区分「建议越界 / 请求越界 / 实际越界」，本系统在执行层阻断）。"""
+        entry = {
+            "ts": _now(),
+            "clock": _clock(time.time()),
+            "stage": stage,          # 目前恒为 request：模型提出→执行层阻断，不产生实际越界
+            "result": result,        # blocked：被控制器/护栏阻断；executed 仅用于事后审计异常
+            "tool": tool,
+            "kind": kind,
+            "target": target,
+            "reason": reason,
+        }
+        entry.update(extra)
+        self.boundary_events.append(entry)
+        self.note("boundary", f"阻断越界请求：{tool}（{kind}）{reason}"[:200])
+        return entry
 
     def log_step(self, step: dict[str, Any]) -> None:
         step.setdefault("ts", _now())
@@ -328,6 +366,9 @@ class RunState:
             "ledger": self.ledger,
             "counters": self.counters,
             "artifacts": self.artifacts,
+            "verdict": self.verdict,
+            "coverage": self.coverage,
+            "boundary_events": self.boundary_events,
         }
 
 

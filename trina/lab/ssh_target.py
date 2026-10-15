@@ -13,6 +13,7 @@ CLI: ``python3 -m trina.lab.run --ssh --port 2222``
 
 from __future__ import annotations
 
+import logging
 import random
 import socket
 import threading
@@ -20,6 +21,10 @@ import time
 from typing import Any
 
 import paramiko
+
+# 夹具场景下客户端随时可能断开（探活、单次凭据验证），paramiko 会把这种情况记成异常日志；
+# 那属于预期噪声，压到 CRITICAL，避免污染测试与评测输出。
+logging.getLogger("paramiko").setLevel(logging.CRITICAL)
 
 from .http_target import run_command
 

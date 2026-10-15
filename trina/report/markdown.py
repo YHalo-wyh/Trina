@@ -1,6 +1,6 @@
 """Markdown 渲染：把 `builder.collect_data()` 产出的结构化数据排成中文报告。
 
-渲染器不访问 `RunState`/`PAIConfig`，所有默认值填充已在 builder 完成，
+渲染器不访问 `RunState`/`TrinaConfig`，所有默认值填充已在 builder 完成，
 因此 Markdown 与 HTML 的内容严格一致（HTML 仅多了内联 SVG 图表）。
 """
 

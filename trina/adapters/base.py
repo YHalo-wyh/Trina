@@ -31,7 +31,7 @@ from typing import Any, Iterable, Mapping
 
 import yaml
 
-from ..config import PAIConfig
+from ..config import TrinaConfig
 
 #: 项目根目录（`trina/adapters/base.py` → parents[2]）。
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -259,7 +259,7 @@ class RangeAdapter(ABC):
     name: str
     kind: str
 
-    def __init__(self, config: PAIConfig, spec: Mapping[str, Any] | None = None, path: Path | None = None):
+    def __init__(self, config: TrinaConfig, spec: Mapping[str, Any] | None = None, path: Path | None = None):
         self.config = config
         self.spec: dict[str, Any] = dict(spec or {})
         self.path: Path | None = Path(path) if path else None
@@ -371,7 +371,7 @@ class RangeAdapter(ABC):
 # ---------------------------------------------------------------------------
 
 
-def ranges_dir(config: PAIConfig | None = None) -> Path:
+def ranges_dir(config: TrinaConfig | None = None) -> Path:
     """靶场注册表目录（来自 `config.eval.ranges_dir`，相对项目根解析）。"""
     raw = ""
     if config is not None:
@@ -394,7 +394,7 @@ def read_range_spec(path: str | Path) -> dict[str, Any]:
     return loaded
 
 
-def default_range_candidate(config: PAIConfig) -> Path | None:
+def default_range_candidate(config: TrinaConfig) -> Path | None:
     """默认靶场：环境变量 `TRINA_RANGE`/`TRINA_DEFAULT_RANGE` → `default.yaml` → `local.yaml`；都没有则 None。"""
     for env_key in DEFAULT_RANGE_ENVS:
         value = os.environ.get(env_key, "").strip()
@@ -407,7 +407,7 @@ def default_range_candidate(config: PAIConfig) -> Path | None:
     return None
 
 
-def resolve_range_path(config: PAIConfig, name: str | Path | None = None) -> Path:
+def resolve_range_path(config: TrinaConfig, name: str | Path | None = None) -> Path:
     """把简写 / 相对 / 绝对路径统一解析为靶场 yaml 路径。"""
     candidate = name
     directory = ranges_dir(config)
@@ -434,7 +434,7 @@ def resolve_range_path(config: PAIConfig, name: str | Path | None = None) -> Pat
     raise RangeError(f"未知靶场 {text!r}；可用: {available_range_names(config)}")
 
 
-def available_range_names(config: PAIConfig) -> list[str]:
+def available_range_names(config: TrinaConfig) -> list[str]:
     directory = ranges_dir(config)
     if not directory.is_dir():
         return []
@@ -499,7 +499,7 @@ def adapter_class_for(spec: Mapping[str, Any]) -> type[RangeAdapter]:
     return classes["LocalRangeAdapter"]
 
 
-def empty_local_adapter(config: PAIConfig) -> "RangeAdapter":
+def empty_local_adapter(config: TrinaConfig) -> "RangeAdapter":
     """没有任何默认靶场配置时的兜底：空的 local 适配器（不抛异常，只提示怎么配）。"""
     spec = {
         "name": "local",
@@ -515,7 +515,7 @@ def empty_local_adapter(config: PAIConfig) -> "RangeAdapter":
     return adapter_classes()["LocalRangeAdapter"](config, spec, None)
 
 
-def load_adapter(config: PAIConfig, name: str | Path | None = None) -> RangeAdapter:
+def load_adapter(config: TrinaConfig, name: str | Path | None = None) -> RangeAdapter:
     """按简写名 / 路径 / 默认值装载靶场适配器。
 
     `name` 取值：
@@ -535,7 +535,7 @@ def load_adapter(config: PAIConfig, name: str | Path | None = None) -> RangeAdap
     return adapter_class(config, spec, path)
 
 
-def list_adapters(cfg: PAIConfig) -> list[dict]:
+def list_adapters(cfg: TrinaConfig) -> list[dict]:
     """扫描 `configs/ranges/*.yaml`，返回每个靶场的 `name/kind/source/ready`。"""
     directory = ranges_dir(cfg)
     entries: list[dict] = []

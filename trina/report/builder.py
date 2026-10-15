@@ -1,4 +1,4 @@
-"""报告构建：把 `RunState` + `PAIConfig` 组装成可交付的报告。
+"""报告构建：把 `RunState` + `TrinaConfig` 组装成可交付的报告。
 
 数据流::
 
@@ -24,7 +24,7 @@ from typing import Any
 
 from .. import __version__
 from ..audit import AuditLog
-from ..config import PAIConfig
+from ..config import TrinaConfig
 from ..state import SEVERITIES, SEVERITY_CN, SEVERITY_ORDER, Finding, RunState
 from .html import render as render_html
 from .markdown import render as render_markdown
@@ -639,7 +639,7 @@ def _sorted_findings(findings: list[Finding]) -> list[Finding]:
     return sorted(findings, key=lambda f: (SEVERITY_ORDER.get(f.severity, 99), -_num(f.last_seen)))
 
 
-def _finding_data(finding: Finding, cfg: PAIConfig) -> dict[str, Any]:
+def _finding_data(finding: Finding, cfg: TrinaConfig) -> dict[str, Any]:
     cls_key = _class_key(finding.vuln_class)
     cvss = str(finding.cvss or "").strip()
     cvss_source = "provided" if cvss else "default"
@@ -767,7 +767,7 @@ def _timeline_data(state: RunState) -> list[dict[str, Any]]:
 # --------------------------------------------------------------------------- 汇总
 def collect_data(
     state: RunState,
-    cfg: PAIConfig,
+    cfg: TrinaConfig,
     *,
     meta: dict[str, Any] | None = None,
     audit_summary: dict[str, Any] | None = None,
@@ -1085,7 +1085,7 @@ class Report:
 
 def build_report(
     state: RunState,
-    cfg: PAIConfig,
+    cfg: TrinaConfig,
     *,
     meta: dict[str, Any] | None = None,
     audit_summary: dict[str, Any] | None = None,

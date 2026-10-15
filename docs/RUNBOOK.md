@@ -52,6 +52,37 @@ reports/<run_id>_report.md             Markdown 报告
 reports/<run_id>_report.html           自包含 HTML 报告（内联 CSS/SVG）
 ```
 
+## 2.1 一条命令直接开打（`play`）
+
+```bash
+python3 -m trina play                                   # 自动起内置 lab 靶机（HTTP 9099 + SSH 2222）→ 跑 → 出报告
+python3 -m trina play --target http://127.0.0.1:9099 --goal "拿到 flag 并验证 SQL 注入"
+python3 -m trina play --range dvwa --goal "验证 SQL 注入"     # 用靶场适配器（自动 prepare + 取目标）
+python3 -m trina play --approve exploit                  # 逐个高危动作要人工批准（需交互终端）
+python3 -m trina play --keep-lab                         # 结束后保留自动拉起的靶机
+```
+
+输出要点（P3 语言）：**结论状态**（CONFIRMED / NOT_CONFIRMED / INCONCLUSIVE）、**已测/未测检查项**、
+**停止原因**、被拒动作数、审计文件路径。自动拉起的靶机在任务结束时回收（`--keep-lab` 可保留）。
+
+## 2.2 交互控制台（人工可实时介入）
+
+```bash
+python3 -m trina console --approve exploit      # 默认模式：只审命令执行/爆破
+python3 -m trina                                # 等价：裸命令直接进控制台
+```
+
+| 时点 | 命令 | 作用 |
+|---|---|---|
+| 空闲 | `play [--target T] [--range N] [--goal G] [--max-steps N] [--approve MODE]` | 一条命令开打 |
+| 空闲 | `run <target> [--goal G] ...` | 对指定目标跑一轮 |
+| 空闲 | `tools` / `tool <name> --params '<json>'` / `guard check <t>` / `ranges` / `report` / `audit verify` | 复用 CLI 同一实现 |
+| 空闲 | `approve off\|exploit\|verify\|all` | 调整审批闸门 |
+| 空闲 | `revoke <target_id>` / `grant <target_id>` | 撤权 / 恢复（撤权后该目标的一切检查被拒） |
+| 运行中 | `y` / `n` | 批准 / 拒绝当前挂起的高危动作（超时＝拒绝） |
+| 运行中 | `hint <文本>`（或 `!<文本>`） | 给 Agent 注入提示，下一步生效 |
+| 运行中 | `pause` / `resume` / `stop` / `status` | 暂停 / 继续 / 停止 / 看状态 |
+
 ## 3. 单步操作（排障/精确控制）
 
 ```bash
@@ -125,6 +156,18 @@ python3 -m trina audit verify logs/<run_id>.jsonl     # 哈希链校验（篡改
 python3 -m trina audit show logs/<run_id>.jsonl --limit 30
 python3 -m trina report rebuild --state runs/<run_id>/state.json   # 由历史状态重建报告
 ```
+
+### 7.1 复核（评价 Agent，只读）
+
+```bash
+python3 -m trina review --state runs/<run_id>/state.json            # 打印复核记录
+python3 -m trina review --state runs/<run_id>/state.json --save review/   # 落盘供人签署
+python3 -m trina review --state runs/<run_id>/state.json --json      # 机器可读
+```
+
+复核内容：① 声明与证据逐条核对（缺证据会被标 ❌）；② 结论与证据一致性（如 CONFIRMED 却无已验证发现）；
+③ 覆盖缺口（未测项 + 原因）；④ 边界事件（请求越界，执行层已阻断）；⑤ 审计哈希链；
+⑥ 建议补测的注册检查项。退出码：`0` 无矛盾，`2` 存在矛盾或缺证据（便于 CI/人工分流）。
 
 ## 8. 怎么写目标（`--goal`）
 

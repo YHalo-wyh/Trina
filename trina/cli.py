@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from . import __version__
-from .config import PAIConfig, PROJECT_ROOT, ConfigError
+from .config import TrinaConfig, PROJECT_ROOT, ConfigError
 from .scope import ScopeGuard
 
 # ---------------------------------------------------------------------------
@@ -82,7 +82,7 @@ def _status_mark(ok: bool) -> str:
 # ---------------------------------------------------------------------------
 
 
-def build_config(args: argparse.Namespace) -> PAIConfig:
+def build_config(args: argparse.Namespace) -> TrinaConfig:
     overrides: dict[str, Any] = {}
     for item in getattr(args, "set", None) or []:
         if "=" not in item:
@@ -98,7 +98,7 @@ def build_config(args: argparse.Namespace) -> PAIConfig:
         overrides["llm.replay_script"] = str(Path(args.replay).resolve())
     if getattr(args, "allow_exploit", False):
         overrides["scope.exploit_level"] = "exploit"
-    config = PAIConfig.load(getattr(args, "config", None), overrides)
+    config = TrinaConfig.load(getattr(args, "config", None), overrides)
     return config
 
 
@@ -307,7 +307,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     return 0 if state.status in ("success", "partial") else 1
 
 
-def _write_report(config: PAIConfig, state, *, meta: dict[str, Any] | None = None) -> list[Path]:
+def _write_report(config: TrinaConfig, state, *, meta: dict[str, Any] | None = None) -> list[Path]:
     """生成报告（报告模块缺失时降级为提示，不影响主流程）。"""
     try:
         from .report import build_report
@@ -510,6 +510,133 @@ def cmd_tool(args: argparse.Namespace) -> int:
     return 0 if result.ok else 1
 
 
+def cmd_play(args: argparse.Namespace) -> int:
+    """一条命令直接开打：准备靶场 → 全自动渗透 → 出报告。"""
+    import sys as _sys
+    import time
+
+    from .play import build_plan, run_plan
+    from .session import Session, level_needs_approval
+
+    config = build_config(args)
+    approval_mode = getattr(args, "approve", "off") or "off"
+    if approval_mode != "off" and not _sys.stdin.isatty():
+        out(
+            "非交互环境下无法进行人工审批：请改用 `--approve off`（全自动），"
+            "或运行 `python3 -m trina console` 进入可介入的控制台。",
+            "red",
+        )
+        return 2
+
+    rule("Trina · 直接开打")
+    plan = build_plan(
+        config,
+        target=getattr(args, "target", None),
+        range_name=getattr(args, "range", None),
+        goal=getattr(args, "goal", "") or "",
+        log=lambda message: print(message),
+    )
+    session = Session(approval_mode=approval_mode, emit=lambda message: print(f"[审批] {message}"))
+
+    def _ask(request: dict) -> bool:
+        """交互式审批：默认（enter）拒绝，避免误放行。"""
+        level = str(request.get("level", ""))
+        question = f"允许执行 {request.get('tool')}（{level}，{request.get('params')}）？[y/N] "
+        try:
+            answer = input(question).strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            answer = ""
+        return answer in ("y", "yes")
+
+    try:
+        state = run_plan(
+            config,
+            plan,
+            approval=_ask if approval_mode != "off" else None,
+            steer_queue=session.steers,
+            stop_event=session.stop_event,
+            pause_event=session.pause_event,
+            controller=None,
+            max_steps=getattr(args, "max_steps", None),
+            max_seconds=getattr(args, "max_seconds", None),
+            log=lambda message: print(f"  · {message}"),
+            on_step=lambda step: print(
+                f"  [{step.index:02d}] {'拒' if step.denied else ('OK' if step.ok else '×')} "
+                f"{step.action} — {str(step.summary)[:100]}"
+            ),
+            write_report=not getattr(args, "no_report", False),
+        )
+    finally:
+        if getattr(args, "keep_lab", False):
+            out("（按 --keep-lab 保留本次拉起的靶机）")
+        else:
+            plan.teardown()
+
+    kv_table(
+        [
+            ("结论状态", f"{state.verdict} ({state.status})"),
+            ("耗时", f"{state.duration:.0f}s"),
+            ("步数/漏洞/flag", f"{state.counters.get('steps', 0)} / {len(state.findings)} / {len(state.flags)}"),
+            ("已测/未测检查项", f"{len((state.coverage or {}).get('executed') or [])} / {len((state.coverage or {}).get('untested') or [])}"),
+            ("停止原因", (state.coverage or {}).get("stop_reason") or "正常收敛"),
+            ("被拒动作", str(state.counters.get("denied", 0))),
+            ("审计文件", state.artifacts.get("audit_path", "")),
+        ]
+    )
+    return 0 if state.verdict in ("CONFIRMED", "NOT_CONFIRMED") else 1
+
+
+def cmd_console(args: argparse.Namespace) -> int:
+    """进入交互式控制台（人工可介入）。"""
+    from .interactive import main as console_main
+
+    argv: list[str] = []
+    if getattr(args, "approve", None):
+        argv += ["--approve", args.approve]
+    if getattr(args, "config", None):
+        argv += ["--config", args.config]
+    for item in getattr(args, "set", None) or []:
+        argv += ["--set", item]
+    if getattr(args, "no_lab_autostart", False):
+        argv += ["--no-lab-autostart"]
+    return console_main(argv)
+
+
+def cmd_review(args: argparse.Namespace) -> int:
+    """评价 Agent（只读复核）：核对声明与证据、覆盖缺口、边界事件，生成复核记录。"""
+    from .policy import PolicyRegistry
+    from .review import load_state, review_state
+
+    config = build_config(args)
+    state_path = Path(args.state)
+    if not state_path.exists():
+        out(f"状态文件不存在: {state_path}", "red")
+        return 2
+    state = load_state(state_path)
+    audit_path = args.audit
+    if not audit_path:
+        candidate = state.get("artifacts", {}).get("audit_path")
+        if candidate and Path(candidate).exists():
+            audit_path = candidate
+    registry = None if args.no_registry else PolicyRegistry.load(config, extra_dirs=list(config.policy.registry_dirs))
+    note = review_state(state, audit_path=audit_path, registry=registry)
+    markdown = note.to_markdown()
+    if args.json:
+        print(json.dumps(note.to_dict(), ensure_ascii=False, indent=2))
+    else:
+        print(markdown)
+    if args.save:
+        out_dir = Path(args.save)
+        if not out_dir.is_absolute():
+            out_dir = PROJECT_ROOT / out_dir
+        out_dir.mkdir(parents=True, exist_ok=True)
+        target = out_dir / f"{note.run_id or state_path.stem}-review.md"
+        target.write_text(markdown, encoding="utf-8")
+        print(f"复核记录: {target}")
+    # 退出码：无矛盾且结论一致 → 0；存在矛盾/缺证据 → 2，便于 CI 与人工复核分流
+    return 0 if not (note.verdict_conflicts or note.claims_without_evidence) else 2
+
+
 def cmd_report(args: argparse.Namespace) -> int:
     config = build_config(args)
     path = Path(args.state)
@@ -606,6 +733,25 @@ def build_parser() -> argparse.ArgumentParser:
     guard_summary = guard_sub.add_parser("summary", help="打印护栏边界")
     guard_summary.set_defaults(func=cmd_guard)
 
+    play = sub.add_parser("play", help="一条命令直接开打（自动准备靶场 → 渗透 → 报告）")
+    add_common(play)
+    play.add_argument("--target", "-t", help="目标（默认自动起本地 lab 靶机）")
+    play.add_argument("--range", "-r", help="靶场适配器名（lab/dvwa/pikachu/...）")
+    play.add_argument("--goal", "-g", default="", help="任务目标")
+    play.add_argument("--max-steps", type=int, default=None)
+    play.add_argument("--max-seconds", type=int, default=None)
+    play.add_argument("--approve", choices=["off", "exploit", "verify", "all"], default="off",
+                      help="人工审批闸门（默认 off 全自动；非 off 需交互终端，或改用 console）")
+    play.add_argument("--no-report", action="store_true", help="不生成报告")
+    play.add_argument("--keep-lab", action="store_true", help="结束后保留自动拉起的靶机")
+    play.set_defaults(func=cmd_play)
+
+    console = sub.add_parser("console", help="交互式控制台（人工可实时介入）")
+    add_common(console)
+    console.add_argument("--approve", choices=["off", "exploit", "verify", "all"], default="exploit")
+    console.add_argument("--no-lab-autostart", action="store_true")
+    console.set_defaults(func=cmd_console)
+
     run = sub.add_parser("run", help="对目标执行全自动渗透")
     add_common(run)
     run.add_argument("--target", "-t", help="目标（host:port 或 URL）")
@@ -664,6 +810,15 @@ def build_parser() -> argparse.ArgumentParser:
     eval_adv.add_argument("--modes", nargs="*")
     eval_adv.set_defaults(func=cmd_eval)
 
+    review = sub.add_parser("review", help="评价 Agent：只读复核一次运行的声明与证据")
+    add_common(review)
+    review.add_argument("--state", required=True, help="runs/<run_id>/state.json")
+    review.add_argument("--audit", help="审计 JSONL（默认取 state.json 里记录的路径）")
+    review.add_argument("--json", action="store_true", help="输出 JSON 而不是 Markdown")
+    review.add_argument("--save", metavar="DIR", help="保存复核记录到目录（默认 review/）")
+    review.add_argument("--no-registry", action="store_true", help="不加载注册表（只做证据核对）")
+    review.set_defaults(func=cmd_review)
+
     report = sub.add_parser("report", help="报告")
     add_common(report)
     report_sub = report.add_subparsers(dest="report_action", required=True)
@@ -675,6 +830,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
+    if not argv:
+        # 裸命令 → 交互式控制台（人工可介入）
+        return cmd_console(
+            argparse.Namespace(approve="exploit", config=None, set=None, no_lab_autostart=False)
+        )
     parser = build_parser()
     args = parser.parse_args(argv)
     try:

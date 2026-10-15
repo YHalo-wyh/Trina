@@ -15,7 +15,7 @@ from typing import Any, Callable
 
 import yaml
 
-from ..config import PROJECT_ROOT, PAIConfig
+from ..config import PROJECT_ROOT, TrinaConfig
 from .metrics import (
     ScenarioResult,
     compute_metrics,
@@ -95,7 +95,7 @@ class EvalHarness:
 
     def __init__(
         self,
-        config: PAIConfig,
+        config: TrinaConfig,
         *,
         runner: Callable[[ScenarioSpec], Any] | None = None,
         logger: Callable[..., None] = print,

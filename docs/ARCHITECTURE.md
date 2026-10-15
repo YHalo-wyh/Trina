@@ -70,7 +70,7 @@ system = 角色 + 铁律 + 工具清单 + 授权边界 ────┘        �
 
 | 模块 | 关键类型 / 函数 | 约定 |
 |---|---|---|
-| `trina.config` | `PAIConfig.load(path, overrides)`、`ScopeConfig`、`scope_prompt_block()` | 配置是护栏的**唯一**数据源；`TRINA_<SECTION>_<KEY>` 环境变量可覆盖标量；未知字段直接报错（宁可启动失败） |
+| `trina.config` | `TrinaConfig.load(path, overrides)`、`ScopeConfig`、`scope_prompt_block()` | 配置是护栏的**唯一**数据源；`TRINA_<SECTION>_<KEY>` 环境变量可覆盖标量；未知字段直接报错（宁可启动失败） |
 | `trina.scope` | `ScopeGuard.check_target/check_argv/check_payload/check_http/check_action_level/check_destructive/check_brute_scale/throttle`；`Decision`；`ScopeViolation` | 所有判定返回 `Decision`（含 `reason`/`hint`/`category`），拒绝时把 `hint` 回灌给模型换路径 |
 | `trina.audit` | `AuditLog.open/append/verify/summary` | 每条记录 `hash = sha256(canonical(record - hash))`，`prev_hash` 链接；写入即 fsync；敏感字段自动脱敏 |
 | `trina.state` | `RunState.absorb(facts)`、`add_finding`、`summary_for_prompt` | 工具只声明 facts（`ports/services/paths/credentials/flags/findings/notes`），状态合并逻辑集中在此 |
@@ -82,6 +82,11 @@ system = 角色 + 铁律 + 工具清单 + 授权边界 ────┘        �
 | `trina.brain.goal` | `GoalRequirements.parse(goal)`、`unsatisfied(state)/soft_hints/satisfied` | 把任务描述解析成硬条件（漏洞类 / 路径 / 端口）；未满足时不允许收敛，也不允许把"取巧拿到 flag"判为成功；**不使用 ground truth** |
 | `trina.llm` | `make_backend(LLMConfig)`、`LLMBackend.complete(system, user)`、`LLMUsage` | 后端实现只管"给提示词 → 返回文本 + 用量"；`ledger` 汇总进报告 |
 | `trina.adapters` | `load_adapter/list_adapters`、`RangeAdapter.prepare/status/ground_truth/check_flag`、`score_tsecbench` | 靶场自描述（目标 + ground truth + flag 模式），评测框架据此自动判分 |
+| `trina.policy` | `PolicyRegistry.load()`、`AuthorizationController.check/note_evidence/revoke/coverage`、`Budget` | **计划器提出、控制器批准**：注册目标/检查项 + 预算 + 撤权，逐动作裁决；模型无写权限 |
+| `trina.session` | `Session.request_approval/answer/steer/toggle_pause/request_stop`、`level_needs_approval` | 人机协同原语；审批**超时即拒绝**（fail-closed） |
+| `trina.play` | `build_plan(config, target=, range_name=)`、`run_plan(config, plan, approval=, steer_queue=, …)` | 一条命令开打的准备与执行；谁拉起靶机谁负责回收 |
+| `trina.interactive` | `Console(config, input_fn=, output=).run()/handle(line)` | 行式交互控制台；空闲命令复用 CLI，运行中只放行介入类命令 |
+| `trina.review` | `review_state(state, audit_path=, registry=) -> ReviewNote`、`ReviewNote.to_markdown()` | 评价 Agent（只读）：核对声明/证据、结论一致性、覆盖缺口、边界事件、审计链 |
 | `trina.eval` | `EvalHarness(config, runner=).run(suite)`、`compute_metrics`、`AdversarialProxy` | `runner` 可注入，便于离线/回放评测 |
 | `trina.report` | `build_report(state, cfg, meta=, audit_summary=) -> Report`、`Report.save()` | HTML 自包含（内联 CSS/SVG，无外部资源） |
 
@@ -119,7 +124,31 @@ flags 或 存在 verified/exploited 漏洞 → success
 目标越界被预检拒绝                    → blocked
 ```
 
-`RunState` 同时是报告的输入：`hosts / findings / credentials / flags / evidence / timeline / steps / ledger / counters / artifacts`。
+`RunState` 同时是报告的输入：`hosts / findings / credentials / flags / evidence / timeline / steps / ledger / counters / artifacts / verdict / coverage / boundary_events`。
+
+### 6.1 结论状态与覆盖（P3 口径）
+
+| 结论 | 判定 | 报告里必须同时给出 |
+|---|---|---|
+| `CONFIRMED` | 存在 `verified`/`exploited` 且带证据的发现 | 证据、复现命令、影响面 |
+| `NOT_CONFIRMED` | 检查跑完、无失败无受限、无已验证发现 | 「**仅限已执行检查**，不代表全系统安全」 |
+| `INCONCLUSIVE` | 有错误/超时/撤权/被拒，或压根没执行检查 | 缺口清单 + 原因（预算/未调度/撤权） |
+
+运行状态机（与结论状态正交）：`PLANNED → ALLOWED → RUNNING → EVIDENCE_COLLECTED → {CONFIRMED|NOT_CONFIRMED|INCONCLUSIVE} → STOPPED`。
+
+三类越界的记录方式（`RunState.boundary_events`）：
+- **建议越界**：模型在 thought 里提到越界（只存在于审计的 `react.action.thought`）；
+- **请求越界**：动作参数越界 → 控制器/护栏拒绝 → `boundary_events` 记 `stage=request, result=blocked`；
+- **实际越界**：本系统不产生——执行链单点收口，未获批准的动作不会执行（若出现即视为实现缺陷，需按事故处理）。
+
+### 6.2 人工介入点
+
+| 介入点 | 位置 | 语义 |
+|---|---|---|
+| 审批闸门 | `PentestAgent(approval=…)` ← `Session.request_approval` | 按动作等级拦截，超时即拒绝 |
+| 实时提示 | `PentestAgent(steer_queue=…)` ← 控制台 `hint` | 下一步注入 `[人工介入]` 提示 |
+| 暂停/停止 | `pause_event` / `stop_event` | 循环边界检查；停止后按已获证据给出结论 |
+| 撤权 | `AuthorizationController.revoke(target_id)` | 执行层立即拒绝该目标的一切检查（减权不绕路） |
 
 ## 7. 扩展点
 

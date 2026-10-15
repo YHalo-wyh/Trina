@@ -1,0 +1,1246 @@
+{
+ "run_id": "20261015-164542-2598dc",
+ "target": "http://127.0.0.1:9099",
+ "goal": "拿到 flag 并验证 SQL 注入与命令注入",
+ "status": "success",
+ "phase": "report",
+ "phase_history": [
+  "recon",
+  "enum",
+  "vuln",
+  "exploit",
+  "post"
+ ],
+ "started_at": 1792053942.253,
+ "ended_at": 1792053994.9381073,
+ "duration": 52.7,
+ "hosts": {
+  "127.0.0.1": {
+   "host": "127.0.0.1",
+   "alive": true,
+   "ports": {
+    "22": {
+     "service": "ssh",
+     "protocol": "tcp"
+    },
+    "2222": {
+     "service": "unknown",
+     "protocol": "tcp"
+    },
+    "3389": {
+     "service": "rdp",
+     "protocol": "tcp"
+    }
+   },
+   "technologies": [
+    "Apache"
+   ],
+   "web_paths": [
+    "http://127.0.0.1:9099/robots.txt",
+    "http://127.0.0.1:9099/sitemap.xml",
+    "http://127.0.0.1:9099/.well-known/security.txt",
+    "http://127.0.0.1:9099/sqli?id=1",
+    "http://127.0.0.1:9099/lfi?file=readme.txt",
+    "http://127.0.0.1:9099/rce?cmd=id",
+    "http://127.0.0.1:9099/login",
+    "http://127.0.0.1:9099/admin"
+   ],
+   "notes": []
+  }
+ },
+ "findings": [
+  {
+   "id": "TRINA-001",
+   "title": "缺少安全响应头 Content-Security-Policy",
+   "vuln_class": "security_misconfig_headers",
+   "target": "http://127.0.0.1:9099/",
+   "url": "http://127.0.0.1:9099/",
+   "parameter": "Content-Security-Policy",
+   "method": "GET",
+   "severity": "info",
+   "confidence": "high",
+   "status": "detected",
+   "tool": "http_fingerprint",
+   "payload": "",
+   "description": "缺少 CSP，可能放大 XSS 与内容注入风险",
+   "impact": "",
+   "remediation": "在 Web 服务器/反代上补充响应头 Content-Security-Policy",
+   "cvss": "",
+   "cwe": "",
+   "refs": [],
+   "evidence": [
+    {
+     "kind": "http",
+     "target": "http://127.0.0.1:9099/",
+     "method": "GET",
+     "status": 200,
+     "request": {
+      "method": "GET",
+      "url": "http://127.0.0.1:9099/",
+      "headers": {},
+      "body": ""
+     },
+     "response": {
+      "status": 200,
+      "length": 342,
+      "body_excerpt": "<!DOCTYPE html><html><head><title>Trina Lab</title></head><body>\n<h1>Trina 脆弱靶机</h1>\n<ul>\n<li><a href=\"/sqli?id=1\">/sqli?id=1</a></li>\n<li><a href=\"/lfi?file=readme.txt\">/lfi?file=readme.txt</a></li>\n<li><a href=\"/rce?cmd=id\">/rce?cmd=id</a></li>\n<li><a href=\"/login\">/login</a></li>\n<li><a href=\"/admin\">/admin</a></li>\n</ul>\n</body></html>\n"
+     },
+     "payload": "",
+     "note": "响应头缺失: Content-Security-Policy"
+    }
+   ],
+   "first_seen": 1792053959.171,
+   "last_seen": 1792053959.171,
+   "severity_cn": "信息"
+  },
+  {
+   "id": "TRINA-002",
+   "title": "缺少安全响应头 X-Frame-Options",
+   "vuln_class": "security_misconfig_headers",
+   "target": "http://127.0.0.1:9099/",
+   "url": "http://127.0.0.1:9099/",
+   "parameter": "X-Frame-Options",
+   "method": "GET",
+   "severity": "info",
+   "confidence": "high",
+   "status": "detected",
+   "tool": "http_fingerprint",
+   "payload": "",
+   "description": "缺少 X-Frame-Options，页面可能被 iframe 嵌套（点击劫持）",
+   "impact": "",
+   "remediation": "在 Web 服务器/反代上补充响应头 X-Frame-Options",
+   "cvss": "",
+   "cwe": "",
+   "refs": [],
+   "evidence": [
+    {
+     "kind": "http",
+     "target": "http://127.0.0.1:9099/",
+     "method": "GET",
+     "status": 200,
+     "request": {
+      "method": "GET",
+      "url": "http://127.0.0.1:9099/",
+      "headers": {},
+      "body": ""
+     },
+     "response": {
+      "status": 200,
+      "length": 342,
+      "body_excerpt": "<!DOCTYPE html><html><head><title>Trina Lab</title></head><body>\n<h1>Trina 脆弱靶机</h1>\n<ul>\n<li><a href=\"/sqli?id=1\">/sqli?id=1</a></li>\n<li><a href=\"/lfi?file=readme.txt\">/lfi?file=readme.txt</a></li>\n<li><a href=\"/rce?cmd=id\">/rce?cmd=id</a></li>\n<li><a href=\"/login\">/login</a></li>\n<li><a href=\"/admin\">/admin</a></li>\n</ul>\n</body></html>\n"
+     },
+     "payload": "",
+     "note": "响应头缺失: X-Frame-Options"
+    }
+   ],
+   "first_seen": 1792053959.171,
+   "last_seen": 1792053959.171,
+   "severity_cn": "信息"
+  },
+  {
+   "id": "TRINA-003",
+   "title": "缺少安全响应头 Strict-Transport-Security",
+   "vuln_class": "security_misconfig_headers",
+   "target": "http://127.0.0.1:9099/",
+   "url": "http://127.0.0.1:9099/",
+   "parameter": "Strict-Transport-Security",
+   "method": "GET",
+   "severity": "info",
+   "confidence": "high",
+   "status": "detected",
+   "tool": "http_fingerprint",
+   "payload": "",
+   "description": "缺少 HSTS，HTTPS 可被降级到明文 HTTP",
+   "impact": "",
+   "remediation": "在 Web 服务器/反代上补充响应头 Strict-Transport-Security",
+   "cvss": "",
+   "cwe": "",
+   "refs": [],
+   "evidence": [
+    {
+     "kind": "http",
+     "target": "http://127.0.0.1:9099/",
+     "method": "GET",
+     "status": 200,
+     "request": {
+      "method": "GET",
+      "url": "http://127.0.0.1:9099/",
+      "headers": {},
+      "body": ""
+     },
+     "response": {
+      "status": 200,
+      "length": 342,
+      "body_excerpt": "<!DOCTYPE html><html><head><title>Trina Lab</title></head><body>\n<h1>Trina 脆弱靶机</h1>\n<ul>\n<li><a href=\"/sqli?id=1\">/sqli?id=1</a></li>\n<li><a href=\"/lfi?file=readme.txt\">/lfi?file=readme.txt</a></li>\n<li><a href=\"/rce?cmd=id\">/rce?cmd=id</a></li>\n<li><a href=\"/login\">/login</a></li>\n<li><a href=\"/admin\">/admin</a></li>\n</ul>\n</body></html>\n"
+     },
+     "payload": "",
+     "note": "响应头缺失: Strict-Transport-Security"
+    }
+   ],
+   "first_seen": 1792053959.171,
+   "last_seen": 1792053959.171,
+   "severity_cn": "信息"
+  },
+  {
+   "id": "TRINA-004",
+   "title": "缺少安全响应头 X-Content-Type-Options",
+   "vuln_class": "security_misconfig_headers",
+   "target": "http://127.0.0.1:9099/",
+   "url": "http://127.0.0.1:9099/",
+   "parameter": "X-Content-Type-Options",
+   "method": "GET",
+   "severity": "info",
+   "confidence": "high",
+   "status": "detected",
+   "tool": "http_fingerprint",
+   "payload": "",
+   "description": "缺少 X-Content-Type-Options，浏览器可能 MIME 嗅探导致 XSS",
+   "impact": "",
+   "remediation": "在 Web 服务器/反代上补充响应头 X-Content-Type-Options",
+   "cvss": "",
+   "cwe": "",
+   "refs": [],
+   "evidence": [
+    {
+     "kind": "http",
+     "target": "http://127.0.0.1:9099/",
+     "method": "GET",
+     "status": 200,
+     "request": {
+      "method": "GET",
+      "url": "http://127.0.0.1:9099/",
+      "headers": {},
+      "body": ""
+     },
+     "response": {
+      "status": 200,
+      "length": 342,
+      "body_excerpt": "<!DOCTYPE html><html><head><title>Trina Lab</title></head><body>\n<h1>Trina 脆弱靶机</h1>\n<ul>\n<li><a href=\"/sqli?id=1\">/sqli?id=1</a></li>\n<li><a href=\"/lfi?file=readme.txt\">/lfi?file=readme.txt</a></li>\n<li><a href=\"/rce?cmd=id\">/rce?cmd=id</a></li>\n<li><a href=\"/login\">/login</a></li>\n<li><a href=\"/admin\">/admin</a></li>\n</ul>\n</body></html>\n"
+     },
+     "payload": "",
+     "note": "响应头缺失: X-Content-Type-Options"
+    }
+   ],
+   "first_seen": 1792053959.171,
+   "last_seen": 1792053959.171,
+   "severity_cn": "信息"
+  },
+  {
+   "id": "TRINA-005",
+   "title": "robots.txt 泄露敏感路径",
+   "vuln_class": "information_disclosure",
+   "target": "",
+   "url": "http://127.0.0.1:9099/robots.txt",
+   "parameter": "",
+   "method": "GET",
+   "severity": "low",
+   "confidence": "medium",
+   "status": "detected",
+   "tool": "",
+   "payload": "",
+   "description": "robots.txt 中列出了管理后台/备份/源码等敏感路径，可直接作为攻击入口。",
+   "impact": "攻击者据此外推后台与备份文件位置，降低入侵成本。",
+   "remediation": "robots.txt 不应列出敏感路径；重要目录改用鉴权与不可枚举命名，并移除线上备份文件。",
+   "cvss": "",
+   "cwe": "CWE-200",
+   "refs": [],
+   "evidence": [
+    {
+     "kind": "http",
+     "target": "http://127.0.0.1:9099/robots.txt",
+     "method": "GET",
+     "status": 200,
+     "request": {
+      "method": "GET",
+      "url": "http://127.0.0.1:9099/robots.txt",
+      "headers": {},
+      "body": ""
+     },
+     "response": {
+      "status": 200,
+      "length": 86,
+      "body_excerpt": "User-agent: *\nDisallow: /admin\nDisallow: /backup\nDisallow: /.git/\nDisallow: /uploads/\n"
+     },
+     "payload": "",
+     "note": "robots.txt 命中敏感路径关键词: admin, backup, git, upload"
+    }
+   ],
+   "first_seen": 1792053959.171,
+   "last_seen": 1792053959.171,
+   "severity_cn": "低危"
+  },
+  {
+   "id": "TRINA-006",
+   "title": "SQL 注入（id，错误型）",
+   "vuln_class": "sqli",
+   "target": "http://127.0.0.1:9099",
+   "url": "http://127.0.0.1:9099/sqli",
+   "parameter": "id",
+   "method": "GET",
+   "severity": "high",
+   "confidence": "high",
+   "status": "verified",
+   "tool": "sqli_test",
+   "payload": "'",
+   "description": "注入 \"'\" 触发 DBMS 报错：MySQL, MariaDB。",
+   "impact": "",
+   "remediation": "",
+   "cvss": "",
+   "cwe": "CWE-89",
+   "refs": [],
+   "evidence": [
+    {
+     "kind": "http",
+     "target": "http://127.0.0.1:9099/sqli?id=%27",
+     "method": "GET",
+     "status": 500,
+     "request": {
+      "method": "GET",
+      "url": "http://127.0.0.1:9099/sqli?id=%27",
+      "headers": {},
+      "body": ""
+     },
+     "response": {
+      "status": 500,
+      "length": 223,
+      "body_excerpt": "Warning: mysqli_query(): (42000/1064): You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near ''' at line 1 in /var/www/html/sqli.php on line 14"
+     },
+     "payload": "'",
+     "note": "错误型命中 MySQL,MariaDB",
+     "payload_label": "'"
+    }
+   ],
+   "first_seen": 1792053972.515,
+   "last_seen": 1792053972.515,
+   "severity_cn": "高危"
+  },
+  {
+   "id": "TRINA-007",
+   "title": "命令注入（cmd）",
+   "vuln_class": "rce",
+   "target": "http://127.0.0.1:9099",
+   "url": "http://127.0.0.1:9099/rce",
+   "parameter": "cmd",
+   "method": "GET",
+   "severity": "critical",
+   "confidence": "high",
+   "status": "verified",
+   "tool": "cmd_inject_test",
+   "payload": ";echo TRINA_MARK_JFYDKU",
+   "description": "参数 cmd 可用前缀 [';', '|', '$('] 注入命令；标记 TRINA_MARK_JFYDKU 被回显。",
+   "impact": "",
+   "remediation": "",
+   "cvss": "",
+   "cwe": "CWE-78",
+   "refs": [],
+   "evidence": [
+    {
+     "kind": "http",
+     "target": "http://127.0.0.1:9099/rce?cmd=%3Becho+TRINA_MARK_JFYDKU",
+     "method": "GET",
+     "status": 200,
+     "request": {
+      "method": "GET",
+      "url": "http://127.0.0.1:9099/rce?cmd=%3Becho+TRINA_MARK_JFYDKU",
+      "headers": {},
+      "body": ""
+     },
+     "response": {
+      "status": 200,
+      "length": 18,
+      "body_excerpt": "TRINA_MARK_JFYDKU\n"
+     },
+     "payload": ";echo TRINA_MARK_JFYDKU",
+     "note": "前缀 ';' 回显标记",
+     "payload_label": ";echo TRINA_MARK_JFYDKU"
+    },
+    {
+     "kind": "http",
+     "target": "http://127.0.0.1:9099/rce?cmd=%7Cecho+TRINA_MARK_JFYDKU",
+     "method": "GET",
+     "status": 200,
+     "request": {
+      "method": "GET",
+      "url": "http://127.0.0.1:9099/rce?cmd=%7Cecho+TRINA_MARK_JFYDKU",
+      "headers": {},
+      "body": ""
+     },
+     "response": {
+      "status": 200,
+      "length": 18,
+      "body_excerpt": "TRINA_MARK_JFYDKU\n"
+     },
+     "payload": "|echo TRINA_MARK_JFYDKU",
+     "note": "前缀 '|' 回显标记",
+     "payload_label": "|echo TRINA_MARK_JFYDKU"
+    },
+    {
+     "kind": "http",
+     "target": "http://127.0.0.1:9099/rce?cmd=%24%28echo+TRINA_MARK_JFYDKU%29",
+     "method": "GET",
+     "status": 200,
+     "request": {
+      "method": "GET",
+      "url": "http://127.0.0.1:9099/rce?cmd=%24%28echo+TRINA_MARK_JFYDKU%29",
+      "headers": {},
+      "body": ""
+     },
+     "response": {
+      "status": 200,
+      "length": 41,
+      "body_excerpt": "sh: TRINA_MARK_JFYDKU: command not found\n"
+     },
+     "payload": "$(echo TRINA_MARK_JFYDKU)",
+     "note": "前缀 '$(' 回显标记",
+     "payload_label": "$(echo TRINA_MARK_JFYDKU)"
+    }
+   ],
+   "first_seen": 1792053978.532,
+   "last_seen": 1792053978.532,
+   "severity_cn": "严重"
+  }
+ ],
+ "credentials": [],
+ "flags": [
+  {
+   "value": "flag{trina_lab_0ceed274}",
+   "source": "http://127.0.0.1:9099/flag",
+   "ts": 1792053994.917
+  }
+ ],
+ "evidence": [
+  {
+   "kind": "http",
+   "target": "http://127.0.0.1:9099/",
+   "method": "GET",
+   "status": 200,
+   "request": {
+    "method": "GET",
+    "url": "http://127.0.0.1:9099/",
+    "headers": {},
+    "body": ""
+   },
+   "response": {
+    "status": 200,
+    "length": 342,
+    "body_excerpt": "<!DOCTYPE html><html><head><title>Trina Lab</title></head><body>\n<h1>Trina 脆弱靶机</h1>\n<ul>\n<li><a href=\"/sqli?id=1\">/sqli?id=1</a></li>\n<li><a href=\"/lfi?file=readme.txt\">/lfi?file=readme.txt</a></li>\n<li><a href=\"/rce?cmd=id\">/rce?cmd=id</a></li>\n<li><a href=\"/login\">/login</a></li>\n<li><a href=\"/admin\">/admin</a></li>\n</ul>\n</body></html>\n"
+   },
+   "payload": "",
+   "note": "响应头缺失: Content-Security-Policy",
+   "finding_id": "TRINA-001",
+   "ts": 1792053959.171,
+   "clock": "16:45:59"
+  },
+  {
+   "kind": "http",
+   "target": "http://127.0.0.1:9099/",
+   "method": "GET",
+   "status": 200,
+   "request": {
+    "method": "GET",
+    "url": "http://127.0.0.1:9099/",
+    "headers": {},
+    "body": ""
+   },
+   "response": {
+    "status": 200,
+    "length": 342,
+    "body_excerpt": "<!DOCTYPE html><html><head><title>Trina Lab</title></head><body>\n<h1>Trina 脆弱靶机</h1>\n<ul>\n<li><a href=\"/sqli?id=1\">/sqli?id=1</a></li>\n<li><a href=\"/lfi?file=readme.txt\">/lfi?file=readme.txt</a></li>\n<li><a href=\"/rce?cmd=id\">/rce?cmd=id</a></li>\n<li><a href=\"/login\">/login</a></li>\n<li><a href=\"/admin\">/admin</a></li>\n</ul>\n</body></html>\n"
+   },
+   "payload": "",
+   "note": "响应头缺失: X-Frame-Options",
+   "finding_id": "TRINA-002",
+   "ts": 1792053959.171,
+   "clock": "16:45:59"
+  },
+  {
+   "kind": "http",
+   "target": "http://127.0.0.1:9099/",
+   "method": "GET",
+   "status": 200,
+   "request": {
+    "method": "GET",
+    "url": "http://127.0.0.1:9099/",
+    "headers": {},
+    "body": ""
+   },
+   "response": {
+    "status": 200,
+    "length": 342,
+    "body_excerpt": "<!DOCTYPE html><html><head><title>Trina Lab</title></head><body>\n<h1>Trina 脆弱靶机</h1>\n<ul>\n<li><a href=\"/sqli?id=1\">/sqli?id=1</a></li>\n<li><a href=\"/lfi?file=readme.txt\">/lfi?file=readme.txt</a></li>\n<li><a href=\"/rce?cmd=id\">/rce?cmd=id</a></li>\n<li><a href=\"/login\">/login</a></li>\n<li><a href=\"/admin\">/admin</a></li>\n</ul>\n</body></html>\n"
+   },
+   "payload": "",
+   "note": "响应头缺失: Strict-Transport-Security",
+   "finding_id": "TRINA-003",
+   "ts": 1792053959.171,
+   "clock": "16:45:59"
+  },
+  {
+   "kind": "http",
+   "target": "http://127.0.0.1:9099/",
+   "method": "GET",
+   "status": 200,
+   "request": {
+    "method": "GET",
+    "url": "http://127.0.0.1:9099/",
+    "headers": {},
+    "body": ""
+   },
+   "response": {
+    "status": 200,
+    "length": 342,
+    "body_excerpt": "<!DOCTYPE html><html><head><title>Trina Lab</title></head><body>\n<h1>Trina 脆弱靶机</h1>\n<ul>\n<li><a href=\"/sqli?id=1\">/sqli?id=1</a></li>\n<li><a href=\"/lfi?file=readme.txt\">/lfi?file=readme.txt</a></li>\n<li><a href=\"/rce?cmd=id\">/rce?cmd=id</a></li>\n<li><a href=\"/login\">/login</a></li>\n<li><a href=\"/admin\">/admin</a></li>\n</ul>\n</body></html>\n"
+   },
+   "payload": "",
+   "note": "响应头缺失: X-Content-Type-Options",
+   "finding_id": "TRINA-004",
+   "ts": 1792053959.171,
+   "clock": "16:45:59"
+  },
+  {
+   "kind": "http",
+   "target": "http://127.0.0.1:9099/robots.txt",
+   "method": "GET",
+   "status": 200,
+   "request": {
+    "method": "GET",
+    "url": "http://127.0.0.1:9099/robots.txt",
+    "headers": {},
+    "body": ""
+   },
+   "response": {
+    "status": 200,
+    "length": 86,
+    "body_excerpt": "User-agent: *\nDisallow: /admin\nDisallow: /backup\nDisallow: /.git/\nDisallow: /uploads/\n"
+   },
+   "payload": "",
+   "note": "robots.txt 命中敏感路径关键词: admin, backup, git, upload",
+   "finding_id": "TRINA-005",
+   "ts": 1792053959.171,
+   "clock": "16:45:59"
+  },
+  {
+   "kind": "http",
+   "target": "http://127.0.0.1:9099/",
+   "method": "GET",
+   "status": 200,
+   "request": {
+    "method": "GET",
+    "url": "http://127.0.0.1:9099/",
+    "headers": {},
+    "body": ""
+   },
+   "response": {
+    "status": 200,
+    "length": 342,
+    "body_excerpt": "<!DOCTYPE html><html><head><title>Trina Lab</title></head><body>\n<h1>Trina 脆弱靶机</h1>\n<ul>\n<li><a href=\"/sqli?id=1\">/sqli?id=1</a></li>\n<li><a href=\"/lfi?file=readme.txt\">/lfi?file=readme.txt</a></li>\n<li><a href=\"/rce?cmd=id\">/rce?cmd=id</a></li>\n<li><a href=\"/login\">/login</a></li>\n<li><a href=\"/admin\">/admin</a></li>\n</ul>\n</body></html>\n"
+   },
+   "payload": "",
+   "note": "http_fingerprint 首页探测",
+   "tool": "http_fingerprint",
+   "ts": 1792053959.171,
+   "clock": "16:45:59"
+  },
+  {
+   "kind": "http",
+   "target": "http://127.0.0.1:9099/robots.txt",
+   "method": "GET",
+   "status": 200,
+   "request": {
+    "method": "GET",
+    "url": "http://127.0.0.1:9099/robots.txt",
+    "headers": {},
+    "body": ""
+   },
+   "response": {
+    "status": 200,
+    "length": 86,
+    "body_excerpt": "User-agent: *\nDisallow: /admin\nDisallow: /backup\nDisallow: /.git/\nDisallow: /uploads/\n"
+   },
+   "payload": "",
+   "note": "发现路径 /robots.txt",
+   "tool": "http_fingerprint",
+   "ts": 1792053959.171,
+   "clock": "16:45:59"
+  },
+  {
+   "kind": "http",
+   "target": "http://127.0.0.1:9099/sitemap.xml",
+   "method": "GET",
+   "status": 200,
+   "request": {
+    "method": "GET",
+    "url": "http://127.0.0.1:9099/sitemap.xml",
+    "headers": {},
+    "body": ""
+   },
+   "response": {
+    "status": 200,
+    "length": 137,
+    "body_excerpt": "<!DOCTYPE html><html><head><title>404 Not Found</title></head><body><h1>Not Found</h1><p>The requested URL was not found on this server.<"
+   },
+   "payload": "",
+   "note": "发现路径 /sitemap.xml",
+   "tool": "http_fingerprint",
+   "ts": 1792053959.171,
+   "clock": "16:45:59"
+  },
+  {
+   "kind": "http",
+   "target": "http://127.0.0.1:9099/.well-known/security.txt",
+   "method": "GET",
+   "status": 200,
+   "request": {
+    "method": "GET",
+    "url": "http://127.0.0.1:9099/.well-known/security.txt",
+    "headers": {},
+    "body": ""
+   },
+   "response": {
+    "status": 200,
+    "length": 137,
+    "body_excerpt": "<!DOCTYPE html><html><head><title>404 Not Found</title></head><body><h1>Not Found</h1><p>The requested URL was not found on this server.<"
+   },
+   "payload": "",
+   "note": "发现路径 /.well-known/security.txt",
+   "tool": "http_fingerprint",
+   "ts": 1792053959.171,
+   "clock": "16:45:59"
+  },
+  {
+   "kind": "http",
+   "target": "http://127.0.0.1:9099/",
+   "method": "GET",
+   "status": 200,
+   "request": {
+    "method": "GET",
+    "url": "http://127.0.0.1:9099/",
+    "headers": {},
+    "body": ""
+   },
+   "response": {
+    "status": 200,
+    "length": 342,
+    "body_excerpt": "<!DOCTYPE html><html><head><title>Trina Lab</title></head><body>\n<h1>Trina 脆弱靶机</h1>\n<ul>\n<li><a href=\"/sqli?id=1\">/sqli?id=1</a></li>\n<li><a href=\"/lfi?file=readme.txt\">/lfi?file=readme.txt</a></li>\n<li><a href=\"/rce?cmd=id\">/rce?cmd=id</a></li>\n<li><a href=\"/login\">/login</a></li>\n<li><a href=\"/admin\">/admin</a></li>\n</ul>\n</body></html>\n"
+   },
+   "payload": "web_surface",
+   "note": "web_surface: 0 表单 / 3 参数 / 0 注释",
+   "tool": "web_surface",
+   "ts": 1792053966.407,
+   "clock": "16:46:06"
+  },
+  {
+   "kind": "http",
+   "target": "http://127.0.0.1:9099/sqli?id=%27",
+   "method": "GET",
+   "status": 500,
+   "request": {
+    "method": "GET",
+    "url": "http://127.0.0.1:9099/sqli?id=%27",
+    "headers": {},
+    "body": ""
+   },
+   "response": {
+    "status": 500,
+    "length": 223,
+    "body_excerpt": "Warning: mysqli_query(): (42000/1064): You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near ''' at line 1 in /var/www/html/sqli.php on line 14"
+   },
+   "payload": "'",
+   "note": "错误型命中 MySQL,MariaDB",
+   "payload_label": "'",
+   "finding_id": "TRINA-006",
+   "ts": 1792053972.515,
+   "clock": "16:46:12"
+  },
+  {
+   "kind": "http",
+   "target": "http://127.0.0.1:9099/sqli?id=%27",
+   "method": "GET",
+   "status": 500,
+   "request": {
+    "method": "GET",
+    "url": "http://127.0.0.1:9099/sqli?id=%27",
+    "headers": {},
+    "body": ""
+   },
+   "response": {
+    "status": 500,
+    "length": 223,
+    "body_excerpt": "Warning: mysqli_query(): (42000/1064): You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near ''' at line 1 in /var/www/html/sqli.php on line 14"
+   },
+   "payload": "'",
+   "note": "错误型命中 MySQL,MariaDB",
+   "payload_label": "'",
+   "tool": "sqli_test",
+   "ts": 1792053972.515,
+   "clock": "16:46:12"
+  },
+  {
+   "kind": "http",
+   "target": "http://127.0.0.1:9099/rce?cmd=%3Becho+TRINA_MARK_JFYDKU",
+   "method": "GET",
+   "status": 200,
+   "request": {
+    "method": "GET",
+    "url": "http://127.0.0.1:9099/rce?cmd=%3Becho+TRINA_MARK_JFYDKU",
+    "headers": {},
+    "body": ""
+   },
+   "response": {
+    "status": 200,
+    "length": 18,
+    "body_excerpt": "TRINA_MARK_JFYDKU\n"
+   },
+   "payload": ";echo TRINA_MARK_JFYDKU",
+   "note": "前缀 ';' 回显标记",
+   "payload_label": ";echo TRINA_MARK_JFYDKU",
+   "finding_id": "TRINA-007",
+   "ts": 1792053978.532,
+   "clock": "16:46:18"
+  },
+  {
+   "kind": "http",
+   "target": "http://127.0.0.1:9099/rce?cmd=%7Cecho+TRINA_MARK_JFYDKU",
+   "method": "GET",
+   "status": 200,
+   "request": {
+    "method": "GET",
+    "url": "http://127.0.0.1:9099/rce?cmd=%7Cecho+TRINA_MARK_JFYDKU",
+    "headers": {},
+    "body": ""
+   },
+   "response": {
+    "status": 200,
+    "length": 18,
+    "body_excerpt": "TRINA_MARK_JFYDKU\n"
+   },
+   "payload": "|echo TRINA_MARK_JFYDKU",
+   "note": "前缀 '|' 回显标记",
+   "payload_label": "|echo TRINA_MARK_JFYDKU",
+   "finding_id": "TRINA-007",
+   "ts": 1792053978.532,
+   "clock": "16:46:18"
+  },
+  {
+   "kind": "http",
+   "target": "http://127.0.0.1:9099/rce?cmd=%24%28echo+TRINA_MARK_JFYDKU%29",
+   "method": "GET",
+   "status": 200,
+   "request": {
+    "method": "GET",
+    "url": "http://127.0.0.1:9099/rce?cmd=%24%28echo+TRINA_MARK_JFYDKU%29",
+    "headers": {},
+    "body": ""
+   },
+   "response": {
+    "status": 200,
+    "length": 41,
+    "body_excerpt": "sh: TRINA_MARK_JFYDKU: command not found\n"
+   },
+   "payload": "$(echo TRINA_MARK_JFYDKU)",
+   "note": "前缀 '$(' 回显标记",
+   "payload_label": "$(echo TRINA_MARK_JFYDKU)",
+   "finding_id": "TRINA-007",
+   "ts": 1792053978.532,
+   "clock": "16:46:18"
+  },
+  {
+   "kind": "http",
+   "target": "http://127.0.0.1:9099/rce?cmd=%3Becho+TRINA_MARK_JFYDKU",
+   "method": "GET",
+   "status": 200,
+   "request": {
+    "method": "GET",
+    "url": "http://127.0.0.1:9099/rce?cmd=%3Becho+TRINA_MARK_JFYDKU",
+    "headers": {},
+    "body": ""
+   },
+   "response": {
+    "status": 200,
+    "length": 18,
+    "body_excerpt": "TRINA_MARK_JFYDKU\n"
+   },
+   "payload": ";echo TRINA_MARK_JFYDKU",
+   "note": "前缀 ';' 回显标记",
+   "payload_label": ";echo TRINA_MARK_JFYDKU",
+   "tool": "cmd_inject_test",
+   "ts": 1792053978.532,
+   "clock": "16:46:18"
+  },
+  {
+   "kind": "http",
+   "target": "http://127.0.0.1:9099/rce?cmd=%7Cecho+TRINA_MARK_JFYDKU",
+   "method": "GET",
+   "status": 200,
+   "request": {
+    "method": "GET",
+    "url": "http://127.0.0.1:9099/rce?cmd=%7Cecho+TRINA_MARK_JFYDKU",
+    "headers": {},
+    "body": ""
+   },
+   "response": {
+    "status": 200,
+    "length": 18,
+    "body_excerpt": "TRINA_MARK_JFYDKU\n"
+   },
+   "payload": "|echo TRINA_MARK_JFYDKU",
+   "note": "前缀 '|' 回显标记",
+   "payload_label": "|echo TRINA_MARK_JFYDKU",
+   "tool": "cmd_inject_test",
+   "ts": 1792053978.532,
+   "clock": "16:46:18"
+  },
+  {
+   "kind": "http",
+   "target": "http://127.0.0.1:9099/rce?cmd=%24%28echo+TRINA_MARK_JFYDKU%29",
+   "method": "GET",
+   "status": 200,
+   "request": {
+    "method": "GET",
+    "url": "http://127.0.0.1:9099/rce?cmd=%24%28echo+TRINA_MARK_JFYDKU%29",
+    "headers": {},
+    "body": ""
+   },
+   "response": {
+    "status": 200,
+    "length": 41,
+    "body_excerpt": "sh: TRINA_MARK_JFYDKU: command not found\n"
+   },
+   "payload": "$(echo TRINA_MARK_JFYDKU)",
+   "note": "前缀 '$(' 回显标记",
+   "payload_label": "$(echo TRINA_MARK_JFYDKU)",
+   "tool": "cmd_inject_test",
+   "ts": 1792053978.532,
+   "clock": "16:46:18"
+  }
+ ],
+ "timeline": [
+  {
+   "ts": 1792053942.29,
+   "clock": "16:45:42",
+   "kind": "run",
+   "text": "开始对 http://127.0.0.1:9099 的自动化渗透测试",
+   "goal": "拿到 flag 并验证 SQL 注入与命令注入"
+  },
+  {
+   "ts": 1792053942.29,
+   "clock": "16:45:42",
+   "kind": "goal",
+   "text": "目标要求（未满足前不允许收敛）：需验证的漏洞类: rce, sqli"
+  },
+  {
+   "ts": 1792053942.49,
+   "clock": "16:45:42",
+   "kind": "policy",
+   "text": "授权策略：mode=guided，注册目标 6 个、注册检查项 11 个；当前目标 target_id=lab-http"
+  },
+  {
+   "ts": 1792053949.52,
+   "clock": "16:45:49",
+   "kind": "phase",
+   "text": "进入阶段 enum",
+   "note": "recon 阶段目标达成 → 进入 enum"
+  },
+  {
+   "ts": 1792053959.171,
+   "clock": "16:45:59",
+   "kind": "finding",
+   "text": "新增 info security_misconfig_headers @ http://127.0.0.1:9099/"
+  },
+  {
+   "ts": 1792053959.171,
+   "clock": "16:45:59",
+   "kind": "finding",
+   "text": "新增 info security_misconfig_headers @ http://127.0.0.1:9099/"
+  },
+  {
+   "ts": 1792053959.171,
+   "clock": "16:45:59",
+   "kind": "finding",
+   "text": "新增 info security_misconfig_headers @ http://127.0.0.1:9099/"
+  },
+  {
+   "ts": 1792053959.171,
+   "clock": "16:45:59",
+   "kind": "finding",
+   "text": "新增 info security_misconfig_headers @ http://127.0.0.1:9099/"
+  },
+  {
+   "ts": 1792053959.171,
+   "clock": "16:45:59",
+   "kind": "finding",
+   "text": "新增 low information_disclosure @ http://127.0.0.1:9099/robots.txt"
+  },
+  {
+   "ts": 1792053959.315,
+   "clock": "16:45:59",
+   "kind": "phase",
+   "text": "进入阶段 vuln",
+   "note": "enum 阶段目标达成 → 进入 vuln"
+  },
+  {
+   "ts": 1792053972.515,
+   "clock": "16:46:12",
+   "kind": "finding",
+   "text": "新增 high sqli @ http://127.0.0.1:9099/sqli"
+  },
+  {
+   "ts": 1792053972.529,
+   "clock": "16:46:12",
+   "kind": "phase",
+   "text": "进入阶段 exploit",
+   "note": "vuln 阶段目标达成 → 进入 exploit"
+  },
+  {
+   "ts": 1792053978.532,
+   "clock": "16:46:18",
+   "kind": "finding",
+   "text": "新增 critical rce @ http://127.0.0.1:9099/rce"
+  },
+  {
+   "ts": 1792053978.55,
+   "clock": "16:46:18",
+   "kind": "phase",
+   "text": "进入阶段 post",
+   "note": "exploit 阶段目标达成 → 进入 post"
+  },
+  {
+   "ts": 1792053985.023,
+   "clock": "16:46:25",
+   "kind": "denied",
+   "text": "rce_exec 被拒绝: 动作等级 exploit 超过当前上限 verify（工具 rce_exec）",
+   "category": "action-level"
+  },
+  {
+   "ts": 1792053985.046,
+   "clock": "16:46:25",
+   "kind": "boundary",
+   "text": "阻断越界请求：rce_exec（action-level）动作等级 exploit 超过当前上限 verify（工具 rce_exec）"
+  },
+  {
+   "ts": 1792053985.046,
+   "clock": "16:46:25",
+   "kind": "hint",
+   "text": "当前仅允许 verify 级动作；如需更高等级请由授权人修改配置"
+  },
+  {
+   "ts": 1792053994.938,
+   "clock": "16:46:34",
+   "kind": "phase",
+   "text": "进入阶段 report",
+   "note": "post 阶段目标达成 → 进入 report"
+  },
+  {
+   "ts": 1792053994.938,
+   "clock": "16:46:34",
+   "kind": "budget",
+   "text": "已无更多可执行动作，提前收敛"
+  },
+  {
+   "ts": 1792053994.938,
+   "clock": "16:46:34",
+   "kind": "verdict",
+   "text": "结论状态 CONFIRMED（已确认（有可复现证据））；已测 5 项，未测 6 项，停止原因：正常收敛"
+  },
+  {
+   "ts": 1792053994.958,
+   "clock": "16:46:34",
+   "kind": "run.end",
+   "text": "任务结束：状态=success，步数=8，漏洞=7，flag=1"
+  },
+  {
+   "ts": 1792053994.958,
+   "clock": "16:46:34",
+   "kind": "goal",
+   "text": "结束时的目标要求缺口：无"
+  }
+ ],
+ "steps": [
+  {
+   "kind": "tool",
+   "tool": "port_scan",
+   "params": {
+    "target": "127.0.0.1",
+    "ports": "quick",
+    "timeout": 1.0,
+    "max_ports": 4096
+   },
+   "ok": true,
+   "summary": "端口扫描 127.0.0.1: 3 个开放端口 / 扫描 32 个 (engine=builtin)",
+   "duration": 0.582,
+   "ts": 1792053949.52
+  },
+  {
+   "index": 1,
+   "phase": "recon",
+   "thought": "阶段要求先摸清目标生存状态；目标已给出 http://127.0.0.1:9099，先做常见端口快速扫描确认服务面。",
+   "action": "port_scan",
+   "params": {
+    "target": "127.0.0.1",
+    "ports": "quick"
+   },
+   "ok": true,
+   "denied": false,
+   "summary": "端口扫描 127.0.0.1: 3 个开放端口 / 扫描 32 个 (engine=builtin)",
+   "duration": 0.582,
+   "llm_seconds": 6.33,
+   "error": "",
+   "ts": 1792053949.52
+  },
+  {
+   "kind": "tool",
+   "tool": "http_fingerprint",
+   "params": {
+    "url": "http://127.0.0.1:9099/"
+   },
+   "ok": true,
+   "summary": "HTTP 指纹 http://127.0.0.1:9099/: 200 title=Trina Lab tech=Apache 缺失安全头 4 个",
+   "duration": 0.248,
+   "ts": 1792053959.19
+  },
+  {
+   "index": 2,
+   "phase": "enum",
+   "thought": "端口扫描未覆盖 9099，但任务是 Web 目标 http://127.0.0.1:9099；先做 HTTP 指纹确认 Web 服务与技术栈（需带 test_id=http_fingerprint）。",
+   "action": "http_fingerprint",
+   "params": {
+    "url": "http://127.0.0.1:9099/"
+   },
+   "ok": true,
+   "denied": false,
+   "summary": "HTTP 指纹 http://127.0.0.1:9099/: 200 title=Trina Lab tech=Apache 缺失安全头 4 个",
+   "duration": 0.248,
+   "llm_seconds": 9.32,
+   "error": "",
+   "ts": 1792053959.19
+  },
+  {
+   "kind": "tool",
+   "tool": "web_surface",
+   "params": {
+    "url": "http://127.0.0.1:9099/"
+   },
+   "ok": true,
+   "summary": "提取到 0 个表单、3 个参数、0 条注释",
+   "duration": 0.121,
+   "ts": 1792053966.424
+  },
+  {
+   "index": 3,
+   "phase": "vuln",
+   "thought": "需定位有参数的接口才能验证 sqli/rce；先提取首页表面（表单/链接/参数/JS）",
+   "action": "web_surface",
+   "params": {
+    "url": "http://127.0.0.1:9099/"
+   },
+   "ok": true,
+   "denied": false,
+   "summary": "提取到 0 个表单、3 个参数、0 条注释",
+   "duration": 0.121,
+   "llm_seconds": 6.93,
+   "error": "",
+   "ts": 1792053966.425
+  },
+  {
+   "kind": "tool",
+   "tool": "sqli_test",
+   "params": {
+    "url": "http://127.0.0.1:9099/sqli",
+    "param": "id",
+    "method": "GET",
+    "technique": "auto"
+   },
+   "ok": true,
+   "summary": "SQL 注入已验证[错误型]：http://127.0.0.1:9099/sqli 参数 id，DBMS≈MySQL,MariaDB，payload=\"'\"",
+   "duration": 0.425,
+   "ts": 1792053972.529
+  },
+  {
+   "index": 4,
+   "phase": "vuln",
+   "thought": "首页暴露了 /sqli?id=1、/lfi?file=、/rce?cmd= 三个带参接口，先对 sqli 接口做注入验证（硬性要求之一）。",
+   "action": "sqli_test",
+   "params": {
+    "url": "http://127.0.0.1:9099/sqli",
+    "param": "id",
+    "method": "GET"
+   },
+   "ok": true,
+   "denied": false,
+   "summary": "SQL 注入已验证[错误型]：http://127.0.0.1:9099/sqli 参数 id，DBMS≈MySQL,MariaDB，payload=\"'\"",
+   "duration": 0.425,
+   "llm_seconds": 5.63,
+   "error": "",
+   "ts": 1792053972.529
+  },
+  {
+   "kind": "tool",
+   "tool": "cmd_inject_test",
+   "params": {
+    "url": "http://127.0.0.1:9099/rce",
+    "param": "cmd",
+    "method": "GET"
+   },
+   "ok": true,
+   "summary": "命令注入已验证：http://127.0.0.1:9099/rce 参数 cmd 可用前缀 ';'、'|'、'$('，标记 TRINA_MARK_JFYDKU 回显（可用 rce_exec prefix=';' 执行白名单命令）",
+   "duration": 0.65,
+   "ts": 1792053978.549
+  },
+  {
+   "index": 5,
+   "phase": "exploit",
+   "thought": "存在 /rce?cmd=id 端点，先用无害标记验证命令注入是否真实可回显，再决定是否用 rce_exec 取身份",
+   "action": "cmd_inject_test",
+   "params": {
+    "url": "http://127.0.0.1:9099/rce",
+    "param": "cmd",
+    "method": "GET"
+   },
+   "ok": true,
+   "denied": false,
+   "summary": "命令注入已验证：http://127.0.0.1:9099/rce 参数 cmd 可用前缀 ';'、'|'、'$('，标记 TRINA_MARK_JFYDKU 回显（可用 rce_exec prefix=';' 执行白名单命令）",
+   "duration": 0.65,
+   "llm_seconds": 5.32,
+   "error": "",
+   "ts": 1792053978.549
+  },
+  {
+   "index": 6,
+   "phase": "post",
+   "thought": "已确认命令注入，post 阶段先取证：用 rce_exec 执行白名单命令 id 确认执行身份与上下文，随后再 flag_hunt 搜刮 flag。",
+   "action": "rce_exec",
+   "params": {
+    "url": "http://127.0.0.1:9099/rce",
+    "param": "cmd",
+    "command": "id",
+    "prefix": ";"
+   },
+   "ok": false,
+   "denied": true,
+   "summary": "动作被护栏拒绝（action-level）：动作等级 exploit 超过当前上限 verify（工具 rce_exec）",
+   "duration": 0.046,
+   "llm_seconds": 6.42,
+   "error": "动作等级 exploit 超过当前上限 verify（工具 rce_exec）",
+   "ts": 1792053985.046
+  },
+  {
+   "kind": "tool",
+   "tool": "flag_hunt",
+   "params": {
+    "target": "127.0.0.1",
+    "base_url": "http://127.0.0.1:9099",
+    "include_local": false
+   },
+   "ok": true,
+   "summary": "找到 1 个 flag：flag{trina_lab_0ceed274}",
+   "duration": 0.924,
+   "ts": 1792053994.938
+  },
+  {
+   "index": 7,
+   "phase": "post",
+   "thought": "rce_exec 属 exploit 级被拒；改用 verify 级的 flag_hunt 在 Web 路径清单中搜刮 flag，符合当前动作上限。",
+   "action": "flag_hunt",
+   "params": {
+    "target": "127.0.0.1",
+    "base_url": "http://127.0.0.1:9099"
+   },
+   "ok": true,
+   "denied": false,
+   "summary": "找到 1 个 flag：flag{trina_lab_0ceed274}",
+   "duration": 0.924,
+   "llm_seconds": 8.85,
+   "error": "",
+   "ts": 1792053994.938
+  }
+ ],
+ "ledger": {
+  "calls": 8,
+  "input_tokens": 6238,
+  "output_tokens": 1216,
+  "cache_read_tokens": 53888,
+  "cost_usd": 0.003653,
+  "model": "deepseek/deepseek-v4-flash"
+ },
+ "counters": {
+  "steps": 13,
+  "llm_calls": 7,
+  "tool_calls": 7,
+  "denied": 1,
+  "errors": 0
+ },
+ "artifacts": {
+  "workspace": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/20261015-164542-2598dc",
+  "audit_path": "/mnt/c/Users/WYH/Desktop/网安实训中级/logs/20261015-164542-2598dc.jsonl",
+  "state_file": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/20261015-164542-2598dc/state.json"
+ },
+ "verdict": "CONFIRMED",
+ "coverage": {
+  "mode": "guided",
+  "budget": {
+   "max_checks": 40,
+   "logic_seconds": 900
+  },
+  "checks_used": 7,
+  "executed": [
+   "cmd_inject_probe",
+   "flag_read",
+   "http_fingerprint",
+   "port_quick",
+   "sqli_probe"
+  ],
+  "unregistered": [
+   "rce_exec",
+   "web_surface"
+  ],
+  "untested": [
+   {
+    "test_id": "dir_enum",
+    "tool": "dir_bruteforce",
+    "reason": "未调度（步数/优先级不足）"
+   },
+   {
+    "test_id": "poc_scan",
+    "tool": "poc_scan",
+    "reason": "未调度（步数/优先级不足）"
+   },
+   {
+    "test_id": "lfi_probe",
+    "tool": "lfi_test",
+    "reason": "未调度（步数/优先级不足）"
+   },
+   {
+    "test_id": "upload_probe",
+    "tool": "file_upload_test",
+    "reason": "未调度（步数/优先级不足）"
+   },
+   {
+    "test_id": "login_weak_cred",
+    "tool": "http_form_login",
+    "reason": "未调度（步数/优先级不足）"
+   },
+   {
+    "test_id": "ssh_weak_cred",
+    "tool": "weak_password_brute",
+    "reason": "未调度（步数/优先级不足）"
+   }
+  ],
+  "skipped": [],
+  "denied": [],
+  "revoked": [],
+  "stop_reason": ""
+ },
+ "boundary_events": [
+  {
+   "ts": 1792053985.046,
+   "clock": "16:46:25",
+   "stage": "request",
+   "result": "blocked",
+   "tool": "rce_exec",
+   "kind": "action-level",
+   "target": "http://127.0.0.1:9099/rce",
+   "reason": "动作等级 exploit 超过当前上限 verify（工具 rce_exec）",
+   "test_id": ""
+  }
+ ]
+}

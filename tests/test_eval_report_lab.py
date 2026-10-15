@@ -13,7 +13,7 @@ import unittest
 import urllib.request
 from pathlib import Path
 
-from trina.config import PAIConfig
+from trina.config import TrinaConfig
 from trina.state import Credential, Finding, HostState, RunState
 
 
@@ -117,7 +117,7 @@ class TestMetricsMath(unittest.TestCase):
             id="s", name="s", kind="web", target="http://x",
             ground_truth=[{"vuln_class": "sqli", "url": "/sqli", "parameter": "id"}],
         )
-        result = EvalHarness(PAIConfig.load()).to_result(spec, state, 0.0)
+        result = EvalHarness(TrinaConfig.load()).to_result(spec, state, 0.0)
         self.assertEqual(len(result.gt_hit), 1)
         self.assertEqual(result.fp_count, 0)
         self.assertEqual(result.out_of_scope_count, 2)
@@ -132,7 +132,7 @@ class TestMetricsMath(unittest.TestCase):
         state = RunState(run_id="h", target="127.0.0.1")
         state.host("127.0.0.1").add_port(9099, service="http", version="Apache/2.4.41")
         state.host("127.0.0.1").add_port(2222, service="ssh", version="OpenSSH_9.6")
-        harness = EvalHarness(PAIConfig.load())
+        harness = EvalHarness(TrinaConfig.load())
 
         spec = ScenarioSpec(
             id="host-scan", name="scan", kind="host", target="127.0.0.1",
@@ -160,7 +160,7 @@ class TestMetricsMath(unittest.TestCase):
         state.flags.append({"value": "flag{trina_lab_deadbeef}", "source": "http://x/flag"})
         spec = ScenarioSpec(id="flag", name="flag", kind="web", target="http://x", success_criteria="flags",
                             flag_patterns=[r"flag\{trina_lab_[0-9a-f]+\}"])
-        self.assertEqual(EvalHarness(PAIConfig.load()).to_result(spec, state, 0.0).status, "success")
+        self.assertEqual(EvalHarness(TrinaConfig.load()).to_result(spec, state, 0.0).status, "success")
 
     def test_markdown_renders_chinese_table(self):
         from trina.eval.metrics import format_metrics_markdown
@@ -197,7 +197,7 @@ class TestScopeAwareToolBehaviour(unittest.TestCase):
         from trina.tools.http import HttpClient
         from trina.tools.registry import ToolContext
 
-        cfg = PAIConfig.load()
+        cfg = TrinaConfig.load()
         cfg.scope.exploit_level = "verify"
         with tempfile.TemporaryDirectory() as tmp:
             audit = AuditLog.open(tmp, run_id="dyn", resume=False)
@@ -258,7 +258,7 @@ class TestScopeAwareToolBehaviour(unittest.TestCase):
         server, _thread = create_server(port=0)
         port = server.server_address[1]
         try:
-            cfg = PAIConfig.load()
+            cfg = TrinaConfig.load()
             cfg.scope.exploit_level = "verify"
             with tempfile.TemporaryDirectory() as tmp:
                 audit = AuditLog.open(tmp, run_id="inner", resume=False)
@@ -292,7 +292,7 @@ class TestScopeAwareToolBehaviour(unittest.TestCase):
 
         server, _thread = create_server(port=0)
         port = server.server_address[1]
-        cfg = PAIConfig.load()
+        cfg = TrinaConfig.load()
         tmp = tempfile.TemporaryDirectory()
         try:
             audit = AuditLog.open(tmp.name, run_id="up", resume=False)
@@ -349,7 +349,7 @@ class TestLabFixtures(unittest.TestCase):
             probe.bind(("127.0.0.1", 0))
             port = probe.getsockname()[1]
 
-        harness = EvalHarness(PAIConfig.load())
+        harness = EvalHarness(TrinaConfig.load())
         spec = ScenarioSpec(id="s", name="s", kind="host", target="127.0.0.1", fixtures=[f"127.0.0.1:{port}"])
         harness.start_lab_fixtures([spec])
         try:
@@ -367,7 +367,7 @@ class TestLabFixtures(unittest.TestCase):
 
             server, thread = create_server(port=0)
             port = server.server_address[1]
-            harness = EvalHarness(PAIConfig.load())
+            harness = EvalHarness(TrinaConfig.load())
             harness.start_lab_fixtures([ScenarioSpec(id="s", name="s", kind="web", target=f"http://127.0.0.1:{port}")])
             self.assertEqual(harness._lab_servers, [], "已在运行的靶机不应被重复拉起")
             harness.stop_lab_fixtures()
@@ -403,7 +403,7 @@ class TestReport(unittest.TestCase):
     def test_sections_and_self_contained_html(self):
         from trina.report import build_report
 
-        config = PAIConfig.load()
+        config = TrinaConfig.load()
         report = build_report(self._state(), config, meta={"goal": "拿 flag"}, audit_summary={"denied": 0, "chain_ok": True})
         for title in ("执行摘要", "授权与合规", "攻击路径", "资产", "漏洞详情", "凭据", "附录"):
             self.assertIn(title, report.markdown)
@@ -420,7 +420,7 @@ class TestReport(unittest.TestCase):
     def test_credentials_redacted_in_output(self):
         from trina.report import build_report
 
-        report = build_report(self._state(), PAIConfig.load())
+        report = build_report(self._state(), TrinaConfig.load())
         for blob in (report.markdown, report.html, json.dumps(report.data, ensure_ascii=False)):
             self.assertNotIn("admin123", blob, "报告不得出现明文口令")
 
@@ -428,7 +428,7 @@ class TestReport(unittest.TestCase):
         from trina.report import build_report
 
         with tempfile.TemporaryDirectory() as tmp:
-            report = build_report(self._state(), PAIConfig.load())
+            report = build_report(self._state(), TrinaConfig.load())
             paths = report.save(out_dir=tmp, formats=["markdown", "html", "json"], stem="demo")
             names = sorted(Path(p).name for p in paths)
             self.assertEqual(names, ["demo.html", "demo.json", "demo.md"])
@@ -438,7 +438,7 @@ class TestReport(unittest.TestCase):
     def test_empty_state_still_renders(self):
         from trina.report import build_report
 
-        report = build_report(RunState(run_id="empty", target="127.0.0.1"), PAIConfig.load())
+        report = build_report(RunState(run_id="empty", target="127.0.0.1"), TrinaConfig.load())
         self.assertIn("执行摘要", report.markdown)
         self.assertIn("<svg", report.html)
 
@@ -447,7 +447,7 @@ class TestAdaptersAndScoring(unittest.TestCase):
     def test_list_and_load_adapters(self):
         from trina.adapters import list_adapters, load_adapter
 
-        config = PAIConfig.load()
+        config = TrinaConfig.load()
         names = {item["name"] for item in list_adapters(config)}
         for expected in ("lab", "dvwa", "pikachu", "vulhub", "vulnstack", "tsecbench"):
             self.assertIn(expected, names)
@@ -458,7 +458,7 @@ class TestAdaptersAndScoring(unittest.TestCase):
     def test_unreachable_range_does_not_raise(self):
         from trina.adapters import load_adapter
 
-        info = load_adapter(PAIConfig.load(), "dvwa").prepare()
+        info = load_adapter(TrinaConfig.load(), "dvwa").prepare()
         self.assertGreaterEqual(len(info.targets), 1)
 
     def test_tsecbench_scoring(self):

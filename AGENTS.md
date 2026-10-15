@@ -14,7 +14,7 @@
    否则会绕过审计与护栏，属于架构破坏。
 2. **新工具必须注册进 `ToolRegistry`**（子模块导出 `TOOLS: list[Tool]`，由 `trina/tools/__init__.py#build_registry` 装配），
    并声明 `action_level` 与参数表 —— 参数校验、护栏、审计、超时都由执行链统一处理。
-3. **不要把授权边界写进提示词**。提示词里的范围描述来自 `PAIConfig.scope_prompt_block()`，与真实判据同源；
+3. **不要把授权边界写进提示词**。提示词里的范围描述来自 `TrinaConfig.scope_prompt_block()`，与真实判据同源；
    任何"临时放开一下"的想法都应改为修改 `configs/trina.yaml` 并留下变更记录。
 4. **测试**：护栏/审计/注册表/大脑的改动必须带单元测试（`python3 -m unittest discover -s tests`）。
    禁止为了让测试通过而放宽护栏；测试断言的是"必须被拒绝"的行为。

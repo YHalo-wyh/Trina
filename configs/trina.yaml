@@ -81,6 +81,18 @@ audit:
   # 审计记录中脱敏的字段名
   redact_keys: ["password", "passwd", "pwd", "token", "secret", "api_key", "cookie", "authorization"]
 
+# 授权策略：计划器提出，独立控制器批准（P3 要求）
+policy:
+  # free 只看护栏 | guided 注册表为提示（未注册目标仍由护栏判定）| strict 只接受注册的 target_id + test_id
+  mode: guided
+  # 预算与停止合同（数字是试跑参数，不是安全标准；按班级试跑后冻结）
+  max_checks: 40
+  logic_seconds: 900
+  # 连续多少步没有新增证据就按停止合同收尾
+  stop_on_no_new_evidence: 4
+  # 注册表来源（靶场 yaml 的 targets/tests 段）
+  registry_dirs: ["configs/ranges"]
+
 eval:
   # 场景库目录与报告输出
   scenarios_dir: "trina/eval/scenarios"

@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 
 from trina.audit import AuditLog
-from trina.config import PAIConfig
+from trina.config import TrinaConfig
 from trina.scope import ScopeGuard
 from trina.state import RunState
 from trina.tools.http import HttpClient
@@ -70,7 +70,7 @@ class _Destructive(Tool):
 class TestRegistry(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        self.cfg = PAIConfig.load()
+        self.cfg = TrinaConfig.load()
         self.cfg.run.tool_timeout = 2
         self.audit = AuditLog.open(self.tmp.name, run_id="reg", resume=False)
         self.guard = ScopeGuard(self.cfg.scope, audit=self.audit)

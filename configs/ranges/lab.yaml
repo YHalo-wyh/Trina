@@ -11,13 +11,100 @@ base_url: "http://127.0.0.1:9099"
 probe_path: "/"
 timeout: 5
 
-# 附带主机维度目标（SSH 弱口令靶机），local 侧由 Agent 用内置凭据引擎验证。
+# 注册目标（控制器判据：只接受这里登记的 target_id）
 targets:
-  - host: "127.0.0.1"
+  - id: lab-http
+    host: "127.0.0.1"
+    port: 9099
+    service: "http"
+    url: "http://127.0.0.1:9099"
+    notes: "lab Web 靶机（SQLi/LFI/RCE/上传/弱口令/flag/信息泄露）"
+  - id: lab-ssh
+    host: "127.0.0.1"
     port: 2222
     service: "ssh"
     url: "ssh://127.0.0.1:2222"
     notes: "lab SSH 靶机：用户 trina / 口令 trina123（单次凭据验证，禁止爆破）"
+
+# 注册检查项（计划器只能从这些里提议 test_id；控制器按此批准）
+tests:
+  - id: port_quick
+    target_id: lab-http
+    tool: port_scan
+    level: detect
+    params: {target: "127.0.0.1", ports: "quick"}
+    description: "常见端口快速扫描"
+    expect_finding: ""
+  - id: http_fingerprint
+    target_id: lab-http
+    tool: http_fingerprint
+    level: detect
+    params: {url: "http://127.0.0.1:9099"}
+    description: "HTTP 指纹与技术栈/安全头"
+    expect_finding: security_misconfig_headers
+  - id: dir_enum
+    target_id: lab-http
+    tool: dir_bruteforce
+    level: detect
+    params: {url: "http://127.0.0.1:9099"}
+    description: "目录枚举（软 404 过滤）"
+    expect_finding: information_disclosure
+  - id: poc_scan
+    target_id: lab-http
+    tool: poc_scan
+    level: detect
+    params: {url: "http://127.0.0.1:9099"}
+    description: "只读 PoC 体检（.git/.env/备份/phpinfo 等）"
+    expect_finding: information_disclosure
+  - id: sqli_probe
+    target_id: lab-http
+    tool: sqli_test
+    level: verify
+    params: {url: "http://127.0.0.1:9099/sqli", param: "id", method: "GET"}
+    description: "SQL 注入验证（错误型/布尔型/时间型）"
+    expect_finding: sqli
+  - id: lfi_probe
+    target_id: lab-http
+    tool: lfi_test
+    level: verify
+    params: {url: "http://127.0.0.1:9099/lfi", param: "file", method: "GET"}
+    description: "本地文件包含验证（读取 /etc/passwd 特征）"
+    expect_finding: lfi
+  - id: cmd_inject_probe
+    target_id: lab-http
+    tool: cmd_inject_test
+    level: verify
+    params: {url: "http://127.0.0.1:9099/rce", param: "cmd", method: "GET"}
+    description: "命令注入验证（无害回显标记）"
+    expect_finding: rce
+  - id: upload_probe
+    target_id: lab-http
+    tool: file_upload_test
+    level: verify
+    params: {url: "http://127.0.0.1:9099/upload", field: "file"}
+    description: "任意文件上传验证（仅无害探测文件）"
+    expect_finding: unrestricted_file_upload
+  - id: login_weak_cred
+    target_id: lab-http
+    tool: http_form_login
+    level: verify
+    params: {url: "http://127.0.0.1:9099/login", username: "admin", password: "admin123"}
+    description: "表单弱口令单次验证（已知凭据，非爆破）"
+    expect_finding: weak_password
+  - id: ssh_weak_cred
+    target_id: lab-ssh
+    tool: weak_password_brute
+    level: verify
+    params: {service: "ssh", target: "127.0.0.1", port: 2222, username: "trina", password: "trina123"}
+    description: "SSH 弱口令单次验证（显式凭据 ≤3 组＝verify 级）"
+    expect_finding: weak_password
+  - id: flag_read
+    target_id: lab-http
+    tool: flag_hunt
+    level: verify
+    params: {target: "127.0.0.1", base_url: "http://127.0.0.1:9099"}
+    description: "内置路径清单搜刮 flag"
+    expect_finding: ""
 
 # 靶场自带凭据登录（弱口令验证）：POST /login 表单字段 username/password，admin/admin123
 login:

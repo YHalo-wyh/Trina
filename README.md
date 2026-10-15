@@ -3,15 +3,22 @@
 在 [omp](https://omp.sh) 之上二开的自动化渗透测试 Agent：**大模型 ReAct 决策 + 全套工具封装 + 多靶场适配 + 硬性安全护栏 + 标准报告 + 评测框架**。
 
 ```bash
-# 1) 起一个故意脆弱的本地靶机（仅监听 127.0.0.1，用于自证）
-python3 -m trina.lab.run --http --port 9099 &
+# 一条命令直接开打：自动起靶机 → 全自动渗透 → 出报告（无需手工准备靶场）
+python3 -m trina play
 
-# 2) 全自动渗透（复用 omp 已配置的模型与鉴权，无需额外 API Key）
+# 交互控制台：人工可实时介入（审批高危动作 / 注入提示 / 暂停 / 停止 / 撤权）
+python3 -m trina console --approve exploit
+
+# 评价 Agent（只读复核：声明与证据是否对得上、覆盖缺口、边界事件、审计链）
+python3 -m trina review --state runs/<run_id>/state.json
+```
+
+也可以用完整流程（复用 omp 已配置的模型与鉴权，无需额外 API Key）：
+
+```bash
+python3 -m trina.lab.run --http --port 9099 &            # 起故意脆弱的本地靶机（仅回环）
 python3 -m trina run --target http://127.0.0.1:9099 --goal "拿到 flag"
-
-# 3) 看报告
-ls reports/            # <run_id>_report.md / .html
-python3 -m trina audit verify logs/<run_id>.jsonl   # 校验审计哈希链
+python3 -m trina audit verify logs/<run_id>.jsonl        # 校验审计哈希链
 ```
 
 ## 五项能力
@@ -33,6 +40,39 @@ python3 -m trina audit verify logs/<run_id>.jsonl   # 校验审计哈希链
 | vuln | `poc_scan`（21 个只读 PoC） `nuclei_scan`（缺 nuclei 自动降级内置引擎） | detect |
 | exploit | `sqli_test` `cmd_inject_test` `lfi_test` `file_upload_test` `rce_exec` | verify / exploit |
 | creds | `weak_password_brute`（ssh/ftp/mysql/redis/http_basic/http_form） `http_form_login` `flag_hunt` | exploit / verify |
+
+## 人的位置：审批、介入、复核
+
+| 能力 | 命令 | 说明 |
+|---|---|---|
+| 一条命令开打 | `trina play [--target T] [--range NAME] [--goal G] [--approve MODE]` | 自动准备靶场（默认内置 lab）→ 跑 → 出报告；`--approve` 非 off 时逐个高危动作要人工批准 |
+| 交互控制台 | `trina console`（或直接 `trina`） | 运行中可用 `y/n` 审批、`hint <文本>` 介入、`pause/resume`、`stop`、`status`、`revoke <target_id>` 撤权 |
+| 审批闸门 | `--approve off\|exploit\|verify\|all` | 默认 `exploit`：只有命令执行/爆破这类高危动作需要点击批准；**超时未答复按拒绝处理**（fail-closed） |
+| 评价 Agent | `trina review --state runs/<id>/state.json [--save review/]` | 只读复核：缺证据的声明、结论一致性、覆盖缺口、越界请求、审计链；生成复核记录初稿供人签署 |
+
+## 授权策略：计划器提出，控制器批准
+
+- 目标与检查项来自**人可读的注册表**：`configs/ranges/*.yaml` 的 `targets:` 与 `tests:` 段。
+- 控制器（`trina/policy.py`）在执行层逐动作批准：注册 → 预算 → 撤权；模型**没有写权限**，
+  也不能用"这应该安全"当许可。模式：`free` / `guided`(默认) / `strict`（只接受注册 `target_id` + `test_id`）。
+- 预算与停止合同：`policy.max_checks` / `logic_seconds` / `stop_on_no_new_evidence`，到点即停并留下**已测/未测/原因**。
+- 撤权 = 减权不绕路：`revoke <target_id>` 后对该目标的一切检查被拒（换地址/换工具同样被拒）。
+- 结论三分类：`CONFIRMED`（有证据）/ `NOT_CONFIRMED`（**仅限已执行检查**）/ `INCONCLUSIVE`（缺口、工具失败、授权受限）。
+
+## 交付物与提交边界
+
+六类内容类别与其映射、**什么该提交/什么不该提交**、证据与复核分离：见 [`docs/SUBMISSION.md`](docs/SUBMISSION.md)。
+
+| 类别 | 位置 |
+|---|---|
+| brief（问题/范围/验收ID/责任） | [`brief/README.md`](brief/README.md)、`docs/PLAN.md` |
+| design（ADR/AI 规则/状态与权限） | [`design/`](design/README.md)（含 8 篇 ADR 与 [`ai-rules.md`](design/ai-rules.md)） |
+| eval（用例与判定） | [`eval/README.md`](eval/README.md)、`trina/eval/scenarios/*.yaml`、`docs/EVAL.md` |
+| evidence（运行事实） | [`evidence/README.md`](evidence/README.md) + 精选样本 |
+| release（启动/重置/停止/恢复/已知问题） | [`release/README.md`](release/README.md)、`docs/RUNBOOK.md` |
+| review（实验/Change/Finding/互评签署） | [`review/README.md`](review/README.md) + 复核记录 |
+
+> 全量 `runs/`、`logs/`、`reports/` **不入库**（可重复生成、体积大）；令牌与真实目标数据**永不提交**。
 
 ## 评测
 
