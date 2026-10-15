@@ -36,7 +36,7 @@ HELP_TEXT = """可用命令（空闲时）:
   tools               工具清单；      tool <name> --params '<json>'  单工具执行
   guard check <target>                 授权范围校验
   ranges [list|status <name>]          靶场适配器状态
-  report --state <runs/.../state.json> 由状态重建报告
+  report [--state <f>]                 由状态重建报告；  review [--state <f>]  评价 Agent 复核（省略则复核最近一次）
   audit verify <logs/*.jsonl>          校验审计哈希链
   help / quit                          帮助 / 退出
 运行中可用: y / n · hint <文本> · status · pause · resume · stop"""
@@ -152,6 +152,7 @@ class Console:
             "guard": lambda: self._delegate(["guard", *args]),
             "ranges": lambda: self._delegate(["ranges", *args]),
             "report": lambda: self._delegate(["report", *args]),
+            "review": lambda: self._delegate(["review", *args]),
             "audit": lambda: self._delegate(["audit", *args]),
             "lab": lambda: self._delegate(["lab", *args]),
         }.get(command)

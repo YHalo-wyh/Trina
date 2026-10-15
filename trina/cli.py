@@ -608,10 +608,22 @@ def cmd_review(args: argparse.Namespace) -> int:
     from .review import load_state, review_state
 
     config = build_config(args)
-    state_path = Path(args.state)
-    if not state_path.exists():
-        out(f"状态文件不存在: {state_path}", "red")
-        return 2
+    if args.state:
+        state_path = Path(args.state)
+        if not state_path.exists():
+            out(f"状态文件不存在: {state_path}", "red")
+            return 2
+    else:
+        candidates = sorted(
+            (PROJECT_ROOT / config.run.workspace).glob("*/state.json"),
+            key=lambda path: path.stat().st_mtime,
+            reverse=True,
+        )
+        if not candidates:
+            out("未找到任何运行状态：请先跑一次（pai play / pai run），或用 --state 指定 state.json", "red")
+            return 2
+        state_path = candidates[0]
+        out(f"（未指定 --state，复核最近一次运行：{state_path.parent.name}）")
     state = load_state(state_path)
     audit_path = args.audit
     if not audit_path:
@@ -812,7 +824,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     review = sub.add_parser("review", help="评价 Agent：只读复核一次运行的声明与证据")
     add_common(review)
-    review.add_argument("--state", required=True, help="runs/<run_id>/state.json")
+    review.add_argument("--state", help="runs/<run_id>/state.json（省略则复核最近一次运行）")
     review.add_argument("--audit", help="审计 JSONL（默认取 state.json 里记录的路径）")
     review.add_argument("--json", action="store_true", help="输出 JSON 而不是 Markdown")
     review.add_argument("--save", metavar="DIR", help="保存复核记录到目录（默认 review/）")
