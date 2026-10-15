@@ -101,6 +101,10 @@ class Console:
             try:
                 raw = self._input(self._prompt())
             except (EOFError, KeyboardInterrupt):
+                if self.session.running and self.session.thread is not None:
+                    # 输入结束时不要立刻掐掉正在进行的对话/任务：等它收尾（最多 20s），避免丢掉最后一轮结果
+                    self._emit("输入已结束：等待当前对话/任务收尾（最多 20 秒）…")
+                    self.session.thread.join(timeout=20)
                 self._emit("\n再见。")
                 break
             except StopIteration:  # 测试注入的输入耗尽
