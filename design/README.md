@@ -6,6 +6,8 @@
 - 架构与护栏细节：[`docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md)、[`docs/GUARDRAILS.md`](../docs/GUARDRAILS.md)
 
 ## ADR 一览
+
+### 架构决策
 | 编号 | 决定 | 关键理由 |
 |---|---|---|
 | [ADR-0001](adr/0001-brain-own-react-loop.md) | 决策大脑自研 ReAct 循环，omp 只做模型接入 | 护栏/审计/指标/超时需确定性可控 |
@@ -16,6 +18,16 @@
 | [ADR-0006](adr/0006-planner-controller-separation.md) | 计划器与控制器分离，只接受注册 target_id/test_id | P3 核心：模型不能自行扩大范围 |
 | [ADR-0007](adr/0007-three-verdict-states.md) | 结论三分类 + 覆盖说明（已测/未测/原因） | 「没有结果」不等于「没有问题」 |
 | [ADR-0008](adr/0008-goal-requirements.md) | 把任务描述解析为硬条件（漏洞类/路径/端口/凭据） | 防止"顺手拿到 flag"替代要求的验证 |
+
+### 实证决策（都有实验卡与逐次数据，对应 O4：实验卡＋逐次数据＋ADR）
+| 编号 | 决定 | 实验卡 | 关键数据 |
+|---|---|---|---|
+| [ADR-0009](adr/0009-evidence-over-status-code.md) | 验收判定以响应证据为准，状态码只是前置条件 | [E1](../review/experiments/E1-verdict-evidence-vs-status.md) | 软 404：误报 1 → **0**；目录爆破 700 请求 0 误报 |
+| [ADR-0010](adr/0010-credential-verification-scope.md) | 动作等级按**尝试规模**判定，被拒时回灌等价做法 | [E2](../review/experiments/E2-credential-verification-scope.md) | 弱口令场景 partial(0/1) → **success(1/1)**，等级拒绝 8–10 → **0** |
+| [ADR-0011](adr/0011-eval-scoring-scope.md) | 评测口径：按声明范围评分 + 端口感知 AND 匹配 + 基础设施类不计误报 | — | web 套件 precision **57.1% → 100%**、FPR **42.9% → 0%** |
+| [ADR-0012](adr/0012-fixed-vs-dynamic-checks.md) | 保留阶段机与注册检查项，动态只在阶段内发生 | [E3](../review/experiments/E3-fixed-vs-dynamic.md) | 修前 GT 命中 0/N → 修后 7/8 场景通过；**固定臂未跑**（缺口如实标注） |
+| [ADR-0013](adr/0013-human-approval-gates.md) | 人工介入＝审批闸门 + 引导式介入，超时即拒绝 | — | 审批/介入/停止/撤权均有测试与实测会话 |
+| [ADR-0014](adr/0014-fixture-self-healing.md) | 夹具自愈：谁拉起谁回收，评测器自动起靶机 | — | 冷环境一键跑通；靶机被回收不再污染指标 |
 
 ## 状态与权限（一页图）
 

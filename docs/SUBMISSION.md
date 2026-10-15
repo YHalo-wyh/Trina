@@ -51,7 +51,8 @@
 |---|---|---|
 | 实现 | `trina/`（含 policy/session/interactive/play）、`configs/`、`tests/` | `git log -1` |
 | 计划与验收 | `docs/PLAN.md`、`brief/README.md` | — |
-| 设计 | `design/adr/*.md`、`design/ai-rules.md`、`docs/ARCHITECTURE.md`、`docs/GUARDRAILS.md` | — |
+| 设计 | `design/adr/*.md`（14 篇：8 架构 + 6 实证）、`design/ai-rules.md`、`docs/ARCHITECTURE.md`、`docs/GUARDRAILS.md` | — |
+| 实验与复核 | `review/experiments/E1–E3`（实验卡含逐次数据与结论边界）、`review/README.md` 模板、`review/*-review.md` 复核记录 | 见文件内标注 |
 | 评测 | `trina/eval/scenarios/*.yaml`、`docs/EVAL.md`、`evidence/` 中的评测摘要 | 见文件内 commit |
 | 发布/交接 | `release/README.md`、`docs/RUNBOOK.md` | — |
 | 复核 | `review/README.md`（模板，待填） | 需本组与结对组签署 |

@@ -66,7 +66,7 @@ python3 -m trina audit verify logs/<run_id>.jsonl        # 校验审计哈希链
 | 类别 | 位置 |
 |---|---|
 | brief（问题/范围/验收ID/责任） | [`brief/README.md`](brief/README.md)、`docs/PLAN.md` |
-| design（ADR/AI 规则/状态与权限） | [`design/`](design/README.md)（含 8 篇 ADR 与 [`ai-rules.md`](design/ai-rules.md)） |
+| design（ADR/AI 规则/状态与权限） | [`design/`](design/README.md)（**14 篇 ADR**：8 篇架构 + 6 篇实证；[`ai-rules.md`](design/ai-rules.md)） |
 | eval（用例与判定） | [`eval/README.md`](eval/README.md)、`trina/eval/scenarios/*.yaml`、`docs/EVAL.md` |
 | evidence（运行事实） | [`evidence/README.md`](evidence/README.md) + 精选样本 |
 | release（启动/重置/停止/恢复/已知问题） | [`release/README.md`](release/README.md)、`docs/RUNBOOK.md` |
