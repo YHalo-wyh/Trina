@@ -3,14 +3,18 @@
 在 [omp](https://omp.sh) 之上二开的自动化渗透测试 Agent：**大模型 ReAct 决策 + 全套工具封装 + 多靶场适配 + 硬性安全护栏 + 标准报告 + 评测框架**。
 
 ```bash
-# 一条命令直接开打：自动起靶机 → 全自动渗透 → 出报告（无需手工准备靶场）
-python3 -m trina play
+bash scripts/install.sh          # 装成全局命令：之后在任意目录敲 `trina` 即可（默认直连 DeepSeek）
+trina                            # 交互控制台（人工可随时介入）
+trina play --goal "拿到 flag"     # 一条命令直接开打（自动起靶机 → 渗透 → 报告 → 回收）
+trina doctor                     # 环境自检（后端连通性、外部工具、护栏边界）
+trina review                     # 评价 Agent：只读复核最近一次运行
+```
 
-# 交互控制台：人工可实时介入（审批高危动作 / 注入提示 / 暂停 / 停止 / 撤权）
-python3 -m trina console --approve exploit
+也可以直接用本地启动器（不装全局命令）：
 
-# 评价 Agent（只读复核：声明与证据是否对得上、覆盖缺口、边界事件、审计链）
-python3 -m trina review --state runs/<run_id>/state.json
+```bash
+bash scripts/dev.sh              # 控制台（后端=omp）
+bash scripts/dev.sh --api deepseek   # 控制台（直连 DeepSeek 官方 API）
 ```
 
 也可以用完整流程（复用 omp 已配置的模型与鉴权，无需额外 API Key）：

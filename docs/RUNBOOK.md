@@ -1,6 +1,18 @@
 # 运行手册
 
-## 0. 环境自检
+## 0. 装成全局命令（在任意目录敲 `trina`）
+
+```bash
+bash scripts/install.sh                 # 装到 ~/.local/bin/trina（在 PATH 上，无需 sudo）
+bash scripts/install.sh --api omp       # 默认后端改成 omp（默认 deepseek）
+bash scripts/install.sh --uninstall     # 卸载
+trina doctor                            # 自检
+```
+
+包装脚本只做三件事：指向本仓库的 `scripts/dev.sh`、注入默认后端、把 `PYTHONPATH` 指向仓库；
+密钥仍只从 `~/.trina/env`（0600）或环境变量读取，**不写进仓库**。
+
+## 0.1 环境自检
 
 ```bash
 python3 -m trina doctor
