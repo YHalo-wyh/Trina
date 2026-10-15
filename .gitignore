@@ -18,6 +18,13 @@ Thumbs.db
 .idea/
 .vscode/
 
+# ---- 凭据 / 本地密钥（永不提交）----
+.env
+.env.*
+*.local.env
+secrets.yml
+scripts/env.local.sh
+
 # ---- 临时录制（保留 trina/eval/scenarios 下的回放样张）----
 *.replay.local.yaml
 /tmp/

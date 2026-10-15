@@ -60,9 +60,17 @@ class OpenAICompatBackend(LLMBackend):
 
         duration = round(time.monotonic() - started, 2)
         try:
-            text = body["choices"][0]["message"]["content"] or ""
+            message = body["choices"][0]["message"]
         except (KeyError, IndexError, TypeError):
             return self._tally(LLMResponse(ok=False, error=f"响应格式异常: {str(body)[:200]}", duration=duration))
+        text = message.get("content") or ""
+        if not text.strip():
+            # 推理型模型（如 DeepSeek 系列）可能把内容放在 reasoning_content
+            text = message.get("reasoning_content") or message.get("reasoning") or ""
+        if not text.strip():
+            return self._tally(
+                LLMResponse(ok=False, error=f"模型返回空内容: {str(message)[:200]}", duration=duration)
+            )
         raw_usage = body.get("usage") or {}
         usage = LLMUsage(
             input_tokens=int(raw_usage.get("prompt_tokens") or 0),

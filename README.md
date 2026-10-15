@@ -16,10 +16,28 @@ python3 -m trina review --state runs/<run_id>/state.json
 也可以用完整流程（复用 omp 已配置的模型与鉴权，无需额外 API Key）：
 
 ```bash
-python3 -m trina.lab.run --http --port 9099 &            # 起故意脆弱的本地靶机（仅回环）
-python3 -m trina run --target http://127.0.0.1:9099 --goal "拿到 flag"
-python3 -m trina audit verify logs/<run_id>.jsonl        # 校验审计哈希链
+scripts/dev.sh doctor            # 环境自检（后端=omp）
+scripts/dev.sh                   # 交互控制台（后端=omp）
+scripts/dev.sh play              # 一条命令直接开打（后端=omp）
 ```
+
+### 换成直连 DeepSeek 官方 API（同一个模型）
+
+```bash
+mkdir -p ~/.trina && cp scripts/env.example ~/.trina/env && chmod 600 ~/.trina/env
+# 编辑 ~/.trina/env → export DEEPSEEK_API_KEY=sk-xxxx
+
+scripts/dev.sh doctor --api deepseek      # 应显示：后端=openai，模型=deepseek-v4-flash，连通性 OK
+scripts/dev.sh --api deepseek             # 交互控制台（直连 DeepSeek）
+scripts/dev.sh play --api deepseek --goal "拿到 flag 并验证 SQL 注入" --max-steps 12
+```
+
+| 后端 | 何时用 | 密钥 | 实测 |
+|---|---|---|---|
+| `omp`（默认） | 本机已有 omp 且配好模型 | 无需（复用 omp 鉴权） | 50s/次全流程 |
+| `openai` + DeepSeek | 想独立于 omp、或要更低延迟/换机器 | `$DEEPSEEK_API_KEY`（`~/.trina/env`，0600，不入库） | **11s** 打穿 lab 并 CONFIRMED |
+
+> 密钥只从环境变量读取（`scripts/dev.sh` 会 source `~/.trina/env`）；仓库里**不含任何密钥**（见 `docs/SUBMISSION.md`）。
 
 ## 五项能力
 
