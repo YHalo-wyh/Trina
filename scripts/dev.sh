@@ -35,9 +35,11 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# 默认子命令：console（交互控制台）
-if [[ ${#ARGS[@]} -eq 0 || "${ARGS[0]}" == --* ]]; then
-  ARGS=(console "${ARGS[@]:-}")
+# 默认子命令：console（交互控制台）；也允许 `dev.sh --api X` 这种把选项写在最前
+if [[ ${#ARGS[@]} -eq 0 ]]; then
+  ARGS=(console)
+elif [[ "${ARGS[0]}" == --* ]]; then
+  ARGS=(console "${ARGS[@]}")
 fi
 # 允许 `dev.sh play ...` / `dev.sh doctor` / `dev.sh console`
 SUB="${ARGS[0]}"
