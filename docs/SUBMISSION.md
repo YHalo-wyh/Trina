@@ -57,7 +57,31 @@
 | 发布/交接 | `release/README.md`、`docs/RUNBOOK.md` | — |
 | 复核 | `review/README.md`（模板，待填） | 需本组与结对组签署 |
 
-## 5. 发布前自检（三条命令）
+## 5. 提交邮箱与贡献归属（Gitee 贡献墙）
+
+贡献墙按「**提交邮箱 ↔ 账号已绑定邮箱**」匹配，两点必须同时满足，否则墙上是空的：
+
+1. Gitee → 设置 → 邮箱管理 里**已绑定并验证**邮箱（开启「不公开邮箱」时会给你一个提交专用地址，
+   形如 `<用户ID>+<登录名>@user.noreply.gitee.com`；用 `GET /api/v5/emails` 可查到该地址）；
+2. 本地 `git config user.email` 与上面那个地址一致：
+
+```bash
+git config user.email "15640673+YHalo@user.noreply.gitee.com"   # 换成本账号的地址
+git config user.name  "YHalo"
+```
+
+> **注意**：邮箱绑定**之前**的历史提交不会被回填。旧提交必须重写作者邮箱后重新推送：
+
+```bash
+bash scripts/fix-commit-email.sh --email "<你的提交专用地址>" --dry-run   # 先看改什么
+bash scripts/fix-commit-email.sh --email "<你的提交专用地址>"            # 改写本地历史（自动建备份分支）
+git push --force-with-lease origin HEAD                                  # 确认内容未变后再强推
+```
+
+脚本的安全保障：改前自动建 `backup/pre-email-rewrite-<时间戳>` 分支；断言**内容树哈希**改前改后一致
+（只有元数据允许变化），不一致立即回滚；推送建议用 `--force-with-lease`，避免覆盖别人的提交。
+
+## 6. 发布前自检（三条命令）
 
 ```bash
 git status --short                      # 只应有源码/文档/精选证据
