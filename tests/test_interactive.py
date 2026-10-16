@@ -264,6 +264,52 @@ class TestChatAgent(unittest.TestCase):
         self.assertFalse(chat.state.hosts.get("127.0.0.1") and chat.state.hosts["127.0.0.1"].ports)
 
 
+class TestLauncherArgCompatibility(unittest.TestCase):
+    """启动器会按后端注入 `--set llm.*`：每个被注入的子命令都必须能解析这些参数。
+
+    这类 bug 只在"启动器 + 某个子命令"组合下出现（`trina tools` 曾因此直接报错），
+    所以用一个不依赖网络的解析测试把它钉住。
+    """
+
+    def test_injected_overrides_parse_for_launcher_subcommands(self):
+        """启动器在子命令与其余参数之间注入 --set（`trina <sub> --set … <rest>`），逐命令验证能解析。"""
+        from trina.cli import build_parser
+
+        injected = [
+            "--set", "llm.backend=openai",
+            "--set", "llm.model=deepseek-v4-flash",
+            "--set", "llm.base_url=https://api.deepseek.com/v1",
+            "--set", "llm.api_key_env=DEEPSEEK_API_KEY",
+        ]
+        cases = {
+            "console": ["console", *injected],
+            "play": ["play", *injected, "--target", "127.0.0.1"],
+            "doctor": ["doctor", *injected],
+            "run": ["run", *injected, "--target", "127.0.0.1"],
+            "eval": ["eval", *injected, "run", "--suite", "web"],
+            "review": ["review", *injected, "--state", "runs/x/state.json"],
+            "report": ["report", *injected, "rebuild", "--state", "runs/x/state.json"],
+            "guard": ["guard", *injected, "check", "127.0.0.1"],
+            "tool": ["tool", *injected, "port_scan"],
+            "ranges": ["ranges", *injected, "list"],
+        }
+        for sub, argv in cases.items():
+            try:
+                build_parser().parse_args(argv)
+            except SystemExit as exc:  # argparse 报错会 SystemExit(2)
+                self.fail(f"子命令 {sub} 无法解析启动器注入的参数（argv={argv}）: {exc}")
+
+    def test_commands_without_config_args(self):
+        """tools/audit/lab 走另一分支（不注入 --set），解析应正常。"""
+        from trina.cli import build_parser
+
+        for argv in (["tools"], ["tools", "--json"], ["audit", "verify", "logs/x.jsonl"], ["lab", "--http"]):
+            try:
+                build_parser().parse_args(argv)
+            except SystemExit as exc:
+                self.fail(f"{argv} 解析失败: {exc}")
+
+
 class TestConsole(unittest.TestCase):
     """控制台命令分发（不需要真 LLM：只验证解析、状态与错误处理）。"""
 

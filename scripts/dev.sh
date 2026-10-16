@@ -78,8 +78,15 @@ esac
 
 cd "$REPO_ROOT"
 case "$SUB" in
-  console|play|doctor|run|eval|review|tools|tool|guard|ranges|audit|report|lab)
+  console|play|doctor|run|eval|review|report|guard|tool|ranges)
     exec python3 -m trina "$SUB" "${OVERRIDES[@]}" ${REST[@]+"${REST[@]}"}
+    ;;
+  tools|audit|lab)
+    # 这几个子命令不接受 --config/--set（也不涉及模型调用），别把覆盖参数塞给它们
+    if [[ ${#OVERRIDES[@]} -gt 0 ]]; then
+      echo "（$SUB 不涉及模型调用，忽略 --api 设定）"
+    fi
+    exec python3 -m trina "$SUB" ${REST[@]+"${REST[@]}"}
     ;;
   *)
     echo "!! 未知子命令 $SUB（可用：console/play/doctor/run/eval/review/tools/guard/ranges/audit/report/lab）" >&2
