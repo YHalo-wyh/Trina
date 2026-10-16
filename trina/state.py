@@ -159,6 +159,12 @@ class RunState:
     coverage: dict[str, Any] = field(default_factory=dict)
     #: 边界事件：模型"请求越界"与"被控制器/护栏阻断"的记录（用于区分建议/请求/实际越界）
     boundary_events: list[dict[str, Any]] = field(default_factory=list)
+    #: 假设台账（Hypothesis Ledger）：待验证的问题、状态与优先级
+    hypotheses: list[dict[str, Any]] = field(default_factory=list)
+    #: 证据关系图（资产→路径→发现→证据→检查项→假设）
+    graph: dict[str, Any] = field(default_factory=dict)
+    #: 循环识别统计（无新信息重复比例等）
+    loop: dict[str, Any] = field(default_factory=dict)
     max_evidence: int = 200
 
     # ------------------------------------------------------------------ 基础
@@ -369,7 +375,88 @@ class RunState:
             "verdict": self.verdict,
             "coverage": self.coverage,
             "boundary_events": self.boundary_events,
+            "hypotheses": self.hypotheses,
+            "graph": self.graph,
+            "loop": self.loop,
         }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "RunState":
+        """从 ``to_dict()``/``state.json`` 还原（供 trina watch / 控制台 / 报告复核读取历史运行）。"""
+        if not isinstance(data, dict):
+            raise TypeError("RunState.from_dict 需要 dict")
+        if data.get("error"):
+            raise ValueError(str(data["error"]))
+
+        hosts: dict[str, HostState] = {}
+        for name, payload in (data.get("hosts") or {}).items():
+            if not isinstance(payload, dict):
+                continue
+            ports: dict[int, dict[str, Any]] = {}
+            for key, info in (payload.get("ports") or {}).items():
+                try:
+                    ports[int(key)] = dict(info) if isinstance(info, dict) else {"info": info}
+                except (TypeError, ValueError):
+                    continue
+            hosts[str(name)] = HostState(
+                host=str(payload.get("host") or name),
+                ports=ports,
+                technologies=list(payload.get("technologies") or []),
+                web_paths=list(payload.get("web_paths") or []),
+                notes=list(payload.get("notes") or []),
+                alive=payload.get("alive"),
+            )
+
+        findings: list[Finding] = []
+        for raw in data.get("findings") or []:
+            if not isinstance(raw, dict):
+                continue
+            fields = {k: v for k, v in raw.items() if k in Finding.__dataclass_fields__}
+            fields.setdefault("id", f"TRINA-{len(findings) + 1:03d}")
+            fields.setdefault("title", fields.get("vuln_class", "未命名漏洞"))
+            fields.setdefault("vuln_class", "unknown")
+            findings.append(Finding(**fields))
+
+        credentials: list[Credential] = []
+        for raw in data.get("credentials") or []:
+            if not isinstance(raw, dict):
+                continue
+            fields = {k: v for k, v in raw.items() if k in Credential.__dataclass_fields__}
+            fields.setdefault("target", "")
+            fields.setdefault("service", "")
+            fields.setdefault("username", "")
+            credentials.append(Credential(**fields))
+
+        counters = dict(data.get("counters") or {})
+        state = cls(
+            run_id=str(data.get("run_id") or ""),
+            target=str(data.get("target") or ""),
+            goal=str(data.get("goal") or ""),
+            mode=str(data.get("mode") or "auto"),
+            status=str(data.get("status") or "running"),
+            phase=str(data.get("phase") or "recon"),
+            phase_history=list(data.get("phase_history") or []),
+            hosts=hosts,
+            findings=findings,
+            credentials=credentials,
+            flags=list(data.get("flags") or []),
+            evidence=list(data.get("evidence") or []),
+            timeline=list(data.get("timeline") or []),
+            steps=list(data.get("steps") or []),
+            ledger=dict(data.get("ledger") or {}),
+            counters=counters or {},
+            artifacts=dict(data.get("artifacts") or {}),
+            verdict=str(data.get("verdict") or ""),
+            coverage=dict(data.get("coverage") or {}),
+            boundary_events=list(data.get("boundary_events") or []),
+            hypotheses=list(data.get("hypotheses") or []),
+            graph=dict(data.get("graph") or {}),
+            loop=dict(data.get("loop") or {}),
+        )
+        state.started_at = float(data.get("started_at") or state.started_at)
+        ended = data.get("ended_at")
+        state.ended_at = float(ended) if isinstance(ended, (int, float)) else None
+        return state
 
 
 def _max_status(a: str, b: str) -> str:

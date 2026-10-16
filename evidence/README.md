@@ -10,9 +10,18 @@ evidence/20261015-lab-e2e/
 ├── audit-verify.txt       `trina audit verify` 的输出（哈希链完整性结论）
 ├── state.json             运行状态：发现、覆盖（已测/未测/原因）、结论状态、边界事件
 └── report.md              当次生成的渗透测试报告（Markdown）
+
+evidence/20261016-insight-layer/
+├── audit.jsonl            审计哈希链（147 条，完整）
+├── audit-verify.txt       `trina audit verify` 输出
+├── state.json             同上，另含 `hypotheses`（假设台账）/`graph`（证据图）/`loop`（冗余率）
+└── report.md              含"六、证据链与假设台账"（mermaid 关系图）的报告
 ```
 
 ## 这份样本是什么
+
+### 样本 1 · `20261015-lab-e2e`（端到端：侦察→验证→夺旗）
+
 | 项 | 值 |
 |---|---|
 | 场景 | 内置模拟器（lab，故意脆弱靶机，仅回环） |
@@ -20,6 +29,18 @@ evidence/20261015-lab-e2e/
 | 结果 | 结论 **CONFIRMED**；漏洞 7 条（含 sqli / rce 已验证）；flag 1 个；被拒动作 1 次（`rce_exec` 超动作等级） |
 | 覆盖 | 已测 5 / 未测 6 个注册检查项（未测原因见 state.json） |
 | 复核 | [`../review/20261015-lab-e2e-review.md`](../review/20261015-lab-e2e-review.md)（评价 Agent 生成初稿，人工签署栏待填） |
+
+### 样本 2 · `20261016-insight-layer`（洞察层：假设台账 + 证据图 + 循环/失败归因）
+
+| 项 | 值 |
+|---|---|
+| 场景 | 内置模拟器（lab，仅回环）；模型 `deepseek/deepseek-v4-flash`；动作上限 `verify` |
+| 命令 | `python3 -m trina play --target http://127.0.0.1:9099 --max-steps 7` |
+| 结果 | 结论 **NOT_CONFIRMED**（跑完已调度检查、无已验证漏洞）；漏洞 6 条（含 `.git` 泄露，高危 1）；flag 1 个（`flag{trina_lab_d9176a45}`） |
+| 洞察层 | 假设 4 条（2 条 confirmed 由新发现驱动、2 条收尾标为未解决）；证据图 30 节点 / 36 边；`redundant_action_rate = 0.0`；失败 0 |
+| 报告 | 新增章节"六、证据链与假设台账"（mermaid + 关系表 + 假设表） |
+| 复核 | [`../review/20261016-165055-2598dc-review.md`](../review/20261016-165055-2598dc-review.md)（评价 Agent 初稿） |
+| 实验卡 | [`../review/experiments/E4-insight-layer.md`](../review/experiments/E4-insight-layer.md)（含故障注入那轮的失败归因数据） |
 
 ## 怎么复现
 ```bash

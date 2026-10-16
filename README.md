@@ -47,11 +47,22 @@ scripts/dev.sh play --api deepseek --goal "拿到 flag 并验证 SQL 注入" --m
 
 | 能力 | 落地位置 | 关键设计 |
 |---|---|---|
-| 1. 自动决策大脑 | `trina/brain/` | ReAct 循环 + PTES 阶段机（事实驱动推进）+ 停滞检测 + 预算收敛；动作协议是**文本 JSON**，跨模型可移植、可回放 |
+| 1. 自动决策大脑 | `trina/brain/` | ReAct 循环 + PTES 阶段机（事实驱动推进）+ **假设台账**（按价值×置信度×信息增量排序验证）+ 失败分类与循环守卫（无新信息就打转→换参数→换工具→请人介入）+ 预算收敛；动作协议是**文本 JSON**，跨模型可移植、可回放 |
 | 2. 工具统一封装 | `trina/tools/` | 17 个工具，统一 `ToolSpec/ToolResult` 契约；**外部二进制优先 + 内置 Python 引擎兜底**（本机无 nmap/nuclei/sqlmap/hydra 也能跑） |
 | 3. 多靶场适配 | `trina/adapters/` + `configs/ranges/` | `local` / `docker-compose` / `http-range` / `tsecbench` 四类适配器，内置 Pikachu、DVWA、Vulhub、VulnStack、lab、TSecBench 六套注册表（含 ground truth） |
 | 4. 安全合规护栏 | `trina/scope.py` + `trina/audit.py` | 授权网段白名单硬校验、动作分级、破坏性闸门、DoS/删库硬禁止、限速与爆破规模上限、SHA-256 哈希链审计 |
-| 5. 标准报告 | `trina/report/` | Markdown + 自包含 HTML（内联 CSS/SVG，无外部依赖），含执行摘要、攻击路径、漏洞详情（CVSS/CWE/证据/复现/修复）、凭据与 flag、工具时间线、合规声明 |
+| 5. 标准报告 | `trina/report/` | Markdown + 自包含 HTML（内联 CSS/SVG，无外部依赖），含执行摘要、攻击路径、漏洞详情（CVSS/CWE/证据/复现/修复）、**证据链与假设台账**（mermaid 关系图，结论可反向追溯）、凭据与 flag、工具时间线、合规声明 |
+
+### 决策可解释（洞察层）
+
+- **假设台账**（`trina/hypotheses.py`）：模型每步可带 `hypothesis`，系统按 `置信度×价值×信息增量/(成本+λ·风险)` 排序，
+  用结果确定性推进状态（`open → verifying → confirmed/refuted/blocked`）；收尾时未答完的问题显式标为"未解决"。
+- **失败分类与循环守卫**（`trina/brain/failure.py`）：结果归因成 boundary/tool/environment/budget/hypothesis 五类并计数；
+  同工具+同参数+同结果视为无新信息，递进提示"换参数 → 换工具 → 请人介入"。
+- **证据关系图**（`trina/evidence_graph.py`）：目标→主机→端口→路径→发现→证据（+ 检查项/假设→发现、→flag），
+  既是报告章节也是复核依据。
+- **工作台**：`trina/brain` 每步落盘 `state.json`，`/board`、`/hypotheses`、`/graph` 与 `trina watch` 共用一份渲染，
+  另给四项内部指标：Cost per Success、Time to Evidence、Redundant Action Rate、Recovery Rate（口径见 `docs/EVAL.md`）。
 
 ## 已封装的工具（17）
 
@@ -124,11 +135,13 @@ python3 -m trina guard check 8.8.8.8 127.0.0.1            # 目标是否授权�
 python3 -m trina guard argv -- sqlmap -u http://x --os-shell   # 命令是否会被拒
 python3 -m trina tool port_scan --target 127.0.0.1        # 单工具执行（带护栏与审计）
 python3 -m trina run --target 127.0.0.1:9099 --allow-exploit   # 放开到 exploit 等级
+python3 -m trina watch                                    # 实时监视最近一次运行（工作台视图）
+python3 -m trina watch <run_id> --once                    # 只打印一次（脚本留档）
 python3 -m trina ranges list                              # 靶场适配器状态
 python3 -m trina eval run --suite web                     # 跑评测套件（指标 + 报告）
 python3 -m trina eval adversarial --port 9100             # 蓝队对抗代理（WAF/封禁/限速/篡改/蜜罐）
 python3 -m trina lab --http --ssh                         # 本地靶机（HTTP + 弱口令 SSH）
-python3 -m unittest discover -s tests                   # 128 个单元测试
+python3 -m unittest discover -s tests                   # 197 个单元测试
 ```
 
 ## omp 二开（在本目录里开 omp 会话即生效）
@@ -141,7 +154,7 @@ python3 -m unittest discover -s tests                   # 128 个单元测试
 ## 目录
 
 ```
-trina/            核心包（brain / tools / adapters / report / eval / lab）
+trina/            核心包（brain / tools / adapters / report / eval / lab；洞察层：hypotheses / failure / evidence_graph / board）
 configs/        主配置 + 靶场注册表 + 字典
 docs/           方案与文档（PLAN / ARCHITECTURE / GUARDRAILS / EVAL / RUNBOOK）
 .omp/           omp 二开产物（扩展 + 技能 + 配置覆盖）

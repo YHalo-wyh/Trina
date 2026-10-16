@@ -27,6 +27,9 @@ HELP_TEXT = """这是**对话式**控制台：直接说人话即可（例如「�
 Trina 会回答你；需要动手时它会自己调用工具执行（照样过授权控制器、护栏与审计）。以 / 开头的输入一律当命令。
 
 会话与模型:
+  /board                      工作台视图：任务状态、研究成果、假设台账、覆盖、成本一屏看
+  /hypotheses                 假设台账（按优先级排序，含状态与置信度）
+  /graph                      证据关系图（mermaid：结论→证据→检查项/假设）
   /model [list|<spec>]        看/换模型（如 /model deepseek/deepseek-chat，或 /model list 列出可选）
   /backend <omp|deepseek>     切换模型后端（omp 复用 omp 鉴权；deepseek 直连官方 API）
   /save                       把当前后端与模型持久化到 ~/.trina/env（下次启动仍是这个设置）
@@ -57,6 +60,7 @@ COMMAND_NAMES = {
     "revoke", "grant", "y", "yes", "n", "no", "deny", "tools", "tool", "guard", "ranges",
     "report", "review", "audit", "lab", "quit", "exit", "q",
     "model", "backend", "history", "new", "usage", "save", "clear",
+    "board", "hypotheses", "graph",
 }
 
 
@@ -172,6 +176,12 @@ class Console:
         if self.session.running:
             return self._handle_running(command, args, line, forced=forced)
 
+        if command in ("quit", "exit", "q"):
+            self._emit("\n再见。")
+            self.running = False
+            self.exit_requested = True
+            return True
+
         handler = {
             "help": lambda: self.output(HELP_TEXT),
             "?": lambda: self.output(HELP_TEXT),
@@ -202,6 +212,9 @@ class Console:
             "clear": self._cmd_new,
             "usage": self._cmd_usage,
             "save": self._cmd_save,
+            "board": self._cmd_board,
+            "hypotheses": self._cmd_hypotheses,
+            "graph": self._cmd_graph,
         }.get(command)
         if handler is None:
             if forced:
@@ -255,6 +268,87 @@ class Console:
             return True
         self._emit("任务运行中，可用命令：y / n · hint <文本> · status · pause · resume · stop（也可直接说人话＝介入提示）")
         return True
+
+    # ------------------------------------------------------------------ 工作台视图
+    def _current_state(self) -> Any:
+        """当前可展示的状态：运行中的 → 本会话最近一轮 → 磁盘上最近一次运行。"""
+        if self.session.state is not None:
+            return self.session.state
+        if self._last_state is not None:
+            return self._last_state
+        if self.chat is not None and self.chat.state is not None:
+            return self.chat.state
+        # 会话里还没有状态：读磁盘上最近一次运行，让 /board /graph 开箱可用
+        try:
+            from .board import latest_state_file, load_run_state
+
+            config = getattr(self, "config", None)
+            workspace = getattr(config, "workspace_dir", None) or "runs"
+            path = latest_state_file(workspace)
+            if path is not None:
+                state = load_run_state(path)
+                if state is not None:
+                    self.output(f"（已载入最近一次运行 {getattr(state, 'run_id', '') or path.parent.name}；用 /play 开始新一轮）")
+                    return state
+        except Exception:  # noqa: BLE001 - 载入失败不影响后续命令
+            return None
+        return None
+
+    def _cmd_board(self) -> None:
+        from .board import render_board
+
+        state = self._current_state()
+        if state is None:
+            self._emit("还没有可展示的内容：先 /play 跑一轮，或直接说句话让我开工")
+            return
+        hypotheses = self.chat.ledger.to_dict() if self.chat is not None else None
+        self.output(render_board(state, hypotheses=hypotheses))
+
+    def _cmd_hypotheses(self) -> None:
+        if self.chat is not None:
+            ledger = self.chat.ledger
+            items = ledger.to_dict()
+            summary = ledger.summary()
+        else:
+            state = self._current_state()
+            items = (getattr(state, "hypotheses", None) or []) if state is not None else []
+            summary = {
+                "total": len(items),
+                "open": len([h for h in items if h.get("status") in ("open", "verifying")]),
+                "confirmed": len([h for h in items if h.get("status") == "confirmed"]),
+                "refuted": len([h for h in items if h.get("status") == "refuted"]),
+                "blocked": len([h for h in items if h.get("status") == "blocked"]),
+            }
+        if not items:
+            self._emit("假设台账为空（模型可以在动作里带 hypothesis 字段提出假设，我会按优先级排序）")
+            return
+        self._emit(
+            f"假设台账：共 {summary['total']} 条（待验证 {summary['open']}、已确认 {summary['confirmed']}、"
+            f"已否定 {summary['refuted']}、被阻断 {summary['blocked']}）"
+        )
+        ordered = sorted(items, key=lambda h: h.get("priority", 0), reverse=True)
+        for item in ordered[:15]:
+            self.output(
+                f"    {item.get('id')} [{item.get('status_cn', item.get('status'))}] "
+                f"优先级={item.get('priority')} P={item.get('confidence')} — {str(item.get('statement', ''))[:70]}"
+            )
+
+    def _cmd_graph(self) -> None:
+        """证据关系图（mermaid）：结论 → 证据 → 检查项/假设 可反向追溯。"""
+        state = self._current_state()
+        if state is None:
+            self._emit("还没有可绘制的证据：先 /play 跑一轮，或说句话让我开工")
+            return
+        from .evidence_graph import build as build_graph
+
+        registry = self._controller.registry if self._controller is not None else None
+        try:
+            graph = build_graph(state, registry=registry, hypotheses=getattr(state, "hypotheses", None))
+        except Exception as exc:  # noqa: BLE001
+            self._emit(f"绘图失败：{type(exc).__name__}: {exc}")
+            return
+        self._emit(graph.summary())
+        self.output(graph.to_mermaid())
 
     # ------------------------------------------------------------------ 会话/模型
     def _backend(self) -> Any:
@@ -452,9 +546,11 @@ class Console:
     def _chat_digest(self, chat: Any) -> str:
         snap = chat.snapshot()
         executed = "、".join(snap.get("executed") or []) or "—"
+        hypotheses = snap.get("hypotheses") or {}
         return (
             f"会话 {snap['run_id']}｜轮次 {snap['turns']}｜目标 {snap['target'] or '未指定'}｜"
-            f"发现 {snap['findings']}｜flag {snap['flags']}｜已用检查 {snap['checks_used']}（{executed}）"
+            f"发现 {snap['findings']}｜flag {snap['flags']}｜已用检查 {snap['checks_used']}（{executed}）｜"
+            f"假设 待验证 {hypotheses.get('open', 0)}/已确认 {hypotheses.get('confirmed', 0)}/已否定 {hypotheses.get('refuted', 0)}"
         )
 
     def _show_status(self) -> None:

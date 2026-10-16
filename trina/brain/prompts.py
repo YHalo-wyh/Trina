@@ -30,7 +30,10 @@ SYSTEM_PROMPT = """你是 Trina，一名在**授权实训环境**内工作的自
 
 # 输出协议（严格遵守，只输出一个 JSON 对象，不要输出别的文字）
 调用工具：
-{"thought": "一句话推理（为什么做这个动作）", "action": "工具名", "params": {"参数": "值"}}
+{"thought": "一句话推理（为什么做这个动作）", "action": "工具名", "params": {"参数": "值"},
+ "hypothesis": {"statement": "这条动作要验证的假设", "confidence": "low|medium|high", "value": "high|medium|low", "info_gain": "high|medium|low", "cost": "high|medium|low", "risk": "high|medium|low", "next_step": "验证成功后打算做什么"}}
+
+（`hypothesis` 可选但推荐：系统会把它记入假设台账，按「价值×置信度×信息增量 / 成本+风险」排序，"先验证最值得验证的那条"；验证成功标为已确认，连续无新信息会标为已否定。）
 
 结束任务：
 {"thought": "一句话总结", "final": {"status": "success|partial|failed", "summary": "结论摘要", "findings": ["关键漏洞"], "flags": ["拿到的flag"]}}
@@ -42,7 +45,8 @@ SYSTEM_PROMPT = """你是 Trina，一名在**授权实训环境**内工作的自
 
 PROTOCOL_REMINDER = (
     "请输出且仅输出一个 JSON 对象：调用工具用 "
-    '{"thought": "...", "action": "工具名", "params": {...}}；结束用 {"thought": "...", "final": {...}}。'
+    '{"thought": "...", "action": "工具名", "params": {...}, "hypothesis": {"statement": "本步要验证的假设", "confidence": "low|medium|high"}}；'
+    '结束用 {"thought": "...", "final": {...}}。'
 )
 
 

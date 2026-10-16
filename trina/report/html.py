@@ -156,6 +156,7 @@ def render(data: dict[str, Any]) -> str:
     _attack_path(parts, data)
     _assets(parts, data)
     _findings(parts, data)
+    _evidence(parts, data)
     _secrets(parts, data)
     _appendix(parts, data)
     parts.append(
@@ -339,6 +340,35 @@ def _finding(parts: list[str], finding: dict[str, Any]) -> None:
         for ref in finding["refs"]:
             parts.append(f"<li>{esc(ref)}</li>")
         parts.append("</ul>")
+
+
+def _evidence(parts: list[str], data: dict[str, Any]) -> None:
+    """证据链与假设台账（HTML 不依赖外部脚本，因此以表格代替 mermaid 图）。"""
+    parts.append(f"<h2>{esc(data['sections']['evidence'])}</h2>")
+    graph = data.get("evidence_graph") or {}
+    counts = data.get("hypothesis_counts") or {}
+    parts.append(
+        f'<p class="meta">假设台账：共 {len(data.get("hypotheses") or [])} 条'
+        f"（待验证 {counts.get('open', 0)}、验证中 {counts.get('verifying', 0)}、"
+        f"已确认 {counts.get('confirmed', 0)}、已否定 {counts.get('refuted', 0)}、"
+        f"被阻断 {counts.get('blocked', 0)}）</p>"
+    )
+    if data.get("hypothesis_rows"):
+        parts.append(
+            _table(
+                ["ID", "状态", "置信度", "优先级", "假设", "下一步", "证据数"],
+                data["hypothesis_rows"],
+                numeric=[2, 3, 6],
+            )
+        )
+    else:
+        parts.append('<p class="empty">（本轮未记录假设）</p>')
+    if graph.get("available"):
+        parts.append(f"<h3>证据关系图</h3><p class=\"meta\">{esc(graph.get('summary') or '')}</p>")
+        if graph.get("edge_rows"):
+            parts.append(_table(["起点", "关系", "终点"], graph["edge_rows"]))
+    else:
+        parts.append('<p class="empty">（本轮没有可绘制的证据关系）</p>')
 
 
 def _secrets(parts: list[str], data: dict[str, Any]) -> None:

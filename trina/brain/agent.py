@@ -27,6 +27,7 @@ from ..state import VERDICT_CN, RunState
 from ..tools import ToolRegistry, build_registry
 from ..tools.http import HttpClient
 from ..tools.registry import ToolContext
+from .failure import LoopGuard, advice_for, alternatives_for, classify_failure
 from .goal import GoalRequirements
 from .planner import Planner
 from .prompts import build_step_prompt, build_system_prompt, parse_action
@@ -174,6 +175,12 @@ class PentestAgent:
             state.note("goal", f"目标要求（未满足前不允许收敛）：{requirements.describe()}")
         hints: list[str] = list(seed_hints or []) + requirements.credential_hints()
 
+        # 假设台账 + 循环守卫（文档建议：把"待验证的问题"结构化，并识别无新信息的重复）
+        from ..hypotheses import HypothesisLedger
+
+        ledger = HypothesisLedger(risk_aversion=float(getattr(self.config.run, "hypothesis_risk_aversion", 1.0) or 1.0))
+        loop_guard = LoopGuard()
+
         # 独立控制器：授权来自注册表与预算合同，不来自模型的文字
         controller = self.controller
         if controller is None:
@@ -277,11 +284,16 @@ class PentestAgent:
                     },
                     # 任务硬性要求放在显眼位置：否则模型容易被"顺路发现"带偏，把预算花在目标之外
                     extra_context=(
-                        "## 本次任务的硬性要求（未完成前不允许结束，请优先处理）\n"
-                        + "\n".join(f"- {item}" for item in missing_goal)
+                        (
+                            "## 本次任务的硬性要求（未完成前不允许结束，请优先处理）\n"
+                            + "\n".join(f"- {item}" for item in missing_goal)
+                            + "\n\n"
+                        )
                         if missing_goal
                         else ""
-                    ),
+                    )
+                    + "## 假设台账（按优先级排序）\n"
+                    + ledger.prompt_block(),
                 )
                 hints = []
 
@@ -411,12 +423,46 @@ class PentestAgent:
 
                 self.logger(f"[{index}/{max_steps}] {phase} · {tool_name} {_brief_params(params)}")
                 audit.append("react.action", step=index, phase=phase, thought=thought[:300], tool=tool_name, params=params)
+                before_finding_ids = {f.id for f in state.findings}
 
                 result = self.registry.execute(tool_name, params, ctx)
                 observation = result.to_observation()
                 new_facts = bool(result.facts) and any(
                     bool(value) for value in (result.facts or {}).values() if isinstance(value, (list, dict, tuple, set))
                 )
+
+                # 假设台账：模型可在动作里带 hypothesis；无论成败都用结果更新（确定性规则，不看自我宣告）
+                hypothesis = ledger.from_action(action)
+                new_finding_ids = [f.id for f in state.findings if f.id not in before_finding_ids]
+                if hypothesis is not None:
+                    updated = ledger.record_outcome(
+                        hypothesis.id,
+                        new_information=bool(new_facts or new_finding_ids),
+                        confirmed=bool(new_finding_ids) and result.ok,
+                        blocked=result.denied,
+                        note=str(result.summary or result.error)[:160],
+                        evidence=[{"kind": "tool", "tool": tool_name, "finding_id": fid} for fid in new_finding_ids],
+                    )
+                    if updated is not None:
+                        state.note("hypothesis", f"{updated.id} → {updated.status}：{updated.statement[:80]}")
+
+                # 循环识别（结果指纹）与失败分类：把"重试"变成有依据的升级阶梯
+                advice = loop_guard.observe(tool_name, params, result)
+                if advice:
+                    hints.append(advice)
+                    state.note("loop", advice)
+                failure_kind = classify_failure(result, new_information=new_facts)
+                if failure_kind != "ok":
+                    state.counters[f"fail_{failure_kind}"] = state.counters.get(f"fail_{failure_kind}", 0) + 1
+                    fallback = advice_for(
+                        failure_kind,
+                        alternatives=alternatives_for(self.registry, tool_name, tried=loop_guard.tried_tools()),
+                        attempt=loop_guard.escalation_step,
+                    )
+                    if fallback:
+                        hints.append(fallback)
+                if loop_guard.needs_human():
+                    state.note("human_request", "循环守卫：连续多次无新信息，建议人工介入调整方向")
 
                 step = StepRecord(
                     index=index,
@@ -481,6 +527,10 @@ class PentestAgent:
                 if stop_reason:
                     state.note("budget", f"按停止合同收尾：{stop_reason}")
                     break
+                # 周期落盘：让外部（trina watch / 编辑器 / 另一个终端）能实时看到进展
+                every = int(getattr(self.config.run, "flush_state_every", 1) or 0)
+                if every and index % every == 0:
+                    self._save_state(state, workspace)
         finally:
             if record_handle:
                 record_handle.write("\n]}\n")
@@ -509,6 +559,16 @@ class PentestAgent:
             else:
                 state.status = "failed"
         state.ledger = self.backend.ledger.to_dict()
+        unfinished = ledger.finalize()
+        if unfinished:
+            state.note(
+                "hypotheses",
+                f"本轮仍有 {len(unfinished)} 条假设未解决（既未确认也未否定，已列入待验证）："
+                + "；".join(f"{item.id} {item.statement[:40]}" for item in unfinished[:3])
+                + ("…" if len(unfinished) > 3 else ""),
+            )
+        state.hypotheses = ledger.to_dict()
+        state.loop = loop_guard.to_dict()
 
         # 结论状态与覆盖说明（P3：没有得到证据 ≠ 获得否定证据，检查没跑不能当作通过）
         coverage = controller.coverage()
@@ -531,6 +591,23 @@ class PentestAgent:
             "verdict",
             f"结论状态 {verdict}（{VERDICT_CN.get(verdict, '')}）；已测 {len(executed)} 项，"
             f"未测 {len(coverage.get('untested') or [])} 项，停止原因：{coverage.get('stop_reason') or '正常收敛'}",
+        )
+
+        # 证据关系图：让"结论 → 证据 → 检查项/假设"可反向追溯
+        try:
+            from ..evidence_graph import build as build_graph
+
+            graph = build_graph(state, registry=controller.registry, hypotheses=state.hypotheses)
+            state.graph = graph.to_dict()
+            state.note("graph", graph.summary())
+        except Exception as exc:  # noqa: BLE001 - 绘图失败不影响结论
+            state.graph = {"error": f"{type(exc).__name__}: {exc}"}
+
+        ledger_summary = ledger.summary()
+        state.note(
+            "hypotheses",
+            f"假设台账：共 {ledger_summary['total']} 条（待验证 {ledger_summary['open']}、"
+            f"已确认 {ledger_summary['confirmed']}、已否定 {ledger_summary['refuted']}、被阻断 {ledger_summary['blocked']}）",
         )
         audit.append(
             "run.verdict",

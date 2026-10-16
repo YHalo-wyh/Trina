@@ -20,6 +20,7 @@ python3 -m trina review --state runs/<run_id>/state.json --save review/
 | [E1](experiments/E1-verdict-evidence-vs-status.md) | 验收判定该看状态码还是响应证据？ | 软 404 靶机上误报 1 → 0，真实发现未减少；**不能**推广为"所有站点零误报" | [ADR-0009](../design/adr/0009-evidence-over-status-code.md) |
 | [E2](experiments/E2-credential-verification-scope.md) | 弱口令验证该按工具级还是按尝试规模定等级？ | 显式凭据验证 0/1 → **1/1**、等级拒绝 8–10 → 0；字典仍被拦；**主机场景仍波动**（2/3 ↔ 1/3） | [ADR-0010](../design/adr/0010-credential-verification-scope.md) |
 | [E3](experiments/E3-fixed-vs-dynamic.md) | 固定全跑 vs 动态选择检查项，谁更划算？ | **部分完成**：只有动态臂数据（覆盖 5/11、CONFIRMED、53s）；固定臂未跑，因此**不能**宣称动态更优 | [ADR-0012](../design/adr/0012-fixed-vs-dynamic-checks.md) |
+| [E4](experiments/E4-insight-layer.md) | 假设台账 + 失败分类/循环守卫 + 证据图，真能"解释得清、失败换路"吗？ | **部分完成**：状态推进由结果确定性驱动、环境失败被单独归因、结论可反向追溯（机制层面 ✅）；**没有** A/B 对照，不能宣称提效 | [ADR-0015](../design/adr/0015-insight-layer-hypotheses-failure-graph.md) |
 
 > 每张实验卡都必须写清：**统计单位、数据集/版本、无法控制的变量、结论边界**。
 > 「没有优势/负结果」同样是有效结论，不允许用含糊总分解释所有变化。

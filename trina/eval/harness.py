@@ -70,6 +70,17 @@ class ScenarioSpec:
         return spec
 
 
+def _first_evidence_seconds(state: Any) -> float | None:
+    """首个证据出现的时间（自运行开始计），用于 Time to Evidence 指标。"""
+    started = getattr(state, "started_at", None)
+    findings = getattr(state, "findings", None) or []
+    stamps = [getattr(finding, "first_seen", None) for finding in findings]
+    stamps = [value for value in stamps if isinstance(value, (int, float))]
+    if not started or not stamps:
+        return None
+    return round(min(stamps) - float(started), 3)
+
+
 def _local_endpoints(spec: ScenarioSpec) -> set[tuple[str, int]]:
     """从场景目标里抽出「本机端口」，用于决定需要拉起哪些 lab 夹具。"""
     import urllib.parse
@@ -334,6 +345,10 @@ class EvalHarness:
             steps=int(counters.get("steps", 0) or 0),
             denied=int(counters.get("denied", 0) or 0),
             error=error,
+            cost_usd=float((getattr(state, "ledger", None) or {}).get("cost_usd", 0.0) or 0.0),
+            first_evidence_seconds=_first_evidence_seconds(state),
+            redundant_rate=float((getattr(state, "loop", None) or {}).get("redundant_action_rate", 0.0) or 0.0),
+            failures=sum(int(v) for k, v in (counters or {}).items() if str(k).startswith("fail_")),
         )
 
     # -------------------------------------------------------------- 默认执行器

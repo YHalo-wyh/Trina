@@ -23,6 +23,7 @@ from ..state import RunState
 from ..tools import ToolRegistry, build_registry
 from ..tools.http import HttpClient
 from ..tools.registry import ToolContext
+from .failure import LoopGuard, advice_for, classify_failure
 
 CHAT_SYSTEM_PROMPT = """你是 Trina，一个在**授权实训环境**里协助用户的渗透测试助手。用户会用自然语言跟你说话。
 
@@ -32,7 +33,10 @@ CHAT_SYSTEM_PROMPT = """你是 Trina，一个在**授权实训环境**里协助�
 2) **动手执行**：当用户的要求需要实际操作（扫描、指纹、目录枚举、注入验证、上传验证、弱口令验证、读 flag 等），
    输出**一个** JSON 动作对象，由系统执行后把结果给你，你再继续：
 
-{"thought": "一句话说明为什么做这个动作", "test_id": "注册检查项ID（可选）", "action": "工具名", "params": {"参数": "值"}}
+{"thought": "一句话说明为什么做这个动作", "test_id": "注册检查项ID（可选）", "action": "工具名", "params": {"参数": "值"},
+ "hypothesis": {"statement": "这条动作要验证的假设", "confidence": "low|medium|high", "value": "high|medium|low", "info_gain": "…", "cost": "…", "risk": "…"}}
+
+（`hypothesis` 可选但推荐：它会被记入假设台账，系统按优先级决定先验证哪条；验证成功会标记为已确认，连续无新信息会标记为已否定。）
 
 铁律（违反会被拒绝并记录）：
 - 只在授权范围内动作（越界目标会被硬拒绝，别反复试）；
@@ -102,6 +106,11 @@ class ChatAgent:
         )
         self.history: list[dict[str, str]] = []
         self.turns = 0
+        #: 假设台账与循环守卫：对话里同样"提假设 → 按优先级验证 → 无新信息就换路"
+        from ..hypotheses import HypothesisLedger
+
+        self.ledger = HypothesisLedger()
+        self.loop_guard = LoopGuard()
 
     # ------------------------------------------------------------------ 控制器
     @property
@@ -181,6 +190,8 @@ class ChatAgent:
             + self.config.scope_prompt_block()
             + "\n\n# 已注册检查项\n"
             + registered
+            + "\n\n# 假设台账\n"
+            + self.ledger.prompt_block()
             + "\n\n# 可用工具\n"
             + tool_block
         )
@@ -237,9 +248,36 @@ class ChatAgent:
             self.logger("[人工拒绝] 该动作未执行")
             return f"操作者拒绝了 {tool_name}（未执行）。换更保守的做法，或先说明为什么需要它。"
 
+        before_finding_ids = {f.id for f in self.state.findings}
         result = self.registry.execute(tool_name, params, self.ctx)
         if self.on_tool is not None:
             self.on_tool(result)
+        new_finding_ids = [f.id for f in self.state.findings if f.id not in before_finding_ids]
+
+        # 假设台账：模型可带 hypothesis；用结果确定性更新状态
+        hypothesis = self.ledger.from_action(action)
+        if hypothesis is not None:
+            updated = self.ledger.record_outcome(
+                hypothesis.id,
+                new_information=bool(result.facts or new_finding_ids),
+                confirmed=bool(new_finding_ids) and result.ok,
+                blocked=result.denied,
+                note=str(result.summary or result.error)[:160],
+                evidence=[{"kind": "tool", "tool": tool_name, "finding_id": fid} for fid in new_finding_ids],
+            )
+            if updated is not None:
+                self.logger(f"[假设] {updated.id} → {updated.status}（P={updated.confidence:.2f}）：{updated.statement[:60]}")
+
+        # 循环识别 + 失败分类
+        advice = self.loop_guard.observe(tool_name, params, result)
+        if advice:
+            self.logger(f"[循环守卫] {advice}")
+        kind = classify_failure(result, new_information=bool(result.facts or new_finding_ids))
+        if kind != "ok":
+            self.state.counters[f"fail_{kind}"] = self.state.counters.get(f"fail_{kind}", 0) + 1
+            hint = advice_for(kind, attempt=self.loop_guard.escalation_step)
+            if hint:
+                self.logger(f"[失败分类] {kind}：{hint}")
         self.controller.note_evidence(
             bool(result.facts) and any(bool(v) for v in (result.facts or {}).values() if isinstance(v, (list, dict, tuple, set)))
         )
@@ -263,6 +301,7 @@ class ChatAgent:
     # ------------------------------------------------------------------ 视图
     def snapshot(self) -> dict[str, Any]:
         coverage = self.controller.coverage() if self._controller is not None else {}
+        ledger = self.ledger.summary()
         return {
             "run_id": self.run_id,
             "turns": self.turns,
@@ -271,6 +310,8 @@ class ChatAgent:
             "flags": len(self.state.flags),
             "checks_used": coverage.get("checks_used", 0),
             "executed": coverage.get("executed", []),
+            "hypotheses": ledger,
+            "redundant_rate": self.loop_guard.redundant_rate,
             "audit": str(self.audit.path),
         }
 

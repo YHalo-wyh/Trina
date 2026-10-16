@@ -19,6 +19,7 @@ def render(data: dict[str, Any]) -> str:
     _attack_path(lines, data)
     _assets(lines, data)
     _findings(lines, data)
+    _evidence(lines, data)
     _secrets(lines, data)
     _appendix(lines, data)
     return "\n".join(lines).rstrip() + "\n"
@@ -217,6 +218,37 @@ def _finding(lines: list[str], finding: dict[str, Any]) -> None:
         lines.append("")
         lines += [f"- {ref}" for ref in finding["refs"]]
     lines.append("")
+
+
+def _evidence(lines: list[str], data: dict[str, Any]) -> None:
+    """证据链与假设台账：结论 → 证据 → 检查项/假设 可反向追溯。"""
+    lines += _section(data, "evidence")
+    graph = data.get("evidence_graph") or {}
+    counts = data.get("hypothesis_counts") or {}
+    lines.append(
+        "假设台账:共 "
+        f"{len(data.get('hypotheses') or [])} 条（待验证 {counts.get('open', 0)}、验证中 {counts.get('verifying', 0)}、"
+        f"已确认 {counts.get('confirmed', 0)}、已否定 {counts.get('refuted', 0)}、被阻断 {counts.get('blocked', 0)}）"
+    )
+    lines.append("")
+    if data.get("hypothesis_rows"):
+        lines += _table(
+            ["ID", "状态", "置信度", "优先级", "假设", "下一步", "证据数"],
+            data["hypothesis_rows"],
+            align=["l", "l", "r", "r", "l", "l", "r"],
+        )
+        lines.append("")
+    if graph.get("available"):
+        lines.append("证据关系图（可用支持 mermaid 的 Markdown 查看器渲染）：")
+        lines.append("")
+        lines.append(str(graph["mermaid"]))
+        lines.append("")
+        lines.append(str(graph["summary"]))
+        lines.append("")
+        if graph.get("edge_rows"):
+            lines += _table(["起点", "关系", "终点"], graph["edge_rows"], align=["l", "l", "l"])
+    else:
+        lines.append("（本轮没有可绘制的证据关系）")
 
 
 def _secrets(lines: list[str], data: dict[str, Any]) -> None:

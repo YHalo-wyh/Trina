@@ -105,7 +105,11 @@ trina --api omp                # 临时切回 omp 后端
 | 空闲 | `/new`（别名 `/clear`） | 开启新对话会话（清空上下文；审计另起文件） |
 | 空闲 | `/play [--target T] [--range N] [--goal G] [--max-steps N] [--approve MODE]` | 一条命令开打（完整任务模式） |
 | 空闲 | `/run <target> ...` | 对指定目标跑一轮完整任务 |
-| 空闲 | `/tools` `/tool <name> --params '<json>'` `/guard check <t>` `/ranges` `/report` `/review` `/audit verify` | 复用 CLI 同一实现 |
+| 空闲 | `/board` | 工作台视图：任务状态 / 研究成果 / 假设台账 / 覆盖 / 成本一屏（对齐"打开就看到状态"的诉求） |
+| 空闲 | `/hypotheses` | 假设台账（按优先级排序，含状态与置信度：模型在动作里带 `hypothesis` 时自动登记） |
+| 空闲 | `/graph` | 证据关系图（mermaid：结论→证据→检查项/假设，可反向追溯） |
+| 空闲 | `/report` `/review` `/audit verify` | 生成报告 / 只读复核 / 校验审计哈希链 |
+| 空闲 | `/tools` `/tool <name> --params '<json>'` `/guard check <t>` `/ranges` | 复用 CLI 同一实现 |
 | 空闲 | `/approve off\|exploit\|verify\|all` | 调整审批闸门 |
 | 空闲 | `/revoke <target_id>` / `/grant <target_id>` | 撤权 / 恢复（撤权后该目标的一切检查被拒） |
 | 运行中 | `y` / `n` | 批准 / 拒绝当前挂起的高危动作（超时＝拒绝） |
@@ -116,6 +120,19 @@ trina --api omp                # 临时切回 omp 后端
 > `/model` 与 `/backend` 只对当前会话生效；想长期保留用 `/save`（只改 `~/.trina/env`，不碰仓库）。
 
 对话模式的审计：每次会话写一个 `logs/chat-<ts>.jsonl`（同样是哈希链），每轮的问答与工具动作都在里面。
+
+### 2.3 实时监视（`watch`）
+
+Agent 每步会把 `runs/<run_id>/state.json` 落盘一次（`run.flush_state_every` 控制），因此可以在**另一个终端**盯进展、不干预它：
+
+```bash
+trina watch                 # 监视最近一次运行（每 2s 刷新，Ctrl+C 退出）
+trina watch <run_id>        # 指定运行
+trina watch --once          # 只打印一次（适合脚本/日志留档）
+```
+
+面板与控制台 `/board` 共用同一份渲染：状态/结论、研究成果（漏洞/flag/凭据）、假设台账（待验证 vs 已确认）、
+覆盖（已测/未测检查项）、最近动作、工作区与成本（调用次数/token/美元）。
 
 ## 3. 单步操作（排障/精确控制）
 

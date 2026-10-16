@@ -45,6 +45,7 @@ RUN_STATUS_CN = {
 }
 CONFIDENCE_CN = {"low": "低", "medium": "中", "high": "高"}
 FINDING_STATUS_CN = {"detected": "已发现", "verified": "已验证", "exploited": "已利用"}
+HYPOTHESIS_STATUS_CN = {"open": "待验证", "verifying": "验证中", "confirmed": "已确认", "refuted": "已否定", "blocked": "被阻断"}
 NODE_KIND_CN = {
     "target": "目标",
     "phase": "阶段",
@@ -62,8 +63,9 @@ SECTION_TITLES: dict[str, str] = {
     "attack_path": "三、攻击路径",
     "assets": "四、资产清单",
     "findings": "五、漏洞详情",
-    "secrets": "六、凭据与 Flag",
-    "appendix": "七、附录",
+    "evidence": "六、证据链与假设台账",
+    "secrets": "七、凭据与 Flag",
+    "appendix": "八、附录",
 }
 
 #: 漏洞类 → 默认 CVSS 3.1 向量（`Finding.cvss` 为空时使用）。
@@ -765,6 +767,38 @@ def _timeline_data(state: RunState) -> list[dict[str, Any]]:
 
 
 # --------------------------------------------------------------------------- 汇总
+def _evidence_graph(state: RunState, hypotheses: list[dict[str, Any]]) -> dict[str, Any]:
+    """证据关系图（节点/边 + mermaid 源码）；构建失败不影响报告生成。"""
+    empty = {"available": False, "mermaid": "", "summary": "", "node_rows": [], "edge_rows": []}
+    try:
+        from ..evidence_graph import build as build_graph
+
+        graph = build_graph(state, hypotheses=hypotheses)
+    except Exception:  # noqa: BLE001 - 报告宁可少一节也不能失败
+        return empty
+    try:
+        payload = graph.to_dict()
+        kind_cn = {
+            "host": "主机", "port": "端口", "service": "服务", "path": "路径", "web_path": "路径",
+            "finding": "漏洞", "evidence": "证据", "flag": "夺旗", "credential": "凭据",
+            "hypothesis": "假设", "check": "检查项", "target": "目标",
+        }
+        return {
+            "available": True,
+            "mermaid": graph.to_mermaid(),
+            "summary": graph.summary(),
+            "node_rows": [
+                [node["id"], kind_cn.get(node.get("kind", ""), node.get("kind", "")), node.get("label", "")]
+                for node in payload["nodes"]
+            ],
+            "edge_rows": [
+                [edge["src"], edge.get("label", ""), edge["dst"]] for edge in payload["edges"]
+            ],
+        }
+    except Exception:  # noqa: BLE001
+        return empty
+
+
 def collect_data(
     state: RunState,
     cfg: TrinaConfig,
@@ -993,6 +1027,24 @@ def collect_data(
     summary_rows: list[list[Any]] = [[row["severity_cn"], row["count"], row["pct"]] for row in severity_rows]
     summary_rows.append(["合计", len(state.findings), "100.0%" if state.findings else "-"])
 
+    hypotheses = list(getattr(state, "hypotheses", None) or [])
+    hypothesis_rows: list[list[Any]] = [
+        [
+            item.get("id", ""),
+            HYPOTHESIS_STATUS_CN.get(str(item.get("status", "")), str(item.get("status", ""))),
+            f"{float(item.get('confidence', 0) or 0):.2f}",
+            f"{float(item.get('priority', 0) or 0):.2f}",
+            _short(item.get("statement", ""), 140),
+            _short(item.get("next_step", "") or "-", 80),
+            len(item.get("evidence") or []),
+        ]
+        for item in hypotheses
+    ]
+    hypothesis_counts = {
+        key: len([h for h in hypotheses if h.get("status") == key])
+        for key in ("open", "verifying", "confirmed", "refuted", "blocked")
+    }
+
     data: dict[str, Any] = {
         "title": title,
         "generated_at": generated_at,
@@ -1026,6 +1078,10 @@ def collect_data(
         "asset_rows": asset_rows,
         "findings": findings,
         "finding_rows": finding_rows,
+        "hypotheses": hypotheses,
+        "hypothesis_rows": hypothesis_rows,
+        "hypothesis_counts": hypothesis_counts,
+        "evidence_graph": _evidence_graph(state, hypotheses),
         "credentials": credential_rows,
         "flags": flag_rows,
         "steps": steps,

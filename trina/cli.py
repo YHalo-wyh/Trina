@@ -649,6 +649,39 @@ def cmd_review(args: argparse.Namespace) -> int:
     return 0 if not (note.verdict_conflicts or note.claims_without_evidence) else 2
 
 
+def cmd_watch(args: argparse.Namespace) -> int:
+    """实时监视一次运行（读取周期落盘的 state.json，不干预 Agent）。"""
+    import sys as _sys
+    import time as _time
+
+    from .board import latest_state_file, load_state, render_board
+
+    config = build_config(args)
+    workspace = config.workspace_dir
+    if args.run_id:
+        path = workspace / args.run_id / "state.json"
+    else:
+        path = latest_state_file(workspace)
+    if path is None or not Path(path).exists():
+        out("未找到运行状态：先跑一次（trina play / trina run），或指定 run_id", "red")
+        return 2
+
+    if args.once:
+        print(render_board(load_state(path)))
+        return 0
+
+    out(f"监视 {path.parent.name}（每 {args.interval}s 刷新，Ctrl+C 退出）")
+    try:
+        while True:
+            board = render_board(load_state(path))
+            _sys.stdout.write("\033[2J\033[H" + board + "\n")
+            _sys.stdout.flush()
+            _time.sleep(max(0.5, float(args.interval)))
+    except KeyboardInterrupt:
+        out("\n已退出监视")
+        return 0
+
+
 def cmd_report(args: argparse.Namespace) -> int:
     config = build_config(args)
     path = Path(args.state)
@@ -821,6 +854,13 @@ def build_parser() -> argparse.ArgumentParser:
     eval_adv.add_argument("--port", type=int, default=9100)
     eval_adv.add_argument("--modes", nargs="*")
     eval_adv.set_defaults(func=cmd_eval)
+
+    watch = sub.add_parser("watch", help="实时监视一次运行（工作台视图）")
+    add_common(watch)
+    watch.add_argument("run_id", nargs="?", help="运行 ID（省略则监视最近一次）")
+    watch.add_argument("--interval", type=float, default=2.0, help="刷新间隔秒（默认 2）")
+    watch.add_argument("--once", action="store_true", help="只打印一次")
+    watch.set_defaults(func=cmd_watch)
 
     review = sub.add_parser("review", help="评价 Agent：只读复核一次运行的声明与证据")
     add_common(review)

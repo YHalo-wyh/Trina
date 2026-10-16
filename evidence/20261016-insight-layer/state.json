@@ -1,0 +1,1446 @@
+{
+ "run_id": "20261016-165055-2598dc",
+ "target": "http://127.0.0.1:9099",
+ "goal": "",
+ "status": "success",
+ "phase": "vuln",
+ "phase_history": [
+  "recon",
+  "enum"
+ ],
+ "started_at": 1792140655.172,
+ "ended_at": 1792140682.6204104,
+ "duration": 27.4,
+ "hosts": {
+  "127.0.0.1": {
+   "host": "127.0.0.1",
+   "alive": true,
+   "ports": {
+    "22": {
+     "service": "ssh",
+     "protocol": "tcp"
+    },
+    "3389": {
+     "service": "rdp",
+     "protocol": "tcp"
+    }
+   },
+   "technologies": [
+    "Apache"
+   ],
+   "web_paths": [
+    "http://127.0.0.1:9099/robots.txt",
+    "http://127.0.0.1:9099/sitemap.xml",
+    "http://127.0.0.1:9099/.well-known/security.txt",
+    "http://127.0.0.1:9099/.git/HEAD"
+   ],
+   "notes": []
+  }
+ },
+ "findings": [
+  {
+   "id": "TRINA-001",
+   "title": "缺少安全响应头 Content-Security-Policy",
+   "vuln_class": "security_misconfig_headers",
+   "target": "http://127.0.0.1:9099",
+   "url": "http://127.0.0.1:9099",
+   "parameter": "Content-Security-Policy",
+   "method": "GET",
+   "severity": "info",
+   "confidence": "high",
+   "status": "detected",
+   "tool": "http_fingerprint",
+   "payload": "",
+   "description": "缺少 CSP，可能放大 XSS 与内容注入风险",
+   "impact": "",
+   "remediation": "在 Web 服务器/反代上补充响应头 Content-Security-Policy",
+   "cvss": "",
+   "cwe": "",
+   "refs": [],
+   "evidence": [
+    {
+     "kind": "http",
+     "target": "http://127.0.0.1:9099",
+     "method": "GET",
+     "status": 200,
+     "request": {
+      "method": "GET",
+      "url": "http://127.0.0.1:9099",
+      "headers": {},
+      "body": ""
+     },
+     "response": {
+      "status": 200,
+      "length": 342,
+      "body_excerpt": "<!DOCTYPE html><html><head><title>Trina Lab</title></head><body>\n<h1>Trina 脆弱靶机</h1>\n<ul>\n<li><a href=\"/sqli?id=1\">/sqli?id=1</a></li>\n<li><a href=\"/lfi?file=readme.txt\">/lfi?file=readme.txt</a></li>\n<li><a href=\"/rce?cmd=id\">/rce?cmd=id</a></li>\n<li><a href=\"/login\">/login</a></li>\n<li><a href=\"/admin\">/admin</a></li>\n</ul>\n</body></html>\n"
+     },
+     "payload": "",
+     "note": "响应头缺失: Content-Security-Policy"
+    }
+   ],
+   "first_seen": 1792140664.298,
+   "last_seen": 1792140664.298,
+   "severity_cn": "信息"
+  },
+  {
+   "id": "TRINA-002",
+   "title": "缺少安全响应头 X-Frame-Options",
+   "vuln_class": "security_misconfig_headers",
+   "target": "http://127.0.0.1:9099",
+   "url": "http://127.0.0.1:9099",
+   "parameter": "X-Frame-Options",
+   "method": "GET",
+   "severity": "info",
+   "confidence": "high",
+   "status": "detected",
+   "tool": "http_fingerprint",
+   "payload": "",
+   "description": "缺少 X-Frame-Options，页面可能被 iframe 嵌套（点击劫持）",
+   "impact": "",
+   "remediation": "在 Web 服务器/反代上补充响应头 X-Frame-Options",
+   "cvss": "",
+   "cwe": "",
+   "refs": [],
+   "evidence": [
+    {
+     "kind": "http",
+     "target": "http://127.0.0.1:9099",
+     "method": "GET",
+     "status": 200,
+     "request": {
+      "method": "GET",
+      "url": "http://127.0.0.1:9099",
+      "headers": {},
+      "body": ""
+     },
+     "response": {
+      "status": 200,
+      "length": 342,
+      "body_excerpt": "<!DOCTYPE html><html><head><title>Trina Lab</title></head><body>\n<h1>Trina 脆弱靶机</h1>\n<ul>\n<li><a href=\"/sqli?id=1\">/sqli?id=1</a></li>\n<li><a href=\"/lfi?file=readme.txt\">/lfi?file=readme.txt</a></li>\n<li><a href=\"/rce?cmd=id\">/rce?cmd=id</a></li>\n<li><a href=\"/login\">/login</a></li>\n<li><a href=\"/admin\">/admin</a></li>\n</ul>\n</body></html>\n"
+     },
+     "payload": "",
+     "note": "响应头缺失: X-Frame-Options"
+    }
+   ],
+   "first_seen": 1792140664.298,
+   "last_seen": 1792140664.298,
+   "severity_cn": "信息"
+  },
+  {
+   "id": "TRINA-003",
+   "title": "缺少安全响应头 Strict-Transport-Security",
+   "vuln_class": "security_misconfig_headers",
+   "target": "http://127.0.0.1:9099",
+   "url": "http://127.0.0.1:9099",
+   "parameter": "Strict-Transport-Security",
+   "method": "GET",
+   "severity": "info",
+   "confidence": "high",
+   "status": "detected",
+   "tool": "http_fingerprint",
+   "payload": "",
+   "description": "缺少 HSTS，HTTPS 可被降级到明文 HTTP",
+   "impact": "",
+   "remediation": "在 Web 服务器/反代上补充响应头 Strict-Transport-Security",
+   "cvss": "",
+   "cwe": "",
+   "refs": [],
+   "evidence": [
+    {
+     "kind": "http",
+     "target": "http://127.0.0.1:9099",
+     "method": "GET",
+     "status": 200,
+     "request": {
+      "method": "GET",
+      "url": "http://127.0.0.1:9099",
+      "headers": {},
+      "body": ""
+     },
+     "response": {
+      "status": 200,
+      "length": 342,
+      "body_excerpt": "<!DOCTYPE html><html><head><title>Trina Lab</title></head><body>\n<h1>Trina 脆弱靶机</h1>\n<ul>\n<li><a href=\"/sqli?id=1\">/sqli?id=1</a></li>\n<li><a href=\"/lfi?file=readme.txt\">/lfi?file=readme.txt</a></li>\n<li><a href=\"/rce?cmd=id\">/rce?cmd=id</a></li>\n<li><a href=\"/login\">/login</a></li>\n<li><a href=\"/admin\">/admin</a></li>\n</ul>\n</body></html>\n"
+     },
+     "payload": "",
+     "note": "响应头缺失: Strict-Transport-Security"
+    }
+   ],
+   "first_seen": 1792140664.298,
+   "last_seen": 1792140664.298,
+   "severity_cn": "信息"
+  },
+  {
+   "id": "TRINA-004",
+   "title": "缺少安全响应头 X-Content-Type-Options",
+   "vuln_class": "security_misconfig_headers",
+   "target": "http://127.0.0.1:9099",
+   "url": "http://127.0.0.1:9099",
+   "parameter": "X-Content-Type-Options",
+   "method": "GET",
+   "severity": "info",
+   "confidence": "high",
+   "status": "detected",
+   "tool": "http_fingerprint",
+   "payload": "",
+   "description": "缺少 X-Content-Type-Options，浏览器可能 MIME 嗅探导致 XSS",
+   "impact": "",
+   "remediation": "在 Web 服务器/反代上补充响应头 X-Content-Type-Options",
+   "cvss": "",
+   "cwe": "",
+   "refs": [],
+   "evidence": [
+    {
+     "kind": "http",
+     "target": "http://127.0.0.1:9099",
+     "method": "GET",
+     "status": 200,
+     "request": {
+      "method": "GET",
+      "url": "http://127.0.0.1:9099",
+      "headers": {},
+      "body": ""
+     },
+     "response": {
+      "status": 200,
+      "length": 342,
+      "body_excerpt": "<!DOCTYPE html><html><head><title>Trina Lab</title></head><body>\n<h1>Trina 脆弱靶机</h1>\n<ul>\n<li><a href=\"/sqli?id=1\">/sqli?id=1</a></li>\n<li><a href=\"/lfi?file=readme.txt\">/lfi?file=readme.txt</a></li>\n<li><a href=\"/rce?cmd=id\">/rce?cmd=id</a></li>\n<li><a href=\"/login\">/login</a></li>\n<li><a href=\"/admin\">/admin</a></li>\n</ul>\n</body></html>\n"
+     },
+     "payload": "",
+     "note": "响应头缺失: X-Content-Type-Options"
+    }
+   ],
+   "first_seen": 1792140664.298,
+   "last_seen": 1792140664.298,
+   "severity_cn": "信息"
+  },
+  {
+   "id": "TRINA-005",
+   "title": "robots.txt 泄露敏感路径",
+   "vuln_class": "information_disclosure",
+   "target": "",
+   "url": "http://127.0.0.1:9099/robots.txt",
+   "parameter": "",
+   "method": "GET",
+   "severity": "low",
+   "confidence": "medium",
+   "status": "detected",
+   "tool": "",
+   "payload": "",
+   "description": "robots.txt 中列出了管理后台/备份/源码等敏感路径，可直接作为攻击入口。",
+   "impact": "攻击者据此外推后台与备份文件位置，降低入侵成本。",
+   "remediation": "robots.txt 不应列出敏感路径；重要目录改用鉴权与不可枚举命名，并移除线上备份文件。",
+   "cvss": "",
+   "cwe": "CWE-200",
+   "refs": [],
+   "evidence": [
+    {
+     "kind": "http",
+     "target": "http://127.0.0.1:9099/robots.txt",
+     "method": "GET",
+     "status": 200,
+     "request": {
+      "method": "GET",
+      "url": "http://127.0.0.1:9099/robots.txt",
+      "headers": {},
+      "body": ""
+     },
+     "response": {
+      "status": 200,
+      "length": 86,
+      "body_excerpt": "User-agent: *\nDisallow: /admin\nDisallow: /backup\nDisallow: /.git/\nDisallow: /uploads/\n"
+     },
+     "payload": "",
+     "note": "robots.txt 命中敏感路径关键词: admin, backup, git, upload"
+    }
+   ],
+   "first_seen": 1792140664.298,
+   "last_seen": 1792140664.298,
+   "severity_cn": "低危"
+  },
+  {
+   "id": "TRINA-006",
+   "title": ".git 目录可公开访问",
+   "vuln_class": "info_disclosure",
+   "target": "http://127.0.0.1:9099",
+   "url": "http://127.0.0.1:9099/.git/HEAD",
+   "parameter": "",
+   "method": "GET",
+   "severity": "high",
+   "confidence": "high",
+   "status": "detected",
+   "tool": "poc_scan",
+   "payload": "",
+   "description": ".git/HEAD 可未授权访问，攻击者可据此还原完整源码与提交历史。",
+   "impact": "",
+   "remediation": "部署时移除版本控制元数据，或在 Web 入口屏蔽以 . 开头的路径。",
+   "cvss": "",
+   "cwe": "CWE-538",
+   "refs": [],
+   "evidence": [
+    {
+     "kind": "http",
+     "target": "http://127.0.0.1:9099/.git/HEAD",
+     "method": "GET",
+     "status": 200,
+     "request": {
+      "method": "GET",
+      "url": "http://127.0.0.1:9099/.git/HEAD",
+      "headers": {},
+      "body": ""
+     },
+     "response": {
+      "status": 200,
+      "length": 21,
+      "body_excerpt": "ref: refs/heads/main\n"
+     },
+     "payload": "poc:git_leak",
+     "note": "PoC git_leak 命中",
+     "poc_id": "git_leak",
+     "severity": "high",
+     "cwe": "CWE-538",
+     "reproduce": "curl -sk -i 'http://127.0.0.1:9099/.git/HEAD'"
+    }
+   ],
+   "first_seen": 1792140670.638,
+   "last_seen": 1792140670.638,
+   "severity_cn": "高危"
+  }
+ ],
+ "credentials": [],
+ "flags": [
+  {
+   "value": "flag{trina_lab_d9176a45}",
+   "source": "http://127.0.0.1:9099/flag",
+   "ts": 1792140677.899
+  }
+ ],
+ "evidence": [
+  {
+   "kind": "http",
+   "target": "http://127.0.0.1:9099",
+   "method": "GET",
+   "status": 200,
+   "request": {
+    "method": "GET",
+    "url": "http://127.0.0.1:9099",
+    "headers": {},
+    "body": ""
+   },
+   "response": {
+    "status": 200,
+    "length": 342,
+    "body_excerpt": "<!DOCTYPE html><html><head><title>Trina Lab</title></head><body>\n<h1>Trina 脆弱靶机</h1>\n<ul>\n<li><a href=\"/sqli?id=1\">/sqli?id=1</a></li>\n<li><a href=\"/lfi?file=readme.txt\">/lfi?file=readme.txt</a></li>\n<li><a href=\"/rce?cmd=id\">/rce?cmd=id</a></li>\n<li><a href=\"/login\">/login</a></li>\n<li><a href=\"/admin\">/admin</a></li>\n</ul>\n</body></html>\n"
+   },
+   "payload": "",
+   "note": "响应头缺失: Content-Security-Policy",
+   "finding_id": "TRINA-001",
+   "ts": 1792140664.298,
+   "clock": "16:51:04"
+  },
+  {
+   "kind": "http",
+   "target": "http://127.0.0.1:9099",
+   "method": "GET",
+   "status": 200,
+   "request": {
+    "method": "GET",
+    "url": "http://127.0.0.1:9099",
+    "headers": {},
+    "body": ""
+   },
+   "response": {
+    "status": 200,
+    "length": 342,
+    "body_excerpt": "<!DOCTYPE html><html><head><title>Trina Lab</title></head><body>\n<h1>Trina 脆弱靶机</h1>\n<ul>\n<li><a href=\"/sqli?id=1\">/sqli?id=1</a></li>\n<li><a href=\"/lfi?file=readme.txt\">/lfi?file=readme.txt</a></li>\n<li><a href=\"/rce?cmd=id\">/rce?cmd=id</a></li>\n<li><a href=\"/login\">/login</a></li>\n<li><a href=\"/admin\">/admin</a></li>\n</ul>\n</body></html>\n"
+   },
+   "payload": "",
+   "note": "响应头缺失: X-Frame-Options",
+   "finding_id": "TRINA-002",
+   "ts": 1792140664.298,
+   "clock": "16:51:04"
+  },
+  {
+   "kind": "http",
+   "target": "http://127.0.0.1:9099",
+   "method": "GET",
+   "status": 200,
+   "request": {
+    "method": "GET",
+    "url": "http://127.0.0.1:9099",
+    "headers": {},
+    "body": ""
+   },
+   "response": {
+    "status": 200,
+    "length": 342,
+    "body_excerpt": "<!DOCTYPE html><html><head><title>Trina Lab</title></head><body>\n<h1>Trina 脆弱靶机</h1>\n<ul>\n<li><a href=\"/sqli?id=1\">/sqli?id=1</a></li>\n<li><a href=\"/lfi?file=readme.txt\">/lfi?file=readme.txt</a></li>\n<li><a href=\"/rce?cmd=id\">/rce?cmd=id</a></li>\n<li><a href=\"/login\">/login</a></li>\n<li><a href=\"/admin\">/admin</a></li>\n</ul>\n</body></html>\n"
+   },
+   "payload": "",
+   "note": "响应头缺失: Strict-Transport-Security",
+   "finding_id": "TRINA-003",
+   "ts": 1792140664.298,
+   "clock": "16:51:04"
+  },
+  {
+   "kind": "http",
+   "target": "http://127.0.0.1:9099",
+   "method": "GET",
+   "status": 200,
+   "request": {
+    "method": "GET",
+    "url": "http://127.0.0.1:9099",
+    "headers": {},
+    "body": ""
+   },
+   "response": {
+    "status": 200,
+    "length": 342,
+    "body_excerpt": "<!DOCTYPE html><html><head><title>Trina Lab</title></head><body>\n<h1>Trina 脆弱靶机</h1>\n<ul>\n<li><a href=\"/sqli?id=1\">/sqli?id=1</a></li>\n<li><a href=\"/lfi?file=readme.txt\">/lfi?file=readme.txt</a></li>\n<li><a href=\"/rce?cmd=id\">/rce?cmd=id</a></li>\n<li><a href=\"/login\">/login</a></li>\n<li><a href=\"/admin\">/admin</a></li>\n</ul>\n</body></html>\n"
+   },
+   "payload": "",
+   "note": "响应头缺失: X-Content-Type-Options",
+   "finding_id": "TRINA-004",
+   "ts": 1792140664.298,
+   "clock": "16:51:04"
+  },
+  {
+   "kind": "http",
+   "target": "http://127.0.0.1:9099/robots.txt",
+   "method": "GET",
+   "status": 200,
+   "request": {
+    "method": "GET",
+    "url": "http://127.0.0.1:9099/robots.txt",
+    "headers": {},
+    "body": ""
+   },
+   "response": {
+    "status": 200,
+    "length": 86,
+    "body_excerpt": "User-agent: *\nDisallow: /admin\nDisallow: /backup\nDisallow: /.git/\nDisallow: /uploads/\n"
+   },
+   "payload": "",
+   "note": "robots.txt 命中敏感路径关键词: admin, backup, git, upload",
+   "finding_id": "TRINA-005",
+   "ts": 1792140664.298,
+   "clock": "16:51:04"
+  },
+  {
+   "kind": "http",
+   "target": "http://127.0.0.1:9099",
+   "method": "GET",
+   "status": 200,
+   "request": {
+    "method": "GET",
+    "url": "http://127.0.0.1:9099",
+    "headers": {},
+    "body": ""
+   },
+   "response": {
+    "status": 200,
+    "length": 342,
+    "body_excerpt": "<!DOCTYPE html><html><head><title>Trina Lab</title></head><body>\n<h1>Trina 脆弱靶机</h1>\n<ul>\n<li><a href=\"/sqli?id=1\">/sqli?id=1</a></li>\n<li><a href=\"/lfi?file=readme.txt\">/lfi?file=readme.txt</a></li>\n<li><a href=\"/rce?cmd=id\">/rce?cmd=id</a></li>\n<li><a href=\"/login\">/login</a></li>\n<li><a href=\"/admin\">/admin</a></li>\n</ul>\n</body></html>\n"
+   },
+   "payload": "",
+   "note": "http_fingerprint 首页探测",
+   "tool": "http_fingerprint",
+   "ts": 1792140664.298,
+   "clock": "16:51:04"
+  },
+  {
+   "kind": "http",
+   "target": "http://127.0.0.1:9099/robots.txt",
+   "method": "GET",
+   "status": 200,
+   "request": {
+    "method": "GET",
+    "url": "http://127.0.0.1:9099/robots.txt",
+    "headers": {},
+    "body": ""
+   },
+   "response": {
+    "status": 200,
+    "length": 86,
+    "body_excerpt": "User-agent: *\nDisallow: /admin\nDisallow: /backup\nDisallow: /.git/\nDisallow: /uploads/\n"
+   },
+   "payload": "",
+   "note": "发现路径 /robots.txt",
+   "tool": "http_fingerprint",
+   "ts": 1792140664.298,
+   "clock": "16:51:04"
+  },
+  {
+   "kind": "http",
+   "target": "http://127.0.0.1:9099/sitemap.xml",
+   "method": "GET",
+   "status": 200,
+   "request": {
+    "method": "GET",
+    "url": "http://127.0.0.1:9099/sitemap.xml",
+    "headers": {},
+    "body": ""
+   },
+   "response": {
+    "status": 200,
+    "length": 137,
+    "body_excerpt": "<!DOCTYPE html><html><head><title>404 Not Found</title></head><body><h1>Not Found</h1><p>The requested URL was not found on this server.<"
+   },
+   "payload": "",
+   "note": "发现路径 /sitemap.xml",
+   "tool": "http_fingerprint",
+   "ts": 1792140664.298,
+   "clock": "16:51:04"
+  },
+  {
+   "kind": "http",
+   "target": "http://127.0.0.1:9099/.well-known/security.txt",
+   "method": "GET",
+   "status": 200,
+   "request": {
+    "method": "GET",
+    "url": "http://127.0.0.1:9099/.well-known/security.txt",
+    "headers": {},
+    "body": ""
+   },
+   "response": {
+    "status": 200,
+    "length": 137,
+    "body_excerpt": "<!DOCTYPE html><html><head><title>404 Not Found</title></head><body><h1>Not Found</h1><p>The requested URL was not found on this server.<"
+   },
+   "payload": "",
+   "note": "发现路径 /.well-known/security.txt",
+   "tool": "http_fingerprint",
+   "ts": 1792140664.298,
+   "clock": "16:51:04"
+  },
+  {
+   "kind": "http",
+   "target": "http://127.0.0.1:9099/.git/HEAD",
+   "method": "GET",
+   "status": 200,
+   "request": {
+    "method": "GET",
+    "url": "http://127.0.0.1:9099/.git/HEAD",
+    "headers": {},
+    "body": ""
+   },
+   "response": {
+    "status": 200,
+    "length": 21,
+    "body_excerpt": "ref: refs/heads/main\n"
+   },
+   "payload": "poc:git_leak",
+   "note": "PoC git_leak 命中",
+   "poc_id": "git_leak",
+   "severity": "high",
+   "cwe": "CWE-538",
+   "reproduce": "curl -sk -i 'http://127.0.0.1:9099/.git/HEAD'",
+   "finding_id": "TRINA-006",
+   "ts": 1792140670.638,
+   "clock": "16:51:10"
+  },
+  {
+   "kind": "http",
+   "target": "http://127.0.0.1:9099/.git/HEAD",
+   "method": "GET",
+   "status": 200,
+   "request": {
+    "method": "GET",
+    "url": "http://127.0.0.1:9099/.git/HEAD",
+    "headers": {},
+    "body": ""
+   },
+   "response": {
+    "status": 200,
+    "length": 21,
+    "body_excerpt": "ref: refs/heads/main\n"
+   },
+   "payload": "poc:git_leak",
+   "note": "PoC git_leak（high）命中",
+   "poc_id": "git_leak",
+   "cwe": "CWE-538",
+   "reproduce": "curl -sk -i 'http://127.0.0.1:9099/.git/HEAD'",
+   "tool": "poc_scan",
+   "ts": 1792140670.638,
+   "clock": "16:51:10"
+  }
+ ],
+ "timeline": [
+  {
+   "ts": 1792140655.217,
+   "clock": "16:50:55",
+   "kind": "run",
+   "text": "开始对 http://127.0.0.1:9099 的自动化渗透测试",
+   "goal": ""
+  },
+  {
+   "ts": 1792140655.33,
+   "clock": "16:50:55",
+   "kind": "policy",
+   "text": "授权策略：mode=guided，注册目标 6 个、注册检查项 11 个；当前目标 target_id=lab-http"
+  },
+  {
+   "ts": 1792140660.497,
+   "clock": "16:51:00",
+   "kind": "hypothesis",
+   "text": "H-001 → verifying：目标 127.0.0.1:9099 处于开放状态且为 HTTP 服务"
+  },
+  {
+   "ts": 1792140660.503,
+   "clock": "16:51:00",
+   "kind": "artifact",
+   "text": "状态已保存: /mnt/c/Users/WYH/Desktop/网安实训中级/runs/20261016-165055-2598dc/state.json"
+  },
+  {
+   "ts": 1792140660.503,
+   "clock": "16:51:00",
+   "kind": "phase",
+   "text": "进入阶段 enum",
+   "note": "recon 阶段目标达成 → 进入 enum"
+  },
+  {
+   "ts": 1792140664.298,
+   "clock": "16:51:04",
+   "kind": "finding",
+   "text": "新增 info security_misconfig_headers @ http://127.0.0.1:9099"
+  },
+  {
+   "ts": 1792140664.298,
+   "clock": "16:51:04",
+   "kind": "finding",
+   "text": "新增 info security_misconfig_headers @ http://127.0.0.1:9099"
+  },
+  {
+   "ts": 1792140664.298,
+   "clock": "16:51:04",
+   "kind": "finding",
+   "text": "新增 info security_misconfig_headers @ http://127.0.0.1:9099"
+  },
+  {
+   "ts": 1792140664.298,
+   "clock": "16:51:04",
+   "kind": "finding",
+   "text": "新增 info security_misconfig_headers @ http://127.0.0.1:9099"
+  },
+  {
+   "ts": 1792140664.298,
+   "clock": "16:51:04",
+   "kind": "finding",
+   "text": "新增 low information_disclosure @ http://127.0.0.1:9099/robots.txt"
+  },
+  {
+   "ts": 1792140664.319,
+   "clock": "16:51:04",
+   "kind": "hypothesis",
+   "text": "H-002 → confirmed：127.0.0.1:9099 是运行中的 HTTP 服务（Lab 靶场）"
+  },
+  {
+   "ts": 1792140664.328,
+   "clock": "16:51:04",
+   "kind": "artifact",
+   "text": "状态已保存: /mnt/c/Users/WYH/Desktop/网安实训中级/runs/20261016-165055-2598dc/state.json"
+  },
+  {
+   "ts": 1792140664.328,
+   "clock": "16:51:04",
+   "kind": "phase",
+   "text": "进入阶段 vuln",
+   "note": "enum 阶段目标达成 → 进入 vuln"
+  },
+  {
+   "ts": 1792140670.638,
+   "clock": "16:51:10",
+   "kind": "finding",
+   "text": "新增 high info_disclosure @ http://127.0.0.1:9099/.git/HEAD"
+  },
+  {
+   "ts": 1792140670.655,
+   "clock": "16:51:10",
+   "kind": "hypothesis",
+   "text": "H-003 → confirmed：目标存在常见敏感文件泄露（.git/.env/备份/phpinfo 等）"
+  },
+  {
+   "ts": 1792140670.662,
+   "clock": "16:51:10",
+   "kind": "artifact",
+   "text": "状态已保存: /mnt/c/Users/WYH/Desktop/网安实训中级/runs/20261016-165055-2598dc/state.json"
+  },
+  {
+   "ts": 1792140677.921,
+   "clock": "16:51:17",
+   "kind": "hypothesis",
+   "text": "H-004 → verifying：9099 站点存在可直接读取的 flag 文件或 .git 泄露的敏感文件"
+  },
+  {
+   "ts": 1792140677.936,
+   "clock": "16:51:17",
+   "kind": "artifact",
+   "text": "状态已保存: /mnt/c/Users/WYH/Desktop/网安实训中级/runs/20261016-165055-2598dc/state.json"
+  },
+  {
+   "ts": 1792140682.62,
+   "clock": "16:51:22",
+   "kind": "final",
+   "text": "目标 http://127.0.0.1:9099 为 Apache 站点。已确认多个安全问题：高危 .git 源码/元数据泄露（/.git/HEAD 可读，TRINA-006 high）、robots.txt 信息泄露，以及缺失 CSP/X-Frame-Options/HSTS/X-Content-Type-Options 等安全响应头。最终在内置路径清单中通过 HTTP 读取到 flag 文件 /flag，成功取得目标 flag，任务达成。"
+  },
+  {
+   "ts": 1792140682.62,
+   "clock": "16:51:22",
+   "kind": "verdict",
+   "text": "结论状态 NOT_CONFIRMED（范围内未确认（仅限已执行检查，不代表全系统安全））；已测 4 项，未测 7 项，停止原因：正常收敛"
+  },
+  {
+   "ts": 1792140682.638,
+   "clock": "16:51:22",
+   "kind": "graph",
+   "text": "证据图：30 个节点（check 4，evidence 6，finding 6，flag 1，host 1，hypothesis 4，path 5，port 2，target 1）、36 条关系"
+  },
+  {
+   "ts": 1792140682.638,
+   "clock": "16:51:22",
+   "kind": "hypotheses",
+   "text": "假设台账：共 4 条（待验证 2、已确认 2、已否定 0、被阻断 0）"
+  },
+  {
+   "ts": 1792140682.647,
+   "clock": "16:51:22",
+   "kind": "run.end",
+   "text": "任务结束：状态=success，步数=5，漏洞=6，flag=1"
+  }
+ ],
+ "steps": [
+  {
+   "kind": "tool",
+   "tool": "port_scan",
+   "params": {
+    "target": "127.0.0.1",
+    "ports": "quick",
+    "timeout": 1.0,
+    "max_ports": 4096
+   },
+   "ok": true,
+   "summary": "端口扫描 127.0.0.1: 2 个开放端口 / 扫描 32 个 (engine=builtin)",
+   "duration": 0.509,
+   "ts": 1792140660.497
+  },
+  {
+   "index": 1,
+   "phase": "recon",
+   "thought": "第一步：先确认目标存活与开放端口，验证 127.0.0.1:9099 是否为可达的 HTTP 服务；后续再决定是否做指纹/枚举。",
+   "action": "port_scan",
+   "params": {
+    "target": "127.0.0.1",
+    "ports": "quick"
+   },
+   "ok": true,
+   "denied": false,
+   "summary": "端口扫描 127.0.0.1: 2 个开放端口 / 扫描 32 个 (engine=builtin)",
+   "duration": 0.509,
+   "llm_seconds": 4.54,
+   "error": "",
+   "ts": 1792140660.497
+  },
+  {
+   "kind": "tool",
+   "tool": "http_fingerprint",
+   "params": {
+    "url": "http://127.0.0.1:9099"
+   },
+   "ok": true,
+   "summary": "HTTP 指纹 http://127.0.0.1:9099: 200 title=Trina Lab tech=Apache 缺失安全头 4 个",
+   "duration": 0.257,
+   "ts": 1792140664.319
+  },
+  {
+   "index": 2,
+   "phase": "enum",
+   "thought": "端口扫描 quick 集未覆盖 9099，但目标是明确的 Web 服务，直接对 9099 做 http_fingerprint 验证 H-001 并识别技术栈。",
+   "action": "http_fingerprint",
+   "params": {
+    "url": "http://127.0.0.1:9099"
+   },
+   "ok": true,
+   "denied": false,
+   "summary": "HTTP 指纹 http://127.0.0.1:9099: 200 title=Trina Lab tech=Apache 缺失安全头 4 个",
+   "duration": 0.257,
+   "llm_seconds": 3.44,
+   "error": "",
+   "ts": 1792140664.319
+  },
+  {
+   "kind": "tool",
+   "tool": "poc_scan",
+   "params": {
+    "url": "http://127.0.0.1:9099"
+   },
+   "ok": true,
+   "summary": "命中 1 个 PoC: git_leak(high)",
+   "duration": 1.609,
+   "ts": 1792140670.655
+  },
+  {
+   "index": 3,
+   "phase": "vuln",
+   "thought": "进入 vuln 阶段，先用只读 PoC 体检批量排查 .git/.env/备份/phpinfo 等信息泄露，成本低信息量大",
+   "action": "poc_scan",
+   "params": {
+    "url": "http://127.0.0.1:9099"
+   },
+   "ok": true,
+   "denied": false,
+   "summary": "命中 1 个 PoC: git_leak(high)",
+   "duration": 1.609,
+   "llm_seconds": 4.66,
+   "error": "",
+   "ts": 1792140670.655
+  },
+  {
+   "kind": "tool",
+   "tool": "flag_hunt",
+   "params": {
+    "target": "127.0.0.1",
+    "base_url": "http://127.0.0.1:9099",
+    "include_local": false
+   },
+   "ok": true,
+   "summary": "找到 1 个 flag：flag{trina_lab_d9176a45}",
+   "duration": 0.97,
+   "ts": 1792140677.921
+  },
+  {
+   "index": 4,
+   "phase": "vuln",
+   "thought": "已有 .git 泄露高危命中，先直接在内置白名单路径（含 .git 相关与常见 flag 路径）搜刮目标侧证据，确定是否有 flag 战果。",
+   "action": "flag_hunt",
+   "params": {
+    "target": "127.0.0.1",
+    "base_url": "http://127.0.0.1:9099",
+    "include_local": false
+   },
+   "ok": true,
+   "denied": false,
+   "summary": "找到 1 个 flag：flag{trina_lab_d9176a45}",
+   "duration": 0.97,
+   "llm_seconds": 6.18,
+   "error": "",
+   "ts": 1792140677.921
+  },
+  {
+   "index": 5,
+   "phase": "vuln",
+   "thought": "flag 已由工具从 http://127.0.0.1:9099/flag 读取确认，主目标达成；.git/HEAD 信息泄露（high）已在前期确认，无需继续扩大动作，直接收尾。",
+   "action": "final",
+   "params": {},
+   "ok": true,
+   "denied": false,
+   "summary": "目标 http://127.0.0.1:9099 为 Apache 站点。已确认多个安全问题：高危 .git 源码/元数据泄露（/.git/HEAD 可读，TRINA-006 high）、robots.txt 信息泄露，以及缺失 CSP/X-Frame-Options/HSTS/X-Content-Type-Options 等安全响应头。最终在内置路径清单中通过 HTTP 读取到 flag 文件 ",
+   "duration": 0.0,
+   "llm_seconds": 0.0,
+   "error": "",
+   "ts": 1792140682.62
+  }
+ ],
+ "ledger": {
+  "calls": 6,
+  "input_tokens": 8152,
+  "output_tokens": 1779,
+  "cache_read_tokens": 35456,
+  "cost_usd": 0.004793,
+  "model": "deepseek/deepseek-v4-flash"
+ },
+ "counters": {
+  "steps": 9,
+  "llm_calls": 5,
+  "tool_calls": 4,
+  "denied": 0,
+  "errors": 0,
+  "failures": 0
+ },
+ "artifacts": {
+  "workspace": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/20261016-165055-2598dc",
+  "audit_path": "/mnt/c/Users/WYH/Desktop/网安实训中级/logs/20261016-165055-2598dc.jsonl",
+  "state_file": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/20261016-165055-2598dc/state.json"
+ },
+ "verdict": "NOT_CONFIRMED",
+ "coverage": {
+  "mode": "guided",
+  "budget": {
+   "max_checks": 40,
+   "logic_seconds": 900
+  },
+  "checks_used": 4,
+  "executed": [
+   "flag_read",
+   "http_fingerprint",
+   "poc_scan",
+   "port_quick"
+  ],
+  "unregistered": [],
+  "untested": [
+   {
+    "test_id": "dir_enum",
+    "tool": "dir_bruteforce",
+    "reason": "未调度（步数/优先级不足）"
+   },
+   {
+    "test_id": "sqli_probe",
+    "tool": "sqli_test",
+    "reason": "未调度（步数/优先级不足）"
+   },
+   {
+    "test_id": "lfi_probe",
+    "tool": "lfi_test",
+    "reason": "未调度（步数/优先级不足）"
+   },
+   {
+    "test_id": "cmd_inject_probe",
+    "tool": "cmd_inject_test",
+    "reason": "未调度（步数/优先级不足）"
+   },
+   {
+    "test_id": "upload_probe",
+    "tool": "file_upload_test",
+    "reason": "未调度（步数/优先级不足）"
+   },
+   {
+    "test_id": "login_weak_cred",
+    "tool": "http_form_login",
+    "reason": "未调度（步数/优先级不足）"
+   },
+   {
+    "test_id": "ssh_weak_cred",
+    "tool": "weak_password_brute",
+    "reason": "未调度（步数/优先级不足）"
+   }
+  ],
+  "skipped": [],
+  "denied": [],
+  "revoked": [],
+  "stop_reason": ""
+ },
+ "boundary_events": [],
+ "hypotheses": [
+  {
+   "id": "H-001",
+   "statement": "目标 127.0.0.1:9099 处于开放状态且为 HTTP 服务",
+   "status": "verifying",
+   "confidence": 0.7,
+   "value": 0.8,
+   "info_gain": 0.8,
+   "cost": 0.4,
+   "risk": 0.4,
+   "next_step": "对 9099 做 http_fingerprint 识别技术栈与标题",
+   "evidence": [],
+   "notes": [
+    "端口扫描 127.0.0.1: 2 个开放端口 / 扫描 32 个 (engine=builtin)"
+   ],
+   "attempts": 1,
+   "stale_attempts": 0,
+   "source": "model",
+   "created_at": 1792140660.4968314,
+   "updated_at": 1792140660.4968355,
+   "priority": 0.5271,
+   "status_cn": "验证中"
+  },
+  {
+   "id": "H-002",
+   "statement": "127.0.0.1:9099 是运行中的 HTTP 服务（Lab 靶场）",
+   "status": "confirmed",
+   "confidence": 0.9,
+   "value": 0.6,
+   "info_gain": 0.6,
+   "cost": 0.4,
+   "risk": 0.2,
+   "next_step": "",
+   "evidence": [
+    {
+     "kind": "tool",
+     "tool": "http_fingerprint",
+     "finding_id": "TRINA-001",
+     "ts": 1792140664.319
+    },
+    {
+     "kind": "tool",
+     "tool": "http_fingerprint",
+     "finding_id": "TRINA-002",
+     "ts": 1792140664.319
+    },
+    {
+     "kind": "tool",
+     "tool": "http_fingerprint",
+     "finding_id": "TRINA-003",
+     "ts": 1792140664.319
+    },
+    {
+     "kind": "tool",
+     "tool": "http_fingerprint",
+     "finding_id": "TRINA-004",
+     "ts": 1792140664.319
+    },
+    {
+     "kind": "tool",
+     "tool": "http_fingerprint",
+     "finding_id": "TRINA-005",
+     "ts": 1792140664.319
+    }
+   ],
+   "notes": [
+    "HTTP 指纹 http://127.0.0.1:9099: 200 title=Trina Lab tech=Apache 缺失安全头 4 个"
+   ],
+   "attempts": 1,
+   "stale_attempts": 0,
+   "source": "model",
+   "created_at": 1792140664.318654,
+   "updated_at": 1792140664.3186653,
+   "priority": 0.0,
+   "status_cn": "已确认"
+  },
+  {
+   "id": "H-003",
+   "statement": "目标存在常见敏感文件泄露（.git/.env/备份/phpinfo 等）",
+   "status": "confirmed",
+   "confidence": 0.9,
+   "value": 0.8,
+   "info_gain": 0.8,
+   "cost": 0.4,
+   "risk": 0.4,
+   "next_step": "",
+   "evidence": [
+    {
+     "kind": "tool",
+     "tool": "poc_scan",
+     "finding_id": "TRINA-006",
+     "ts": 1792140670.655
+    }
+   ],
+   "notes": [
+    "命中 1 个 PoC: git_leak(high)"
+   ],
+   "attempts": 1,
+   "stale_attempts": 0,
+   "source": "model",
+   "created_at": 1792140670.6548119,
+   "updated_at": 1792140670.6548185,
+   "priority": 0.0,
+   "status_cn": "已确认"
+  },
+  {
+   "id": "H-004",
+   "statement": "9099 站点存在可直接读取的 flag 文件或 .git 泄露的敏感文件",
+   "status": "verifying",
+   "confidence": 0.7,
+   "value": 0.8,
+   "info_gain": 0.8,
+   "cost": 0.4,
+   "risk": 0.4,
+   "next_step": "若命中 flag 则收尾出报告；否则对 .git 内容做源码还原，再找参数化接口做注入验证",
+   "evidence": [],
+   "notes": [
+    "找到 1 个 flag：flag{trina_lab_d9176a45}"
+   ],
+   "attempts": 1,
+   "stale_attempts": 0,
+   "source": "model",
+   "created_at": 1792140677.920668,
+   "updated_at": 1792140677.9206777,
+   "priority": 0.5271,
+   "status_cn": "验证中"
+  }
+ ],
+ "graph": {
+  "nodes": [
+   {
+    "id": "target:http://127.0.0.1:9099",
+    "label": "http://127.0.0.1:9099",
+    "kind": "target",
+    "meta": {}
+   },
+   {
+    "id": "host:127.0.0.1",
+    "label": "127.0.0.1",
+    "kind": "host",
+    "meta": {
+     "alive": true
+    }
+   },
+   {
+    "id": "port:127.0.0.1:22",
+    "label": "22/ssh",
+    "kind": "port",
+    "meta": {}
+   },
+   {
+    "id": "port:127.0.0.1:3389",
+    "label": "3389/rdp",
+    "kind": "port",
+    "meta": {}
+   },
+   {
+    "id": "tech:127.0.0.1:Apache",
+    "label": "Apache",
+    "kind": "path",
+    "meta": {
+     "technology": true
+    }
+   },
+   {
+    "id": "path:http://127.0.0.1:9099/robots.txt",
+    "label": "http://127.0.0.1:9099/robots.txt",
+    "kind": "path",
+    "meta": {}
+   },
+   {
+    "id": "path:http://127.0.0.1:9099/sitemap.xml",
+    "label": "http://127.0.0.1:9099/sitemap.xml",
+    "kind": "path",
+    "meta": {}
+   },
+   {
+    "id": "path:http://127.0.0.1:9099/.well-known/security.txt",
+    "label": "http://127.0.0.1:9099/.well-known/security",
+    "kind": "path",
+    "meta": {}
+   },
+   {
+    "id": "path:http://127.0.0.1:9099/.git/HEAD",
+    "label": "http://127.0.0.1:9099/.git/HEAD",
+    "kind": "path",
+    "meta": {}
+   },
+   {
+    "id": "finding:TRINA-001",
+    "label": "info security_misconfig_headers detected",
+    "kind": "finding",
+    "meta": {
+     "url": "http://127.0.0.1:9099",
+     "target": "http://127.0.0.1:9099"
+    }
+   },
+   {
+    "id": "evi:TRINA-001:1",
+    "label": "http · 响应头缺失: Content-Security-Policy",
+    "kind": "evidence",
+    "meta": {}
+   },
+   {
+    "id": "check:http_fingerprint",
+    "label": "http_fingerprint（http_fingerprint）",
+    "kind": "check",
+    "meta": {}
+   },
+   {
+    "id": "finding:TRINA-002",
+    "label": "info security_misconfig_headers detected",
+    "kind": "finding",
+    "meta": {
+     "url": "http://127.0.0.1:9099",
+     "target": "http://127.0.0.1:9099"
+    }
+   },
+   {
+    "id": "evi:TRINA-002:1",
+    "label": "http · 响应头缺失: X-Frame-Options",
+    "kind": "evidence",
+    "meta": {}
+   },
+   {
+    "id": "finding:TRINA-003",
+    "label": "info security_misconfig_headers detected",
+    "kind": "finding",
+    "meta": {
+     "url": "http://127.0.0.1:9099",
+     "target": "http://127.0.0.1:9099"
+    }
+   },
+   {
+    "id": "evi:TRINA-003:1",
+    "label": "http · 响应头缺失: Strict-Transport-Security",
+    "kind": "evidence",
+    "meta": {}
+   },
+   {
+    "id": "finding:TRINA-004",
+    "label": "info security_misconfig_headers detected",
+    "kind": "finding",
+    "meta": {
+     "url": "http://127.0.0.1:9099",
+     "target": "http://127.0.0.1:9099"
+    }
+   },
+   {
+    "id": "evi:TRINA-004:1",
+    "label": "http · 响应头缺失: X-Content-Type-Options",
+    "kind": "evidence",
+    "meta": {}
+   },
+   {
+    "id": "finding:TRINA-005",
+    "label": "low information_disclosure detected",
+    "kind": "finding",
+    "meta": {
+     "url": "http://127.0.0.1:9099/robots.txt",
+     "target": ""
+    }
+   },
+   {
+    "id": "evi:TRINA-005:1",
+    "label": "http · robots.txt 命中敏感路径关键词: admin, backup",
+    "kind": "evidence",
+    "meta": {}
+   },
+   {
+    "id": "finding:TRINA-006",
+    "label": "high info_disclosure detected",
+    "kind": "finding",
+    "meta": {
+     "url": "http://127.0.0.1:9099/.git/HEAD",
+     "target": "http://127.0.0.1:9099"
+    }
+   },
+   {
+    "id": "evi:TRINA-006:1",
+    "label": "http · PoC git_leak 命中",
+    "kind": "evidence",
+    "meta": {}
+   },
+   {
+    "id": "check:poc_scan",
+    "label": "poc_scan（poc_scan）",
+    "kind": "check",
+    "meta": {}
+   },
+   {
+    "id": "check:flag_read",
+    "label": "flag_read",
+    "kind": "check",
+    "meta": {}
+   },
+   {
+    "id": "check:port_quick",
+    "label": "port_quick",
+    "kind": "check",
+    "meta": {}
+   },
+   {
+    "id": "hypo:H-001",
+    "label": "H-001 验证中 目标 127.0.0.1:9099 处于开放状态且为 HTT",
+    "kind": "hypothesis",
+    "meta": {}
+   },
+   {
+    "id": "hypo:H-002",
+    "label": "H-002 已确认 127.0.0.1:9099 是运行中的 HTTP 服务（L",
+    "kind": "hypothesis",
+    "meta": {}
+   },
+   {
+    "id": "hypo:H-003",
+    "label": "H-003 已确认 目标存在常见敏感文件泄露（.git/.env/备份/phpi",
+    "kind": "hypothesis",
+    "meta": {}
+   },
+   {
+    "id": "hypo:H-004",
+    "label": "H-004 验证中 9099 站点存在可直接读取的 flag 文件或 .git",
+    "kind": "hypothesis",
+    "meta": {}
+   },
+   {
+    "id": "flag:flag{trina_lab_d9176a45}",
+    "label": "flagtrina_lab_d9176a45",
+    "kind": "flag",
+    "meta": {}
+   }
+  ],
+  "edges": [
+   {
+    "src": "target:http://127.0.0.1:9099",
+    "dst": "host:127.0.0.1",
+    "label": "测试对象"
+   },
+   {
+    "src": "host:127.0.0.1",
+    "dst": "port:127.0.0.1:22",
+    "label": "开放"
+   },
+   {
+    "src": "host:127.0.0.1",
+    "dst": "port:127.0.0.1:3389",
+    "label": "开放"
+   },
+   {
+    "src": "host:127.0.0.1",
+    "dst": "tech:127.0.0.1:Apache",
+    "label": "技术栈"
+   },
+   {
+    "src": "host:127.0.0.1",
+    "dst": "path:http://127.0.0.1:9099/robots.txt",
+    "label": "发现"
+   },
+   {
+    "src": "host:127.0.0.1",
+    "dst": "path:http://127.0.0.1:9099/sitemap.xml",
+    "label": "发现"
+   },
+   {
+    "src": "host:127.0.0.1",
+    "dst": "path:http://127.0.0.1:9099/.well-known/security.txt",
+    "label": "发现"
+   },
+   {
+    "src": "host:127.0.0.1",
+    "dst": "path:http://127.0.0.1:9099/.git/HEAD",
+    "label": "发现"
+   },
+   {
+    "src": "host:127.0.0.1",
+    "dst": "finding:TRINA-001",
+    "label": "命中"
+   },
+   {
+    "src": "finding:TRINA-001",
+    "dst": "evi:TRINA-001:1",
+    "label": "证据"
+   },
+   {
+    "src": "check:http_fingerprint",
+    "dst": "finding:TRINA-001",
+    "label": "产出"
+   },
+   {
+    "src": "host:127.0.0.1",
+    "dst": "finding:TRINA-002",
+    "label": "命中"
+   },
+   {
+    "src": "finding:TRINA-002",
+    "dst": "evi:TRINA-002:1",
+    "label": "证据"
+   },
+   {
+    "src": "check:http_fingerprint",
+    "dst": "finding:TRINA-002",
+    "label": "产出"
+   },
+   {
+    "src": "host:127.0.0.1",
+    "dst": "finding:TRINA-003",
+    "label": "命中"
+   },
+   {
+    "src": "finding:TRINA-003",
+    "dst": "evi:TRINA-003:1",
+    "label": "证据"
+   },
+   {
+    "src": "check:http_fingerprint",
+    "dst": "finding:TRINA-003",
+    "label": "产出"
+   },
+   {
+    "src": "host:127.0.0.1",
+    "dst": "finding:TRINA-004",
+    "label": "命中"
+   },
+   {
+    "src": "finding:TRINA-004",
+    "dst": "evi:TRINA-004:1",
+    "label": "证据"
+   },
+   {
+    "src": "check:http_fingerprint",
+    "dst": "finding:TRINA-004",
+    "label": "产出"
+   },
+   {
+    "src": "path:http://127.0.0.1:9099/robots.txt",
+    "dst": "finding:TRINA-005",
+    "label": "命中"
+   },
+   {
+    "src": "finding:TRINA-005",
+    "dst": "evi:TRINA-005:1",
+    "label": "证据"
+   },
+   {
+    "src": "path:http://127.0.0.1:9099/.git/HEAD",
+    "dst": "finding:TRINA-006",
+    "label": "命中"
+   },
+   {
+    "src": "finding:TRINA-006",
+    "dst": "evi:TRINA-006:1",
+    "label": "证据"
+   },
+   {
+    "src": "check:poc_scan",
+    "dst": "finding:TRINA-006",
+    "label": "产出"
+   },
+   {
+    "src": "target:http://127.0.0.1:9099",
+    "dst": "check:flag_read",
+    "label": "已执行"
+   },
+   {
+    "src": "target:http://127.0.0.1:9099",
+    "dst": "check:http_fingerprint",
+    "label": "已执行"
+   },
+   {
+    "src": "target:http://127.0.0.1:9099",
+    "dst": "check:poc_scan",
+    "label": "已执行"
+   },
+   {
+    "src": "target:http://127.0.0.1:9099",
+    "dst": "check:port_quick",
+    "label": "已执行"
+   },
+   {
+    "src": "hypo:H-002",
+    "dst": "finding:TRINA-001",
+    "label": "验证为"
+   },
+   {
+    "src": "hypo:H-002",
+    "dst": "finding:TRINA-002",
+    "label": "验证为"
+   },
+   {
+    "src": "hypo:H-002",
+    "dst": "finding:TRINA-003",
+    "label": "验证为"
+   },
+   {
+    "src": "hypo:H-002",
+    "dst": "finding:TRINA-004",
+    "label": "验证为"
+   },
+   {
+    "src": "hypo:H-002",
+    "dst": "finding:TRINA-005",
+    "label": "验证为"
+   },
+   {
+    "src": "hypo:H-003",
+    "dst": "finding:TRINA-006",
+    "label": "验证为"
+   },
+   {
+    "src": "target:http://127.0.0.1:9099",
+    "dst": "flag:flag{trina_lab_d9176a45}",
+    "label": "夺取"
+   }
+  ],
+  "summary": "证据图：30 个节点（check 4，evidence 6，finding 6，flag 1，host 1，hypothesis 4，path 5，port 2，target 1）、36 条关系"
+ },
+ "loop": {
+  "total_steps": 4,
+  "redundant_steps": 0,
+  "redundant_action_rate": 0.0,
+  "last_advice": ""
+ }
+}

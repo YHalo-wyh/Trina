@@ -145,6 +145,11 @@ class ScenarioResult:
     steps: int = 0
     denied: int = 0
     error: str = ""
+    #: 成本与效率指标（文档建议的内部指标）
+    cost_usd: float = 0.0
+    first_evidence_seconds: float | None = None
+    redundant_rate: float = 0.0
+    failures: int = 0
 
     @property
     def ok(self) -> bool:
@@ -171,6 +176,10 @@ class ScenarioResult:
             "steps": self.steps,
             "denied": self.denied,
             "error": self.error,
+            "cost_usd": round(self.cost_usd, 6),
+            "first_evidence_seconds": self.first_evidence_seconds,
+            "redundant_rate": self.redundant_rate,
+            "failures": self.failures,
         }
 
 
@@ -408,6 +417,24 @@ def compute_metrics(results: list[ScenarioResult]) -> dict[str, Any]:
         "service_accuracy": _ratio(services_correct, services_expected),
         "flag_rate": _ratio(flag_results, total),
         "denied_total": sum(int(r.denied) for r in results),
+        # ---- 文档建议的内部指标（不只看总分）
+        "cost_usd_total": round(sum(float(r.cost_usd or 0.0) for r in results), 6),
+        "cost_per_success": round(
+            (sum(float(r.cost_usd or 0.0) for r in results) / passed), 6
+        ) if passed else 0.0,
+        "time_to_evidence_avg": round(
+            sum(float(r.first_evidence_seconds) for r in results if r.first_evidence_seconds is not None)
+            / max(1, len([r for r in results if r.first_evidence_seconds is not None])),
+            3,
+        ) if any(r.first_evidence_seconds is not None for r in results) else None,
+        "redundant_action_rate": round(
+            sum(float(r.redundant_rate or 0.0) for r in results) / total, 4
+        ) if total else 0.0,
+        "recovery_rate": _ratio(
+            len([r for r in results if r.failures and r.status == "success"]),
+            len([r for r in results if r.failures]),
+        ),
+        "failures_total": sum(int(r.failures or 0) for r in results),
         "ports_found": ports_found,
         "ports_expected": ports_expected,
         "services_correct": services_correct,
