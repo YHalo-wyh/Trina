@@ -292,7 +292,8 @@ class TestConsole(unittest.TestCase):
         console, output = self._console(["help", "status", "approve verify", "quit"])
         self.assertEqual(console.run(), 0)
         blob = "\n".join(output)
-        self.assertIn("常用命令", blob)
+        self.assertIn("会话与模型", blob)
+        self.assertIn("/model", blob)
         self.assertIn("/play", blob)
         self.assertIn("审批模式已切换为 verify", blob)
         self.assertEqual(console.session.approval_mode, "verify")
@@ -329,6 +330,53 @@ class TestConsole(unittest.TestCase):
         console, output = self._console(["/nope", "quit"])
         console.run()
         self.assertTrue(any("未知命令" in line for line in output))
+
+    def test_model_and_backend_switch(self):
+        console, output = self._console(["/model deepseek/deepseek-chat", "/backend omp", "/usage", "quit"])
+        console.run()
+        blob = "\n".join(output)
+        self.assertIn("已切换模型", blob)
+        self.assertIn("已切到 omp 后端", blob)
+        self.assertIn("模型调用", blob)
+        self.assertEqual(console.config.llm.backend, "omp")
+        self.assertIn("/", console.config.llm.model, "omp 后端下模型应带 provider 前缀")
+
+    def test_model_list_and_history_and_new(self):
+        console, output = self._console(
+            ["/model list", "/history", "/new", "/history", "quit"]
+        )
+        console.run()
+        blob = "\n".join(output)
+        self.assertTrue("可选模型" in blob or "没能列出" in blob)
+        self.assertIn("还没有对话历史", blob)
+        self.assertIn("已开启新对话会话", blob)
+
+    def test_save_persists_backend_and_model(self):
+        import os
+        import tempfile as _tempfile
+        from pathlib import Path as _Path
+
+        with _tempfile.TemporaryDirectory() as tmp:
+            env_file = _Path(tmp) / "env"
+            env_file.write_text("# keep me\nexport DEEPSEEK_API_KEY=sk-test\n", encoding="utf-8")
+            os.environ["TRINA_ENV_FILE"] = str(env_file)
+            try:
+                console, output = self._console(["/model deepseek-chat", "/save", "quit"])
+                console.run()
+                blob = "\n".join(output)
+                self.assertIn("已保存到", blob)
+                content = env_file.read_text(encoding="utf-8")
+                self.assertIn("export TRINA_MODEL=deepseek-chat", content)
+                self.assertIn("export TRINA_API=", content)
+                self.assertIn("DEEPSEEK_API_KEY=sk-test", content, "既有内容不能被覆盖")
+                self.assertNotIn("# keep me\n# keep me", content)
+            finally:
+                os.environ.pop("TRINA_ENV_FILE", None)
+
+    def test_usage_without_chat_still_reports_ledger(self):
+        console, output = self._console(["/usage", "quit"])
+        console.run()
+        self.assertTrue(any("模型调用" in line for line in output))
 
     def test_revoke_and_grant(self):
         console, output = self._console(["revoke lab-http", "grant lab-http", "quit"])

@@ -23,32 +23,40 @@ from typing import Any, Callable
 from .config import TrinaConfig
 from .session import APPROVAL_MODES, Session
 
-HELP_TEXT = """这是**对话式**控制台：直接说人话即可（例如「你好」「帮我看看 127.0.0.1:9099 有什么漏洞」「验证一下 /sqli 的注入」），
+HELP_TEXT = """这是**对话式**控制台：直接说人话即可（例如「你好」「帮我看看 127.0.0.1:9099 有什么漏洞」「继续」），
 Trina 会回答你；需要动手时它会自己调用工具执行（照样过授权控制器、护栏与审计）。以 / 开头的输入一律当命令。
 
-常用命令（也可不加 /）:
+会话与模型:
+  /model [list|<spec>]        看/换模型（如 /model deepseek/deepseek-chat，或 /model list 列出可选）
+  /backend <omp|deepseek>     切换模型后端（omp 复用 omp 鉴权；deepseek 直连官方 API）
+  /save                       把当前后端与模型持久化到 ~/.trina/env（下次启动仍是这个设置）
+  /usage                      查看本次会话的模型调用次数/token/成本
+  /history [n]                查看最近对话（含工具结果摘要）
+  /new | /clear               开启新对话会话（清空上下文，审计另起一个文件）
+
+任务与工具:
   /play [--target T] [--range NAME] [--goal G] [--max-steps N] [--approve MODE]
-        一条命令开打：自动准备靶场（默认起本地 lab）→ 全自动渗透 → 出报告
-  /run <target> [--goal G] [--max-steps N] [--approve MODE]
-        对指定目标跑一轮完整任务（含阶段机与结论/覆盖统计）
-  /status              当前状态；  /approve <off|exploit|verify|all> 调整审批模式
-  /hint <文本>         给运行中的 Agent 注入提示（下一步生效）
-  /pause /resume       暂停 / 继续；  /stop  停止当前任务
-  /y /n                批准 / 拒绝当前挂起的动作审批
-  /revoke <target_id>  撤销某注册目标的授权（P3 撤权演练）；/grant <target_id> 恢复
-  /tools               工具清单；      /tool <name> --params '<json>'  单工具执行
-  /guard check <target>                授权范围校验
-  /ranges [list|status <name>]         靶场适配器状态
-  /report [--state <f>]                由状态重建报告；  /review [--state <f>]  评价 Agent 复核
-  /audit verify <logs/*.jsonl>         校验审计哈希链
-  /help /quit                          帮助 / 退出
-运行中可用: y / n · hint <文本>（或直接说人话＝介入提示）· status · pause · resume · stop"""
+                              一条命令开打：自动准备靶场 → 全自动渗透 → 出报告
+  /run <target> [--goal G] ... 对指定目标跑一轮完整任务（含阶段机与结论/覆盖）
+  /status                     当前状态（空闲时显示上一轮结论与覆盖）
+  /approve <off|exploit|verify|all>   调整审批闸门（默认 exploit）
+  /tools   /tool <name> --params '<json>'   工具清单 / 单工具执行
+  /guard check <target>       授权范围校验
+  /ranges [list|status <name>]  靶场适配器状态
+  /revoke <target_id> /grant <target_id>    撤销/恢复某注册目标的授权
+  /report [--state <f>]       由状态重建报告；  /review [--state <f>]  评价 Agent 复核
+  /audit verify <logs/*.jsonl>  校验审计哈希链
+  /lab                        本地靶机（故意脆弱，仅回环）
+  /help /quit                 帮助 / 退出
+
+运行中可用: y / n 审批 · hint <文本>（或直接说人话＝介入提示）· status · pause · resume · stop"""
 
 #: 已知命令名（用于区分"命令"与"对 Agent 说话"）
 COMMAND_NAMES = {
     "help", "?", "play", "run", "status", "approve", "hint", "pause", "resume", "stop",
     "revoke", "grant", "y", "yes", "n", "no", "deny", "tools", "tool", "guard", "ranges",
     "report", "review", "audit", "lab", "quit", "exit", "q",
+    "model", "backend", "history", "new", "usage", "save", "clear",
 }
 
 
@@ -69,7 +77,10 @@ class Console:
         self.config = config or TrinaConfig.load()
         self._input = input_fn or input
         self.output = output or (lambda line: print(line, flush=True))
-        self.backend = backend
+        #: 注入的后端（测试用）或按当前会话配置构建的缓存
+        self._backend_obj = backend
+        #: 测试可注入的后端工厂（形如 make_backend(llm_config) -> LLMBackend）
+        self._backend_factory = None
         self.registry = registry
         self.autostart_lab = autostart_lab
         self._lock = threading.RLock()
@@ -115,7 +126,9 @@ class Console:
         return 0
 
     def _prompt(self) -> str:
-        return "trina(run)> " if self.session.running else "trina> "
+        """提示符带当前模型（omp 风格的状态提示）。"""
+        short = (self.config.llm.model or "?").split("/")[-1]
+        return f"trina[{short}](run)> " if self.session.running else f"trina[{short}]> "
 
     def _banner(self) -> None:
         policy = self.config.policy
@@ -182,6 +195,13 @@ class Console:
             "review": lambda: self._delegate(["review", *args]),
             "audit": lambda: self._delegate(["audit", *args]),
             "lab": lambda: self._delegate(["lab", *args]),
+            "model": lambda: self._cmd_model(args),
+            "backend": lambda: self._cmd_backend(args),
+            "history": lambda: self._cmd_history(args),
+            "new": self._cmd_new,
+            "clear": self._cmd_new,
+            "usage": self._cmd_usage,
+            "save": self._cmd_save,
         }.get(command)
         if handler is None:
             if forced:
@@ -236,6 +256,145 @@ class Console:
         self._emit("任务运行中，可用命令：y / n · hint <文本> · status · pause · resume · stop（也可直接说人话＝介入提示）")
         return True
 
+    # ------------------------------------------------------------------ 会话/模型
+    def _backend(self) -> Any:
+        """按当前（会话级）配置取后端；切换模型/后端后会被重建。"""
+        if self._backend_obj is None:
+            from .llm import make_backend
+
+            self._backend_obj = self._backend_factory(self.config.llm) if self._backend_factory else make_backend(self.config.llm)
+        return self._backend_obj
+
+    def _reload_backend(self) -> None:
+        self._backend_obj = None
+        if self.chat is not None:  # 保留对话历史，只换大脑后端
+            from .llm import make_backend
+
+            self.chat.backend = make_backend(self.config.llm)
+
+    def _cmd_model(self, args: list[str]) -> None:
+        llm = self.config.llm
+        if not args or args[0] in ("list", "ls", "?"):
+            self._emit(f"当前后端 {llm.backend} · 模型 {llm.model}" + (f" · base_url {llm.base_url}" if llm.backend == "openai" else ""))
+            from .models import list_models
+
+            entries = list_models(limit=25)
+            if not entries:
+                self._emit("（没能列出可选模型：可手动 /model provider/model）")
+                return
+            self._emit("可选模型（/model <spec> 切换；加 /save 持久化）:")
+            for entry in entries:
+                marker = " ←当前" if entry.spec.endswith(llm.model) else ""
+                self.output(f"    {entry.render()}{marker}")
+            return
+        spec = args[0]
+        from .models import normalize_spec
+
+        llm.model = normalize_spec(spec, llm.backend)
+        self._reload_backend()
+        self._emit(f"已切换模型（本会话）：{llm.model}（后端 {llm.backend}）—— 想长期生效用 /save")
+
+    def _cmd_backend(self, args: list[str]) -> None:
+        llm = self.config.llm
+        if not args:
+            self._emit(f"当前后端：{llm.backend}（可选：omp | deepseek）")
+            return
+        name = args[0].strip().lower()
+        from .models import preset_for
+
+        if name == "omp":
+            llm.backend = "omp"
+            if "/" not in llm.model:
+                llm.model = f"deepseek/{llm.model}"
+            self._reload_backend()
+            self._emit(f"已切到 omp 后端（复用 omp 鉴权）：模型 {llm.model}")
+            return
+        preset = preset_for(name)
+        if preset is None:
+            self._emit(f"未知后端 {name}（可选 omp | deepseek）")
+            return
+        import os
+
+        llm.backend = "openai"
+        llm.base_url = str(preset["base_url"])
+        llm.api_key_env = str(preset.get("api_key_env") or llm.api_key_env)
+        models = list(preset.get("models") or [])
+        if llm.model not in models:
+            llm.model = str(models[0]) if models else llm.model
+        self._reload_backend()
+        has_key = bool(os.environ.get(llm.api_key_env))
+        self._emit(
+            f"已切到 {name} 官方 API：模型 {llm.model} · base_url {llm.base_url}"
+            + ("" if has_key else f"（注意：环境变量 {llm.api_key_env} 未设置，调用会失败；见 scripts/env.example）")
+        )
+
+    def _cmd_history(self, args: list[str]) -> None:
+        if self.chat is None or not self.chat.history:
+            self._emit("还没有对话历史（先说句话，或 /play 跑一轮任务）")
+            return
+        limit = 8
+        if args:
+            try:
+                limit = max(1, int(args[0]))
+            except ValueError:
+                pass
+        items = self.chat.history[-limit:]
+        self._emit(f"最近 {len(items)} 条对话（共 {len(self.chat.history)} 条）：")
+        for item in items:
+            role = {"user": "你", "assistant": "Trina"}.get(item.get("role", ""), item.get("role", "?"))
+            text = str(item.get("content", "")).replace("\n", " ")
+            if text.startswith("[工具结果]"):
+                role = "工具"
+                text = text[len("[工具结果]"):].strip()
+            self.output(f"    {role}: {text[:220]}")
+
+    def _cmd_new(self) -> None:
+        if self.session.running:
+            self._emit("有任务在跑：先 /stop 再开新会话")
+            return
+        self.chat = None
+        self._emit("已开启新对话会话（历史与审计都重新开始；上一次的审计文件仍在 logs/ 下）")
+
+    def _cmd_usage(self) -> None:
+        backend = self._backend()
+        ledger = getattr(backend, "ledger", None)
+        if ledger is not None:
+            data = ledger.to_dict()
+            self._emit(
+                f"模型调用 {data.get('calls', 0)} 次 · 输入 {data.get('input_tokens', 0)} tokens · "
+                f"输出 {data.get('output_tokens', 0)} tokens · 缓存读 {data.get('cache_read_tokens', 0)} · "
+                f"成本 ${data.get('cost_usd', 0)}"
+            )
+        else:
+            self._emit("当前后端未统计用量")
+        if self.chat is not None:
+            self._emit(self._chat_digest(self.chat))
+        if self._last_state is not None:
+            self._emit(f"上一轮任务：结论={self._last_state.verdict or '-'} 状态={self._last_state.status}")
+
+    def _cmd_save(self) -> None:
+        """把当前后端/模型持久化到 ~/.trina/env（仓库外，0600）——下次启动仍是这个设置。"""
+        import os
+        from pathlib import Path as _Path
+
+        path = _Path(os.environ.get("TRINA_ENV_FILE") or (_Path.home() / ".trina" / "env"))
+        keep: list[str] = []
+        if path.exists():
+            keep = [
+                line
+                for line in path.read_text(encoding="utf-8").splitlines()
+                if not line.startswith(("export TRINA_API=", "export TRINA_MODEL="))
+            ]
+        keep.append(f"export TRINA_API={self.config.llm.backend}")
+        keep.append(f"export TRINA_MODEL={self.config.llm.model}")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("\n".join(keep).strip() + "\n", encoding="utf-8")
+        try:
+            os.chmod(path, 0o600)
+        except OSError:
+            pass
+        self._emit(f"已保存到 {path}：后端 {self.config.llm.backend} · 模型 {self.config.llm.model}（下次启动生效）")
+
     # ------------------------------------------------------------------ 子命令
     # ------------------------------------------------------------------ 对话
     def _ensure_chat(self) -> Any:
@@ -245,7 +404,7 @@ class Console:
             self.chat = ChatAgent(
                 self.config,
                 registry=self.registry,
-                backend=self.backend,
+                backend=self._backend(),
                 approval=self.session.request_approval,
                 steer_queue=self.session.steers,
                 stop_event=self.session.stop_event,
@@ -425,7 +584,7 @@ class Console:
                 state = run_plan(
                     self.config,
                     plan,
-                    backend=self.backend,
+                    backend=self._backend(),
                     registry=self.registry,
                     approval=self.session.request_approval,
                     steer_queue=self.session.steers,

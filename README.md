@@ -67,7 +67,7 @@ scripts/dev.sh play --api deepseek --goal "拿到 flag 并验证 SQL 注入" --m
 
 | 能力 | 命令 | 说明 |
 |---|---|---|
-| **对话式控制台** | `trina`（或 `trina console`） | **直接说人话**：`你好` / `帮我看看 127.0.0.1:9099 有什么漏洞` → Trina 回答；需要动手时它自己调工具（照样过授权控制器、护栏、审批与审计）。命令仍可用，见 `/help` |
+| **对话式控制台** | `trina`（或 `trina console`） | **直接说人话**：`你好` / `帮我看看 127.0.0.1:9099 有什么漏洞` → Trina 回答；需要动手时它自己调工具（照样过授权控制器、护栏、审批与审计）。`/help` 看命令；`/model` 换模型、`/backend` 换后端、`/history` 看历史、`/usage` 看用量、`/save` 持久化 |
 | 一条命令开打 | `trina play [--target T] [--range NAME] [--goal G] [--approve MODE]` | 自动准备靶场（默认内置 lab）→ 跑完整任务（含阶段机与结论/覆盖统计）→ 出报告 |
 | 运行中介入 | `hint <文本>`（或直接说人话）· `pause/resume` · `stop` · `status` · `/revoke <target_id>` 撤权 | 运行中说人话＝介入提示；审批 `y/n`，**超时即拒绝** |
 | 评价 Agent | `trina review [--state runs/<id>/state.json]` | 只读复核：缺证据的声明、结论一致性、覆盖缺口、边界事件、审计链 |

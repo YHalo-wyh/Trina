@@ -44,27 +44,24 @@ cat > "$TARGET" <<EOF
 #!/usr/bin/env bash
 # Trina 全局入口（由 scripts/install.sh 生成于 $(date -Iseconds)）
 #
-#   trina                     → 交互控制台（人工可介入）
+#   trina                     → 对话式控制台（人工可介入）
 #   trina play --goal "..."   → 一条命令直接开打
 #   trina doctor              → 环境自检
 #   trina review              → 评价 Agent 复核最近一次运行
 #
-# 环境变量：TRINA_API=deepseek|omp（默认 ${DEFAULT_API}）· TRINA_REPO · TRINA_ENV_FILE
+# 后端/模型来自 ~/.trina/env（TRINA_API / TRINA_MODEL，可被命令行 --api 覆盖）；
+# 也可用 TRINA_REPO / TRINA_ENV_FILE 覆盖路径。
 set -euo pipefail
 REPO="\${TRINA_REPO:-$REPO_ROOT}"
 if [[ ! -f "\$REPO/scripts/dev.sh" ]]; then
   echo "trina: 找不到仓库入口 \$REPO/scripts/dev.sh（可用 TRINA_REPO 指定）" >&2
   exit 2
 fi
-API_ARGS=(--api "\${TRINA_API:-${DEFAULT_API}}")
-for arg in "\$@"; do
-  if [[ "\$arg" == "--api" || "\$arg" == "--api="* ]]; then API_ARGS=(); break; fi
-done
 export PYTHONPATH="\$REPO\${PYTHONPATH:+:\$PYTHONPATH}"
-exec bash "\$REPO/scripts/dev.sh" \${API_ARGS[@]+"\${API_ARGS[@]}"} "\$@"
+exec bash "\$REPO/scripts/dev.sh" "\$@"
 EOF
 chmod +x "$TARGET"
-echo "已安装：$TARGET（默认后端 ${DEFAULT_API}）"
+echo "已安装：$TARGET（默认后端来自 ~/.trina/env，缺省 ${DEFAULT_API}）"
 
 case ":$PATH:" in
   *":$PREFIX:"*) echo "PATH 检查：OK（$PREFIX 已在 PATH 中）" ;;
@@ -72,11 +69,23 @@ case ":$PATH:" in
 esac
 
 ENV_FILE="${TRINA_ENV_FILE:-$HOME/.trina/env}"
-if [[ "${DEFAULT_API}" == "deepseek" && ! -f "$ENV_FILE" ]]; then
+if [[ ! -f "$ENV_FILE" ]]; then
+  mkdir -p "$(dirname "$ENV_FILE")"
+  {
+    echo "# Trina 本地配置（仓库外，0600）。可用控制台里的 /save 更新后端与模型。"
+    echo "export TRINA_API=${DEFAULT_API}"
+  } > "$ENV_FILE"
+  chmod 600 "$ENV_FILE" 2>/dev/null || true
+  echo "已写入默认后端到 $ENV_FILE（TRINA_API=${DEFAULT_API}）"
+elif ! grep -q '^export TRINA_API=' "$ENV_FILE"; then
+  echo "export TRINA_API=${DEFAULT_API}" >> "$ENV_FILE"
+  echo "已把默认后端追加到 $ENV_FILE（TRINA_API=${DEFAULT_API}）"
+fi
+
+if [[ "${DEFAULT_API}" == "deepseek" ]] && ! grep -q '^export DEEPSEEK_API_KEY=' "$ENV_FILE"; then
   echo
-  echo "!! 还缺 DeepSeek 密钥文件：$ENV_FILE"
-  echo "   mkdir -p ~/.trina && cp \"$REPO_ROOT/scripts/env.example\" \"$ENV_FILE\" && chmod 600 \"$ENV_FILE\""
-  echo "   然后编辑填入 export DEEPSEEK_API_KEY=sk-xxxx"
+  echo "!! 还缺 DeepSeek 密钥：$ENV_FILE"
+  echo "   编辑该文件追加：export DEEPSEEK_API_KEY=sk-xxxx（或 export 到环境变量）"
 fi
 
 echo

@@ -20,7 +20,7 @@ if [[ -f "$ENV_FILE" ]]; then
   source "$ENV_FILE"
 fi
 
-API="omp"
+API=""
 ARGS=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -35,6 +35,9 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# 默认后端优先级：命令行 --api > $TRINA_API（可由 ~/.trina/env 持久化）> omp
+API="${API:-${TRINA_API:-omp}}"
+
 # 默认子命令：console（交互控制台）；也允许 `dev.sh --api X` 这种把选项写在最前
 if [[ ${#ARGS[@]} -eq 0 ]]; then
   ARGS=(console)
@@ -47,7 +50,13 @@ REST=("${ARGS[@]:1}")
 
 OVERRIDES=()
 case "$API" in
-  deepseek|openai)
+  omp)
+    echo "== 后端：omp（复用 omp 已配置的模型与鉴权，默认 ${TRINA_MODEL:-deepseek/deepseek-v4-flash}）"
+    if [[ -n "${TRINA_MODEL:-}" ]]; then
+      OVERRIDES+=(--set "llm.model=$TRINA_MODEL")
+    fi
+    ;;
+  deepseek)
     if [[ -z "${DEEPSEEK_API_KEY:-}" ]]; then
       echo "!! 未找到 DEEPSEEK_API_KEY：请 exports 或写入 $ENV_FILE（chmod 600）" >&2
       echo "   格式：export DEEPSEEK_API_KEY=sk-xxxxxxxx" >&2
@@ -55,14 +64,11 @@ case "$API" in
     fi
     OVERRIDES=(
       --set llm.backend=openai
-      --set llm.model=deepseek-v4-flash
+      --set "llm.model=${TRINA_MODEL:-deepseek-v4-flash}"
       --set llm.base_url=https://api.deepseek.com/v1
       --set llm.api_key_env=DEEPSEEK_API_KEY
     )
-    echo "== 后端：DeepSeek 官方 API（deepseek-v4-flash）"
-    ;;
-  omp)
-    echo "== 后端：omp（复用 omp 已配置的模型与鉴权，默认 $([[ -n "${TRINA_MODEL:-}" ]] && echo "$TRINA_MODEL" || echo deepseek/deepseek-v4-flash) )"
+    echo "== 后端：DeepSeek 官方 API（${TRINA_MODEL:-deepseek-v4-flash}）"
     ;;
   *)
     echo "!! 未知 --api $API（可选：omp | deepseek）" >&2

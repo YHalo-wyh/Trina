@@ -93,18 +93,27 @@ trina --api omp                # 临时切回 omp 后端
 | 已知命令名（`play`、`status`、`tools`…） | 当命令执行（不加 `/` 也可以） |
 | 运行中说人话 | 作为**人工介入提示**注入到正在跑的 Agent（下一步生效） |
 
-控制台内可用命令：
+控制台内可用命令（对齐 omp 习惯，`/` 开头；已知命令名不加 `/` 也可以）：
 
 | 时点 | 命令 | 作用 |
 |---|---|---|
+| 空闲 | `/model [list\|<spec>]` | 看当前模型 / 列出可选模型 / 切换模型（如 `/model deepseek/deepseek-chat`） |
+| 空闲 | `/backend <omp\|deepseek>` | 切换模型后端（omp 复用 omp 鉴权；deepseek 直连官方 API） |
+| 空闲 | `/save` | 把当前后端与模型写进 `~/.trina/env`（仓库外，0600），下次启动仍生效 |
+| 空闲 | `/usage` | 本次会话的模型调用次数 / token / 成本 |
+| 空闲 | `/history [n]` | 查看最近对话（含工具结果摘要） |
+| 空闲 | `/new`（别名 `/clear`） | 开启新对话会话（清空上下文；审计另起文件） |
 | 空闲 | `/play [--target T] [--range N] [--goal G] [--max-steps N] [--approve MODE]` | 一条命令开打（完整任务模式） |
 | 空闲 | `/run <target> ...` | 对指定目标跑一轮完整任务 |
-| 空闲 | `/tools` `/tool <name> --params '<json>'` `/guard check <t>` `/ranges` `/report` `/audit verify` `/review` | 复用 CLI 同一实现 |
+| 空闲 | `/tools` `/tool <name> --params '<json>'` `/guard check <t>` `/ranges` `/report` `/review` `/audit verify` | 复用 CLI 同一实现 |
 | 空闲 | `/approve off\|exploit\|verify\|all` | 调整审批闸门 |
 | 空闲 | `/revoke <target_id>` / `/grant <target_id>` | 撤权 / 恢复（撤权后该目标的一切检查被拒） |
 | 运行中 | `y` / `n` | 批准 / 拒绝当前挂起的高危动作（超时＝拒绝） |
 | 运行中 | `hint <文本>` 或直接说人话 | 注入提示，下一步生效 |
 | 运行中 | `pause` / `resume` / `stop` / `status` | 暂停 / 继续 / 停止 / 看状态 |
+
+> 提示符会带上当前模型：空闲 `trina[deepseek-v4-flash]>`，运行中 `trina[<模型>](run)>`。
+> `/model` 与 `/backend` 只对当前会话生效；想长期保留用 `/save`（只改 `~/.trina/env`，不碰仓库）。
 
 对话模式的审计：每次会话写一个 `logs/chat-<ts>.jsonl`（同样是哈希链），每轮的问答与工具动作都在里面。
 
