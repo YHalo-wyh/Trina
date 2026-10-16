@@ -54,8 +54,13 @@ run:
   max_evidence: 200
   # 每 N 步把 state.json 落盘一次（trina watch / 控制台 /board 靠它读实时进展；0 = 只在结束时落盘）
   flush_state_every: 1
-  # 假设排序的风险厌恶系数 λ：优先级 = 置信度×价值×信息增量 / (成本 + λ·风险 + ε)
+  # 假设排序里的风险厌恶系数 λ：优先级 = 置信度×价值×信息增量 / (成本 + λ·风险 + ε)
   hypothesis_risk_aversion: 1.0
+  # 洞察层开关（对照实验用，平时保持 true）
+  # hypothesis_ledger=false：提示词里不出现假设台账、模型给的 hypothesis 不被登记（度量口径不变）
+  hypothesis_ledger: true
+  # loop_guard=false：循环守卫/失败分类的建议不回灌给模型（redundant_action_rate 与 fail_* 照常统计）
+  loop_guard: true
   phases: ["recon", "enum", "vuln", "exploit", "post", "report"]
 
 tools:

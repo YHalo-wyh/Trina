@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 
-SYSTEM_PROMPT = """你是 Trina，一名在**授权实训环境**内工作的自动化渗透测试执行体。你像真人渗透工程师一样工作：
+SYSTEM_PROMPT_TEMPLATE = """你是 Trina，一名在**授权实训环境**内工作的自动化渗透测试执行体。你像真人渗透工程师一样工作：
 先侦察，再枚举，再验证漏洞，再尝试利用，最后取证收尾。你的每一步都必须调用工具，禁止凭空断言。
 
 # 铁律（违反即动作被拒，会被记录）
@@ -30,11 +30,8 @@ SYSTEM_PROMPT = """你是 Trina，一名在**授权实训环境**内工作的自
 
 # 输出协议（严格遵守，只输出一个 JSON 对象，不要输出别的文字）
 调用工具：
-{"thought": "一句话推理（为什么做这个动作）", "action": "工具名", "params": {"参数": "值"},
- "hypothesis": {"statement": "这条动作要验证的假设", "confidence": "low|medium|high", "value": "high|medium|low", "info_gain": "high|medium|low", "cost": "high|medium|low", "risk": "high|medium|low", "next_step": "验证成功后打算做什么"}}
-
-（`hypothesis` 可选但推荐：系统会把它记入假设台账，按「价值×置信度×信息增量 / 成本+风险」排序，"先验证最值得验证的那条"；验证成功标为已确认，连续无新信息会标为已否定。）
-
+{"thought": "一句话推理（为什么做这个动作）", "action": "工具名", "params": {"参数": "值"}}%(hypothesis_field)s
+%(hypothesis_note)s
 结束任务：
 {"thought": "一句话总结", "final": {"status": "success|partial|failed", "summary": "结论摘要", "findings": ["关键漏洞"], "flags": ["拿到的flag"]}}
 
@@ -43,11 +40,40 @@ SYSTEM_PROMPT = """你是 Trina，一名在**授权实训环境**内工作的自
 - 若某个动作被护栏拒绝，观察里会给出拒绝原因与合规提示，请据此改走合规路径。
 """
 
-PROTOCOL_REMINDER = (
-    "请输出且仅输出一个 JSON 对象：调用工具用 "
-    '{"thought": "...", "action": "工具名", "params": {...}, "hypothesis": {"statement": "本步要验证的假设", "confidence": "low|medium|high"}}；'
-    '结束用 {"thought": "...", "final": {...}}。'
-)
+#: `hypothesis` 字段的两种形态：有台账时展示，无台账时整段消失（对照臂用同一份模板渲染）
+HYPOTHESIS_FIELD_BLOCK = """，
+ "hypothesis": {"statement": "这条动作要验证的假设", "vuln_class": "sqli", "target": "待验证的完整 URL 或主机", "parameter": "id", "confidence": "low|medium|high", "value": "high|medium|low", "info_gain": "high|medium|low", "cost": "high|medium|low", "risk": "high|medium|low", "next_step": "验证成功后打算做什么"}"""
+
+HYPOTHESIS_NOTE_BLOCK = """
+（`hypothesis` 可选但推荐：系统按优先级排序。自动确认需要填写 vuln_class、target（精确到路径，查询串可省略）及可选 parameter，并取得匹配的带证据 verified/exploited 发现。继续验证既有假设时，用顶层 "hypothesis_id": "H-001" 代替新增假设。连续无新信息只降低优先级，仍属未解决，不能声称已否定。）"""
+
+
+def render_system_prompt(include_hypothesis: bool = True) -> str:
+    """渲染角色提示词；``include_hypothesis=False`` 时输出"没有假设台账"的基线协议。"""
+    return SYSTEM_PROMPT_TEMPLATE % (
+        {"hypothesis_field": HYPOTHESIS_FIELD_BLOCK, "hypothesis_note": HYPOTHESIS_NOTE_BLOCK}
+        if include_hypothesis
+        else {"hypothesis_field": "", "hypothesis_note": ""}
+    )
+
+
+#: 默认（启用假设台账）的角色提示词由 ``render_system_prompt(True)`` 生成；
+#: 对照臂用 ``render_system_prompt(False)``，两者同源同模板，不会漂移。
+
+_REMINDER_HEAD = "请输出且仅输出一个 JSON 对象：调用工具用 "
+_REMINDER_ACTION = '{"thought": "...", "action": "工具名", "params": {...}'
+_REMINDER_HYPOTHESIS = ', "hypothesis": {"statement": "本步要验证的假设", "confidence": "low|medium|high"}'
+_REMINDER_TAIL = '}；结束用 {"thought": "...", "final": {...}}。'
+
+
+def protocol_reminder(include_hypothesis: bool = True) -> str:
+    """单步协议提醒；与系统提示同源，同样支持"没有假设台账"的基线口径。"""
+    return (
+        _REMINDER_HEAD
+        + _REMINDER_ACTION
+        + (_REMINDER_HYPOTHESIS if include_hypothesis else "")
+        + _REMINDER_TAIL
+    )
 
 
 #: 各阶段的作业指引。阶段由 Planner 依据事实推进，不由模型自称。
@@ -90,9 +116,15 @@ PHASE_TOOL_CATEGORIES: dict[str, tuple[str, ...]] = {
 }
 
 
-def build_system_prompt(scope_block: str, tool_block: str, extra_rules: str = "") -> str:
+def build_system_prompt(
+    scope_block: str,
+    tool_block: str,
+    extra_rules: str = "",
+    *,
+    include_hypothesis: bool = True,
+) -> str:
     """拼出系统提示：角色 → 铁律 → 方法论 → 工具清单 → 授权边界。"""
-    parts = [SYSTEM_PROMPT, "\n# 授权边界（硬约束，来自配置文件）\n" + scope_block]
+    parts = [render_system_prompt(include_hypothesis), "\n# 授权边界（硬约束，来自配置文件）\n" + scope_block]
     if extra_rules:
         parts.append("\n# 本次任务附加约束\n" + extra_rules)
     parts.append("\n# 可用工具\n" + tool_block)
@@ -108,6 +140,7 @@ def build_step_prompt(
     hints: list[str] | None = None,
     budget: dict[str, object] | None = None,
     extra_context: str = "",
+    include_hypothesis: bool = True,
 ) -> str:
     """拼出单步的 user 提示：状态 → 阶段任务 → 上一步观察 → 提醒。"""
     lines = [
@@ -127,7 +160,7 @@ def build_step_prompt(
         lines.append(extra_context)
     lines.append("\n## 上一步的观察结果")
     lines.append(last_observation.strip()[:3000] if last_observation else "(这是第一步，尚未调用任何工具)")
-    lines.append("\n" + PROTOCOL_REMINDER)
+    lines.append("\n" + protocol_reminder(include_hypothesis))
     return "\n".join(lines)
 
 

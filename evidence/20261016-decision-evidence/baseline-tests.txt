@@ -1,0 +1,216 @@
+....................................................F.................EE..Exception in thread trina-lab-http-0:
+Traceback (most recent call last):
+  File "D:\python310\lib\threading.py", line 1016, in _bootstrap_inner
+    self.run()
+  File "D:\python310\lib\threading.py", line 953, in run
+    self._target(*self._args, **self._kwargs)
+  File "D:\python310\lib\socketserver.py", line 232, in serve_forever
+    ready = selector.select(poll_interval)
+  File "D:\python310\lib\selectors.py", line 324, in select
+    r, w, _ = self._select(self._readers, self._writers, [], timeout)
+  File "D:\python310\lib\selectors.py", line 315, in _select
+    r, w, x = select.select(r, w, w, timeout)
+OSError: [WinError 10038] ��һ�����׽����ϳ�����һ��������
+EE......EE........................................................EEE......................................................
+======================================================================
+ERROR: test_cli_target_fills_declared_param_only (test_eval_report_lab.TestScopeAwareToolBehaviour)
+--target ֻ�������������Ŀ�������url �� target�����������У���ֱ�Ӿܡ�
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\WYH\Desktop\����ʵѵ�м�\tests\test_eval_report_lab.py", line 334, in test_cli_target_fills_declared_param_only
+    registry = build_registry()
+  File "C:\Users\WYH\Desktop\����ʵѵ�м�\trina\tools\__init__.py", line 35, in build_registry
+    module = importlib.import_module(f"{__name__}.{name}")
+  File "D:\python310\lib\importlib\__init__.py", line 126, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+  File "<frozen importlib._bootstrap>", line 1050, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1027, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1006, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 688, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 883, in exec_module
+  File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+  File "C:\Users\WYH\Desktop\����ʵѵ�м�\trina\tools\web.py", line 22, in <module>
+    from bs4 import BeautifulSoup, Comment
+ModuleNotFoundError: No module named 'bs4'
+
+======================================================================
+ERROR: test_dynamic_level_enforced_by_registry (test_eval_report_lab.TestScopeAwareToolBehaviour)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\WYH\Desktop\����ʵѵ�м�\tests\test_eval_report_lab.py", line 209, in test_dynamic_level_enforced_by_registry
+    registry = build_registry()
+  File "C:\Users\WYH\Desktop\����ʵѵ�м�\trina\tools\__init__.py", line 35, in build_registry
+    module = importlib.import_module(f"{__name__}.{name}")
+  File "D:\python310\lib\importlib\__init__.py", line 126, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+  File "<frozen importlib._bootstrap>", line 1050, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1027, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1006, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 688, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 883, in exec_module
+  File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+  File "C:\Users\WYH\Desktop\����ʵѵ�м�\trina\tools\web.py", line 22, in <module>
+    from bs4 import BeautifulSoup, Comment
+ModuleNotFoundError: No module named 'bs4'
+
+======================================================================
+ERROR: test_upload_not_reported_on_soft404 (test_eval_report_lab.TestScopeAwareToolBehaviour)
+�� 404 �л�������·�������� 200��û���ϴ��ɹ�֤�ݾͲ��ܲ��� file_upload ���֡�
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\WYH\Desktop\����ʵѵ�м�\tests\test_eval_report_lab.py", line 305, in test_upload_not_reported_on_soft404
+    registry = build_registry()
+  File "C:\Users\WYH\Desktop\����ʵѵ�м�\trina\tools\__init__.py", line 35, in build_registry
+    module = importlib.import_module(f"{__name__}.{name}")
+  File "D:\python310\lib\importlib\__init__.py", line 126, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+  File "<frozen importlib._bootstrap>", line 1050, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1027, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1006, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 688, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 883, in exec_module
+  File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+  File "C:\Users\WYH\Desktop\����ʵѵ�м�\trina\tools\web.py", line 22, in <module>
+    from bs4 import BeautifulSoup, Comment
+ModuleNotFoundError: No module named 'bs4'
+
+======================================================================
+ERROR: test_weak_password_single_credential_is_verify_level (test_eval_report_lab.TestScopeAwareToolBehaviour)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\WYH\Desktop\����ʵѵ�м�\tests\test_eval_report_lab.py", line 181, in test_weak_password_single_credential_is_verify_level
+    tool = build_registry().get("weak_password_brute")
+  File "C:\Users\WYH\Desktop\����ʵѵ�м�\trina\tools\__init__.py", line 35, in build_registry
+    module = importlib.import_module(f"{__name__}.{name}")
+  File "D:\python310\lib\importlib\__init__.py", line 126, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+  File "<frozen importlib._bootstrap>", line 1050, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1027, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1006, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 688, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 883, in exec_module
+  File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+  File "C:\Users\WYH\Desktop\����ʵѵ�м�\trina\tools\web.py", line 22, in <module>
+    from bs4 import BeautifulSoup, Comment
+ModuleNotFoundError: No module named 'bs4'
+
+======================================================================
+ERROR: test_alternatives_empty_for_unknown_tool (test_insight.TestFailureAndLoopGuard)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\WYH\Desktop\����ʵѵ�м�\tests\test_insight.py", line 139, in test_alternatives_empty_for_unknown_tool
+    self.assertEqual(alternatives_for(build_registry(), "no_such_tool"), [])
+  File "C:\Users\WYH\Desktop\����ʵѵ�м�\trina\tools\__init__.py", line 35, in build_registry
+    module = importlib.import_module(f"{__name__}.{name}")
+  File "D:\python310\lib\importlib\__init__.py", line 126, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+  File "<frozen importlib._bootstrap>", line 1050, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1027, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1006, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 688, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 883, in exec_module
+  File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+  File "C:\Users\WYH\Desktop\����ʵѵ�м�\trina\tools\web.py", line 22, in <module>
+    from bs4 import BeautifulSoup, Comment
+ModuleNotFoundError: No module named 'bs4'
+
+======================================================================
+ERROR: test_alternatives_for_prefers_same_category_and_lower_level (test_insight.TestFailureAndLoopGuard)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\WYH\Desktop\����ʵѵ�м�\tests\test_insight.py", line 128, in test_alternatives_for_prefers_same_category_and_lower_level
+    registry = build_registry()
+  File "C:\Users\WYH\Desktop\����ʵѵ�м�\trina\tools\__init__.py", line 35, in build_registry
+    module = importlib.import_module(f"{__name__}.{name}")
+  File "D:\python310\lib\importlib\__init__.py", line 126, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+  File "<frozen importlib._bootstrap>", line 1050, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1027, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1006, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 688, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 883, in exec_module
+  File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+  File "C:\Users\WYH\Desktop\����ʵѵ�м�\trina\tools\web.py", line 22, in <module>
+    from bs4 import BeautifulSoup, Comment
+ModuleNotFoundError: No module named 'bs4'
+
+======================================================================
+ERROR: test_inconclusive_when_nothing_executed (test_policy.TestVerdictAndReview)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\WYH\Desktop\����ʵѵ�м�\tests\test_policy.py", line 188, in test_inconclusive_when_nothing_executed
+    state = self._run([{"response": '{"thought": "ֱ�ӽ���", "final": {"summary": "������"}}'}])
+  File "C:\Users\WYH\Desktop\����ʵѵ�м�\tests\test_policy.py", line 174, in _run
+    agent = PentestAgent(self.cfg, registry=build_registry(), backend=backend)
+  File "C:\Users\WYH\Desktop\����ʵѵ�м�\trina\tools\__init__.py", line 35, in build_registry
+    module = importlib.import_module(f"{__name__}.{name}")
+  File "D:\python310\lib\importlib\__init__.py", line 126, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+  File "<frozen importlib._bootstrap>", line 1050, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1027, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1006, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 688, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 883, in exec_module
+  File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+  File "C:\Users\WYH\Desktop\����ʵѵ�м�\trina\tools\web.py", line 22, in <module>
+    from bs4 import BeautifulSoup, Comment
+ModuleNotFoundError: No module named 'bs4'
+
+======================================================================
+ERROR: test_inconclusive_when_tool_fails (test_policy.TestVerdictAndReview)
+����ʧ��/������ʱ�����۱����� INCONCLUSIVE������д�� NOT_CONFIRMED��
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\WYH\Desktop\����ʵѵ�м�\tests\test_policy.py", line 193, in test_inconclusive_when_tool_fails
+    state = self._run(
+  File "C:\Users\WYH\Desktop\����ʵѵ�м�\tests\test_policy.py", line 174, in _run
+    agent = PentestAgent(self.cfg, registry=build_registry(), backend=backend)
+  File "C:\Users\WYH\Desktop\����ʵѵ�м�\trina\tools\__init__.py", line 35, in build_registry
+    module = importlib.import_module(f"{__name__}.{name}")
+  File "D:\python310\lib\importlib\__init__.py", line 126, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+  File "<frozen importlib._bootstrap>", line 1050, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1027, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1006, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 688, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 883, in exec_module
+  File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+  File "C:\Users\WYH\Desktop\����ʵѵ�м�\trina\tools\web.py", line 22, in <module>
+    from bs4 import BeautifulSoup, Comment
+ModuleNotFoundError: No module named 'bs4'
+
+======================================================================
+ERROR: test_not_confirmed_when_checks_ran_without_findings (test_policy.TestVerdictAndReview)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\WYH\Desktop\����ʵѵ�м�\tests\test_policy.py", line 178, in test_not_confirmed_when_checks_ran_without_findings
+    state = self._run(
+  File "C:\Users\WYH\Desktop\����ʵѵ�м�\tests\test_policy.py", line 174, in _run
+    agent = PentestAgent(self.cfg, registry=build_registry(), backend=backend)
+  File "C:\Users\WYH\Desktop\����ʵѵ�м�\trina\tools\__init__.py", line 35, in build_registry
+    module = importlib.import_module(f"{__name__}.{name}")
+  File "D:\python310\lib\importlib\__init__.py", line 126, in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+  File "<frozen importlib._bootstrap>", line 1050, in _gcd_import
+  File "<frozen importlib._bootstrap>", line 1027, in _find_and_load
+  File "<frozen importlib._bootstrap>", line 1006, in _find_and_load_unlocked
+  File "<frozen importlib._bootstrap>", line 688, in _load_unlocked
+  File "<frozen importlib._bootstrap_external>", line 883, in exec_module
+  File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+  File "C:\Users\WYH\Desktop\����ʵѵ�м�\trina\tools\web.py", line 22, in <module>
+    from bs4 import BeautifulSoup, Comment
+ModuleNotFoundError: No module named 'bs4'
+
+======================================================================
+FAIL: test_lfi_reads_passwd (test_eval_report_lab.TestLabTarget)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\WYH\Desktop\����ʵѵ�м�\tests\test_eval_report_lab.py", line 544, in test_lfi_reads_passwd
+    self.assertEqual(status, 200)
+AssertionError: 500 != 200
+
+----------------------------------------------------------------------
+Ran 197 tests in 20.585s
+
+FAILED (failures=1, errors=9)
+[eval] ���Զ����� lab �л� 127.0.0.1:50937

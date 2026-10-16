@@ -134,6 +134,21 @@ trina watch --once          # 只打印一次（适合脚本/日志留档）
 面板与控制台 `/board` 共用同一份渲染：状态/结论、研究成果（漏洞/flag/凭据）、假设台账（待验证 vs 已确认）、
 覆盖（已测/未测检查项）、最近动作、工作区与成本（调用次数/token/美元）。
 
+### 2.4 对照实验：关掉洞察层跑基线
+
+洞察层（假设台账 + 循环守卫建议）可用配置关闭，**度量口径不变**（冗余率、失败计数照记），因此可以直接 A/B：
+
+```bash
+# 基线臂：提示词里没有假设台账，循环/失败建议不回灌给模型
+python3 -m trina play --target http://127.0.0.1:9099 --goal "拿到 flag" --max-steps 8 \
+  --set run.hypothesis_ledger=false --set run.loop_guard=false
+
+# 一键跑两臂交替对照（逐次落数 + 汇总）
+python3 scripts/experiments/e4_insight_ab.py --runs 3 --max-steps 8 --goal "拿到 flag"
+```
+
+实验结果与结论边界见 `review/experiments/E4-insight-layer.md`（当前只有机制验证，**没有**充分样本支持"提效"）。
+
 ## 3. 单步操作（排障/精确控制）
 
 ```bash

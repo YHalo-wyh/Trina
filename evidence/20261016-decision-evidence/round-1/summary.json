@@ -1,0 +1,52 @@
+{
+  "ok": true,
+  "status": "success",
+  "verdict": "CONFIRMED",
+  "hypotheses": [
+    {
+      "id": "H-001",
+      "statement": "id 参数可能存在错误型 SQL 注入",
+      "status": "confirmed",
+      "confidence": 0.9,
+      "value": 0.6,
+      "info_gain": 0.6,
+      "cost": 0.4,
+      "risk": 0.2,
+      "next_step": "",
+      "vuln_class": "sqli",
+      "target": "http://127.0.0.1:59109/sqli",
+      "parameter": "id",
+      "evidence": [
+        {
+          "kind": "tool",
+          "tool": "sqli_test",
+          "finding_id": "TRINA-001",
+          "ts": 1792141555.495
+        }
+      ],
+      "notes": [
+        "SQL 注入已验证[错误型]：http://127.0.0.1:59109/sqli 参数 id，DBMS≈MySQL,MariaDB，payload=\"'\""
+      ],
+      "attempts": 1,
+      "stale_attempts": 0,
+      "source": "model",
+      "created_at": 1792141555.3903532,
+      "updated_at": 1792141555.4949846,
+      "priority": 0.0,
+      "status_cn": "已确认"
+    }
+  ],
+  "findings": 1,
+  "audit_chain_ok": true,
+  "audit_detail": "哈希链完整：17 条记录，末端 6c14e1846958…",
+  "reports": [
+    "C:\\Users\\WYH\\Desktop\\网安实训中级\\evidence\\20261016-decision-evidence\\round-1\\reports\\20261016-170555-5d2d7c_report.md",
+    "C:\\Users\\WYH\\Desktop\\网安实训中级\\evidence\\20261016-decision-evidence\\round-1\\reports\\20261016-170555-5d2d7c_report.html"
+  ],
+  "artifacts": {
+    "workspace": "C:\\Users\\WYH\\Desktop\\网安实训中级\\evidence\\20261016-decision-evidence\\round-1\\runs\\20261016-170555-5d2d7c",
+    "audit_path": "C:\\Users\\WYH\\Desktop\\网安实训中级\\evidence\\20261016-decision-evidence\\round-1\\logs\\20261016-170555-5d2d7c.jsonl",
+    "state_file": "C:\\Users\\WYH\\Desktop\\网安实训中级\\evidence\\20261016-decision-evidence\\round-1\\runs\\20261016-170555-5d2d7c\\state.json"
+  },
+  "limits": "固定决策 + 内置模拟靶机，仅验证执行机制；不衡量模型规划能力或公开基准成绩"
+}

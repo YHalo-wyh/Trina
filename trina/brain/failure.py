@@ -102,29 +102,43 @@ class LoopGuard:
     @staticmethod
     def params_key(params: dict[str, Any] | None) -> str:
         try:
-            return json.dumps(params or {}, sort_keys=True, ensure_ascii=False)[:300]
+            return json.dumps(params or {}, sort_keys=True, ensure_ascii=False)
         except TypeError:
-            return str(params)[:300]
+            return str(params)
 
     @staticmethod
     def result_digest(result: Any) -> str:
-        """结果指纹：摘要 + 数据 + 原始输出前 4KB 的哈希（不看时间/耗时这类抖动字段）。"""
+        """结果指纹覆盖完整内容，忽略结构化数据中的时间与耗时字段。"""
+        def stable(value: Any) -> Any:
+            if isinstance(value, dict):
+                return {k: stable(v) for k, v in value.items()
+                        if k not in {"ts", "time", "clock", "duration", "elapsed"}}
+            if isinstance(value, list):
+                return [stable(v) for v in value]
+            return value
+
         parts = [
-            str(getattr(result, "summary", "") or "")[:300],
-            str(getattr(result, "error", "") or "")[:200],
-            json.dumps(getattr(result, "data", None) or {}, sort_keys=True, ensure_ascii=False)[:2000],
-            str(getattr(result, "raw", "") or "")[:4000],
+            str(bool(getattr(result, "ok", False))),
+            str(bool(getattr(result, "denied", False))),
+            str(getattr(result, "summary", "") or ""),
+            str(getattr(result, "error", "") or ""),
+            json.dumps(stable(getattr(result, "data", None) or {}), sort_keys=True, ensure_ascii=False),
+            str(getattr(result, "raw", "") or ""),
         ]
         return hashlib.sha256("\n".join(parts).encode("utf-8", "replace")).hexdigest()[:16]
 
     # ------------------------------------------------------------------ 观察
-    def observe(self, tool: str, params: dict[str, Any] | None, result: Any) -> str:
+    def observe(self, tool: str, params: dict[str, Any] | None, result: Any, *, new_information: bool = False) -> str:
         """记录一次调用；若判定为"无新信息"，返回升级建议（否则返回空串）。"""
         self.total_steps += 1
         action = f"{tool}:{self.params_key(params)}"
         fingerprint = f"{action}:{self.result_digest(result)}"
         self.action_counter[action] += 1
         self.fingerprint_counter[fingerprint] += 1
+        if new_information:
+            self.escalation_step = 0
+            self.last_advice = ""
+            return ""
         repeats = self.fingerprint_counter[fingerprint]
         if repeats < 2:
             return ""

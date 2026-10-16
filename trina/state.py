@@ -17,6 +17,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -320,6 +322,29 @@ class RunState:
         return changed
 
     # ------------------------------------------------------------------ 视图
+    def knowledge_digest(self) -> str:
+        """对已有事实生成指纹；忽略时间、重复证据与运行计数，供停滞预算判断。"""
+        volatile = {"ts", "clock", "time", "duration", "first_seen", "last_seen"}
+
+        def stable(value: Any) -> Any:
+            if isinstance(value, dict):
+                return {k: stable(v) for k, v in value.items() if k not in volatile}
+            if isinstance(value, list):
+                # 同一证据重复吸收、列表顺序改变都不能冒充新增知识。
+                entries = {json.dumps(stable(v), sort_keys=True, ensure_ascii=False) for v in value}
+                return sorted(entries)
+            return value
+
+        knowledge = {
+            "hosts": {name: {k: v for k, v in host.to_dict().items() if k != "notes"}
+                      for name, host in self.hosts.items()},
+            "findings": [finding.to_dict() for finding in self.findings],
+            "credentials": [credential.to_dict() for credential in self.credentials],
+            "flags": self.flags,
+        }
+        payload = json.dumps(stable(knowledge), sort_keys=True, ensure_ascii=False)
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
     def summary_for_prompt(self, max_chars: int = 4000) -> str:
         """给大模型的状态摘要（严格控制体积）。"""
         lines: list[str] = [f"目标: {self.target}", f"阶段: {self.phase}", f"状态: {self.status}"]

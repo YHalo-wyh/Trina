@@ -205,8 +205,8 @@ def build(
         h_node = graph.add_node(f"hypo:{hid}", f"{hid} {status_cn} {str(item.get('statement', ''))[:30]}", "hypothesis")
         for evidence in item.get("evidence") or []:
             fid = evidence.get("finding_id")
-            if fid:
-                graph.add_edge(h_node, f"finding:{fid}", "验证为")
+            if fid and any(str(getattr(finding, "id", "")) == str(fid) for finding in findings):
+                graph.add_edge(h_node, f"finding:{fid}", "验证为" if item.get("status") == "confirmed" else "关联线索")
 
     # 凭据 / flag
     for cred in getattr(state, "credentials", None) or []:

@@ -21,7 +21,7 @@
      等级词（high/medium/low）折算成数值；
    - 优先级 = `置信度 × 价值 × 信息增量 / (成本 + λ·风险 + ε)`，λ 由配置项 `hypothesis_risk_aversion` 控制；
    - 状态机 `open → verifying → confirmed | refuted | blocked`，**由结果确定性驱动**：
-     有新证据且产生发现 → confirmed；连续 3 次无新信息 → refuted；被护栏拒绝 → blocked（等人）；
+     同漏洞类、位置与参数的带证据 verified/exploited 发现 → confirmed；明确反证 → refuted；连续无新信息降优先级并保留未解决；被护栏拒绝 → blocked（等人）；
    - 结束未收敛的假设显式标为"未解决"（不假装验证过、也不当已否定），并写进结论说明；
    - 同义假设按前 24 字前缀去重，避免模型换措辞把台账撑爆。
 
@@ -44,23 +44,38 @@
    - 指标口径补齐（`docs/EVAL.md` §1.2）：`cost_per_success`、`time_to_evidence_avg`、
      `redundant_action_rate`、`recovery_rate`——不只看通过率。
 
+5. **对照开关**（`run.hypothesis_ledger` / `run.loop_guard`，默认 `true`）
+   - 关闭只影响"模型看到什么"：提示词里不出现台账、模型给的 `hypothesis` 不登记、循环/失败建议不回灌；
+   - **度量口径不变**（`redundant_action_rate`、`fail_*` 照常统计），否则两条臂不可比；
+   - 两条臂的提示词由**同一模板**渲染（`render_system_prompt(include_hypothesis)`），不会漂移。
+   - 假设内容进**审计哈希链**（`react.action.hypothesis`），而不只在可改的 `state.json` 里。
+
 ## 实测验证
-- `tests/test_insight.py`（23 项）：优先级公式、等级词折算、去重、状态机、收尾语义、循环递进、
-  失败分类、替代工具、图的节点/边/渲染、面板字段、四项新指标、`RunState.from_dict` 往返；
+- `tests/test_insight.py`（26 项）：优先级公式、等级词折算、去重、状态机、收尾语义、循环递进、
+  失败分类、替代工具、图的节点/边/渲染、面板字段、四项新指标、`RunState.from_dict` 往返、
+  以及**开关语义**（关臂提示词无 `hypothesis`、台账为空；守卫关闭后度量照记但建议不回灌；假设进审计链）；
 - 本地 lab 实跑：一次 7 步任务记录 4 条假设（2 条 confirmed、2 条收尾为未解决）、图 30 节点/36 边，
   报告新增"六、证据链与假设台账"（含 mermaid）；
 - 失败注入实跑（靶机不在场）：3 次 `environment_error` 被分类计数、循环守卫给出换路建议、
-  `redundant_action_rate=0.1667` 落进 `state.json`。
+  `redundant_action_rate=0.1667` 落进 `state.json`；
+- **A/B 对照（`review/experiments/E4-insight-layer.md`）**：两臂各 3 次、同一任务交替执行 →
+  开关生效可证（开臂每轮 3–5 条假设，关臂 0）；验证发现 4 vs 1（方向性，n=3 不作结论）；
+  成本 **+44% token**（9807 vs 6801）、Time to Evidence +3.8s、步数 +6%；
+  负对照（靶机全挂）两臂均为 INCONCLUSIVE、0 发现——洞察层不会无中生有。
 
 ## 后果
 - 正面：每步决策可解释（假设→验证→状态）、失败可归因、结论可反向追溯、
   报告与工作台共享同一事实源；"打转"从不可见变成有刻度的指标。
-- 负面：提示词变长（动作协议多一个可选字段）、`state.json` 变大（假设/图）、
-  台账与图的构建多一次遍历（毫秒级，可忽略）。
+- 负面：**实测成本 +44% token**（同任务 9807 vs 6801）、Time to Evidence +3.8s、步数 +6%；
+  提示词变长（动作协议多一个可选字段）、`state.json` 变大（假设/图）、台账与图的构建多一次遍历（毫秒级）。
+  是否值得取决于目标场景：拿到更多**已验证**结论 vs 每目标多花的 token（当前 ≈ 7355 vs 20404 token/个已验证发现，n=3）。
 - 已知边界：`redundant_action_rate` 只看"指纹相同"，参数微调但无信息增量的动作不计入（宁可低估）；
+  简单任务上守卫可能**一次都不触发**（本轮 A/B 两臂冗余率均为 0，守卫收益未被测到）；
   HTML 报告不内嵌 mermaid（离线自包含优先），改以"起点-关系-终点"表代替。
 
 ## 被否决的方案
 1. **画在提示词里**（把假设塞进 system prompt 让模型自己维护）：模型会漂移、会漏，无法审计（同 ADR-0004 的口径）。
 2. **只记日志不做状态机**：日志不能驱动决策（无法"按优先级决定下一步"），也无法在收尾时说明未答的问题。
 3. **HTML 里引 mermaid.js CDN**：报告要求离线自包含、无外部资源（ADR 与报告契约），故否决。
+4. **用"关闭台账但仍展示 field"的方式做对照臂**：模型会被字段引导去自我维护假设，臂不干净；
+   故改为同模板渲染的 `include_hypothesis=False`（提示词里整段消失）。

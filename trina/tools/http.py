@@ -91,7 +91,7 @@ class HttpResult:
             "request": {
                 "method": self.method,
                 "url": self.url,
-                "headers": {k: v for k, v in (self.request_headers or {}).items() if k.lower() not in ("cookie", "authorization")},
+                "headers": {k: v for k, v in (self.request_headers or {}).items() if k.lower() not in ("cookie", "authorization", "proxy-authorization")},
                 "body": (self.request_body or "")[:600],
             },
             "response": {"status": self.status, "length": self.length, "body_excerpt": self.excerpt(600)},
@@ -146,69 +146,80 @@ class HttpClient:
         payload_label: str = "",
         files: Any = None,
     ) -> HttpResult:
-        """发起请求。护栏拒绝时返回带 error 的 HttpResult（不抛异常，交由工具层处置）。"""
-        body_text = ""
-        if isinstance(data, str):
-            body_text = data
-        elif isinstance(data, dict):
-            body_text = "&".join(f"{k}={v}" for k, v in data.items())
-        elif json_body is not None:
-            import json as _json
-
-            body_text = _json.dumps(json_body, ensure_ascii=False)
-
-        if params:
-            from urllib.parse import urlencode
-
-            joiner = "&" if urlsplit(url).query else "?"
-            url = f"{url}{joiner}{urlencode(params, doseq=True)}"
-
-        decision = self.guard.check_http(url, method=method, body=body_text, required_level=required_level)
-        if decision.denied:
-            self.denials.append(decision)
-            return HttpResult(url=url, method=method.upper(), error=f"[护栏拒绝:{decision.category}] {decision.reason}")
-
-        host = urlsplit(url).hostname or ""
-        wait = self.guard.throttle(host)
-        if wait > 0:
-            time.sleep(min(wait, 5.0))
-
+        """逐跳、逐次重试校验实际请求；护栏拒绝作为失败结果返回。"""
         started = time.monotonic()
-        last_error = ""
-        for attempt in range(self.retries + 1):
-            try:
-                response = self.session.request(
-                    method.upper(),
-                    url,
-                    data=data if files is None else None,
-                    json=json_body,
-                    files=files,
-                    headers=headers,
-                    cookies=cookies,
-                    allow_redirects=allow_redirects,
-                    timeout=timeout or self.timeout,
+        history: list[str] = []
+
+        def failure(message: str, request: requests.PreparedRequest | None = None) -> HttpResult:
+            return HttpResult(
+                url=request.url if request is not None else url,
+                method=request.method if request is not None else method.upper(),
+                error=message, elapsed=time.monotonic() - started,
+                payload=payload_label, history=list(history),
+            )
+
+        def denied(decision: Decision, request: requests.PreparedRequest) -> HttpResult:
+            self.denials.append(decision)
+            return failure(f"[护栏拒绝:{decision.category}] {decision.reason}", request)
+
+        try:
+            prepared = self.session.prepare_request(requests.Request(
+                method.upper(), url, params=params, data=data, json=json_body,
+                files=files, headers=headers, cookies=cookies,
+            ))
+        except (requests.exceptions.RequestException, ValueError) as exc:
+            return failure(f"{type(exc).__name__}: {exc}")
+
+        while True:
+            body_text = prepared.body or ""
+            if isinstance(body_text, bytes):
+                body_text = body_text.decode("utf-8", "replace")
+            elif not isinstance(body_text, str):
+                return failure("不支持无法校验和重放的流式请求体", prepared)
+            # 写入类请求连接失败时可能已被服务端处理，不自动重复提交。
+            retries = max(0, self.retries) if prepared.method in ("GET", "HEAD", "OPTIONS") else 0
+            for attempt in range(retries + 1):
+                decision = self.guard.check_http(
+                    prepared.url, method=prepared.method, body=body_text, required_level=required_level,
                 )
-                result = HttpResult(
-                    url=url,
-                    method=method.upper(),
-                    status=response.status_code,
-                    headers={k: v for k, v in response.headers.items()},
-                    body=response.text[:200_000],
-                    elapsed=time.monotonic() - started,
-                    payload=payload_label or body_text[:300],
-                    request_headers=dict(headers or {}),
-                    request_body=body_text[:2000],
-                    history=[r.url for r in response.history],
-                )
+                if decision.denied:
+                    return denied(decision, prepared)
+                wait = self.guard.throttle(urlsplit(prepared.url).hostname or "")
+                if wait > 0:
+                    time.sleep(min(wait, 5.0))
                 self.requests_made += 1
-                self.bytes_received += len(result.body)
-                return result
-            except requests.exceptions.RequestException as exc:
-                last_error = f"{type(exc).__name__}: {exc}"
-                if attempt < self.retries:
+                try:
+                    settings = self.session.merge_environment_settings(prepared.url, {}, False, None, None)
+                    response = self.session.send(
+                        prepared, allow_redirects=False, timeout=timeout or self.timeout, **settings,
+                    )
+                    break
+                except requests.exceptions.RequestException as exc:
+                    if attempt >= retries:
+                        return failure(f"{type(exc).__name__}: {exc}", prepared)
                     time.sleep(0.4 * (attempt + 1))
-        self.requests_made += 1
-        return HttpResult(url=url, method=method.upper(), error=last_error, elapsed=time.monotonic() - started, payload=payload_label)
+
+            try:
+                body = response.text[:200_000]
+                self.bytes_received += len(body)
+                # Requests 只准备下一跳（含方法改写、Cookie 和 307/308 请求体），不发送。
+                following = response.next if allow_redirects else None
+                if following is None:
+                    return HttpResult(
+                        url=prepared.url, method=prepared.method, status=response.status_code,
+                        headers=dict(response.headers), body=body, elapsed=time.monotonic() - started,
+                        payload=payload_label or body_text[:300], request_headers=dict(prepared.headers),
+                        request_body=body_text[:2000], history=list(history),
+                    )
+                if len(history) >= self.session.max_redirects:
+                    return failure(f"重定向次数超过上限 {self.session.max_redirects}", prepared)
+                history.append(prepared.url)
+                decision = self.guard.check_http_redirect(prepared.url, following.url)
+                if decision.denied:
+                    return denied(decision, following)
+                prepared = following
+            finally:
+                response.close()
 
     # ------------------------------------------------------------------ 便捷
     def get(self, url: str, **kwargs: Any) -> HttpResult:

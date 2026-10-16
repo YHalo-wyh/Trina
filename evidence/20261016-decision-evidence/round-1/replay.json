@@ -1,0 +1,10 @@
+{
+  "steps": [
+    {
+      "response": "{\"action\": \"sqli_test\", \"test_id\": \"sqli_recheck\", \"params\": {\"url\": \"http://127.0.0.1:59109/sqli\", \"param\": \"id\", \"technique\": \"error\"}, \"hypothesis\": {\"statement\": \"id 参数可能存在错误型 SQL 注入\", \"vuln_class\": \"sqli\", \"target\": \"http://127.0.0.1:59109/sqli\", \"parameter\": \"id\"}}"
+    },
+    {
+      "response": "{\"final\": {\"summary\": \"固定脚本执行结束，结果由工具证据判定\"}}"
+    }
+  ]
+}

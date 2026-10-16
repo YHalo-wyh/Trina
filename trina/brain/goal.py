@@ -183,13 +183,13 @@ def _covers_port(state: Any, port: int) -> bool:
 
 def _finding_is_evidenced(finding: Any) -> bool:
     status = getattr(finding, "status", "") or ""
-    if status in ("verified", "exploited"):
-        return True
-    return bool(getattr(finding, "evidence", None))
+    return status in ("verified", "exploited") and bool(getattr(finding, "evidence", None))
 
 
 def _covers_class(finding: Any, vuln_class: str) -> bool:
-    if not _finding_is_evidenced(finding):
+    if not _finding_is_evidenced(finding) and not (
+        vuln_class in DETECTION_ONLY and getattr(finding, "evidence", None)
+    ):
         return False
     from ..eval.metrics import normalize_vuln_class
 
@@ -201,7 +201,7 @@ def _covers_path(finding: Any, path: str) -> bool:
     if path not in url:
         return False
     # 路径类要求允许「有结论即可」，但至少要带证据
-    return bool(getattr(finding, "evidence", None)) or getattr(finding, "status", "") in ("verified", "exploited")
+    return bool(getattr(finding, "evidence", None))
 
 
 __all__ = ["GoalRequirements", "KEYWORD_CLASSES", "DETECTION_ONLY"]

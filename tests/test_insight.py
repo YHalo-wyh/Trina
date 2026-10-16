@@ -6,16 +6,19 @@
 
 from __future__ import annotations
 
+import json
 import unittest
+from pathlib import Path
 
 from trina.board import render_board, summarise
 from trina.brain.failure import LoopGuard, advice_for, alternatives_for, classify_failure
+from trina.config import LLMConfig, TrinaConfig
 from trina.evidence_graph import build as build_graph
 from trina.eval.metrics import ScenarioResult, compute_metrics
 from trina.hypotheses import HypothesisLedger
 from trina.state import Finding, RunState
 from trina.tools import build_registry
-from trina.tools.registry import ToolResult
+from trina.tools.registry import ParamSpec, Tool, ToolResult, ToolSpec
 
 
 class TestHypothesisLedger(unittest.TestCase):
@@ -39,7 +42,7 @@ class TestHypothesisLedger(unittest.TestCase):
         self.assertEqual(first.id, second.id)
         self.assertEqual(len(ledger.items), 1)
 
-    def test_outcome_confirms_and_refutes(self):
+    def test_outcome_requires_evidence_to_confirm_or_refute(self):
         ledger = HypothesisLedger()
         confirmed = ledger.add("怀疑存在 SQL 注入")
         result = ledger.record_outcome(confirmed.id, new_information=True, confirmed=True, evidence=[{"finding_id": "PAI-001"}])
@@ -49,8 +52,11 @@ class TestHypothesisLedger(unittest.TestCase):
         refuted = ledger.add("怀疑存在文件包含")
         for _ in range(3):
             ledger.record_outcome(refuted.id, new_information=False)
+        self.assertEqual(refuted.status, "open", "没有新信息不能充当否定证据")
+        self.assertIn("未解决", refuted.next_step)
+        ledger.record_outcome(refuted.id, new_information=False, refuted=True,
+                              evidence=[{"kind": "counterexample", "note": "独立验证排除了特定条件"}])
         self.assertEqual(refuted.status, "refuted")
-        self.assertTrue(any("已否定" in note or "无新信息" in note for note in refuted.notes))
 
     def test_blocked_hypothesis_is_marked(self):
         ledger = HypothesisLedger()
@@ -63,7 +69,7 @@ class TestHypothesisLedger(unittest.TestCase):
         ledger = HypothesisLedger()
         pending = ledger.add("怀疑存在目录爆破可发现的管理后台")
         done = ledger.add("怀疑存在 SQL 注入")
-        ledger.record_outcome(done.id, new_information=True, confirmed=True)
+        ledger.record_outcome(done.id, new_information=True, confirmed=True, evidence=[{"finding_id": "TRINA-001"}])
         unfinished = ledger.finalize()
         self.assertEqual([item.id for item in unfinished], [pending.id])
         self.assertEqual(pending.status, "open")
@@ -167,7 +173,7 @@ class TestEvidenceGraph(unittest.TestCase):
     def test_build_nodes_and_edges(self):
         state = self._state()
         graph = build_graph(state, hypotheses=[{"id": "H-001", "statement": "怀疑注入", "status": "confirmed",
-                                                "evidence": [{"finding_id": "PAI-001"}]}])
+                                                "evidence": [{"finding_id": "TRINA-001"}]}])
         kinds = graph.node_kinds()
         self.assertGreaterEqual(kinds.get("host", 0), 1)
         self.assertGreaterEqual(kinds.get("port", 0), 1)
@@ -277,6 +283,143 @@ class TestStateRoundTrip(unittest.TestCase):
     def test_from_dict_rejects_error_payload(self):
         with self.assertRaises(ValueError):
             RunState.from_dict({"error": "读取失败"})
+
+
+class TestInsightSwitches(unittest.TestCase):
+    """对照实验开关：关闭只改"模型看到什么"，度量口径必须不变（否则 A/B 不可比）。"""
+
+    def setUp(self):
+        import tempfile
+
+        self.tmp = tempfile.TemporaryDirectory()
+        self.cfg = TrinaConfig.load()
+        self.cfg.run.workspace = str(Path(self.tmp.name) / "runs")
+        self.cfg.audit.dir = str(Path(self.tmp.name) / "logs")
+        self.cfg.llm.max_steps = 6
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _agent(self, script: list[dict], *, ledger: bool, guard: bool):
+        from trina.brain.agent import PentestAgent
+        from trina.llm.replay_backend import ReplayBackend
+        from trina.tools.registry import ToolRegistry
+
+        self.cfg.run.hypothesis_ledger = ledger
+        self.cfg.run.loop_guard = guard
+        script_path = Path(self.tmp.name) / "goal.yaml"
+        script_path.write_text(json.dumps({"steps": script}, ensure_ascii=False), encoding="utf-8")
+        recorder = _RecordingBackend(
+            ReplayBackend(LLMConfig(backend="replay", replay_script=str(script_path)))
+        )
+        agent = PentestAgent(
+            self.cfg, registry=ToolRegistry([_SwitchScanTool(), _SwitchFailTool()]), backend=recorder
+        )
+        return agent, recorder
+
+    def test_ledger_off_hides_hypothesis_everywhere(self):
+        step = {
+            "response": json.dumps(
+                {
+                    "thought": "看看端口",
+                    "action": "switch_scan",
+                    "params": {"target": "127.0.0.1"},
+                    "hypothesis": {"statement": "目标开放 80 端口", "confidence": "high"},
+                },
+                ensure_ascii=False,
+            )
+        }
+        agent, recorder = self._agent([step, {"response": '{"thought": "完", "final": {"summary": "ok"}}'}], ledger=False, guard=True)
+        state = agent.run("127.0.0.1")
+        self.assertEqual(state.hypotheses, [], "关闭台账后不得登记假设")
+        self.assertGreater(len(recorder.prompts), 0)
+        for system, user in recorder.prompts:
+            self.assertNotIn("假设台账", system + user)
+            self.assertNotIn("hypothesis", system + user, "对照臂的提示词不应出现假设字段")
+
+    def test_ledger_on_registers_hypothesis(self):
+        step = {
+            "response": json.dumps(
+                {
+                    "thought": "看看端口",
+                    "action": "switch_scan",
+                    "params": {"target": "127.0.0.1"},
+                    "hypothesis": {"statement": "目标开放 80 端口", "confidence": "high"},
+                },
+                ensure_ascii=False,
+            )
+        }
+        agent, recorder = self._agent([step, {"response": '{"thought": "完", "final": {"summary": "ok"}}'}], ledger=True, guard=True)
+        state = agent.run("127.0.0.1")
+        self.assertEqual(len(state.hypotheses), 1)
+        self.assertTrue(
+            any("假设台账" in system + user for system, user in recorder.prompts),
+            "启用台账时应在提示词里展示",
+        )
+        # 假设必须进哈希链（state.json 可改，审计链不可改）
+        audit_text = Path(state.artifacts["audit_path"]).read_text(encoding="utf-8")
+        self.assertIn("目标开放 80 端口", audit_text)
+        self.assertIn("H-001", audit_text)
+
+    def test_loop_guard_off_keeps_metrics_but_silences_advice(self):
+        repeat = '{"thought": "重复同一步", "action": "switch_fail", "params": {"target": "127.0.0.1"}}'
+        agent, recorder = self._agent(
+            [{"response": repeat} for _ in range(4)] + [{"response": '{"thought": "完", "final": {"summary": "done"}}'}],
+            ledger=True,
+            guard=False,
+        )
+        state = agent.run("127.0.0.1", max_steps=4)
+        # 度量照记：冗余率与失败计数不因开关关闭而消失
+        self.assertGreater(state.loop.get("redundant_action_rate", 0.0), 0.0)
+        self.assertGreater(sum(v for k, v in state.counters.items() if str(k).startswith("fail_")), 0)
+        self.assertEqual([note for note in state.timeline if note.get("kind") == "loop"], [])
+        for _system, user in recorder.prompts:
+            self.assertNotIn("与上次完全相同", user, "关闭后循环建议不得回灌给模型")
+
+
+class _RecordingBackend:
+    """包一层记录提示词，用于断言"模型到底看到了什么"。"""
+
+    def __init__(self, inner):
+        self.inner = inner
+        self.prompts: list[tuple[str, str]] = []
+
+    def complete(self, system: str, user: str):
+        self.prompts.append((system, user))
+        return self.inner.complete(system, user)
+
+    def __getattr__(self, item):
+        return getattr(self.inner, item)
+
+
+class _SwitchScanTool(Tool):
+    spec = ToolSpec(
+        name="switch_scan",
+        summary="假端口扫描",
+        category="recon",
+        action_level="detect",
+        params={"target": ParamSpec("str", "目标", required=True)},
+    )
+
+    def run(self, ctx, target):
+        return ToolResult(
+            ok=True,
+            summary=f"扫描 {target}",
+            facts={"ports": [{"host": target, "port": 80, "service": "http"}]},
+        )
+
+
+class _SwitchFailTool(Tool):
+    spec = ToolSpec(
+        name="switch_fail",
+        summary="恒定失败的工具（用于触发循环守卫/失败分类）",
+        category="vuln",
+        action_level="verify",
+        params={"target": ParamSpec("str", "目标", required=True)},
+    )
+
+    def run(self, ctx, target):
+        return ToolResult(ok=False, error="ConnectionError: connection refused", summary="连接被拒")
 
 
 class TestInternalMetrics(unittest.TestCase):

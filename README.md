@@ -57,12 +57,20 @@ scripts/dev.sh play --api deepseek --goal "拿到 flag 并验证 SQL 注入" --m
 
 - **假设台账**（`trina/hypotheses.py`）：模型每步可带 `hypothesis`，系统按 `置信度×价值×信息增量/(成本+λ·风险)` 排序，
   用结果确定性推进状态（`open → verifying → confirmed/refuted/blocked`）；收尾时未答完的问题显式标为"未解决"。
+  自动确认要求 `vuln_class/target/parameter` 与本次带证据的 `verified/exploited` 发现匹配；
+  后续动作通过 `hypothesis_id` 复用台账。连续无新信息只降低优先级，保留未解决状态。
 - **失败分类与循环守卫**（`trina/brain/failure.py`）：结果归因成 boundary/tool/environment/budget/hypothesis 五类并计数；
   同工具+同参数+同结果视为无新信息，递进提示"换参数 → 换工具 → 请人介入"。
 - **证据关系图**（`trina/evidence_graph.py`）：目标→主机→端口→路径→发现→证据（+ 检查项/假设→发现、→flag），
   既是报告章节也是复核依据。
 - **工作台**：`trina/brain` 每步落盘 `state.json`，`/board`、`/hypotheses`、`/graph` 与 `trina watch` 共用一份渲染，
   另给四项内部指标：Cost per Success、Time to Evidence、Redundant Action Rate、Recovery Rate（口径见 `docs/EVAL.md`）。
+- **成本实话**：A/B 实测（`review/experiments/E4-insight-layer.md`，两臂各 3 次）洞察层让同任务 token **+44%**、
+  Time to Evidence +3.8s，换来 3 次里 2 次 CONFIRMED（关臂 1 次）——方向性数据，样本量不足以下"提效"结论；
+  预算紧时可用 `--set run.hypothesis_ledger=false --set run.loop_guard=false` 跑基线档。
+
+目标完成度、已验证缺口与实施顺序见 [目标差距评估](docs/TARGET_PROGRESS.md)。
+固定决策与真实 lab 请求的两轮机制回归：`python -m scripts.verify_decision_evidence`。
 
 ## 已封装的工具（17）
 

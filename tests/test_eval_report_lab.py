@@ -314,6 +314,7 @@ class TestScopeAwareToolBehaviour(unittest.TestCase):
             self.assertIn("没有上传成功证据", fake.summary)
             self.assertEqual([f.url for f in state.findings], [f"http://127.0.0.1:{port}/upload"])
         finally:
+            server.shutdown()
             server.server_close()
             tmp.cleanup()
 
@@ -530,6 +531,7 @@ class TestLabTarget(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.server.shutdown()
+        cls.server.server_close()
         cls.thread.join(timeout=5)
 
     def _get(self, path: str) -> tuple[int, str]:

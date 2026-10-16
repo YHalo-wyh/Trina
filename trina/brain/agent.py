@@ -180,6 +180,9 @@ class PentestAgent:
 
         ledger = HypothesisLedger(risk_aversion=float(getattr(self.config.run, "hypothesis_risk_aversion", 1.0) or 1.0))
         loop_guard = LoopGuard()
+        # 洞察层开关（对照实验用）：关闭只影响"模型看到什么"，统计口径不变（redundant_action_rate / fail_* 照记）
+        use_ledger = bool(getattr(self.config.run, "hypothesis_ledger", True))
+        use_guard = bool(getattr(self.config.run, "loop_guard", True))
 
         # 独立控制器：授权来自注册表与预算合同，不来自模型的文字
         controller = self.controller
@@ -210,7 +213,10 @@ class PentestAgent:
                 + (f"；当前目标 target_id={target_id}" if target_id else "；当前目标未在注册表中"),
             )
         system_prompt = build_system_prompt(
-            self.config.scope_prompt_block(), self.registry.prompt_block(), extra_rules
+            self.config.scope_prompt_block(),
+            self.registry.prompt_block(),
+            extra_rules,
+            include_hypothesis=use_ledger,
         ) + (
             "\n# 已注册的检查项（计划器只能提议这些 test_id；控制器独立批准）\n" + policy_block
             + "\n动作里请带上 test_id（strict 模式下必须来自上式；未注册动作会被控制器拒绝）。"
@@ -292,8 +298,12 @@ class PentestAgent:
                         if missing_goal
                         else ""
                     )
-                    + "## 假设台账（按优先级排序）\n"
-                    + ledger.prompt_block(),
+                    + (
+                        "## 假设台账（按优先级排序）\n" + ledger.prompt_block()
+                        if use_ledger
+                        else ""
+                    ),
+                    include_hypothesis=use_ledger,
                 )
                 hints = []
 
@@ -362,6 +372,9 @@ class PentestAgent:
                 test_id = str(action.get("test_id", "") or inline_test_id or "")
                 action_target = str(params.get("target") or params.get("url") or target)
                 level = self._effective_level(tool_name, params)
+                hypothesis = ledger.from_action(action) if use_ledger else None
+                if use_ledger and action.get("hypothesis_id") and hypothesis is None:
+                    hints.append("hypothesis_id 不存在：请引用台账中的编号或提出新假设")
 
                 # 独立控制器：在执行层逐动作批准（不认模型的自我声明）
                 policy_decision = controller.check(
@@ -375,6 +388,9 @@ class PentestAgent:
                     }
                 )
                 if not policy_decision.allowed:
+                    if hypothesis is not None:
+                        ledger.record_outcome(hypothesis.id, new_information=False, blocked=True,
+                                              note=policy_decision.reason)
                     state.counters["denied"] = state.counters.get("denied", 0) + 1
                     state.note("policy", f"控制器拒绝：{policy_decision.reason}")
                     state.note_boundary(
@@ -410,6 +426,9 @@ class PentestAgent:
                         "test_id": test_id,
                     }
                     if not self.approval(request):
+                        if hypothesis is not None:
+                            ledger.record_outcome(hypothesis.id, new_information=False, blocked=True,
+                                                  note="人工审批未通过")
                         state.note("human", f"人工拒绝动作：{tool_name}（{level}）")
                         audit.append("human.reject", step=index, tool=tool_name, level=level, decision="deny")
                         state.note_boundary(tool=tool_name, reason="人工审批未通过", kind="human", target=action_target)
@@ -422,35 +441,42 @@ class PentestAgent:
                         continue
 
                 self.logger(f"[{index}/{max_steps}] {phase} · {tool_name} {_brief_params(params)}")
-                audit.append("react.action", step=index, phase=phase, thought=thought[:300], tool=tool_name, params=params)
-                before_finding_ids = {f.id for f in state.findings}
+                audit.append(
+                    "react.action", step=index, phase=phase, thought=thought[:300], tool=tool_name, params=params,
+                    # 假设进哈希链：state.json 可改，审计链不可改——"为什么做这步"必须可追溯
+                    hypothesis=(
+                        {
+                            "id": hypothesis.id,
+                            "statement": hypothesis.statement[:200],
+                            "confidence": hypothesis.confidence,
+                            "priority": round(hypothesis.priority(), 4),
+                        }
+                        if hypothesis is not None
+                        else None
+                    ),
+                    reasoning_on_existing=str(action.get("hypothesis_id") or "") or None,
+                )
+                before_knowledge = state.knowledge_digest()
 
                 result = self.registry.execute(tool_name, params, ctx)
                 observation = result.to_observation()
-                new_facts = bool(result.facts) and any(
-                    bool(value) for value in (result.facts or {}).values() if isinstance(value, (list, dict, tuple, set))
-                )
+                new_facts = before_knowledge != state.knowledge_digest()
 
                 # 假设台账：模型可在动作里带 hypothesis；无论成败都用结果更新（确定性规则，不看自我宣告）
-                hypothesis = ledger.from_action(action)
-                new_finding_ids = [f.id for f in state.findings if f.id not in before_finding_ids]
                 if hypothesis is not None:
-                    updated = ledger.record_outcome(
-                        hypothesis.id,
-                        new_information=bool(new_facts or new_finding_ids),
-                        confirmed=bool(new_finding_ids) and result.ok,
-                        blocked=result.denied,
-                        note=str(result.summary or result.error)[:160],
-                        evidence=[{"kind": "tool", "tool": tool_name, "finding_id": fid} for fid in new_finding_ids],
+                    updated = ledger.record_tool_outcome(
+                        hypothesis.id, result=result, state=state, tool=tool_name, new_information=new_facts,
                     )
                     if updated is not None:
                         state.note("hypothesis", f"{updated.id} → {updated.status}：{updated.statement[:80]}")
 
                 # 循环识别（结果指纹）与失败分类：把"重试"变成有依据的升级阶梯
-                advice = loop_guard.observe(tool_name, params, result)
-                if advice:
+                advice = loop_guard.observe(tool_name, params, result, new_information=new_facts)
+                if advice and use_guard:
                     hints.append(advice)
                     state.note("loop", advice)
+                elif advice:
+                    state.loop["last_advice"] = advice  # 对照臂：照样记录，但不影响模型
                 failure_kind = classify_failure(result, new_information=new_facts)
                 if failure_kind != "ok":
                     state.counters[f"fail_{failure_kind}"] = state.counters.get(f"fail_{failure_kind}", 0) + 1
@@ -459,9 +485,9 @@ class PentestAgent:
                         alternatives=alternatives_for(self.registry, tool_name, tried=loop_guard.tried_tools()),
                         attempt=loop_guard.escalation_step,
                     )
-                    if fallback:
+                    if fallback and use_guard:
                         hints.append(fallback)
-                if loop_guard.needs_human():
+                if use_guard and loop_guard.needs_human():
                     state.note("human_request", "循环守卫：连续多次无新信息，建议人工介入调整方向")
 
                 step = StepRecord(
@@ -530,6 +556,8 @@ class PentestAgent:
                 # 周期落盘：让外部（trina watch / 编辑器 / 另一个终端）能实时看到进展
                 every = int(getattr(self.config.run, "flush_state_every", 1) or 0)
                 if every and index % every == 0:
+                    state.hypotheses = ledger.to_dict()
+                    state.loop = loop_guard.to_dict()
                     self._save_state(state, workspace)
         finally:
             if record_handle:
@@ -537,13 +565,13 @@ class PentestAgent:
                 record_handle.close()
 
         # ------------------------------------------------------------------ 收尾
-        if final is not None:
-            raw_status = str(final.get("status", "")).lower()
-            state.status = raw_status if raw_status in ("success", "partial", "failed") else state.status
-            for flag in final.get("flags") or []:
-                state.absorb({"flags": [{"value": str(flag), "source": "agent_final"}]})
+        if final is not None and (final.get("status") or final.get("flags")):
+            state.note("final_claim", "模型自评与 flag 声明仅作摘要；运行结果以工具事实判定")
         state.ended_at = time.time()
-        if not requirements.empty:
+        verified = [f for f in state.findings if f.status in ("verified", "exploited") and f.evidence]
+        if state.status == "stopped":
+            pass
+        elif not requirements.empty:
             # 有明确任务要求时，以「要求是否达成」判定成败：模型自评与 flag 都不能替代验证
             if requirements.satisfied(state):
                 state.status = "success"
@@ -552,9 +580,9 @@ class PentestAgent:
             else:
                 state.status = "failed"
         elif state.status == "running":
-            if state.flags or any(f.status in ("verified", "exploited") for f in state.findings):
+            if state.flags or verified:
                 state.status = "success"
-            elif state.findings:
+            elif state.findings or state.hosts or state.counters.get("denied", 0):
                 state.status = "partial"
             else:
                 state.status = "failed"
@@ -573,7 +601,6 @@ class PentestAgent:
         # 结论状态与覆盖说明（P3：没有得到证据 ≠ 获得否定证据，检查没跑不能当作通过）
         coverage = controller.coverage()
         state.coverage = coverage
-        verified = [f for f in state.findings if f.status in ("verified", "exploited")]
         executed = list(coverage.get("executed") or [])
         error_count = state.counters.get("errors", 0)
         failures = state.counters.get("failures", 0)

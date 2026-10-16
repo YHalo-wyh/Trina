@@ -21,7 +21,7 @@ import socket
 import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Iterable
-from urllib.parse import unquote, urlsplit
+from urllib.parse import unquote_plus, urlsplit
 
 from .config import ACTION_LEVELS, ScopeConfig
 
@@ -491,6 +491,14 @@ class ScopeGuard:
     def check_http(self, url: str, *, method: str = "GET", body: str = "", required_level: str = "detect") -> Decision:
         """校验 HTTP 动作：目标范围 + 方法策略 + 载荷（URL 查询串与请求体都扫描）。"""
         method = (method or "GET").upper()
+        try:
+            scheme = urlsplit(url).scheme.lower()
+        except ValueError as exc:
+            return self._record(self._deny("format", f"非法 HTTP URL: {exc}", target=url), "http")
+        if scheme not in ("http", "https"):
+            return self._record(
+                self._deny("format", "HTTP 出口只接受 http(s):// URL", target=url), "http"
+            )
         target_decision = self.check_target(url, action=f"http.{method}")
         if target_decision.denied:
             return target_decision
@@ -502,7 +510,10 @@ class ScopeGuard:
             destructive = self.check_destructive(target=url, reason=f"{method} 请求")
             if destructive.denied:
                 return destructive
-        for label, blob in (("query", unquote(urlsplit(url).query)), ("body", body or "")):
+        for label, blob in (
+            ("query", unquote_plus(urlsplit(url).query)),
+            ("body", body or ""), ("body", unquote_plus(body or "")),
+        ):
             if not blob:
                 continue
             payload_decision = self.check_payload(blob, target=url)
@@ -513,6 +524,28 @@ class ScopeGuard:
         if level_decision.denied:
             return level_decision
         return self._record(Decision(True, category="http", target=url, reason=f"{method} 合规"), "http")
+
+    def check_http_redirect(self, source: str, destination: str) -> Decision:
+        """自动跳转仅允许同源；目标本身授权不代表允许转发当前请求。"""
+        try:
+            before, after = urlsplit(source), urlsplit(destination)
+            origins = [
+                (parts.scheme.lower(), parts.hostname, parts.port or (443 if parts.scheme.lower() == "https" else 80))
+                for parts in (before, after)
+            ]
+        except ValueError as exc:
+            return self._record(self._deny("format", f"非法重定向 URL: {exc}", target=destination), "http.redirect")
+        if origins[0] != origins[1] or after.username is not None or after.password is not None:
+            return self._record(
+                self._deny(
+                    "redirect", "不自动跟随异源或含凭据的重定向", target=destination,
+                    hint="将跳转目标作为独立检查重新提交授权控制器",
+                ), "http.redirect",
+            )
+        return self._record(
+            Decision(True, category="redirect", target=destination, reason="同源重定向，仍需逐跳校验请求"),
+            "http.redirect",
+        )
 
     # ---------------------------------------------------------------- 限速
     def throttle(self, host: str = "", tokens: float = 1.0) -> float:

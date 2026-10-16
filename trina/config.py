@@ -105,6 +105,10 @@ class RunConfig:
     flush_state_every: int = 1
     #: 假设排序里的风险厌恶系数 λ:优先级 = 置信度×价值×信息增量 / (成本 + λ·风险 + ε)
     hypothesis_risk_aversion: float = 1.0
+    #: 洞察层开关(对照实验用):台账是否向模型展示并登记假设(关闭后仍可手工引用,但不进提示词/不记录)
+    hypothesis_ledger: bool = True
+    #: 循环守卫/失败分类的建议是否回灌给模型(关闭后仍照常统计 redundant_action_rate 与 fail_* 计数)
+    loop_guard: bool = True
     phases: list[str] = field(default_factory=lambda: ["recon", "enum", "vuln", "exploit", "post", "report"])
 
 

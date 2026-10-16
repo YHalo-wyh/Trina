@@ -13,7 +13,7 @@
 * C 成本（时间/Token）、R 风险（越界/破坏性/暴露）
 * λ 风险厌恶系数（默认 1.0，可由配置调）
 
-状态完全由**确定性代码**依据工具结果更新（verified → confirmed；反复无新信息 → refuted），
+状态完全由**确定性代码**依据工具结果更新（匹配的带证据验证 → confirmed；明确反证 → refuted），
 模型只能提出假设与置信度建议，不能自行宣布"假设成立"。
 """
 
@@ -22,6 +22,7 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass, field
 from typing import Any, Iterable
+from urllib.parse import urlsplit
 
 #: 假设状态（与 findings 的三态解耦：假设是"待验证的问题"，漏洞是"已确认的事实"）
 HYPO_STATUSES = ("open", "verifying", "confirmed", "refuted", "blocked")
@@ -77,6 +78,9 @@ class Hypothesis:
     cost: float = 0.4            # C
     risk: float = 0.2            # R
     next_step: str = ""
+    vuln_class: str = ""         # 自动确认所需的结构化验证对象
+    target: str = ""
+    parameter: str = ""
     evidence: list[dict[str, Any]] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
     attempts: int = 0
@@ -86,6 +90,27 @@ class Hypothesis:
     updated_at: float = field(default_factory=time.time)
 
     # ------------------------------------------------------------------ 计算
+    def matches_finding(self, finding: Any) -> bool:
+        """只把同漏洞类、同位置、同参数的结构化发现关联到本假设。"""
+        if not self.vuln_class or not self.target:
+            return False
+        if self.vuln_class.strip().lower() != str(finding.vuln_class).strip().lower():
+            return False
+        if self.parameter and self.parameter != finding.parameter:
+            return False
+
+        def location(value: str) -> tuple[Any, ...]:
+            parsed = urlsplit(value)
+            if parsed.scheme and parsed.netloc:
+                port = parsed.port or {"http": 80, "https": 443}.get(parsed.scheme)
+                return (parsed.scheme.lower(), parsed.hostname, port, parsed.path or "/")
+            return (value,)
+
+        try:
+            return location(self.target) == location(finding.url or finding.target)
+        except ValueError:
+            return False
+
     def priority(self, risk_aversion: float = 1.0) -> float:
         """Priority(h) = P×V×I / (C + λR + ε)。已收敛的假设优先级置 0。"""
         if self.status in ("confirmed", "refuted"):
@@ -143,6 +168,9 @@ class HypothesisLedger:
         next_step: str = "",
         source: str = "model",
         hypothesis_id: str = "",
+        vuln_class: str = "",
+        target: str = "",
+        parameter: str = "",
     ) -> Hypothesis:
         text = (statement or "").strip()
         if not text:
@@ -150,6 +178,8 @@ class HypothesisLedger:
         # 去重：与已有未收敛假设语义近似（前缀互相包含）则复用
         for existing in self.items.values():
             if existing.status not in ("open", "verifying"):
+                continue
+            if (existing.vuln_class, existing.target, existing.parameter) != (vuln_class, target, parameter):
                 continue
             left, right = existing.statement[:24], text[:24]
             if left == right or left.startswith(right) or right.startswith(left):
@@ -168,6 +198,9 @@ class HypothesisLedger:
             cost=_level(cost, 0.4),
             risk=_level(risk, 0.2),
             next_step=str(next_step)[:200],
+            vuln_class=vuln_class,
+            target=target,
+            parameter=parameter,
             source=source,
         )
         self.items[hid] = item
@@ -176,6 +209,10 @@ class HypothesisLedger:
     def from_action(self, action: dict[str, Any]) -> Hypothesis | None:
         """模型可以在动作里附带假设：{"hypothesis": {"statement": …, "confidence": "high", …}}。"""
         raw = action.get("hypothesis")
+        # 引用只能复用既有假设；未知编号不能覆盖或伪造台账记录。
+        reference = action.get("hypothesis_id") or (raw.get("id") if isinstance(raw, dict) else "")
+        if reference:
+            return self.get(str(reference))
         if isinstance(raw, str) and raw.strip():
             return self.add(raw, source="model")
         if isinstance(raw, dict):
@@ -191,10 +228,46 @@ class HypothesisLedger:
                 risk=raw.get("risk", 0.2),
                 next_step=str(raw.get("next_step") or ""),
                 source="model",
+                vuln_class=str(raw.get("vuln_class") or ""),
+                target=str(raw.get("target") or raw.get("url") or ""),
+                parameter=str(raw.get("parameter") or ""),
             )
         return None
 
     # ------------------------------------------------------------------ 改
+    def record_tool_outcome(
+        self, hypothesis_id: str, *, result: Any, state: Any, tool: str, new_information: bool,
+    ) -> Hypothesis | None:
+        """任务与对话模式共用的证据判定：验证对象匹配且本次产出带证据的确证。"""
+        from .state import Finding
+
+        hypothesis = self.get(hypothesis_id)
+        if hypothesis is None:
+            return None
+        related: list[dict[str, Any]] = []
+        confirmed = False
+        for raw in (result.facts or {}).get("findings", []) or []:
+            if not isinstance(raw, dict):
+                continue
+            data = {k: v for k, v in raw.items() if k in Finding.__dataclass_fields__}
+            data.setdefault("id", "")
+            data.setdefault("title", "")
+            data.setdefault("vuln_class", "unknown")
+            candidate = Finding(**data)
+            if not hypothesis.matches_finding(candidate):
+                continue
+            saved = next((f for f in state.findings if f.dedup_key == candidate.dedup_key), None)
+            if saved is not None:
+                related.append({"kind": "tool", "tool": tool, "finding_id": saved.id})
+                confirmed = confirmed or bool(
+                    result.ok and not result.denied and candidate.evidence
+                    and candidate.status in ("verified", "exploited")
+                )
+        return self.record_outcome(
+            hypothesis_id, new_information=new_information, confirmed=confirmed,
+            blocked=result.denied, note=str(result.summary or result.error)[:160], evidence=related,
+        )
+
     def get(self, hypothesis_id: str) -> Hypothesis | None:
         return self.items.get(hypothesis_id)
 
@@ -204,6 +277,7 @@ class HypothesisLedger:
         *,
         new_information: bool,
         confirmed: bool = False,
+        refuted: bool = False,
         blocked: bool = False,
         note: str = "",
         evidence: Iterable[dict[str, Any]] = (),
@@ -212,20 +286,28 @@ class HypothesisLedger:
         item = self.items.get(hypothesis_id)
         if item is None:
             return None
+        entries = list(evidence)
         item.attempts += 1
         item.updated_at = time.time()
-        for entry in evidence:
+        for entry in entries:
             item.add_evidence(entry)
         if note:
             item.notes.append(note[:200])
+        # 已有确证不因后续超时或重复结果而消失；冲突证据保留供复核。
+        if item.status in ("confirmed", "refuted"):
+            return item
         if blocked:
             item.status = "blocked"
             item.confidence = max(0.05, item.confidence * 0.7)
             item.next_step = "换合规路径或请人工确认授权"
             return item
-        if confirmed:
+        if confirmed and entries:
             item.status = "confirmed"
             item.confidence = 0.9
+            item.next_step = ""
+            return item
+        if refuted and entries:
+            item.status = "refuted"
             item.next_step = ""
             return item
         if new_information:
@@ -233,13 +315,13 @@ class HypothesisLedger:
             item.confidence = min(0.95, item.confidence + 0.1)
             item.stale_attempts = 0
             return item
-        # 无新信息：逐步降可信度；连续多次则判为已被否定（避免无限撞墙）
+        # 无新信息只降低调度优先级，不能充当反证。
         item.stale_attempts += 1
         item.confidence = max(0.05, round(item.confidence * 0.85, 3))
         if item.stale_attempts >= 3:
-            item.status = "refuted"
-            item.next_step = ""
-            item.notes.append("连续 3 次验证均无新信息，按已否定处理")
+            item.status = "open"
+            item.next_step = "连续验证无新信息：换验证方法或请求人工判断，结论仍未解决"
+            item.notes.append("连续验证无新信息，保留待验证状态")
         else:
             item.status = "verifying"
             item.cost = _clamp(item.cost + 0.1)
@@ -265,7 +347,7 @@ class HypothesisLedger:
         open_items = self.open_items()
         if not open_items:
             return "（暂无待验证假设：可以先提出 1—3 个可验证的假设，再动手）"
-        lines = ["待验证假设（按优先级排序，建议先验证靠前的；可在动作里用 hypothesis 字段新增假设）:"]
+        lines = ["待验证假设（按优先级排序；用 hypothesis_id 复用编号，hypothesis 字段新增假设）:"]
         for item in open_items[:limit]:
             lines.append(
                 f"  - {item.id}（优先级 {item.priority(self.risk_aversion):.2f}）{item.statement}"

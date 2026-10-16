@@ -8,6 +8,8 @@ dependencies = [
     "requests>=2.31",
     "paramiko>=3.4",
     "rich>=13.0",
+    "beautifulsoup4>=4.12",
+    "aiohttp>=3.9",
 ]
 
 [project.optional-dependencies]

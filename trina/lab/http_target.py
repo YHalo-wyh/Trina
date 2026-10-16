@@ -78,6 +78,9 @@ _GIT_CONFIG = "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n[remote
 
 _README_TXT = "Trina 脆弱靶机使用说明：仅供授权实训与自动化评测使用。\n"
 
+# 固定靶机样本，避免评测依赖宿主机操作系统或暴露真实账户信息。
+_PASSWD_SAMPLE = "root:x:0:0:root:/root:/bin/bash\nwww-data:x:33:33:www-data:/var/www:/usr/sbin/nologin\n"
+
 _LOGIN_FORM_HTML = """<!DOCTYPE html><html><head><title>登录</title></head><body>
 <h1>登录</h1>
 <form action="/login" method="post">
@@ -230,10 +233,7 @@ def handle_lfi(state: LabState, raw_file: str) -> tuple[int, str]:
 
     if raw.startswith("php://filter"):
         if "convert.base64-encode" in raw and "etc/passwd" in raw:
-            try:
-                data = Path("/etc/passwd").read_bytes()
-            except OSError:
-                return 200, ""
+            data = _PASSWD_SAMPLE.encode("utf-8")
             return 200, base64.b64encode(data).decode("ascii")
         return 200, ""
 
@@ -241,10 +241,7 @@ def handle_lfi(state: LabState, raw_file: str) -> tuple[int, str]:
 
     # 目录穿越 → /etc/passwd
     if "etc/passwd" in decoded or "etc/passwd" in os.path.normpath(decoded):
-        try:
-            return 200, Path("/etc/passwd").read_text(encoding="utf-8", errors="replace")
-        except OSError as exc:
-            return 500, f"Warning: include(): failed to open stream: {exc}"
+        return 200, _PASSWD_SAMPLE
 
     if decoded.endswith("readme.txt"):
         return 200, _README_TXT
