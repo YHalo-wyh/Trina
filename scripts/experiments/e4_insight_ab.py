@@ -36,6 +36,8 @@ def _metrics(state: dict[str, Any]) -> dict[str, Any]:
     counters = state.get("counters") or {}
     ledger = state.get("ledger") or {}
     loop = state.get("loop") or {}
+    hypotheses = state.get("hypotheses") or []
+    scheduler = state.get("scheduler") or {}
     return {
         "status": state.get("status"),
         "verdict": state.get("verdict"),
@@ -53,7 +55,12 @@ def _metrics(state: dict[str, Any]) -> dict[str, Any]:
         "cost_usd": round(float(ledger.get("cost_usd") or 0.0), 6),
         "redundant_rate": loop.get("redundant_action_rate"),
         "failures": sum(int(v) for k, v in counters.items() if str(k).startswith("fail_")),
-        "hypotheses": len(state.get("hypotheses") or []),
+        "hypotheses": len(hypotheses),
+        "hypotheses_resolved": len(
+            [h for h in hypotheses if h.get("status") in ("confirmed", "refuted", "blocked")]
+        ),
+        "scheduler_decisions": scheduler.get("decisions"),
+        "scheduler_compliance": scheduler.get("compliance_rate"),
         "denied": counters.get("denied"),
     }
 
@@ -65,7 +72,9 @@ def _play(arm: str, args: argparse.Namespace) -> tuple[int, str, str]:
     if args.goal:
         cmd += ["--goal", args.goal]
     if arm == "off":
-        cmd += ["--set", "run.hypothesis_ledger=false", "--set", "run.loop_guard=false"]
+        for override in args.b_overrides.split(","):
+            if override.strip():
+                cmd += ["--set", override.strip()]
     proc = subprocess.run(cmd, cwd=ROOT, capture_output=True, text=True)
     # 注意：play 对"非成功结论"返回 1（如 INCONCLUSIVE），这不代表运行本身失败——
     # 判据是"是否产出了新的 run_id"，不是退出码。
@@ -94,6 +103,10 @@ def _summarise(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "redundant_rate_avg": mean("redundant_rate"),
         "failures_total": sum(int(row["failures"] or 0) for row in ok_rows),
         "hypotheses_avg": mean("hypotheses"),
+        "hypotheses_resolved_total": sum(int(row["hypotheses_resolved"] or 0) for row in ok_rows),
+        "scheduler_decisions_total": sum(int(row["scheduler_decisions"] or 0) for row in ok_rows),
+        "scheduler_compliance_avg": mean("scheduler_compliance"),
+        "verified_total": sum(int(row["findings_verified"] or 0) for row in ok_rows),
     }
 
 
@@ -125,6 +138,11 @@ def main() -> int:
     parser.add_argument("--goal", default="拿到 flag")
     parser.add_argument("--out", default="")
     parser.add_argument(
+        "--b-overrides",
+        default="run.hypothesis_ledger=false,run.loop_guard=false",
+        help="B 臂（off）的配置覆盖，逗号分隔；例如只关调度：'run.hypothesis_scheduler=false'",
+    )
+    parser.add_argument(
         "--collect", default="",
         help="不跑新任务，从已有运行重建汇总：'on=id1,id2 off=id3'（配合 --out 复用已花费的样本）",
     )
@@ -155,7 +173,9 @@ def main() -> int:
                     f"    {run_id}: 状态={row['status']} 结论={row['verdict']} "
                     f"漏洞={row['findings']}(已验证 {row['findings_verified']}) flag={row['flags']} "
                     f"检查={row['executed_checks']} 步数={row['steps']} 成本=${row['cost_usd']} "
-                    f"冗余率={row['redundant_rate']} 失败={row['failures']} 假设={row['hypotheses']}（{elapsed}s）",
+                    f"冗余率={row['redundant_rate']} 失败={row['failures']} 假设={row['hypotheses']}"
+                    f"(已解决 {row['hypotheses_resolved']}) 调度={row['scheduler_decisions']}"
+                    f"(遵从率 {row['scheduler_compliance']})（{elapsed}s）",
                     flush=True,
                 )
             results[arm].append(row)
@@ -167,7 +187,7 @@ def main() -> int:
             "goal": args.goal,
             "max_steps": args.max_steps,
             "runs_per_arm": args.runs,
-            "arm_off_overrides": ["run.hypothesis_ledger=false", "run.loop_guard=false"],
+            "arm_off_overrides": [item.strip() for item in args.b_overrides.split(",") if item.strip()],
         },
         "runs": results,
         "summary": {arm: _summarise(rows) for arm, rows in results.items()},

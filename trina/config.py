@@ -109,7 +109,27 @@ class RunConfig:
     hypothesis_ledger: bool = True
     #: 循环守卫/失败分类的建议是否回灌给模型(关闭后仍照常统计 redundant_action_rate 与 fail_* 计数)
     loop_guard: bool = True
+    #: 确定性假设调度:把台账优先级翻译成"这一步该验证谁"(绑定注册检查项);关闭后只作为提示词里的排序建议
+    hypothesis_scheduler: bool = True
+    #: 参与调度的最低优先级(低于它不占用一次调度)
+    scheduler_min_priority: float = 0.15
+    #: 专职 Agent 只作建议，默认关闭，待真实任务对照评测后再决定是否默认启用。
+    specialists: bool = False
+    specialist_max_calls: int = 3
+    specialist_max_tokens: int = 1200
+    specialist_context_chars: int = 6000
     phases: list[str] = field(default_factory=lambda: ["recon", "enum", "vuln", "exploit", "post", "report"])
+
+    def validate(self) -> None:
+        if type(self.specialists) is not bool:
+            raise ConfigError("run.specialists 必须为布尔值")
+        for name, lower, upper in (
+            ("specialist_max_calls", 0, 20), ("specialist_max_tokens", 128, 4096),
+            ("specialist_context_chars", 1000, 32000),
+        ):
+            value = getattr(self, name)
+            if type(value) is not int or not lower <= value <= upper:
+                raise ConfigError(f"run.{name} 必须是 {lower}–{upper} 范围内的整数")
 
 
 @dataclass
@@ -301,6 +321,7 @@ class TrinaConfig:
     def validate(self) -> None:
         self.scope.validate()
         self.llm.validate()
+        self.run.validate()
         self.policy.validate()
         if self.audit.dir == "":
             raise ConfigError("audit.dir 不能为空")

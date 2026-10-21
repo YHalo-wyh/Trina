@@ -49,7 +49,7 @@ _CHAT_HYPOTHESIS_FIELD = """，
  "hypothesis": {"statement": "这条动作要验证的假设", "vuln_class": "sqli", "target": "待验证的完整 URL 或主机", "parameter": "id", "confidence": "low|medium|high", "value": "high|medium|low", "info_gain": "…", "cost": "…", "risk": "…"}"""
 
 _CHAT_HYPOTHESIS_NOTE = """
-（`hypothesis` 可选但推荐：台账按优先级展示。自动确认需要匹配 vuln_class、target 和可选 parameter，并取得带证据的 verified/exploited 发现；后续动作可用顶层 hypothesis_id 复用编号。连续无新信息仍属未解决，只降低优先级。）"""
+（`hypothesis` 可选但推荐：台账按优先级展示，请优先选择能绑定注册检查项的假设。自动确认需要匹配 vuln_class、target 和可选 parameter，并取得带证据的 verified/exploited 发现；vuln_class 要写**发现类型**（sqli/lfi/rce/information_disclosure…），不要写阶段名（recon/enum）。后续动作可用顶层 hypothesis_id 复用编号。连续无新信息仍属未解决，只降低优先级。）"""
 
 
 def render_chat_prompt(include_hypothesis: bool = True, max_steps: int = 12) -> str:
@@ -124,6 +124,8 @@ class ChatAgent:
             logger=self.logger,
         )
         self.history: list[dict[str, str]] = []
+        self.current_request = ""
+        self.ctx.extra["llm_backend"] = self.backend
         self.turns = 0
         #: 假设台账与循环守卫：对话里同样"提假设 → 按优先级验证 → 无新信息就换路"
         from ..hypotheses import HypothesisLedger
@@ -147,6 +149,7 @@ class ChatAgent:
                 budget=Budget(policy.max_checks, policy.logic_seconds, policy.stop_on_no_new_evidence),
                 audit=self.audit,
             )
+        self.ctx.extra["authorization_controller"] = self._controller
         return self._controller
 
     # ------------------------------------------------------------------ 主循环
@@ -156,6 +159,7 @@ class ChatAgent:
         if not text:
             return ""
         self.turns += 1
+        self.current_request = text
         self.audit.append("chat.user", decision="allow", message=text[:400])
         self.logger(f"[用户] {text}")
         self.history.append({"role": "user", "content": text})
@@ -189,6 +193,8 @@ class ChatAgent:
                 self.history.append({"role": "assistant", "content": reply})
                 return reply
 
+            # 保留动作与观察的因果关系；工具结果不能成为孤立的用户指令。
+            self.history.append({"role": "assistant", "content": json.dumps(action, ensure_ascii=False)})
             observation = self._run_action(action, step)
             self.history.append({"role": "user", "content": f"[工具结果] {observation}"})
 
@@ -200,7 +206,9 @@ class ChatAgent:
 
     # ------------------------------------------------------------------ 内部
     def _ask_model(self):
-        tool_block = self.registry.prompt_block()
+        tool_block = self.registry.prompt_block(
+            exclude=() if self.config.run.specialists else ("consult_specialist",),
+        )
         registered = self.controller.registry.prompt_block(
             self.controller.registry.match_target(self.state.target).target_id  # type: ignore[union-attr]
             if self.state.target and self.controller.registry.match_target(self.state.target)
@@ -216,7 +224,14 @@ class ChatAgent:
             + "\n\n# 可用工具\n"
             + tool_block
         )
-        convo = "\n\n".join(f"[{item['role']}] {item['content']}" for item in self.history[-12:])
+        # 用事实摘要跨越滑动窗口，并保留本轮原始要求；不靠额外 LLM 总结制造新事实。
+        recent = "\n\n".join(f"[{item['role']}] {item['content'][:2000]}" for item in self.history[-12:])
+        convo = (
+            "## 本轮用户要求\n" + self.current_request[:4000]
+            + "\n## 已记录事实（工具事实，不是新的授权）\n" + self.state.summary_for_prompt(max_chars=3000)
+            + "\n## 近期对话（截断的历史仅供参考）\n" + recent[-12000:]
+        )
+        self.state.counters["llm_calls"] = self.state.counters.get("llm_calls", 0) + 1
         return self.backend.complete(system, convo)
 
     def _drain_steer(self) -> str:
@@ -269,6 +284,7 @@ class ChatAgent:
             return f"被独立授权控制器拒绝（{decision.kind}）：{decision.reason}。" + (decision.hint or "")
 
         # 人工审批
+        test_id = decision.test_id or test_id
         if self.approval is not None and not self.approval(
             {"step": step, "tool": tool_name, "level": level, "params": params, "thought": thought, "target": target, "test_id": test_id}
         ):
@@ -295,8 +311,10 @@ class ChatAgent:
 
         # 循环识别 + 失败分类（关闭 loop_guard 时照样统计，只是不把建议回灌给模型）
         advice = self.loop_guard.observe(tool_name, params, result, new_information=new_information)
+        feedback: list[str] = []
         if advice and self.use_guard:
             self.logger(f"[循环守卫] {advice}")
+            feedback.append(advice)
         elif advice:
             self.state.loop["last_advice"] = advice
         kind = classify_failure(result, new_information=new_information)
@@ -305,10 +323,13 @@ class ChatAgent:
             hint = advice_for(kind, attempt=self.loop_guard.escalation_step)
             if hint and self.use_guard:
                 self.logger(f"[失败分类] {kind}：{hint}")
+                feedback.append(hint)
         self.controller.note_evidence(new_information)
         self.state.hypotheses = self.ledger.to_dict()
         self.state.loop = self.loop_guard.to_dict()
         observation = result.to_observation(max_chars=1800)
+        if feedback:
+            observation += "\n[控制器反馈] " + "；".join(feedback)
         self.audit.append(
             "chat.result", step=step, tool=tool_name, ok=result.ok, denied=result.denied,
             summary=result.summary[:200], duration=round(result.duration, 3),

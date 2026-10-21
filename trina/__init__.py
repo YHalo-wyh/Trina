@@ -1,4 +1,4 @@
-"""Trina · 全自动渗透测试 Agent（omp 二开）。
+"""Trina · 全自动渗透测试 Agent。
 
 模块地图：
     trina.config    配置模型（同时是合规护栏的数据源）

@@ -363,6 +363,16 @@ def _evidence(parts: list[str], data: dict[str, Any]) -> None:
         )
     else:
         parts.append('<p class="empty">（本轮未记录假设）</p>')
+    scheduler = data.get("scheduler") or {}
+    if scheduler.get("decisions"):
+        expected = int(scheduler.get("followed", 0) or 0) + int(scheduler.get("missed", 0) or 0)
+        parts.append(
+            f'<p class="meta">确定性调度：决策 {esc(str(scheduler.get("decisions")))} 次'
+            + (f"，按调度执行 {esc(str(scheduler.get('followed', 0)))}/{expected}"
+               f"（遵从率 {float(scheduler.get('compliance_rate') or 0):.0%}）" if expected else "")
+            + (f"，未遵从 {esc(str(scheduler.get('missed', 0)))} 次" if scheduler.get("missed") else "")
+            + "。</p>"
+        )
     if graph.get("available"):
         parts.append(f"<h3>证据关系图</h3><p class=\"meta\">{esc(graph.get('summary') or '')}</p>")
         if graph.get("edge_rows"):

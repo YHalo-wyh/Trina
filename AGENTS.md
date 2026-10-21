@@ -1,6 +1,6 @@
-# AGENTS.md · 项目约定（omp 会话上下文）
+# AGENTS.md · 项目约定
 
-本仓库是 **Trina（全自动渗透测试 Agent）**。在本目录开 omp 会话时：
+本仓库是 **Trina（全自动渗透测试 Agent）**。在本目录工作时：
 
 ## 快速定位
 

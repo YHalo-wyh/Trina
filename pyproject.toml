@@ -1,7 +1,7 @@
 [project]
 name = "trina"
 version = "0.1.0"
-description = "Trina · 全自动渗透测试 Agent（omp 二开）"
+description = "Trina · 全自动渗透测试 Agent"
 requires-python = ">=3.10"
 dependencies = [
     "pyyaml>=6.0",

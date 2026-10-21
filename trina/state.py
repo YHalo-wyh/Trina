@@ -167,6 +167,8 @@ class RunState:
     graph: dict[str, Any] = field(default_factory=dict)
     #: 循环识别统计（无新信息重复比例等）
     loop: dict[str, Any] = field(default_factory=dict)
+    #: 确定性调度统计（决策次数、遵从率、最近调度）
+    scheduler: dict[str, Any] = field(default_factory=dict)
     max_evidence: int = 200
 
     # ------------------------------------------------------------------ 基础
@@ -403,6 +405,7 @@ class RunState:
             "hypotheses": self.hypotheses,
             "graph": self.graph,
             "loop": self.loop,
+            "scheduler": self.scheduler,
         }
 
     @classmethod
@@ -477,6 +480,7 @@ class RunState:
             hypotheses=list(data.get("hypotheses") or []),
             graph=dict(data.get("graph") or {}),
             loop=dict(data.get("loop") or {}),
+            scheduler=dict(data.get("scheduler") or {}),
         )
         state.started_at = float(data.get("started_at") or state.started_at)
         ended = data.get("ended_at")

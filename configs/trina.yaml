@@ -61,6 +61,15 @@ run:
   hypothesis_ledger: true
   # loop_guard=false：循环守卫/失败分类的建议不回灌给模型（redundant_action_rate 与 fail_* 照常统计）
   loop_guard: true
+  # 确定性假设调度：把台账优先级变成"这一步该验证谁"（绑定注册检查项）；关闭则只作为提示词里的排序建议
+  hypothesis_scheduler: true
+  # 参与调度的最低优先级
+  scheduler_min_priority: 0.15
+  # 按需咨询专职 Agent：建议交回主控，执行仍经注册表、控制器与人工审批；默认关闭以便对照评测
+  specialists: false
+  specialist_max_calls: 3
+  specialist_max_tokens: 1200
+  specialist_context_chars: 6000
   phases: ["recon", "enum", "vuln", "exploit", "post", "report"]
 
 tools:

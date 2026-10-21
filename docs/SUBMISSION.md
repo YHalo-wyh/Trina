@@ -17,7 +17,7 @@
 ## 2. 提交边界（红线）
 
 ### 该提交
-- 源代码与配置：`trina/`、`configs/`、`tests/`、`.omp/`（omp 二开产物）、`pyproject.toml`
+- 源代码与配置：`trina/`、`configs/`、`tests/`、`.omp/`（可选 omp 集成）、`pyproject.toml`
 - 文档与索引：`README.md`、`docs/`、六类目录下的 README/模板/ADR
 - **精选证据**：一次有代表性的运行的审计哈希链、状态、报告与评测指标（小体积、可复核）
 - 靶场注册表（含 ground truth）：`configs/ranges/*.yaml`（**虚构靶机**，不含真实业务数据）

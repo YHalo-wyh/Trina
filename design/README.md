@@ -18,6 +18,12 @@
 | [ADR-0006](adr/0006-planner-controller-separation.md) | 计划器与控制器分离，只接受注册 target_id/test_id | P3 核心：模型不能自行扩大范围 |
 | [ADR-0007](adr/0007-three-verdict-states.md) | 结论三分类 + 覆盖说明（已测/未测/原因） | 「没有结果」不等于「没有问题」 |
 | [ADR-0008](adr/0008-goal-requirements.md) | 把任务描述解析为硬条件（漏洞类/路径/端口/凭据） | 防止"顺手拿到 flag"替代要求的验证 |
+| [ADR-0015](adr/0015-insight-layer-hypotheses-failure-graph.md) | 假设台账、失败分类与证据关系图 | 待验证问题与已验证事实分开，结论可追溯 |
+| [ADR-0016](adr/0016-deterministic-hypothesis-scheduling.md) | 注册检查项驱动的确定性假设调度 | 排序进入实际调度，记录遵从情况 |
+| [ADR-0017](adr/0017-specialist-consultation-without-blackboard.md) | 按需咨询专职 Agent，执行权集中，不引入协作黑板 | 独立上下文只返回建议，复用原有授权与审计 |
+| [ADR-0018](adr/0018-fact-context-and-atomic-snapshots.md) | 事实摘要、实时覆盖与原子快照 | 减少重复调度、对话丢进展和状态读取竞态 |
+
+本轮完整审查、外部资料与待解决问题见 [Agent 设计审查](../docs/AGENT_DESIGN_REVIEW.md)。
 
 ### 实证决策（都有实验卡与逐次数据，对应 O4：实验卡＋逐次数据＋ADR）
 | 编号 | 决定 | 实验卡 | 关键数据 |

@@ -231,6 +231,16 @@ def _evidence(lines: list[str], data: dict[str, Any]) -> None:
         f"已确认 {counts.get('confirmed', 0)}、已否定 {counts.get('refuted', 0)}、被阻断 {counts.get('blocked', 0)}）"
     )
     lines.append("")
+    scheduler = data.get("scheduler") or {}
+    if scheduler.get("decisions"):
+        expected = int(scheduler.get("followed", 0) or 0) + int(scheduler.get("missed", 0) or 0)
+        lines.append(
+            f"确定性调度:决策 {scheduler.get('decisions')} 次"
+            + (f"，按调度执行 {scheduler.get('followed', 0)}/{expected}（遵从率 {float(scheduler.get('compliance_rate') or 0):.0%}）" if expected else "")
+            + (f"，未遵从 {scheduler.get('missed', 0)} 次" if scheduler.get("missed") else "")
+            + "——调度只指定方向，执行仍经控制器与护栏。"
+        )
+        lines.append("")
     if data.get("hypothesis_rows"):
         lines += _table(
             ["ID", "状态", "置信度", "优先级", "假设", "下一步", "证据数"],

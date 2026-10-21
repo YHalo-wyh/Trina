@@ -1,5 +1,5 @@
 /**
- * Trina × omp 扩展 —— 二开产物（项目级，随 cwd 自动加载：<cwd>/.omp/extensions/*.ts）
+ * Trina 的可选 omp 扩展（项目级，随 cwd 自动加载：<cwd>/.omp/extensions/*.ts）
  *
  * 它做两件事：
  * 1. 把 Trina 的工具集暴露成 omp 的一等工具（trina_run / trina_tool / trina_guard / trina_tools / trina_report），

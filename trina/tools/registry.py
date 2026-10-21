@@ -314,17 +314,24 @@ class ToolRegistry:
             grouped.setdefault(spec.category, []).append(spec)
         return grouped
 
-    def prompt_block(self, categories: Iterable[str] | None = None, verbose: bool = False) -> str:
+    def prompt_block(
+        self, categories: Iterable[str] | None = None, verbose: bool = False,
+        *, exclude: Iterable[str] = (),
+    ) -> str:
         """渲染工具清单给大模型（分组、紧凑）。"""
         grouped = self.by_category()
+        excluded = set(exclude)
         blocks: list[str] = []
         order = ["recon", "web", "vuln", "exploit", "utility"]
         keys = [k for k in order if k in grouped] + [k for k in grouped if k not in order]
         for category in keys:
             if categories and category not in categories:
                 continue
+            visible = [spec for spec in grouped[category] if spec.name not in excluded]
+            if not visible:
+                continue
             blocks.append(f"## {category}")
-            blocks.extend(spec.render(verbose=verbose) for spec in grouped[category])
+            blocks.extend(spec.render(verbose=verbose) for spec in visible)
         return "\n".join(blocks)
 
     def describe(self) -> list[dict[str, Any]]:

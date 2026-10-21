@@ -94,6 +94,7 @@ def summarise(state: Any, *, hypotheses: list[dict[str, Any]] | None = None, now
         "errors": counters.get("errors", 0),
         "redundant_rate": loop.get("redundant_action_rate", 0.0),
         "loop_advice": loop.get("last_advice", ""),
+        "scheduler": _get(state, "scheduler") or {},
         "ledger": _get(state, "ledger") or {},
         "last_steps": steps[-3:],
         "artifacts": _get(state, "artifacts") or {},
@@ -144,6 +145,20 @@ def render_board(state: Any, *, hypotheses: list[dict[str, Any]] | None = None, 
         lines.append(f"   未测项（前 5）：{preview}")
     if data["redundant_rate"]:
         lines.append(f" 循环识别   无新信息重复比例 {data['redundant_rate']:.0%}" + (f" · {data['loop_advice'][:40]}" if data["loop_advice"] else ""))
+    scheduler = data.get("scheduler") or {}
+    if scheduler.get("decisions"):
+        expected = scheduler.get("followed", 0) + scheduler.get("missed", 0)
+        lines.append(
+            f" 调度遵从   决策 {scheduler.get('decisions')} 次 · 按调度执行 {scheduler.get('followed', 0)}"
+            + (f"/{expected}（遵从率 {float(scheduler.get('compliance_rate') or 0):.0%}）" if expected else "")
+            + (f" · 未遵从 {scheduler.get('missed')}" if scheduler.get("missed") else "")
+        )
+        last = scheduler.get("last") or {}
+        if last:
+            lines.append(
+                f"   - 最近调度：验证 {last.get('hypothesis_id')} → "
+                + (f"{last.get('test_id')}（{last.get('tool')}）" if last.get("test_id") else f"自由验证 {last.get('vuln_class')}")
+            )
     if data["last_steps"]:
         lines.append(line)
         lines.append(" 最近动作")

@@ -81,6 +81,15 @@ def _first_evidence_seconds(state: Any) -> float | None:
     return round(min(stamps) - float(started), 3)
 
 
+def _scheduler_compliance(state: Any) -> float | None:
+    """调度遵从率：没有可测量的调度决策时返回 None（不进均值分母）。"""
+    payload = getattr(state, "scheduler", None) or {}
+    decisions = int(payload.get("followed", 0) or 0) + int(payload.get("missed", 0) or 0)
+    if not decisions:
+        return None
+    return round(float(payload.get("compliance_rate", 0.0) or 0.0), 4)
+
+
 def _local_endpoints(spec: ScenarioSpec) -> set[tuple[str, int]]:
     """从场景目标里抽出「本机端口」，用于决定需要拉起哪些 lab 夹具。"""
     import urllib.parse
@@ -349,6 +358,15 @@ class EvalHarness:
             first_evidence_seconds=_first_evidence_seconds(state),
             redundant_rate=float((getattr(state, "loop", None) or {}).get("redundant_action_rate", 0.0) or 0.0),
             failures=sum(int(v) for k, v in (counters or {}).items() if str(k).startswith("fail_")),
+            hypotheses_total=len(getattr(state, "hypotheses", None) or []),
+            hypotheses_resolved=len(
+                [
+                    item
+                    for item in (getattr(state, "hypotheses", None) or [])
+                    if str(item.get("status")) in ("confirmed", "refuted", "blocked")
+                ]
+            ),
+            scheduler_compliance=_scheduler_compliance(state),
         )
 
     # -------------------------------------------------------------- 默认执行器

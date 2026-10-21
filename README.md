@@ -1,6 +1,6 @@
 # Trina · 全自动渗透测试 Agent
 
-在 [omp](https://omp.sh) 之上二开的自动化渗透测试 Agent：**大模型 ReAct 决策 + 全套工具封装 + 多靶场适配 + 硬性安全护栏 + 标准报告 + 评测框架**。
+自动化渗透测试 Agent：**大模型 ReAct 决策 + 全套工具封装 + 多靶场适配 + 硬性安全护栏 + 标准报告 + 评测框架**。
 
 ```bash
 bash scripts/install.sh          # 装成全局命令：之后在任意目录敲 `trina` 即可（默认直连 DeepSeek）
@@ -48,7 +48,7 @@ scripts/dev.sh play --api deepseek --goal "拿到 flag 并验证 SQL 注入" --m
 | 能力 | 落地位置 | 关键设计 |
 |---|---|---|
 | 1. 自动决策大脑 | `trina/brain/` | ReAct 循环 + PTES 阶段机（事实驱动推进）+ **假设台账**（按价值×置信度×信息增量排序验证）+ 失败分类与循环守卫（无新信息就打转→换参数→换工具→请人介入）+ 预算收敛；动作协议是**文本 JSON**，跨模型可移植、可回放 |
-| 2. 工具统一封装 | `trina/tools/` | 17 个工具，统一 `ToolSpec/ToolResult` 契约；**外部二进制优先 + 内置 Python 引擎兜底**（本机无 nmap/nuclei/sqlmap/hydra 也能跑） |
+| 2. 工具统一封装 | `trina/tools/` | 17 个目标分析工具 + 1 个可选专职 Agent 咨询工具，统一 `ToolSpec/ToolResult` 契约；**外部二进制优先 + 内置 Python 引擎兜底**（本机无 nmap/nuclei/sqlmap/hydra 也能跑） |
 | 3. 多靶场适配 | `trina/adapters/` + `configs/ranges/` | `local` / `docker-compose` / `http-range` / `tsecbench` 四类适配器，内置 Pikachu、DVWA、Vulhub、VulnStack、lab、TSecBench 六套注册表（含 ground truth） |
 | 4. 安全合规护栏 | `trina/scope.py` + `trina/audit.py` | 授权网段白名单硬校验、动作分级、破坏性闸门、DoS/删库硬禁止、限速与爆破规模上限、SHA-256 哈希链审计 |
 | 5. 标准报告 | `trina/report/` | Markdown + 自包含 HTML（内联 CSS/SVG，无外部依赖），含执行摘要、攻击路径、漏洞详情（CVSS/CWE/证据/复现/修复）、**证据链与假设台账**（mermaid 关系图，结论可反向追溯）、凭据与 flag、工具时间线、合规声明 |
@@ -63,6 +63,9 @@ scripts/dev.sh play --api deepseek --goal "拿到 flag 并验证 SQL 注入" --m
   同工具+同参数+同结果视为无新信息，递进提示"换参数 → 换工具 → 请人介入"。
 - **证据关系图**（`trina/evidence_graph.py`）：目标→主机→端口→路径→发现→证据（+ 检查项/假设→发现、→flag），
   既是报告章节也是复核依据。
+- **确定性调度**（`trina/brain/scheduler.py`）：每步把台账里"能绑定注册检查项"的最高优先级假设派下去
+  （任务要求的漏洞类优先；模型没提假设时直接派该类的注册检查项），并记录**遵从率**（未遵从进审计哈希链）；
+  调度只指定方向，执行仍经控制器与护栏。关掉它：`--set run.hypothesis_scheduler=false`。
 - **工作台**：`trina/brain` 每步落盘 `state.json`，`/board`、`/hypotheses`、`/graph` 与 `trina watch` 共用一份渲染，
   另给四项内部指标：Cost per Success、Time to Evidence、Redundant Action Rate、Recovery Rate（口径见 `docs/EVAL.md`）。
 - **成本实话**：A/B 实测（`review/experiments/E4-insight-layer.md`，两臂各 3 次）洞察层让同任务 token **+44%**、
@@ -72,7 +75,20 @@ scripts/dev.sh play --api deepseek --goal "拿到 flag 并验证 SQL 注入" --m
 目标完成度、已验证缺口与实施顺序见 [目标差距评估](docs/TARGET_PROGRESS.md)。
 固定决策与真实 lab 请求的两轮机制回归：`python -m scripts.verify_decision_evidence`。
 
-## 已封装的工具（17）
+### 按需咨询专职 Agent
+
+主控可以通过注册工具 `consult_specialist` 咨询独立上下文的 `recon`、`web`、`review` 角色。
+子角色只返回建议；采纳后仍需由主控发出普通工具动作，重新经过控制器、人工审批、护栏和审计。
+不新增共享可写黑板，现有 `/board` 与 `watch` 保留为只读进度视图。
+
+默认关闭；开启：`--set run.specialists=true`。每段会话默认最多咨询 3 次，模型失败照样扣额度；
+strict 模式下咨询工具也需要显式注册检查项。尚无实测数据证明多角色提高成功率，因此保留单主控基线。
+
+完整取舍、实现边界与后续缺口见 [Agent 设计审查](docs/AGENT_DESIGN_REVIEW.md)，
+关键决策见 [ADR-0017](design/adr/0017-specialist-consultation-without-blackboard.md)
+和 [ADR-0018](design/adr/0018-fact-context-and-atomic-snapshots.md)。
+
+## 已封装的工具（17 项目标分析 + 1 项可选协作）
 
 | 类别 | 工具 | 动作等级 |
 |---|---|---|
@@ -81,6 +97,7 @@ scripts/dev.sh play --api deepseek --goal "拿到 flag 并验证 SQL 注入" --m
 | vuln | `poc_scan`（21 个只读 PoC） `nuclei_scan`（缺 nuclei 自动降级内置引擎） | detect |
 | exploit | `sqli_test` `cmd_inject_test` `lfi_test` `file_upload_test` `rce_exec` | verify / exploit |
 | creds | `weak_password_brute`（ssh/ftp/mysql/redis/http_basic/http_form） `http_form_login` `flag_hunt` | exploit / verify |
+| collaboration | `consult_specialist`（recon / web / review，仅建议，默认关闭） | detect |
 
 ## 人的位置：审批、介入、复核
 
@@ -152,7 +169,7 @@ python3 -m trina lab --http --ssh                         # 本地靶机（HTTP 
 python3 -m unittest discover -s tests                   # 197 个单元测试
 ```
 
-## omp 二开（在本目录里开 omp 会话即生效）
+## 可选 omp 集成（在本目录里开启会话）
 
 - `.omp/extensions/trina.ts`：把 Trina 暴露成 omp 工具 —— `trina_run` / `trina_tool` / `trina_guard` / `trina_tools` / `trina_report`，并注册 `/pentest` 命令；
   同时对 omp 内建 `bash` 做**第二道防线**拦截（DoS/删库/`--os-shell` 等参数、对公网地址的攻击性工具调用）。
@@ -165,7 +182,7 @@ python3 -m unittest discover -s tests                   # 197 个单元测试
 trina/            核心包（brain / tools / adapters / report / eval / lab；洞察层：hypotheses / failure / evidence_graph / board）
 configs/        主配置 + 靶场注册表 + 字典
 docs/           方案与文档（PLAN / ARCHITECTURE / GUARDRAILS / EVAL / RUNBOOK）
-.omp/           omp 二开产物（扩展 + 技能 + 配置覆盖）
+.omp/           可选 omp 集成（扩展 + 技能 + 配置覆盖）
 logs/           审计哈希链（每 run 一个 JSONL）
 runs/           运行工作区（state.json 等）
 reports/        报告（Markdown / HTML / 评测报告）

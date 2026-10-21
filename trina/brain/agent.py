@@ -14,6 +14,8 @@
 from __future__ import annotations
 
 import json
+import tempfile
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -31,6 +33,7 @@ from .failure import LoopGuard, advice_for, alternatives_for, classify_failure
 from .goal import GoalRequirements
 from .planner import Planner
 from .prompts import build_step_prompt, build_system_prompt, parse_action
+from .scheduler import DEFAULT_MIN_PRIORITY, HypothesisScheduler
 
 MAX_LLM_RETRIES = 4
 #: 目标未达成时最多拒绝几次「提前结束」，超过则尊重模型判断（避免死循环）
@@ -167,6 +170,7 @@ class PentestAgent:
             logger=self.logger,
         )
         self._ctx = ctx
+        ctx.extra["llm_backend"] = self.backend
         state.note("run", f"开始对 {target} 的自动化渗透测试", goal=goal)
 
         planner = Planner(max_steps_per_phase=max(4, max_steps // len(("recon", "enum", "vuln", "exploit", "post", "report"))))
@@ -183,6 +187,14 @@ class PentestAgent:
         # 洞察层开关（对照实验用）：关闭只影响"模型看到什么"，统计口径不变（redundant_action_rate / fail_* 照记）
         use_ledger = bool(getattr(self.config.run, "hypothesis_ledger", True))
         use_guard = bool(getattr(self.config.run, "loop_guard", True))
+        # 确定性调度：把台账优先级翻译成"这一步验证谁"（关闭台账时无从调度）
+        scheduler = (
+            HypothesisScheduler(
+                min_priority=float(getattr(self.config.run, "scheduler_min_priority", DEFAULT_MIN_PRIORITY) or 0.0)
+            )
+            if (use_ledger and bool(getattr(self.config.run, "hypothesis_scheduler", True)))
+            else None
+        )
 
         # 独立控制器：授权来自注册表与预算合同，不来自模型的文字
         controller = self.controller
@@ -201,6 +213,7 @@ class PentestAgent:
             )
             self.controller = controller
         registered = controller.registry.match_target(target)
+        ctx.extra["authorization_controller"] = controller
         target_id = registered.target_id if registered else ""
         if target_id and not getattr(controller, "default_target_id", ""):
             controller.default_target_id = target_id
@@ -214,7 +227,7 @@ class PentestAgent:
             )
         system_prompt = build_system_prompt(
             self.config.scope_prompt_block(),
-            self.registry.prompt_block(),
+            self.registry.prompt_block(exclude=() if self.config.run.specialists else ("consult_specialist",)),
             extra_rules,
             include_hypothesis=use_ledger,
         ) + (
@@ -229,8 +242,23 @@ class PentestAgent:
         new_facts = True
         record_handle = Path(record_path).open("w", encoding="utf-8") if record_path else None
         recorded_steps = 0
+        record_lock = threading.Lock()
         if record_handle:
             record_handle.write('{"steps": [\n')
+
+        def record_response(text: str) -> None:
+            """按实际调用顺序记录主控和专职 Agent，避免多 Agent 回放错位。"""
+            nonlocal recorded_steps
+            with record_lock:
+                if record_handle is None or record_handle.closed:
+                    return
+                if recorded_steps:
+                    record_handle.write(",\n")
+                record_handle.write(json.dumps({"response": text}, ensure_ascii=False))
+                record_handle.flush()
+                recorded_steps += 1
+
+        ctx.extra["model_response_observer"] = record_response
 
         started = time.monotonic()
         steps = 0
@@ -277,6 +305,24 @@ class PentestAgent:
                 elif not requirements.empty:
                     hints.extend(item for item in requirements.soft_hints(state)[:1] if item not in hints)
 
+                # 确定性调度：挑出本步应验证的最高优先级假设（绑定注册检查项）
+                schedule = None
+                if scheduler is not None:
+                    schedule = scheduler.decide(
+                        ledger,
+                        controller.registry.tests_for(target_id) if target_id else [],
+                        executed_tests=set(controller.executed),
+                        goal_classes=requirements.classes,
+                    )
+                    state.scheduler = scheduler.to_dict()
+                    if schedule is not None:
+                        state.note(
+                            "scheduler",
+                            f"调度：验证 {schedule.hypothesis_id}（优先级 {schedule.score:.2f}）→ "
+                            + (f"检查项 {schedule.test_id}（{schedule.tool}）" if schedule.test_id else f"自由验证 {schedule.vuln_class}")
+                            + ("；强制" if schedule.required else ""),
+                        )
+
                 step_prompt = build_step_prompt(
                     state_digest=state.summary_for_prompt(),
                     phase=phase,
@@ -302,7 +348,8 @@ class PentestAgent:
                         "## 假设台账（按优先级排序）\n" + ledger.prompt_block()
                         if use_ledger
                         else ""
-                    ),
+                    )
+                    + ("\n" + schedule.prompt_block() if schedule is not None else ""),
                     include_hypothesis=use_ledger,
                 )
                 hints = []
@@ -321,12 +368,7 @@ class PentestAgent:
                     time.sleep(min(2.0 * state.counters["errors"], 8.0))
                     continue
                 state.counters["llm_calls"] = state.counters.get("llm_calls", 0) + 1
-                if record_handle:
-                    if recorded_steps:
-                        record_handle.write(",\n")
-                    record_handle.write(json.dumps({"response": response.text}, ensure_ascii=False))
-                    record_handle.flush()
-                    recorded_steps += 1
+                record_response(response.text)
 
                 action = parse_action(response.text)
                 if "error" in action:
@@ -414,6 +456,8 @@ class PentestAgent:
                     )
                     continue
 
+                # guided 模式可能由控制器反查出检查项，审批与调度统计使用同一解析结果。
+                test_id = policy_decision.test_id or test_id
                 if self.approval is not None:
                     request = {
                         "index": index,
@@ -459,6 +503,7 @@ class PentestAgent:
                 before_knowledge = state.knowledge_digest()
 
                 result = self.registry.execute(tool_name, params, ctx)
+                state.coverage = controller.coverage()
                 observation = result.to_observation()
                 new_facts = before_knowledge != state.knowledge_digest()
 
@@ -506,6 +551,33 @@ class PentestAgent:
                 state.log_step(step.to_dict())
                 if self.on_step:
                     self.on_step(step)
+
+                # 调度遵从性：模型是否按"这一步该验证谁"执行（未遵从只升级提示，不阻断、不代编证据）
+                if schedule is not None:
+                    followed = scheduler.observe(schedule, test_id=test_id, tool=tool_name)
+                    state.scheduler = scheduler.to_dict()
+                    if followed is False:
+                        state.counters["scheduler_miss"] = state.counters.get("scheduler_miss", 0) + 1
+                        state.note(
+                            "scheduler",
+                            f"未按调度执行：应验证 {schedule.hypothesis_id}"
+                            f"（{schedule.test_id or schedule.tool or schedule.vuln_class}），实际 {tool_name}",
+                        )
+                        hints.append(
+                            f"调度指令未执行：请验证 {schedule.hypothesis_id}"
+                            + (f"（带 test_id={schedule.test_id}）" if schedule.test_id else f"（{schedule.vuln_class} 类证据）")
+                            + "；若确有理由换路，请在 thought 里说明"
+                        )
+                    elif followed is True:
+                        state.note("scheduler", f"按调度执行：{schedule.hypothesis_id} ← {test_id or tool_name}")
+                    audit.append(
+                        "react.schedule",
+                        step=index,
+                        hypothesis_id=schedule.hypothesis_id,
+                        expected=schedule.test_id or schedule.tool,
+                        actual=test_id or tool_name,
+                        followed=followed,
+                    )
 
                 if result.denied:
                     hints.extend(result.next_hints[:3] or ["该动作被护栏拒绝，请换合规做法"])
@@ -558,11 +630,15 @@ class PentestAgent:
                 if every and index % every == 0:
                     state.hypotheses = ledger.to_dict()
                     state.loop = loop_guard.to_dict()
+                    if scheduler is not None:
+                        state.scheduler = scheduler.to_dict()
                     self._save_state(state, workspace)
         finally:
-            if record_handle:
-                record_handle.write("\n]}\n")
-                record_handle.close()
+            ctx.extra.pop("model_response_observer", None)
+            with record_lock:
+                if record_handle:
+                    record_handle.write("\n]}\n")
+                    record_handle.close()
 
         # ------------------------------------------------------------------ 收尾
         if final is not None and (final.get("status") or final.get("flags")):
@@ -597,6 +673,15 @@ class PentestAgent:
             )
         state.hypotheses = ledger.to_dict()
         state.loop = loop_guard.to_dict()
+        if scheduler is not None:
+            state.scheduler = scheduler.to_dict()
+            if scheduler.decisions:
+                state.note(
+                    "scheduler",
+                    f"调度小结：决策 {scheduler.decisions} 次，按调度执行 {scheduler.followed} 次、"
+                    f"未遵从 {scheduler.missed} 次（遵从率 {scheduler.compliance_rate:.2f}）",
+                )
+                audit.append("run.scheduler", **scheduler.to_dict())
 
         # 结论状态与覆盖说明（P3：没有得到证据 ≠ 获得否定证据，检查没跑不能当作通过）
         coverage = controller.coverage()
@@ -692,12 +777,21 @@ class PentestAgent:
         return last
 
     def _save_state(self, state: RunState, workspace: Path) -> None:
+        temporary: Path | None = None
         try:
             path = workspace / "state.json"
-            path.write_text(json.dumps(state.to_dict(), ensure_ascii=False, indent=1), encoding="utf-8")
+            # 同目录临时文件替换，读者只能看到完整旧快照或完整新快照。
+            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=workspace,
+                                             prefix="state-", suffix=".tmp", delete=False) as handle:
+                temporary = Path(handle.name)
+                json.dump(state.to_dict(), handle, ensure_ascii=False, indent=1)
+            temporary.replace(path)
             state.note("artifact", f"状态已保存: {path}")
         except OSError as exc:  # pragma: no cover - 磁盘异常不应影响结论
             state.note("error", f"状态保存失败: {exc}")
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
 
 
 def _short_hash(text: str) -> str:

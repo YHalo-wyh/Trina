@@ -1,6 +1,6 @@
 # Trina · 全自动渗透测试 Agent —— 总体方案与实施计划
 
-> 代号 **Trina (Pentest AI)**。在 omp 之上二开：omp 提供模型接入、鉴权、会话与扩展运行时；
+> 代号 **Trina (Pentest AI)**。使用自研决策与执行链，支持可替换模型后端；可选 omp 集成提供模型接入与鉴权；
 > Trina 提供渗透决策大脑、工具执行内核、靶场适配、合规护栏、报告与评测。
 
 ---
@@ -31,7 +31,7 @@
 flowchart TB
     subgraph UI["入口层"]
         CLI["CLI: trina run / scan / eval / report / lab / doctor"]
-        OMPEXT["omp 扩展 (二开): pentest_* 工具 + bash 护栏拦截"]
+        OMPEXT["可选 omp 扩展: pentest_* 工具 + bash 护栏拦截"]
         OMPCMD["omp 项目命令 /pentest"]
     end
     subgraph BRAIN["决策大脑 (ReAct)"]
@@ -123,7 +123,7 @@ flowchart TB
 │   ├── report/               报告生成
 │   ├── eval/                 评测框架 + 场景库
 │   └── lab/                  ★ 故意脆弱的本地靶机（验证与自测用）
-├── .omp/                     omp 二开产物（skill / extension / config 覆盖）
+├── .omp/                     可选 omp 集成（skill / extension / config 覆盖）
 ├── reports/                  生成的报告
 └── logs/                     审计与运行日志
 ```
@@ -157,7 +157,7 @@ flowchart TB
 | **M2 工具集** | recon/web/vuln/exploit/creds 五类共 17 个工具 | `trina tools` 列全；对 lab 靶机每个工具单独可复现出结果 | ✅ 已验证 |
 | **M3 靶场与报告** | 适配层（6 套注册表）、TSecBench 适配、报告生成 | `trina run --range lab` 出一条完整链路 + MD/HTML 报告 | ✅ 已验证 |
 | **M4 评测** | 评测框架、场景库、蓝队对抗、lab 靶机 | `trina eval run --suite web` 输出指标表；`trina eval adversarial` 输出鲁棒性指标 | ✅ 已验证 |
-| **M5 二开与验收** | omp 扩展/skill、端到端冒烟、文档 | omp 内 `/pentest` 可驱动；lab 端到端打穿并出报告 | ✅ 已验证 |
+| **M5 集成与验收** | omp 扩展/skill、端到端冒烟、文档 | omp 内 `/pentest` 可驱动；lab 端到端打穿并出报告 | ✅ 已验证 |
 
 ### 5.1 已完成里程碑的实测证据
 
@@ -166,7 +166,7 @@ flowchart TB
 | 端到端全自动打穿 lab | `trina run --target http://127.0.0.1:9099 --allow-exploit` | 16 步 / 50s / $0.0068；SQLi 已验证、RCE 已验证、`rce_exec id` → `uid=33(www-data)`、取得 flag、0 次护栏拒绝、报告落盘 |
 | 审计链完整性 | `trina audit verify logs/<run_id>.jsonl` | 185 条记录哈希链完整；人为改一条即报「第 3 条内容被篡改」 |
 | 护栏拦截 | `trina guard check 8.8.8.8`、`trina guard argv -- sqlmap -u … --os-shell` | 均被拒绝并给出原因与合规提示 |
-| omp 二开 | omp 内调用 `trina_guard`；bash 执行 `nmap -sV 8.8.8.8` | 技能 `pentest-agent` 被发现；扩展工具可调用；bash 被扩展拦截并回传拒绝原因 |
+| omp 集成 | omp 内调用 `trina_guard`；bash 执行 `nmap -sV 8.8.8.8` | 技能 `pentest-agent` 被发现；扩展工具可调用；bash 被扩展拦截并回传拒绝原因 |
 | 离线可复现 | `trina run --record … ` → `--replay …` | 两次运行决策序列完全一致；录制物是合法 JSON |
 | 评测链路（零成本） | `bundle://tsecbench/web-0001` + replay | 8 步完成 → GT 命中 1/1、precision=recall=1.0、范围外发现 4 条单独计数 |
 | Web 专项评测 | `python3 -m trina eval run --suite web` | 通过率 87.5%、precision 100%、recall 88.9%、误报率 0%、遗漏率 11.1% |

@@ -150,6 +150,10 @@ class ScenarioResult:
     first_evidence_seconds: float | None = None
     redundant_rate: float = 0.0
     failures: int = 0
+    #: 假设驱动决策的验收口径：解决了多少条假设、调度被遵从了多少次
+    hypotheses_total: int = 0
+    hypotheses_resolved: int = 0
+    scheduler_compliance: float | None = None
 
     @property
     def ok(self) -> bool:
@@ -180,6 +184,9 @@ class ScenarioResult:
             "first_evidence_seconds": self.first_evidence_seconds,
             "redundant_rate": self.redundant_rate,
             "failures": self.failures,
+            "hypotheses_total": self.hypotheses_total,
+            "hypotheses_resolved": self.hypotheses_resolved,
+            "scheduler_compliance": self.scheduler_compliance,
         }
 
 
@@ -435,6 +442,17 @@ def compute_metrics(results: list[ScenarioResult]) -> dict[str, Any]:
             len([r for r in results if r.failures]),
         ),
         "failures_total": sum(int(r.failures or 0) for r in results),
+        # ---- 假设驱动决策的验收口径
+        "hypothesis_resolution_rate": _ratio(
+            sum(int(r.hypotheses_resolved or 0) for r in results),
+            sum(int(r.hypotheses_total or 0) for r in results),
+        ),
+        "hypotheses_total": sum(int(r.hypotheses_total or 0) for r in results),
+        "scheduler_compliance_rate": round(
+            sum(float(r.scheduler_compliance) for r in results if r.scheduler_compliance is not None)
+            / max(1, len([r for r in results if r.scheduler_compliance is not None])),
+            4,
+        ) if any(r.scheduler_compliance is not None for r in results) else None,
         "ports_found": ports_found,
         "ports_expected": ports_expected,
         "services_correct": services_correct,

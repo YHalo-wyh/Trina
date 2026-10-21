@@ -740,7 +740,7 @@ def _state_from_dict(data: dict[str, Any]):
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="trina", description="Trina · 全自动渗透测试 Agent（omp 二开）")
+    parser = argparse.ArgumentParser(prog="trina", description="Trina · 全自动渗透测试 Agent")
     parser.add_argument("--version", action="version", version=f"trina {__version__}")
     sub = parser.add_subparsers(dest="command", required=True)
 

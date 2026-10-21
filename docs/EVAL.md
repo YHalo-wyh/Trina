@@ -33,6 +33,8 @@
 | Time to Evidence | 从运行开始到**首个证据出现**的平均秒数（衡量"多久开始看到东西"，缺失记 null 不参与均值） |
 | Redundant Action Rate | 无新信息重复动作 `Σ 冗余步 / Σ 总步`（同一工具+参数+结果指纹；衡量"打转"程度，宁可低估） |
 | Recovery Rate | `失败过仍最终成功的场景 / 出现过失败的场景`（能不能从失败里换路，而不是一路撞墙） |
+| Hypothesis Resolution Rate | `Σ 已收敛假设(confirmed/refuted/blocked) / Σ 登记假设`（假设驱动决策的验收口径：提出的问题有多少被解决） |
+| Scheduler Compliance | 调度指令被遵从的比例 `followed / (followed + missed)`（动作带上了调度的 test_id 或调用了绑定工具才算遵从） |
 
 > 关键口径：**按场景声明范围评分**。评分范围默认由该场景 `ground truth` 的漏洞类集合推导（也可在场景里显式写 `scoped_classes` 覆盖）。
 > 否则 `web-sqli` 场景里顺带报出的"缺失安全响应头"会被算成误报，系统性压低 precision。

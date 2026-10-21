@@ -1081,6 +1081,7 @@ def collect_data(
         "hypotheses": hypotheses,
         "hypothesis_rows": hypothesis_rows,
         "hypothesis_counts": hypothesis_counts,
+        "scheduler": dict(getattr(state, "scheduler", None) or {}),
         "evidence_graph": _evidence_graph(state, hypotheses),
         "credentials": credential_rows,
         "flags": flag_rows,

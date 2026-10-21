@@ -45,7 +45,7 @@ HYPOTHESIS_FIELD_BLOCK = """，
  "hypothesis": {"statement": "这条动作要验证的假设", "vuln_class": "sqli", "target": "待验证的完整 URL 或主机", "parameter": "id", "confidence": "low|medium|high", "value": "high|medium|low", "info_gain": "high|medium|low", "cost": "high|medium|low", "risk": "high|medium|low", "next_step": "验证成功后打算做什么"}"""
 
 HYPOTHESIS_NOTE_BLOCK = """
-（`hypothesis` 可选但推荐：系统按优先级排序。自动确认需要填写 vuln_class、target（精确到路径，查询串可省略）及可选 parameter，并取得匹配的带证据 verified/exploited 发现。继续验证既有假设时，用顶层 "hypothesis_id": "H-001" 代替新增假设。连续无新信息只降低优先级，仍属未解决，不能声称已否定。）"""
+（`hypothesis` 可选但推荐：系统按优先级排序，并会**确定性调度**——把最高优先级的可绑定假设挑出来，指定下一步用哪个注册检查项去验它。自动确认需要填写 vuln_class、target（精确到路径，查询串可省略）及可选 parameter，并取得匹配的带证据 verified/exploited 发现。**vuln_class 必须写发现类型**（如 sqli / lfi / rce / information_disclosure / security_misconfig_headers / weak_password / unrestricted_file_upload），**不要写阶段名**（recon/enum/vuln 都不是发现类型，会导致无法绑定检查项而失效）。继续验证既有假设时，用顶层 "hypothesis_id": "H-001" 代替新增假设。连续无新信息只降低优先级，仍属未解决，不能声称已否定。）"""
 
 
 def render_system_prompt(include_hypothesis: bool = True) -> str:

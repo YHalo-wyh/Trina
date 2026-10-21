@@ -377,6 +377,69 @@ class TestInsightSwitches(unittest.TestCase):
             self.assertNotIn("与上次完全相同", user, "关闭后循环建议不得回灌给模型")
 
 
+    def test_scheduler_directs_step_and_counts_miss(self):
+        """集成：可绑定假设 → 下一步提示词出现调度指令；模型不遵从 → 计入 scheduler_miss。"""
+        self.cfg.run.hypothesis_scheduler = True
+        propose = {
+            "response": json.dumps(
+                {
+                    "thought": "先提出可验证假设",
+                    "action": "switch_scan",
+                    "params": {"target": "127.0.0.1:9099"},
+                    "hypothesis": {
+                        "statement": "lab 的 /sqli 参数 id 存在错误型注入",
+                        "vuln_class": "sqli",
+                        "target": "http://127.0.0.1:9099/sqli",
+                        "parameter": "id",
+                        "confidence": "high",
+                    },
+                },
+                ensure_ascii=False,
+            )
+        }
+        ignore = '{"thought": "偏航去做别的", "action": "switch_fail", "params": {"target": "127.0.0.1:9099"}}'
+        agent, recorder = self._agent(
+            [propose, {"response": ignore}, {"response": '{"thought": "完", "final": {"summary": "done"}}'}],
+            ledger=True, guard=True,
+        )
+        state = agent.run("127.0.0.1:9099", max_steps=3)
+
+        scheduled = [user for _sys, user in recorder.prompts if "调度指令" in user]
+        self.assertTrue(scheduled, "调度指令应进提示词")
+        self.assertIn("sqli_probe", scheduled[0])
+        self.assertEqual(state.scheduler.get("missed"), 1, "模型没执行 sqli_probe → 记一次未遵从")
+        self.assertEqual(state.counters.get("scheduler_miss"), 1)
+        notes = [note["text"] for note in state.timeline if note.get("kind") == "scheduler"]
+        self.assertTrue(any("未按调度执行" in note for note in notes), notes)
+        self.assertTrue(any("调度：验证" in note for note in notes), notes)
+        self.assertIn("react.schedule", Path(state.artifacts["audit_path"]).read_text(encoding="utf-8"))
+
+    def test_scheduler_off_leaves_no_directive(self):
+        self.cfg.run.hypothesis_scheduler = False
+        propose = {
+            "response": json.dumps(
+                {
+                    "thought": "提出假设",
+                    "action": "switch_scan",
+                    "params": {"target": "127.0.0.1"},
+                    "hypothesis": {
+                        "statement": "目标 127.0.0.1 的 80 端口存在 SQL 注入",
+                        "vuln_class": "sqli",
+                        "target": "http://127.0.0.1/sqli",
+                    },
+                },
+                ensure_ascii=False,
+            )
+        }
+        agent, recorder = self._agent(
+            [propose, {"response": '{"thought": "完", "final": {"summary": "done"}}'}], ledger=True, guard=True,
+        )
+        state = agent.run("127.0.0.1", max_steps=2)
+        self.assertEqual(state.scheduler, {}, "关闭调度后不应有调度统计")
+        for _sys, user in recorder.prompts:
+            self.assertNotIn("调度指令", user)
+
+
 class _RecordingBackend:
     """包一层记录提示词，用于断言"模型到底看到了什么"。"""
 
@@ -420,6 +483,170 @@ class _SwitchFailTool(Tool):
 
     def run(self, ctx, target):
         return ToolResult(ok=False, error="ConnectionError: connection refused", summary="连接被拒")
+
+
+class TestHypothesisScheduler(unittest.TestCase):
+    """确定性调度：把台账优先级翻译成"这一步验证谁"，并记录遵从率。"""
+
+    def setUp(self):
+        from trina.policy import PolicyRegistry
+
+        self.registry = PolicyRegistry.load()
+        self.tests = self.registry.tests_for("lab-http")
+
+    def _ledger(self):
+        from trina.hypotheses import HypothesisLedger
+
+        return HypothesisLedger()
+
+    def test_binds_registered_check_for_verifiable_hypothesis(self):
+        from trina.brain.scheduler import HypothesisScheduler
+
+        ledger = self._ledger()
+        item = ledger.add(
+            "怀疑 /sqli 的参数 id 存在错误型注入",
+            confidence="high", vuln_class="sqli", target="http://127.0.0.1:9099/sqli", parameter="id",
+        )
+        decision = HypothesisScheduler().decide(ledger, self.tests)
+        self.assertIsNotNone(decision)
+        self.assertEqual(decision.hypothesis_id, item.id)
+        self.assertEqual(decision.test_id, "sqli_probe")
+        self.assertEqual(decision.tool, "sqli_test")
+        self.assertIn("test_id", decision.prompt_block())
+        self.assertTrue(decision.matches_action(test_id="sqli_probe"))
+        self.assertTrue(decision.matches_action(tool="sqli_test"))
+        self.assertFalse(decision.matches_action(test_id="lfi_probe", tool="lfi_test"))
+
+    def test_alias_normalisation_matches_vuln_class(self):
+        """`SQL Injection` 这类别名要能绑定到 expect_finding=sqli 的检查项（与评分同一套归一化）。"""
+        from trina.brain.scheduler import HypothesisScheduler
+
+        ledger = self._ledger()
+        ledger.add("别名写法", vuln_class="SQL Injection", target="http://127.0.0.1:9099/sqli")
+        decision = HypothesisScheduler().decide(ledger, self.tests)
+        self.assertEqual(decision.test_id, "sqli_probe")
+
+    def test_descriptive_hypothesis_is_not_scheduled(self):
+        from trina.brain.scheduler import HypothesisScheduler
+
+        ledger = self._ledger()
+        ledger.add("目标可能是一个 Web 站点", confidence="high")  # 无 vuln_class/target
+        self.assertIsNone(HypothesisScheduler().decide(ledger, self.tests))
+
+    def test_low_priority_is_skipped(self):
+        from trina.brain.scheduler import HypothesisScheduler
+
+        ledger = self._ledger()
+        ledger.add(
+            "低价值高成本猜测",
+            confidence="low", value="low", info_gain="low", cost="high", risk="high",
+            vuln_class="sqli", target="http://127.0.0.1:9099/sqli",
+        )
+        self.assertIsNone(HypothesisScheduler(min_priority=0.15).decide(ledger, self.tests))
+
+    def test_tried_check_is_not_rebound(self):
+        from trina.brain.scheduler import HypothesisScheduler
+
+        ledger = self._ledger()
+        item = ledger.add("已试过一轮", vuln_class="sqli", target="http://127.0.0.1:9099/sqli")
+        item.attempts = 2
+        # 同类检查项都跑过 → 没有可调度的确定性动作（交回模型提高强度，而不是重复调度同一检查项）
+        self.assertIsNone(HypothesisScheduler().decide(ledger, self.tests, executed_tests={"sqli_probe"}))
+
+    def test_unbindable_vuln_class_is_not_scheduled(self):
+        """模型的 vuln_class 写成阶段名（recon）或该靶场没注册同类检查 → 不调度，避免烧 token。"""
+        from trina.brain.scheduler import HypothesisScheduler
+
+        ledger = self._ledger()
+        ledger.add("目标有 HTTP 服务", confidence="high", vuln_class="recon", target="127.0.0.1")
+        self.assertIsNone(HypothesisScheduler().decide(ledger, self.tests))
+
+        ledger2 = self._ledger()
+        ledger2.add("怀疑 XXE", confidence="high", vuln_class="xxe", target="http://127.0.0.1:9099/x")
+        self.assertIsNone(HypothesisScheduler().decide(ledger2, self.tests))
+
+    def test_goal_classes_beat_higher_priority_other_class(self):
+        """任务硬性要求优先：高优先级但非目标类的假设，不得压过目标类假设。"""
+        from trina.brain.scheduler import HypothesisScheduler
+
+        ledger = self._ledger()
+        # 优先级更高，但不是任务要求的类
+        info_item = ledger.add(
+            "目标可能存在敏感文件泄露",
+            confidence="high", value="high", info_gain="high", cost="low", risk="low",
+            vuln_class="information_disclosure", target="http://127.0.0.1:9099/.git/HEAD",
+        )
+        target_item = ledger.add(
+            "怀疑 /sqli 参数 id 存在错误型注入",
+            confidence="high", vuln_class="sqli", target="http://127.0.0.1:9099/sqli", parameter="id",
+        )
+        decision = HypothesisScheduler().decide(ledger, self.tests, goal_classes={"sqli"})
+        self.assertEqual(decision.hypothesis_id, target_item.id)
+        self.assertEqual(decision.test_id, "sqli_probe")
+        self.assertIn("命中任务要求", decision.reason)
+
+        # 目标类没有可绑定假设时，回落到台账优先级（信息泄露类：dir_enum 或 poc_scan 都算正确绑定）
+        fallback = HypothesisScheduler().decide(ledger, self.tests, goal_classes={"xxe"})
+        self.assertEqual(fallback.hypothesis_id, info_item.id)
+        self.assertIn(fallback.test_id, {"dir_enum", "poc_scan"})
+
+    def test_goal_directive_when_no_matching_hypothesis(self):
+        """任务要求了某类验证、台账里还没有对应假设 → 直接派该类的注册检查项（目标驱动调度）。"""
+        from trina.brain.scheduler import HypothesisScheduler
+
+        scheduler = HypothesisScheduler()
+        ledger = self._ledger()
+        ledger.add(
+            "目标可能存在敏感文件泄露",
+            confidence="high", value="high", info_gain="high", cost="low", risk="low",
+            vuln_class="information_disclosure", target="http://127.0.0.1:9099/.git/HEAD",
+        )
+        decision = scheduler.decide(ledger, self.tests, goal_classes={"lfi"})
+        self.assertEqual(decision.source, "goal")
+        self.assertEqual(decision.hypothesis_id, "")
+        self.assertEqual(decision.test_id, "lfi_probe")
+        self.assertEqual(scheduler.goal_directives, 1)
+        self.assertIn("任务硬性要求", decision.prompt_block())
+
+        # 该目标类的检查项跑过之后，不再重复派 → 回落到台账优先级
+        fallback = scheduler.decide(ledger, self.tests, goal_classes={"lfi"}, executed_tests={"lfi_probe"})
+        self.assertEqual(fallback.source, "hypothesis")
+        self.assertIn(fallback.test_id, {"dir_enum", "poc_scan"})
+
+    def test_compliance_counting_and_escalation(self):
+        from trina.brain.scheduler import HypothesisScheduler
+
+        ledger = self._ledger()
+        ledger.add("验证对象", confidence="high", vuln_class="sqli", target="http://127.0.0.1:9099/sqli")
+        scheduler = HypothesisScheduler(escalate_after=2)
+        decision = scheduler.decide(ledger, self.tests)
+        self.assertFalse(decision.required)
+        self.assertIs(scheduler.observe(decision, test_id="dir_enum", tool="dir_bruteforce"), False)
+        self.assertIs(scheduler.observe(decision, tool="poc_scan"), False)
+        self.assertEqual(scheduler.missed, 2)
+        self.assertEqual(scheduler.consecutive_misses, 2)
+        self.assertEqual(scheduler.compliance_rate, 0.0)
+        # 连续未遵从达到阈值 → 下一次调度是硬指令
+        self.assertTrue(scheduler.decide(ledger, self.tests).required)
+        # 遵从一次即清零
+        self.assertIs(scheduler.observe(decision, test_id="sqli_probe"), True)
+        self.assertEqual(scheduler.consecutive_misses, 0)
+        self.assertAlmostEqual(scheduler.compliance_rate, 1 / 3, places=4)
+        self.assertTrue(scheduler.to_dict()["recent"])
+
+    def test_scheduler_directs_when_binding_exists(self):
+        """有可绑定的注册检查项时，调度指令必须进提示词。"""
+        from trina.brain.scheduler import HypothesisScheduler
+        from trina.policy import PolicyRegistry
+
+        ledger = self._ledger()
+        ledger.add(
+            "怀疑 /sqli 参数 id 存在错误型注入",
+            confidence="high", vuln_class="sqli", target="http://127.0.0.1:9099/sqli", parameter="id",
+        )
+        decision = HypothesisScheduler().decide(ledger, PolicyRegistry.load().tests_for("lab-http"))
+        self.assertEqual(decision.test_id, "sqli_probe")
+        self.assertIn('"test_id": "sqli_probe"', decision.prompt_block())
 
 
 class TestInternalMetrics(unittest.TestCase):

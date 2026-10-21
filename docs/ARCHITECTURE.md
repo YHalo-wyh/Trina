@@ -13,7 +13,7 @@ flowchart TB
     GUARD["trina.scope.ScopeGuard<br/>唯一放行判据"]
     AUDIT["trina.audit.AuditLog<br/>SHA-256 哈希链"]
     STATE["trina.state.RunState<br/>hosts/findings/creds/flags/evidence/timeline"]
-    TOOLS["trina.tools.{recon,web,vuln,exploit,creds}<br/>17 个工具"]
+    TOOLS["trina.tools：17 项目标分析 + 1 项可选咨询"]
     HTTP["trina.tools.http.HttpClient<br/>带护栏的 HTTP 出口"]
     EXT["trina.tools.external.run_external<br/>外部二进制（shell=False + 护栏）"]
     LLM["trina.llm<br/>omp / openai 兼容 / replay"]
@@ -80,12 +80,15 @@ system = 角色 + 铁律 + 工具清单 + 授权边界 ────┘        �
 | `trina.brain.agent` | `PentestAgent(config, registry=, backend=, on_step=).run(target, goal=, max_steps=, max_seconds=, record_path=) -> RunState` | 评测框架与 CLI 都只依赖这个签名 |
 | `trina.brain.planner` | `Planner.tick/objective_met/directive/force_advance/should_finish` | 阶段推进只看**事实**；每阶段有步数预算，停滞可强制推进 |
 | `trina.brain.goal` | `GoalRequirements.parse(goal)`、`unsatisfied(state)/soft_hints/satisfied` | 把任务描述解析成硬条件（漏洞类 / 路径 / 端口 / 凭证）；未满足时不允许收敛，也不允许把"取巧拿到 flag"判为成功；**不使用 ground truth** |
-| `trina.hypotheses` | `HypothesisLedger.add/from_action/record_tool_outcome/record_outcome/prompt_block/finalize/summary` | 假设按启发式优先级展示，模型仍选择动作；任务/对话共用验证对象匹配与证据判定；`hypothesis_id` 复用台账；无新信息只降优先级，明确反证才能否定 |
+| `trina.hypotheses` | `HypothesisLedger.add/from_action/record_tool_outcome/record_outcome/prompt_block/finalize/summary` | 假设的排序/状态机与证据判定；模型仍选择动作，但确定性选取由 `trina.brain.scheduler` 每步派发；任务/对话共用验证对象匹配；`hypothesis_id` 复用台账；无新信息只降优先级，明确反证才能否定 |
 | `trina.brain.failure` | `classify_failure`、`LoopGuard.observe`、`advice_for`、`alternatives_for` | 失败归因（boundary/tool/environment/budget/hypothesis）+ 无新信息重复识别，给出递进建议（换参数→换工具→人工） |
+| `trina.brain.scheduler` | `HypothesisScheduler.decide(ledger, tests, executed_tests=, goal_classes=)`、`observe(decision, test_id=, tool=)` | **确定性假设调度**：只调度能绑定注册检查项的假设；任务要求的漏洞类优先（无假设时直接派该类检查项）；未遵从进审计链与 `state.scheduler` |
 | `trina.evidence_graph` | `build(state, registry=, hypotheses=)`、`EvidenceGraph.to_mermaid/to_dict` | 结论可反向追溯：目标→主机→端口→路径→发现→证据，另有检查项/假设→发现；构建失败不影响报告 |
 | `trina.board` | `render_board(state, hypotheses=)`、`summarise`、`latest_state_file`、`load_run_state` | 工作台视图的**唯一**渲染实现（控制台 `/board` 与 `trina watch` 共用）；`load_run_state` 把 state.json 还原成 `RunState` |
 | `trina.brain.prompts` | `render_system_prompt(include_hypothesis)`、`build_system_prompt`、`build_step_prompt`、`parse_action`、`protocol_reminder` | 动作协议与阶段指引的**唯一**文本源；`include_hypothesis=False` 即基线口径（对照实验用），两条臂同模板渲染、不会漂移 |
-| `trina.brain.chat` | `ChatAgent(config, registry=, backend=, approval=, steer_queue=, controller=).ask(text) -> str` | **对话式大脑**：说人话→回答；需要动手时自己调工具（与任务模式共用护栏/控制器/审计/审批）；单条消息内工具步数上限 8；能识别「解释文字 + JSON 动作」混排并取第一个动作 |
+| `trina.brain.chat` | `ChatAgent(config, registry=, backend=, approval=, steer_queue=, controller=).ask(text) -> str` | **对话式大脑**：共用护栏/控制器/审计/审批；每条消息最多 12 个动作；本轮请求 + 事实摘要 + 有界历史，保存动作/观察关系并回灌失败建议；不宣称具有任务模式的阶段机 |
+| `trina.collaboration` | `SpecialistRole/Request/Result`、`Specialist.consult` | 专职 Agent 只持有后端并接收快照，返回不可信建议；recon/web 可建议白名单工具，review 只返回摘要；无工具执行、状态写入或递归委派入口 |
+| `trina.tools.specialists` | `ConsultSpecialist`、`TOOLS` | 注册咨询工具，默认关闭；共享审批/控制器/护栏/审计；子调用数、输出长度与快照长度有界；空 facts/evidence；子响应按实际顺序进入任务录制 |
 | `trina.llm` | `make_backend(LLMConfig)`、`LLMBackend.complete(system, user)`、`LLMUsage` | 后端实现只管"给提示词 → 返回文本 + 用量"；`ledger` 汇总进报告 |
 | `trina.adapters` | `load_adapter/list_adapters`、`RangeAdapter.prepare/status/ground_truth/check_flag`、`score_tsecbench` | 靶场自描述（目标 + ground truth + flag 模式），评测框架据此自动判分 |
 | `trina.policy` | `PolicyRegistry.load()`、`AuthorizationController.check/note_evidence/revoke/coverage`、`Budget` | **计划器提出、控制器批准**：注册目标/检查项 + 预算 + 撤权，逐动作裁决；模型无写权限 |
@@ -171,3 +174,20 @@ flags 或 存在 verified/exploited 漏洞 → success
 | 新 LLM 后端 | `trina/llm/<name>_backend.py` + `make_backend` 分支 | 只需实现 `complete()` 并填 `usage` |
 | 新报告格式 | `trina/report/` | 保持 HTML 自包含 |
 | omp 侧新工具 | `.omp/extensions/trina.ts` | 一律转调 `python3 -m trina …`，不要绕过护栏 |
+
+## 8. 专职 Agent 与状态一致性
+
+主控可通过 `consult_specialist` 咨询具有独立上下文的 recon/web/review 角色，
+默认关闭，配置为 `run.specialists`。它与普通工具共用执行链，子角色只返回建议，
+主控需要再发出工具动作才能执行；没有第二套共享黑板或子 Agent 直接修改事实的入口。
+`trina.board` 仍是只读视图，`RunState` 与假设台账分别保存事实和未验证问题。
+
+调度使用控制器当前的检查记录，先过滤已执行项再按漏洞类归组；
+已明确解析出检查 ID 时，不能仅凭同工具名把另一项检查计作遵从。
+对话提示由本轮请求、事实摘要和近期动作/观察构成，失败反馈也直接进入下一次模型输入。
+状态文件采用同目录临时文件写完后替换，避免进度视图读到半份快照。
+
+方案比较、成本、超时局限、验证与重新决策条件见
+[Agent 设计审查](AGENT_DESIGN_REVIEW.md)、
+[ADR-0017](../design/adr/0017-specialist-consultation-without-blackboard.md) 和
+[ADR-0018](../design/adr/0018-fact-context-and-atomic-snapshots.md)。
