@@ -1,0 +1,40 @@
+{
+  "ok": true,
+  "method": "在 tempfile 隔离副本运行同一 check()，不运行副本产品代码，不修改真实仓库",
+  "baseline_ok": true,
+  "experiments": [
+    {
+      "mutation": "移除临时副本 docs/course/specification.md",
+      "expected": "reject",
+      "rejected": true,
+      "exit_code_equivalent": 1,
+      "errors": [
+        "文件不存在: docs/course/specification.md",
+        "本地链接不存在: README.md -> docs/course/specification.md",
+        "本地链接不存在: 开题报告与第一次汇报.md -> docs/course/specification.md",
+        "本地链接不存在: 开题报告与第一次汇报.md -> docs/course/specification.md",
+        "本地链接不存在: docs/course/README.md -> specification.md",
+        "本地链接不存在: docs/course/scenarios.md -> specification.md",
+        "本地链接不存在: docs/course/acceptance-matrix.md -> specification.md",
+        "本地链接不存在: docs/course/repository-map.md -> specification.md",
+        "本地链接不存在: docs/course/course-alignment.md -> specification.md",
+        "本地链接不存在: evidence/20261021-course-pack/README.md -> ../../docs/course/specification.md",
+        "带 ID 的要求少于课程最小 6 条",
+        "验收矩阵未逐条覆盖规格要求",
+        "规格要求与追踪清单 ID 不一致或重复"
+      ]
+    },
+    {
+      "mutation": "向临时清单添加不存在的测试名称",
+      "expected": "reject",
+      "rejected": true,
+      "exit_code_equivalent": 1,
+      "errors": [
+        "REQ-01 测试声明不存在: test_course_missing.TestMissing.test_not_declared",
+        "REQ-01 测试未在矩阵中列明: test_course_missing.TestMissing.test_not_declared"
+      ]
+    }
+  ],
+  "restored_ok": true,
+  "performed_utc": "2026-10-21T08:51:59.457773+00:00"
+}

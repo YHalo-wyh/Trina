@@ -1,0 +1,5 @@
+# 精选运行原件保留字节，避免跨平台换行转换改变归档 SHA-256。
+evidence/20261021-course-pack/** -text
+# 工具原件与测试原始输出保留自身 CRLF/空白，不按代码格式改写。
+evidence/20261021-course-pack/round-*/** -whitespace
+evidence/20261021-course-pack/unit-tests.log -whitespace

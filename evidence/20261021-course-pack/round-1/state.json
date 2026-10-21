@@ -1,0 +1,684 @@
+{
+ "run_id": "20261021-144543-e15b64",
+ "target": "http://127.0.0.1:64182",
+ "goal": "确认 SQL 注入并给出证据",
+ "status": "success",
+ "phase": "recon",
+ "phase_history": [],
+ "started_at": 1792565143.172,
+ "ended_at": 1792565143.3646345,
+ "duration": 0.2,
+ "hosts": {},
+ "findings": [
+  {
+   "id": "TRINA-001",
+   "title": "SQL 注入（id，错误型）",
+   "vuln_class": "sqli",
+   "target": "http://127.0.0.1:64182",
+   "url": "http://127.0.0.1:64182/sqli",
+   "parameter": "id",
+   "method": "GET",
+   "severity": "high",
+   "confidence": "high",
+   "status": "verified",
+   "tool": "sqli_test",
+   "payload": "'",
+   "description": "注入 \"'\" 两次触发新增 DBMS 报错：MySQL, MariaDB；正常参数对照无该报错。",
+   "impact": "",
+   "remediation": "",
+   "cvss": "",
+   "cwe": "CWE-89",
+   "refs": [],
+   "evidence": [
+    {
+     "kind": "http",
+     "target": "http://127.0.0.1:64182/sqli?id=1",
+     "method": "GET",
+     "status": 200,
+     "request": {
+      "method": "GET",
+      "url": "http://127.0.0.1:64182/sqli?id=1",
+      "headers": {
+       "User-Agent": "Trina/0.1 (+authorized-pentest; contact=lab)",
+       "Accept-Encoding": "gzip, deflate, br, zstd",
+       "Accept": "*/*",
+       "Connection": "close",
+       "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8"
+      },
+      "body": ""
+     },
+     "response": {
+      "status": 200,
+      "length": 71,
+      "body_excerpt": "<html><body><h2>用户查询结果</h2><p>用户名: admin</p><p>ID: 1</p></body></html>\n"
+     },
+     "payload": "1",
+     "note": "正常参数基线",
+     "payload_label": "1"
+    },
+    {
+     "kind": "http",
+     "target": "http://127.0.0.1:64182/sqli?id=%27",
+     "method": "GET",
+     "status": 500,
+     "request": {
+      "method": "GET",
+      "url": "http://127.0.0.1:64182/sqli?id=%27",
+      "headers": {
+       "User-Agent": "Trina/0.1 (+authorized-pentest; contact=lab)",
+       "Accept-Encoding": "gzip, deflate, br, zstd",
+       "Accept": "*/*",
+       "Connection": "close",
+       "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8"
+      },
+      "body": ""
+     },
+     "response": {
+      "status": 500,
+      "length": 223,
+      "body_excerpt": "Warning: mysqli_query(): (42000/1064): You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near ''' at line 1 in /var/www/html/sqli.php on line 14"
+     },
+     "payload": "'",
+     "note": "错误型命中 MySQL,MariaDB",
+     "payload_label": "'"
+    },
+    {
+     "kind": "http",
+     "target": "http://127.0.0.1:64182/sqli?id=%27",
+     "method": "GET",
+     "status": 500,
+     "request": {
+      "method": "GET",
+      "url": "http://127.0.0.1:64182/sqli?id=%27",
+      "headers": {
+       "User-Agent": "Trina/0.1 (+authorized-pentest; contact=lab)",
+       "Accept-Encoding": "gzip, deflate, br, zstd",
+       "Accept": "*/*",
+       "Connection": "close",
+       "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8"
+      },
+      "body": ""
+     },
+     "response": {
+      "status": 500,
+      "length": 223,
+      "body_excerpt": "Warning: mysqli_query(): (42000/1064): You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near ''' at line 1 in /var/www/html/sqli.php on line 14"
+     },
+     "payload": "'",
+     "note": "相同载荷重复确认",
+     "payload_label": "'"
+    },
+    {
+     "kind": "http",
+     "target": "http://127.0.0.1:64182/sqli?id=1",
+     "method": "GET",
+     "status": 200,
+     "request": {
+      "method": "GET",
+      "url": "http://127.0.0.1:64182/sqli?id=1",
+      "headers": {
+       "User-Agent": "Trina/0.1 (+authorized-pentest; contact=lab)",
+       "Accept-Encoding": "gzip, deflate, br, zstd",
+       "Accept": "*/*",
+       "Connection": "close",
+       "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8"
+      },
+      "body": ""
+     },
+     "response": {
+      "status": 200,
+      "length": 71,
+      "body_excerpt": "<html><body><h2>用户查询结果</h2><p>用户名: admin</p><p>ID: 1</p></body></html>\n"
+     },
+     "payload": "1",
+     "note": "恢复正常参数后新增报错消失",
+     "payload_label": "1"
+    }
+   ],
+   "first_seen": 1792565143.358,
+   "last_seen": 1792565143.358,
+   "severity_cn": "高危"
+  }
+ ],
+ "credentials": [],
+ "flags": [],
+ "evidence": [
+  {
+   "kind": "http",
+   "target": "http://127.0.0.1:64182/sqli?id=1",
+   "method": "GET",
+   "status": 200,
+   "request": {
+    "method": "GET",
+    "url": "http://127.0.0.1:64182/sqli?id=1",
+    "headers": {
+     "User-Agent": "Trina/0.1 (+authorized-pentest; contact=lab)",
+     "Accept-Encoding": "gzip, deflate, br, zstd",
+     "Accept": "*/*",
+     "Connection": "close",
+     "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8"
+    },
+    "body": ""
+   },
+   "response": {
+    "status": 200,
+    "length": 71,
+    "body_excerpt": "<html><body><h2>用户查询结果</h2><p>用户名: admin</p><p>ID: 1</p></body></html>\n"
+   },
+   "payload": "1",
+   "note": "正常参数基线",
+   "payload_label": "1",
+   "finding_id": "TRINA-001",
+   "ts": 1792565143.358,
+   "clock": "14:45:43"
+  },
+  {
+   "kind": "http",
+   "target": "http://127.0.0.1:64182/sqli?id=%27",
+   "method": "GET",
+   "status": 500,
+   "request": {
+    "method": "GET",
+    "url": "http://127.0.0.1:64182/sqli?id=%27",
+    "headers": {
+     "User-Agent": "Trina/0.1 (+authorized-pentest; contact=lab)",
+     "Accept-Encoding": "gzip, deflate, br, zstd",
+     "Accept": "*/*",
+     "Connection": "close",
+     "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8"
+    },
+    "body": ""
+   },
+   "response": {
+    "status": 500,
+    "length": 223,
+    "body_excerpt": "Warning: mysqli_query(): (42000/1064): You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near ''' at line 1 in /var/www/html/sqli.php on line 14"
+   },
+   "payload": "'",
+   "note": "错误型命中 MySQL,MariaDB",
+   "payload_label": "'",
+   "finding_id": "TRINA-001",
+   "ts": 1792565143.358,
+   "clock": "14:45:43"
+  },
+  {
+   "kind": "http",
+   "target": "http://127.0.0.1:64182/sqli?id=%27",
+   "method": "GET",
+   "status": 500,
+   "request": {
+    "method": "GET",
+    "url": "http://127.0.0.1:64182/sqli?id=%27",
+    "headers": {
+     "User-Agent": "Trina/0.1 (+authorized-pentest; contact=lab)",
+     "Accept-Encoding": "gzip, deflate, br, zstd",
+     "Accept": "*/*",
+     "Connection": "close",
+     "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8"
+    },
+    "body": ""
+   },
+   "response": {
+    "status": 500,
+    "length": 223,
+    "body_excerpt": "Warning: mysqli_query(): (42000/1064): You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near ''' at line 1 in /var/www/html/sqli.php on line 14"
+   },
+   "payload": "'",
+   "note": "相同载荷重复确认",
+   "payload_label": "'",
+   "finding_id": "TRINA-001",
+   "ts": 1792565143.358,
+   "clock": "14:45:43"
+  },
+  {
+   "kind": "http",
+   "target": "http://127.0.0.1:64182/sqli?id=1",
+   "method": "GET",
+   "status": 200,
+   "request": {
+    "method": "GET",
+    "url": "http://127.0.0.1:64182/sqli?id=1",
+    "headers": {
+     "User-Agent": "Trina/0.1 (+authorized-pentest; contact=lab)",
+     "Accept-Encoding": "gzip, deflate, br, zstd",
+     "Accept": "*/*",
+     "Connection": "close",
+     "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8"
+    },
+    "body": ""
+   },
+   "response": {
+    "status": 200,
+    "length": 71,
+    "body_excerpt": "<html><body><h2>用户查询结果</h2><p>用户名: admin</p><p>ID: 1</p></body></html>\n"
+   },
+   "payload": "1",
+   "note": "恢复正常参数后新增报错消失",
+   "payload_label": "1",
+   "finding_id": "TRINA-001",
+   "ts": 1792565143.358,
+   "clock": "14:45:43"
+  },
+  {
+   "kind": "http",
+   "target": "http://127.0.0.1:64182/sqli?id=1",
+   "method": "GET",
+   "status": 200,
+   "request": {
+    "method": "GET",
+    "url": "http://127.0.0.1:64182/sqli?id=1",
+    "headers": {
+     "User-Agent": "Trina/0.1 (+authorized-pentest; contact=lab)",
+     "Accept-Encoding": "gzip, deflate, br, zstd",
+     "Accept": "*/*",
+     "Connection": "close",
+     "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8"
+    },
+    "body": ""
+   },
+   "response": {
+    "status": 200,
+    "length": 71,
+    "body_excerpt": "<html><body><h2>用户查询结果</h2><p>用户名: admin</p><p>ID: 1</p></body></html>\n"
+   },
+   "payload": "1",
+   "note": "正常参数基线",
+   "payload_label": "1",
+   "tool": "sqli_test",
+   "ts": 1792565143.358,
+   "clock": "14:45:43"
+  },
+  {
+   "kind": "http",
+   "target": "http://127.0.0.1:64182/sqli?id=%27",
+   "method": "GET",
+   "status": 500,
+   "request": {
+    "method": "GET",
+    "url": "http://127.0.0.1:64182/sqli?id=%27",
+    "headers": {
+     "User-Agent": "Trina/0.1 (+authorized-pentest; contact=lab)",
+     "Accept-Encoding": "gzip, deflate, br, zstd",
+     "Accept": "*/*",
+     "Connection": "close",
+     "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8"
+    },
+    "body": ""
+   },
+   "response": {
+    "status": 500,
+    "length": 223,
+    "body_excerpt": "Warning: mysqli_query(): (42000/1064): You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near ''' at line 1 in /var/www/html/sqli.php on line 14"
+   },
+   "payload": "'",
+   "note": "错误型命中 MySQL,MariaDB",
+   "payload_label": "'",
+   "tool": "sqli_test",
+   "ts": 1792565143.358,
+   "clock": "14:45:43"
+  },
+  {
+   "kind": "http",
+   "target": "http://127.0.0.1:64182/sqli?id=%27",
+   "method": "GET",
+   "status": 500,
+   "request": {
+    "method": "GET",
+    "url": "http://127.0.0.1:64182/sqli?id=%27",
+    "headers": {
+     "User-Agent": "Trina/0.1 (+authorized-pentest; contact=lab)",
+     "Accept-Encoding": "gzip, deflate, br, zstd",
+     "Accept": "*/*",
+     "Connection": "close",
+     "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8"
+    },
+    "body": ""
+   },
+   "response": {
+    "status": 500,
+    "length": 223,
+    "body_excerpt": "Warning: mysqli_query(): (42000/1064): You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near ''' at line 1 in /var/www/html/sqli.php on line 14"
+   },
+   "payload": "'",
+   "note": "相同载荷重复确认",
+   "payload_label": "'",
+   "tool": "sqli_test",
+   "ts": 1792565143.358,
+   "clock": "14:45:43"
+  },
+  {
+   "kind": "http",
+   "target": "http://127.0.0.1:64182/sqli?id=1",
+   "method": "GET",
+   "status": 200,
+   "request": {
+    "method": "GET",
+    "url": "http://127.0.0.1:64182/sqli?id=1",
+    "headers": {
+     "User-Agent": "Trina/0.1 (+authorized-pentest; contact=lab)",
+     "Accept-Encoding": "gzip, deflate, br, zstd",
+     "Accept": "*/*",
+     "Connection": "close",
+     "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8"
+    },
+    "body": ""
+   },
+   "response": {
+    "status": 200,
+    "length": 71,
+    "body_excerpt": "<html><body><h2>用户查询结果</h2><p>用户名: admin</p><p>ID: 1</p></body></html>\n"
+   },
+   "payload": "1",
+   "note": "恢复正常参数后新增报错消失",
+   "payload_label": "1",
+   "tool": "sqli_test",
+   "ts": 1792565143.358,
+   "clock": "14:45:43"
+  }
+ ],
+ "timeline": [
+  {
+   "ts": 1792565143.18,
+   "clock": "14:45:43",
+   "kind": "run",
+   "text": "开始对 http://127.0.0.1:64182 的自动化渗透测试",
+   "goal": "确认 SQL 注入并给出证据"
+  },
+  {
+   "ts": 1792565143.18,
+   "clock": "14:45:43",
+   "kind": "goal",
+   "text": "目标要求（未满足前不允许收敛）：需验证的漏洞类: sqli"
+  },
+  {
+   "ts": 1792565143.182,
+   "clock": "14:45:43",
+   "kind": "policy",
+   "text": "授权策略：mode=strict，注册目标 1 个、注册检查项 1 个；当前目标 target_id=fresh-lab"
+  },
+  {
+   "ts": 1792565143.358,
+   "clock": "14:45:43",
+   "kind": "finding",
+   "text": "新增 high sqli @ http://127.0.0.1:64182/sqli"
+  },
+  {
+   "ts": 1792565143.361,
+   "clock": "14:45:43",
+   "kind": "hypothesis",
+   "text": "H-001 → confirmed：id 参数可能存在错误型 SQL 注入"
+  },
+  {
+   "ts": 1792565143.364,
+   "clock": "14:45:43",
+   "kind": "artifact",
+   "text": "状态已保存: C:\\Users\\WYH\\Desktop\\网安实训中级\\artifacts\\course_docs\\mechanism-20261021\\round-1\\runs\\20261021-144543-e15b64\\state.json"
+  },
+  {
+   "ts": 1792565143.365,
+   "clock": "14:45:43",
+   "kind": "final",
+   "text": "固定脚本执行结束，结果由工具证据判定"
+  },
+  {
+   "ts": 1792565143.365,
+   "clock": "14:45:43",
+   "kind": "verdict",
+   "text": "结论状态 CONFIRMED（已确认（有可复现证据））；已测 1 项，未测 0 项，停止原因：正常收敛"
+  },
+  {
+   "ts": 1792565143.367,
+   "clock": "14:45:43",
+   "kind": "graph",
+   "text": "证据图：8 个节点（check 1，evidence 4，finding 1，hypothesis 1，target 1）、7 条关系"
+  },
+  {
+   "ts": 1792565143.367,
+   "clock": "14:45:43",
+   "kind": "hypotheses",
+   "text": "假设台账：共 1 条（待验证 0、已确认 1、已否定 0、被阻断 0）"
+  },
+  {
+   "ts": 1792565143.371,
+   "clock": "14:45:43",
+   "kind": "run.end",
+   "text": "任务结束：状态=success，步数=2，漏洞=1，flag=0"
+  },
+  {
+   "ts": 1792565143.371,
+   "clock": "14:45:43",
+   "kind": "goal",
+   "text": "结束时的目标要求缺口：无"
+  }
+ ],
+ "steps": [
+  {
+   "kind": "tool",
+   "tool": "sqli_test",
+   "params": {
+    "url": "http://127.0.0.1:64182/sqli",
+    "param": "id",
+    "method": "GET",
+    "technique": "error"
+   },
+   "ok": true,
+   "summary": "SQL 注入已验证[错误型]：http://127.0.0.1:64182/sqli 参数 id，DBMS≈MySQL,MariaDB，payload=\"'\"",
+   "duration": 0.172,
+   "ts": 1792565143.361
+  },
+  {
+   "index": 1,
+   "phase": "recon",
+   "thought": "",
+   "action": "sqli_test",
+   "params": {
+    "url": "http://127.0.0.1:64182/sqli",
+    "param": "id",
+    "technique": "error"
+   },
+   "ok": true,
+   "denied": false,
+   "summary": "SQL 注入已验证[错误型]：http://127.0.0.1:64182/sqli 参数 id，DBMS≈MySQL,MariaDB，payload=\"'\"",
+   "duration": 0.172,
+   "llm_seconds": 0.0,
+   "error": "",
+   "ts": 1792565143.361
+  },
+  {
+   "index": 2,
+   "phase": "recon",
+   "thought": "",
+   "action": "final",
+   "params": {},
+   "ok": true,
+   "denied": false,
+   "summary": "固定脚本执行结束，结果由工具证据判定",
+   "duration": 0.0,
+   "llm_seconds": 0.0,
+   "error": "",
+   "ts": 1792565143.365
+  }
+ ],
+ "ledger": {
+  "calls": 3,
+  "input_tokens": 0,
+  "output_tokens": 0,
+  "cache_read_tokens": 0,
+  "cost_usd": 0.0,
+  "model": "replay"
+ },
+ "counters": {
+  "steps": 3,
+  "llm_calls": 2,
+  "tool_calls": 1,
+  "denied": 0,
+  "errors": 0,
+  "failures": 0
+ },
+ "artifacts": {
+  "workspace": "C:\\Users\\WYH\\Desktop\\网安实训中级\\artifacts\\course_docs\\mechanism-20261021\\round-1\\runs\\20261021-144543-e15b64",
+  "audit_path": "C:\\Users\\WYH\\Desktop\\网安实训中级\\artifacts\\course_docs\\mechanism-20261021\\round-1\\logs\\20261021-144543-e15b64.jsonl",
+  "state_file": "C:\\Users\\WYH\\Desktop\\网安实训中级\\artifacts\\course_docs\\mechanism-20261021\\round-1\\runs\\20261021-144543-e15b64\\state.json"
+ },
+ "verdict": "CONFIRMED",
+ "coverage": {
+  "mode": "strict",
+  "budget": {
+   "max_checks": 40,
+   "logic_seconds": 900
+  },
+  "checks_used": 1,
+  "executed": [
+   "sqli_recheck"
+  ],
+  "unregistered": [],
+  "untested": [],
+  "skipped": [],
+  "denied": [],
+  "revoked": [],
+  "stop_reason": ""
+ },
+ "boundary_events": [],
+ "hypotheses": [
+  {
+   "id": "H-001",
+   "statement": "id 参数可能存在错误型 SQL 注入",
+   "status": "confirmed",
+   "confidence": 0.9,
+   "value": 0.6,
+   "info_gain": 0.6,
+   "cost": 0.4,
+   "risk": 0.2,
+   "next_step": "",
+   "vuln_class": "sqli",
+   "target": "http://127.0.0.1:64182/sqli",
+   "parameter": "id",
+   "evidence": [
+    {
+     "kind": "tool",
+     "tool": "sqli_test",
+     "finding_id": "TRINA-001",
+     "ts": 1792565143.361
+    }
+   ],
+   "notes": [
+    "SQL 注入已验证[错误型]：http://127.0.0.1:64182/sqli 参数 id，DBMS≈MySQL,MariaDB，payload=\"'\""
+   ],
+   "attempts": 1,
+   "stale_attempts": 0,
+   "source": "model",
+   "created_at": 1792565143.182736,
+   "updated_at": 1792565143.3611207,
+   "priority": 0.0,
+   "status_cn": "已确认"
+  }
+ ],
+ "graph": {
+  "nodes": [
+   {
+    "id": "target:http://127.0.0.1:64182",
+    "label": "http://127.0.0.1:64182",
+    "kind": "target",
+    "meta": {}
+   },
+   {
+    "id": "finding:TRINA-001",
+    "label": "high sqli verified",
+    "kind": "finding",
+    "meta": {
+     "url": "http://127.0.0.1:64182/sqli",
+     "target": "http://127.0.0.1:64182"
+    }
+   },
+   {
+    "id": "evi:TRINA-001:1",
+    "label": "http · 正常参数基线",
+    "kind": "evidence",
+    "meta": {}
+   },
+   {
+    "id": "evi:TRINA-001:2",
+    "label": "http · 错误型命中 MySQL,MariaDB",
+    "kind": "evidence",
+    "meta": {}
+   },
+   {
+    "id": "evi:TRINA-001:3",
+    "label": "http · 相同载荷重复确认",
+    "kind": "evidence",
+    "meta": {}
+   },
+   {
+    "id": "evi:TRINA-001:4",
+    "label": "http · 恢复正常参数后新增报错消失",
+    "kind": "evidence",
+    "meta": {}
+   },
+   {
+    "id": "check:sqli_recheck",
+    "label": "sqli_recheck（sqli_test）",
+    "kind": "check",
+    "meta": {}
+   },
+   {
+    "id": "hypo:H-001",
+    "label": "H-001 已确认 id 参数可能存在错误型 SQL 注入",
+    "kind": "hypothesis",
+    "meta": {}
+   }
+  ],
+  "edges": [
+   {
+    "src": "finding:TRINA-001",
+    "dst": "evi:TRINA-001:1",
+    "label": "证据"
+   },
+   {
+    "src": "finding:TRINA-001",
+    "dst": "evi:TRINA-001:2",
+    "label": "证据"
+   },
+   {
+    "src": "finding:TRINA-001",
+    "dst": "evi:TRINA-001:3",
+    "label": "证据"
+   },
+   {
+    "src": "finding:TRINA-001",
+    "dst": "evi:TRINA-001:4",
+    "label": "证据"
+   },
+   {
+    "src": "check:sqli_recheck",
+    "dst": "finding:TRINA-001",
+    "label": "产出"
+   },
+   {
+    "src": "target:http://127.0.0.1:64182",
+    "dst": "check:sqli_recheck",
+    "label": "已执行"
+   },
+   {
+    "src": "hypo:H-001",
+    "dst": "finding:TRINA-001",
+    "label": "验证为"
+   }
+  ],
+  "summary": "证据图：8 个节点（check 1，evidence 4，finding 1，hypothesis 1，target 1）、7 条关系"
+ },
+ "loop": {
+  "total_steps": 1,
+  "redundant_steps": 0,
+  "redundant_action_rate": 0.0,
+  "last_advice": ""
+ },
+ "scheduler": {
+  "decisions": 0,
+  "goal_directives": 0,
+  "followed": 0,
+  "missed": 0,
+  "compliance_rate": 0.0,
+  "last": null,
+  "recent": []
+ }
+}

@@ -1,0 +1,295 @@
+test_chain_valid_after_writes (test_audit.TestAuditChain) ... ok
+test_deleted_record_detected (test_audit.TestAuditChain) ... ok
+test_prev_hash_links (test_audit.TestAuditChain) ... ok
+test_redact_helper (test_audit.TestAuditChain) ... ok
+test_resume_continues_chain (test_audit.TestAuditChain) ... ok
+test_secrets_redacted (test_audit.TestAuditChain) ... ok
+test_sha256_text_stable (test_audit.TestAuditChain) ... ok
+test_summary_counts (test_audit.TestAuditChain) ... ok
+test_tamper_detected (test_audit.TestAuditChain) ... ok
+test_class_requirement_needs_evidenced_finding (test_brain.TestGoalRequirements) ... ok
+test_credentials_extracted_from_goal (test_brain.TestGoalRequirements) ... ok
+test_flag_goal_has_no_hard_requirement (test_brain.TestGoalRequirements) ... ok
+test_nested_and_dotfile_paths (test_brain.TestGoalRequirements) ... ok
+test_parse_extracts_class_and_path (test_brain.TestGoalRequirements) ... ok
+test_path_only_requirement_is_hard (test_brain.TestGoalRequirements) ... ok
+test_path_requirement_is_soft_when_class_present (test_brain.TestGoalRequirements) ... ok
+test_port_requirement_blocks_until_scanned (test_brain.TestGoalRequirements) ... ok
+test_port_requirements_extracted_and_ignored_when_unrelated (test_brain.TestGoalRequirements) ... ok
+test_braces_inside_strings (test_brain.TestParseAction) ... ok
+test_empty (test_brain.TestParseAction) ... ok
+test_fenced_json (test_brain.TestParseAction) ... ok
+test_garbage (test_brain.TestParseAction) ... ok
+test_json_after_prose (test_brain.TestParseAction) ... ok
+test_last_valid_object_wins (test_brain.TestParseAction) ... ok
+test_missing_fields (test_brain.TestParseAction) ... ok
+test_plain_json (test_brain.TestParseAction) ... ok
+test_budget_forces_advance (test_brain.TestPlanner) ... ok
+test_directive_mentions_known_ports (test_brain.TestPlanner) ... ok
+test_enum_requires_surface_not_just_hosts (test_brain.TestPlanner) ... ok
+test_force_advance (test_brain.TestPlanner) ... ok
+test_recon_to_enum_requires_ports (test_brain.TestPlanner) ... ok
+test_should_finish_after_flags_in_post (test_brain.TestPlanner) ... ok
+test_vuln_needs_verified_or_three_steps (test_brain.TestPlanner) ... ok
+test_denied_action_gets_hints_and_loop_continues (test_brain.TestReActLoop) ... ok
+test_flag_shortcut_does_not_satisfy_task_goal (test_brain.TestReActLoop)
+目标要求「验证 /sqli 的注入」时，仅拿到 flag 不得判定成功或提前收敛。 ... ok
+test_full_loop_reaches_success (test_brain.TestReActLoop) ... ok
+test_goal_satisfied_yields_success (test_brain.TestReActLoop) ... ok
+test_invalid_json_is_recovered (test_brain.TestReActLoop) ... ok
+test_mid_run_pivot_to_out_of_scope_is_denied (test_brain.TestReActLoop)
+预检只覆盖起始目标：模型中途换目标也必须被逐动作拦下并留痕。 ... ok
+test_no_goal_keeps_flag_shortcut_success (test_brain.TestReActLoop)
+无明确任务要求时，拿到 flag 仍然是成功（保持原有语义）。 ... ok
+test_out_of_scope_is_blocked_without_llm (test_brain.TestReActLoop) ... ok
+test_record_round_trip_is_valid_json (test_brain.TestReActLoop)
+录制物是评测回归的输入，必须是合法 JSON 且能被回放后端直接加载。 ... ok
+test_stall_detection_injects_correction (test_brain.TestReActLoop) ... ok
+test_system_prompt_contains_scope_and_tools (test_brain.TestReActLoop) ... ok
+test_adopting_out_of_scope_advice_still_hits_guard (test_collaboration.TestCollaboration) ... ok
+test_advice_never_executes_or_mutates_facts (test_collaboration.TestCollaboration) ... ok
+test_atomic_save_keeps_previous_snapshot_when_replace_fails (test_collaboration.TestCollaboration) ... ok
+test_bad_budget_config_is_rejected (test_collaboration.TestCollaboration) ... ok
+test_chat_failure_feedback_is_sent_back_to_model (test_collaboration.TestCollaboration) ... ok
+test_chat_has_action_observation_pair_and_uses_specialist (test_collaboration.TestCollaboration) ... ok
+test_chat_preserves_facts_and_current_request_after_history_rolls (test_collaboration.TestCollaboration) ... ok
+test_consultation_is_registered_and_can_be_hidden (test_collaboration.TestCollaboration) ... ok
+test_disabled_feature_does_not_call_model (test_collaboration.TestCollaboration) ... ok
+test_forged_flags_status_and_findings_are_removed (test_collaboration.TestCollaboration) ... ok
+test_guided_approval_receives_controller_resolved_test_id (test_collaboration.TestCollaboration) ... ok
+test_invalid_response_consumes_budget (test_collaboration.TestCollaboration) ... ok
+test_parent_approval_rejects_consultation_before_child_call (test_collaboration.TestCollaboration) ... ok
+test_parent_must_issue_separate_action_and_record_replays_child (test_collaboration.TestCollaboration) ... ok
+test_recursion_unregistered_and_cross_role_tools_are_rejected (test_collaboration.TestCollaboration) ... ok
+test_review_cannot_propose_execution (test_collaboration.TestCollaboration) ... ok
+test_same_tool_with_wrong_test_id_is_not_compliance (test_collaboration.TestCollaboration) ... ok
+test_scheduler_consumes_live_controller_coverage (test_collaboration.TestCollaboration) ... ok
+test_scope_denial_precedes_specialist_model_call (test_collaboration.TestCollaboration) ... ok
+test_shared_tool_instance_does_not_share_call_budget (test_collaboration.TestCollaboration) ... ok
+test_snapshot_is_bounded_and_credential_password_is_absent (test_collaboration.TestCollaboration) ... ok
+test_strict_mode_does_not_whitelist_consultation_implicitly (test_collaboration.TestCollaboration) ... ok
+test_unknown_role_and_oversized_task_are_rejected (test_collaboration.TestCollaboration) ... ok
+test_confirmation_cannot_be_erased_by_later_timeout (test_decision_evidence.TestEvidenceDecisions) ... ok
+test_goal_requires_verified_evidence (test_decision_evidence.TestEvidenceDecisions) ... ok
+test_knowledge_ignores_duplicate_facts_and_timestamps_but_sees_upgrade (test_decision_evidence.TestEvidenceDecisions) ... ok
+test_lab_passwd_fixture_is_consistent_between_encodings (test_decision_evidence.TestEvidenceDecisions) ... ok
+test_loop_fingerprint_does_not_truncate_distinct_inputs_or_results (test_decision_evidence.TestEvidenceDecisions) ... ok
+test_reference_does_not_overwrite_hypothesis (test_decision_evidence.TestEvidenceDecisions) ... ok
+test_same_statement_at_different_locations_keeps_separate_hypotheses (test_decision_evidence.TestEvidenceDecisions) ... ok
+test_structured_subject_matches_exact_location (test_decision_evidence.TestEvidenceDecisions) ... ok
+test_chat_uses_same_evidence_rules (test_decision_evidence.TestEvidenceRun) ... ok
+test_detected_upgrade_confirms_same_id_and_flushes_live_ledger (test_decision_evidence.TestEvidenceRun) ... ok
+test_model_final_cannot_create_flag_or_success (test_decision_evidence.TestEvidenceRun) ... ok
+test_repeated_facts_trigger_stop_contract (test_decision_evidence.TestEvidenceRun) ... ok
+test_unrelated_or_unevidenced_findings_do_not_confirm (test_decision_evidence.TestEvidenceRun) ... ok
+test_list_and_load_adapters (test_eval_report_lab.TestAdaptersAndScoring) ... ok
+test_tsecbench_empty (test_eval_report_lab.TestAdaptersAndScoring) ... ok
+test_tsecbench_scoring (test_eval_report_lab.TestAdaptersAndScoring) ... ok
+test_unreachable_range_does_not_raise (test_eval_report_lab.TestAdaptersAndScoring) ... ok
+test_modes_block_and_stats (test_eval_report_lab.TestAdversarialProxy) ... ok
+test_autostart_and_stop (test_eval_report_lab.TestLabFixtures) ... ok
+test_existing_fixture_is_not_touched (test_eval_report_lab.TestLabFixtures) ... ok
+test_flag_present (test_eval_report_lab.TestLabTarget) ... ok
+test_lfi_reads_passwd (test_eval_report_lab.TestLabTarget) ... ok
+test_rce_echoes_id (test_eval_report_lab.TestLabTarget) ... ok
+test_soft404_shape (test_eval_report_lab.TestLabTarget) ... ok
+test_sqli_errors (test_eval_report_lab.TestLabTarget) ... ok
+test_alias_normalization_matches_across_spellings (test_eval_report_lab.TestMetricsMath) ... ok
+test_fp_and_fn_are_counted (test_eval_report_lab.TestMetricsMath) ... ok
+test_harness_to_result_populates_scope_counts (test_eval_report_lab.TestMetricsMath)
+to_result 必须回填范围外计数，否则报告里「范围外发现」恒为 0。 ... ok
+test_in_scope_unmatched_is_fp (test_eval_report_lab.TestMetricsMath) ... ok
+test_infra_findings_and_success_criteria (test_eval_report_lab.TestMetricsMath)
+主机场景：端口/服务事实要能转成 GT 口径；扫描类场景按覆盖度判成败。 ... ok
+test_markdown_renders_chinese_table (test_eval_report_lab.TestMetricsMath) ... ok
+test_out_of_scope_not_counted_as_fp (test_eval_report_lab.TestMetricsMath) ... ok
+test_perfect_match (test_eval_report_lab.TestMetricsMath) ... ok
+test_scenario_without_ground_truth_has_no_false_positives (test_eval_report_lab.TestMetricsMath)
+纯夺旗类场景没有评分依据：其 finding 不应被算成误报。 ... ok
+test_success_criteria_flags (test_eval_report_lab.TestMetricsMath) ... ok
+test_credentials_redacted_in_output (test_eval_report_lab.TestReport) ... ok
+test_empty_state_still_renders (test_eval_report_lab.TestReport) ... ok
+test_save_writes_requested_formats (test_eval_report_lab.TestReport) ... ok
+test_sections_and_self_contained_html (test_eval_report_lab.TestReport) ... ok
+test_cli_target_fills_declared_param_only (test_eval_report_lab.TestScopeAwareToolBehaviour)
+--target 只能填工具声明过的目标参数（url 或 target），否则参数校验会直接拒。 ... ok
+test_dynamic_level_enforced_by_registry (test_eval_report_lab.TestScopeAwareToolBehaviour) ... ok
+test_internal_subrequest_uses_effective_level (test_eval_report_lab.TestScopeAwareToolBehaviour)
+工具按 verify 级被放行时，它内部的子请求不能按 exploit 级自拒。 ... ok
+test_robots_disclosure_detection (test_eval_report_lab.TestScopeAwareToolBehaviour) ... ok
+test_upload_not_reported_on_soft404 (test_eval_report_lab.TestScopeAwareToolBehaviour)
+软 404 靶机对任意路径都返回 200：没有上传成功证据就不能产出 file_upload 发现。 ... ok
+test_weak_password_single_credential_is_verify_level (test_eval_report_lab.TestScopeAwareToolBehaviour) ... ok
+test_303_changes_post_to_get_without_replaying_body (test_http.TestHttpRedirects) ... ok
+test_307_preserves_form_and_redirect_cookie (test_http.TestHttpRedirects) ... ok
+test_cross_origin_redirect_never_contacts_destination (test_http.TestHttpRedirects) ... ok
+test_http_rejects_non_http_schemes_before_transport (test_http.TestHttpRedirects) ... ok
+test_post_transport_error_is_not_retried (test_http.TestHttpRedirects) ... ok
+test_read_transport_error_can_retry (test_http.TestHttpRedirects) ... ok
+test_redirect_loop_is_bounded (test_http.TestHttpRedirects) ... ok
+test_redirect_query_payload_is_rechecked (test_http.TestHttpRedirects) ... ok
+test_redirects_can_be_disabled (test_http.TestHttpRedirects) ... ok
+test_relative_redirects_keep_actual_final_url_and_history (test_http.TestHttpRedirects) ... ok
+test_render_board_sections (test_insight.TestBoard) ... ok
+test_summarise_fields (test_insight.TestBoard) ... ok
+test_build_nodes_and_edges (test_insight.TestEvidenceGraph) ... ok
+test_empty_state_still_renders (test_insight.TestEvidenceGraph) ... ok
+test_mermaid_is_renderable (test_insight.TestEvidenceGraph) ... ok
+test_advice_covers_all_kinds (test_insight.TestFailureAndLoopGuard) ... ok
+test_alternatives_empty_for_unknown_tool (test_insight.TestFailureAndLoopGuard) ... ok
+test_alternatives_for_prefers_same_category_and_lower_level (test_insight.TestFailureAndLoopGuard) ... ok
+test_classify_failure_kinds (test_insight.TestFailureAndLoopGuard) ... ok
+test_loop_guard_escalation_ladder (test_insight.TestFailureAndLoopGuard) ... ok
+test_loop_guard_ignores_different_results (test_insight.TestFailureAndLoopGuard) ... ok
+test_blocked_hypothesis_is_marked (test_insight.TestHypothesisLedger) ... ok
+test_duplicate_is_reused (test_insight.TestHypothesisLedger) ... ok
+test_finalize_marks_unresolved_without_faking (test_insight.TestHypothesisLedger) ... ok
+test_from_action_accepts_string_and_dict (test_insight.TestHypothesisLedger) ... ok
+test_level_words_are_coarsened (test_insight.TestHypothesisLedger) ... ok
+test_outcome_requires_evidence_to_confirm_or_refute (test_insight.TestHypothesisLedger) ... ok
+test_priority_formula (test_insight.TestHypothesisLedger) ... ok
+test_prompt_block_sorted_by_priority (test_insight.TestHypothesisLedger) ... ok
+test_alias_normalisation_matches_vuln_class (test_insight.TestHypothesisScheduler)
+`SQL Injection` 这类别名要能绑定到 expect_finding=sqli 的检查项（与评分同一套归一化）。 ... ok
+test_binds_registered_check_for_verifiable_hypothesis (test_insight.TestHypothesisScheduler) ... ok
+test_compliance_counting_and_escalation (test_insight.TestHypothesisScheduler) ... ok
+test_descriptive_hypothesis_is_not_scheduled (test_insight.TestHypothesisScheduler) ... ok
+test_goal_classes_beat_higher_priority_other_class (test_insight.TestHypothesisScheduler)
+任务硬性要求优先：高优先级但非目标类的假设，不得压过目标类假设。 ... ok
+test_goal_directive_when_no_matching_hypothesis (test_insight.TestHypothesisScheduler)
+任务要求了某类验证、台账里还没有对应假设 → 直接派该类的注册检查项（目标驱动调度）。 ... ok
+test_low_priority_is_skipped (test_insight.TestHypothesisScheduler) ... ok
+test_scheduler_directs_when_binding_exists (test_insight.TestHypothesisScheduler)
+有可绑定的注册检查项时，调度指令必须进提示词。 ... ok
+test_tried_check_is_not_rebound (test_insight.TestHypothesisScheduler) ... ok
+test_unbindable_vuln_class_is_not_scheduled (test_insight.TestHypothesisScheduler)
+模型的 vuln_class 写成阶段名（recon）或该靶场没注册同类检查 → 不调度，避免烧 token。 ... ok
+test_ledger_off_hides_hypothesis_everywhere (test_insight.TestInsightSwitches) ... ok
+test_ledger_on_registers_hypothesis (test_insight.TestInsightSwitches) ... ok
+test_loop_guard_off_keeps_metrics_but_silences_advice (test_insight.TestInsightSwitches) ... ok
+test_scheduler_directs_step_and_counts_miss (test_insight.TestInsightSwitches)
+集成：可绑定假设 → 下一步提示词出现调度指令；模型不遵从 → 计入 scheduler_miss。 ... ok
+test_scheduler_off_leaves_no_directive (test_insight.TestInsightSwitches) ... ok
+test_cost_redundancy_and_recovery (test_insight.TestInternalMetrics) ... ok
+test_metrics_without_cost_data (test_insight.TestInternalMetrics) ... ok
+test_from_dict_rejects_error_payload (test_insight.TestStateRoundTrip) ... ok
+test_to_dict_from_dict_round_trip (test_insight.TestStateRoundTrip) ... ok
+test_approval_allows_action (test_interactive.TestAgentHumanHooks) ... ok
+test_human_rejection_skips_action (test_interactive.TestAgentHumanHooks) ... ok
+test_steering_queue_reaches_agent (test_interactive.TestAgentHumanHooks) ... ok
+test_stop_event_halts_loop (test_interactive.TestAgentHumanHooks) ... ok
+test_answer_releases_waiter (test_interactive.TestApprovalModes) ... ok
+test_level_thresholds (test_interactive.TestApprovalModes) ... ok
+test_off_mode_never_waits (test_interactive.TestApprovalModes) ... ok
+test_timeout_is_fail_closed (test_interactive.TestApprovalModes) ... ok
+test_controller_denial_is_surfaced_to_model_and_user (test_interactive.TestChatAgent) ... ok
+test_human_rejection_blocks_tool (test_interactive.TestChatAgent) ... ok
+test_plain_reply_does_not_call_tools (test_interactive.TestChatAgent) ... ok
+test_prose_plus_action_is_executed (test_interactive.TestChatAgent)
+模型常写「一句解释 + JSON 动作」：必须识别动作并执行，而不是当成纯文本回答。 ... ok
+test_tool_action_then_reply (test_interactive.TestChatAgent) ... ok
+test_free_text_goes_to_chat (test_interactive.TestConsole)
+非命令的自然语言应进入对话，而不是报"未知命令"。 ... ok
+test_model_and_backend_switch (test_interactive.TestConsole) ... ok
+test_model_list_and_history_and_new (test_interactive.TestConsole) ... ok
+test_revoke_and_grant (test_interactive.TestConsole) ... ok
+test_run_without_target_explains_usage (test_interactive.TestConsole) ... ok
+test_running_state_rejects_unrelated_commands (test_interactive.TestConsole) ... ok
+test_save_persists_backend_and_model (test_interactive.TestConsole) ... ok
+test_status_and_help_and_quit (test_interactive.TestConsole) ... ok
+test_unknown_slash_command_is_reported (test_interactive.TestConsole) ... ok
+test_usage_without_chat_still_reports_ledger (test_interactive.TestConsole) ... ok
+test_commands_without_config_args (test_interactive.TestLauncherArgCompatibility)
+tools/audit/lab 走另一分支（不注入 --set），解析应正常。 ... ok
+test_injected_overrides_parse_for_launcher_subcommands (test_interactive.TestLauncherArgCompatibility)
+启动器在子命令与其余参数之间注入 --set（`trina <sub> --set … <rest>`），逐命令验证能解析。 ... ok
+test_plan_autostarts_lab_and_reuses_existing (test_interactive.TestPlayPlan) ... ok
+test_plan_requires_something_to_attack (test_interactive.TestPlayPlan) ... ok
+test_plan_with_explicit_target (test_interactive.TestPlayPlan) ... ok
+test_bare_host_inherits_run_target (test_policy.TestController)
+动作写裸主机时应继承本次运行的目标注册（同主机才继承，且继承不放宽撤权）。 ... ok
+test_budget_stops_checks (test_policy.TestController) ... ok
+test_coverage_reports_untested_reasons (test_policy.TestController) ... ok
+test_guided_marks_unregistered_tool (test_policy.TestController) ... ok
+test_guided_resolves_registered_tool (test_policy.TestController) ... ok
+test_no_new_evidence_triggers_stop (test_policy.TestController) ... ok
+test_revocation_blocks_further_checks (test_policy.TestController) ... ok
+test_strict_rejects_unregistered_target (test_policy.TestController) ... ok
+test_strict_requires_registered_test_id (test_policy.TestController) ... ok
+test_test_id_tool_mismatch_is_denied (test_policy.TestController) ... ok
+test_loads_targets_and_tests_from_ranges (test_policy.TestPolicyRegistry) ... ok
+test_prompt_block_lists_registered_tests (test_policy.TestPolicyRegistry) ... ok
+test_target_matching (test_policy.TestPolicyRegistry) ... ok
+test_inconclusive_when_nothing_executed (test_policy.TestVerdictAndReview) ... ok
+test_inconclusive_when_tool_fails (test_policy.TestVerdictAndReview)
+工具失败/连不上时，结论必须是 INCONCLUSIVE，不能写成 NOT_CONFIRMED。 ... ok
+test_not_confirmed_when_checks_ran_without_findings (test_policy.TestVerdictAndReview) ... ok
+test_review_conflict_when_confirmed_without_verified (test_policy.TestVerdictAndReview) ... ok
+test_review_flags_claim_without_evidence (test_policy.TestVerdictAndReview) ... ok
+test_error_page_with_file_signature_is_not_lfi (test_probe_integrity.TestProbeIntegrity) ... ok
+test_fixed_sql_error_page_is_not_injection (test_probe_integrity.TestProbeIntegrity) ... ok
+test_lfi_has_missing_file_control_and_repeated_evidence (test_probe_integrity.TestProbeIntegrity) ... ok
+test_reflected_parameter_is_not_command_execution (test_probe_integrity.TestProbeIntegrity) ... ok
+test_split_command_marker_reproduces_with_fresh_challenge (test_probe_integrity.TestProbeIntegrity) ... ok
+test_sql_error_must_reproduce_and_disappear_in_control (test_probe_integrity.TestProbeIntegrity) ... ok
+test_stale_command_output_is_not_confirmed (test_probe_integrity.TestProbeIntegrity) ... ok
+test_static_file_signature_is_not_lfi (test_probe_integrity.TestProbeIntegrity) ... ok
+test_transient_sql_error_is_not_confirmed (test_probe_integrity.TestProbeIntegrity) ... ok
+test_action_level_gate (test_registry.TestRegistry) ... ok
+test_denials_are_audited (test_registry.TestRegistry) ... ok
+test_destructive_switch_off (test_registry.TestRegistry) ... ok
+test_exception_isolated (test_registry.TestRegistry) ... ok
+test_missing_required_rejected (test_registry.TestRegistry) ... ok
+test_out_of_scope_target_denied (test_registry.TestRegistry) ... ok
+test_prompt_block_and_describe (test_registry.TestRegistry) ... ok
+test_success_path_absorbs_facts (test_registry.TestRegistry) ... ok
+test_timeout (test_registry.TestRegistry) ... ok
+test_type_coercion_and_enum (test_registry.TestRegistry) ... ok
+test_unknown_param_rejected (test_registry.TestRegistry) ... ok
+test_unknown_tool (test_registry.TestRegistry) ... ok
+test_destructive_requires_host_allowlist (test_scope.TestActionLevels) ... ok
+test_level_gate (test_scope.TestActionLevels) ... ok
+test_unknown_level (test_scope.TestActionLevels) ... ok
+test_argv_hard_denies (test_scope.TestForbiddenPatterns) ... ok
+test_argv_target_check (test_scope.TestForbiddenPatterns) ... ok
+test_benign_argv_allowed (test_scope.TestForbiddenPatterns) ... ok
+test_brute_scale_cap (test_scope.TestForbiddenPatterns) ... ok
+test_http_method_policy (test_scope.TestForbiddenPatterns) ... ok
+test_lfi_passwd_allowed_shadow_denied (test_scope.TestForbiddenPatterns) ... ok
+test_payload_denies (test_scope.TestForbiddenPatterns) ... ok
+test_payload_in_query_string_is_scanned (test_scope.TestForbiddenPatterns) ... ok
+test_bucket_refills (test_scope.TestRateLimiter) ... ok
+test_waits_are_positive_when_exhausted (test_scope.TestRateLimiter) ... ok
+test_authorized_hosts_whitelist (test_scope.TestScopeDecisions) ... ok
+test_cidr_target_must_be_subset (test_scope.TestScopeDecisions) ... ok
+test_deny_cidr_overrides_allow (test_scope.TestScopeDecisions) ... ok
+test_loopback_policy (test_scope.TestScopeDecisions) ... ok
+test_private_allowed_public_denied (test_scope.TestScopeDecisions) ... ok
+test_public_requires_switch_and_explicit_cidr (test_scope.TestScopeDecisions) ... ok
+test_require_target_raises (test_scope.TestScopeDecisions) ... ok
+test_special_addresses_rejected (test_scope.TestScopeDecisions) ... ok
+test_unresolvable_host_denied (test_scope.TestScopeDecisions) ... ok
+test_forms (test_scope.TestTargetParsing) ... ok
+test_invalid (test_scope.TestTargetParsing) ... ok
+test_credentials_and_flags_dedup (test_state.TestAbsorb) ... ok
+test_notes_do_not_crash (test_state.TestAbsorb) ... ok
+test_ports_and_hosts (test_state.TestAbsorb) ... ok
+test_services_paths_tech (test_state.TestAbsorb) ... ok
+test_evidence_cap_enforced (test_state.TestEvidenceAndPrompt) ... ok
+test_finding_defaults (test_state.TestEvidenceAndPrompt) ... ok
+test_summary_contains_key_facts (test_state.TestEvidenceAndPrompt) ... ok
+test_summary_truncated (test_state.TestEvidenceAndPrompt) ... ok
+test_timeline_and_steps (test_state.TestEvidenceAndPrompt) ... ok
+test_to_dict_is_json_serializable (test_state.TestEvidenceAndPrompt) ... ok
+test_dedup_merges_evidence_and_status (test_state.TestFindings) ... ok
+test_different_parameter_is_separate_finding (test_state.TestFindings) ... ok
+test_ids_are_sequential (test_state.TestFindings) ... ok
+test_missing_title_falls_back_to_class (test_state.TestFindings) ... ok
+test_severity_mapping_in_dict (test_state.TestFindings) ... ok
+test_status_only_upgrades (test_state.TestFindings) ... ok
+
+----------------------------------------------------------------------
+Ran 267 tests in 35.685s
+
+OK
+[eval] 已自动拉起 lab 靶机 127.0.0.1:49164

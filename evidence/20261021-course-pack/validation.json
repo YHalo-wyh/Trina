@@ -1,0 +1,135 @@
+{
+  "ok": true,
+  "started_utc": "2026-10-21T08:51:57.796689+00:00",
+  "ended_utc": "2026-10-21T08:52:00.832540+00:00",
+  "product_baseline": "24fb6371a18ed59c905de25bbf0ac69ba69ec256",
+  "python": "3.10.11 (tags/v3.10.11:7d4cc5a, Apr  5 2023, 00:38:17) [MSC v.1929 64 bit (AMD64)]",
+  "platform": "Windows-10-10.0.26300-SP0",
+  "dependencies": {
+    "requests": "2.32.5",
+    "paramiko": "4.0.0",
+    "beautifulsoup4": "4.15.0",
+    "aiohttp": "3.13.5",
+    "PyYAML": "6.0.3",
+    "rich": "13.9.4"
+  },
+  "unit_tests": {
+    "tests_run": 267,
+    "passed": 267,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "exit_code": 0,
+    "runner_seconds": 35.685
+  },
+  "mechanism": {
+    "passed": 2,
+    "rounds": 2,
+    "source_command": "python -m scripts.verify_decision_evidence --output artifacts/course_docs/mechanism-20261021",
+    "run_ids": [
+      "20261021-144543-e15b64",
+      "20261021-144543-6bc995"
+    ]
+  },
+  "structure_negative_checks": true,
+  "commands": [
+    {
+      "argv": [
+        "C:\\Users\\WYH\\Desktop\\网安实训中级\\.venv\\Scripts\\python.exe",
+        "-X",
+        "utf8",
+        "-m",
+        "scripts.verify_course_pack",
+        "--json"
+      ],
+      "exit_code": 0,
+      "stdout": "{\r\n  \"ok\": true,\r\n  \"scope\": \"工件和引用一致性；未执行产品测试、付费模型或人工验收\",\r\n  \"checked_files_hash_mode\": \"UTF-8 文本字节将 CRLF 规范为 LF 后计算 SHA-256；证据原件摘要另见 provenance.json\",\r\n  \"errors\": [],\r\n  \"documents\": 21,\r\n  \"requirements\": 20,\r\n  \"scenarios\": {\r\n    \"P\": 11,\r\n    \"N\": 8,\r\n    \"A\": 7\r\n  },\r\n  \"tasks\": 8,\r\n  \"test_references\": 71,\r\n  \"distinct_test_references\": 71,\r\n  \"local_links\": 205,\r\n  \"checked_files\": {\r\n    \"docs/course/traceability.json\": \"4cdd1e261cbb28c3309d8701d8f6978a176d274bcf2091ebcfc13965eceacf74\",\r\n    \"README.md\": \"a282c208978af07be66b896296b3c3f9e588ce6fade95a53f7d9c09f37eb822c\",\r\n    \"开题报告与第一次汇报.md\": \"cdb4776977b74a1d6658053f35affc457efdcf5fdc725f5ad8670aeebbd46f9a\",\r\n    \"docs/course/README.md\": \"b26e1b1112904586d24e137506341cc13a7ea44b7c472bc31dd0ec58d1863c46\",\r\n    \"docs/course/intent.md\": \"d7dc92354f5b81f9946f39ada5dd4c733bcb65e2fb50ba991477009d9848e269\",\r\n    \"docs/course/problem-frame.md\": \"83e05d2f262674793e6bdc4cabe117acb1d789843f65fd79d18e6a67d8601845\",\r\n    \"docs/course/specification.md\": \"bca6fb9aee47a1d9bb6e979829b5e5a48a9794df4f318d13e89aff547e47f6ed\",\r\n    \"docs/course/scenarios.md\": \"10a411714e28ec0154ec4c2d3617937ac056bde1060646034f707e0189efb13e\",\r\n    \"docs/course/acceptance-matrix.md\": \"7c7b920405002dbe85c23d94edc3459ef666ca1f8cda4322ef33b7960c82ad2c\",\r\n    \"docs/course/state-model.md\": \"9fc8059f2e493181c20b4e14b1fa2991215e9d49a2666814f3d8d5518e519f32\",\r\n    \"docs/course/impact-map.md\": \"861c02bead79b1d485b6ec9538238b49358a9bbc8dbb2f3140ea2139036129b2\",\r\n    \"docs/course/plan.md\": \"f4872f2fd9d4225eefc8868ac5fe04b393d7eceac0fdb475e73125d6face10a9\",\r\n    \"docs/course/tasks.md\": \"deab91fd2b158d6e6bef3c4fc3dc9df3ace63cf37b9eb95643fdf823aa2a4cef\",\r\n    \"docs/course/repository-map.md\": \"1f6e6a97f921051fc078e2d5289ff8ec35c796d0d6bae493883bb01bbb19037a\",\r\n    \"docs/course/harness-manifest.md\": \"cd1973e0d9ffe83e81f0bf1d4f917af14e85b24aff259b19f14b61f36d06d282\",\r\n    \"docs/course/open-questions.md\": \"3e03ead52ffb2044ddfcd01fe9d2d5a163463d06eeb9a42a1d2dc0ab78b570c7\",\r\n    \"docs/course/continuity.md\": \"96f10ddbd6c575d9cb83b153bc8a89d714749228913c243705e8e8da31c074f6\",\r\n    \"docs/course/ai-disclosure.md\": \"fdeae22aef409c26ca53da36b277971de009cf9914ecfc13041005681d02b7f0\",\r\n    \"docs/course/course-alignment.md\": \"d7f53ec99ea11bc9b42f48b4b876ae152d6f91b9149e15c47b130dc4a0ba4f1b\",\r\n    \"design/adr/0019-course-contract-and-dual-harness.md\": \"28e142297c5205be1d8d53d9332a68c54aaa3b724a6d6deb7cb6564598276f7d\",\r\n    \"evidence/20261021-course-pack/README.md\": \"740cccae04762ad56063bc14cd208c00d87eaccb26985c82e6d28f50c35b1e14\",\r\n    \"review/20261021-course-pack-review.md\": \"3f63de80e3d4c3a51a056a893b5f2bc49596d777fc708efb13a0a3468373b384\",\r\n    \"tests/test_audit.py\": \"1feb6f2739ebe093809f4f3359235b05895bafab81f66fc929d5694c81bc1e95\",\r\n    \"tests/test_brain.py\": \"f2022895d2590f8cca00cd9d6958ce8acbcf2771967ecf1c452167c543575199\",\r\n    \"tests/test_collaboration.py\": \"4f23ea69d444b5a3632cf3140a0bbf9df49bd1c7a12071f968e2112b881c8db9\",\r\n    \"tests/test_decision_evidence.py\": \"ee97c960b89131a3955c74512d93fb3e29a44efa4becd17ce308b084d88871a6\",\r\n    \"tests/test_eval_report_lab.py\": \"64ab41b58b5a5bf78acff4ce957c7f08d3f43c4cca23b9621b69bcf869aeeb25\",\r\n    \"tests/test_http.py\": \"24630c966be4d63254758c8005b216f4a829ea824a2934a5bf0b5fa52317ebca\",\r\n    \"tests/test_insight.py\": \"5d421908865b3300fc68db710d7964c762900431c08f274980c9fdaa8f740ed4\",\r\n    \"tests/test_interactive.py\": \"1c0f7d95bf782a7814ad32ca664cd24ba311891a0525816b5d5fe0bffd4d5039\",\r\n    \"tests/test_policy.py\": \"ce5338554eeb6cbbeedb071f7bb87a57887adf599257177ad10ba0ea3bae7f03\",\r\n    \"tests/test_probe_integrity.py\": \"75a9938619439a7f779f8fa49cb5a8bdc080cffd4def63b06ba7dbb556c35915\",\r\n    \"tests/test_registry.py\": \"a34236849b1cd10ec31e57a3f2456dc12ca8771a2ce6cfa8ce73e2b0dd97ebcc\",\r\n    \"tests/test_scope.py\": \"6ff137e0c3a216c50f9a2695357d4946cb304f01bf5bcd05530db1689ca4adbd\",\r\n    \"tests/test_state.py\": \"c357f198af7b8a951cd39f45d8a8bd69c2fe82d286813c2748e2d28d67d20156\",\r\n    \"trina/brain/prompts.py\": \"f452726644150bd0a4c57e4271cc253a8f777498cd22764481e1a30da1b28315\",\r\n    \"trina/config.py\": \"2ac2cde93da435409017c4230d954d099700eb48cd89fd9c900e917bcca5cc14\",\r\n    \"trina/scope.py\": \"16e0e573c0bb9fe5f6a891651163cb24c9cad393279fccc9c7b890fc3285b1ea\",\r\n    \"trina/brain/agent.py\": \"be701f17c2c6fd1075e271b3604428ebf2babbb03c254408e1b4560b4e77c6c4\",\r\n    \"trina/policy.py\": \"2c854be4361e485f2f7d37cceccc3c47105b9b62cfecab81c0bea8260169f20c\",\r\n    \"configs/ranges/lab.yaml\": \"b1cd2025dea87cc0ef9abcac3f31929654e6ee4735854e3237a758078f639d15\",\r\n    \"trina/tools/registry.py\": \"5f3290c54a55148d5737df3dd641ed03d308f0efcc42c4264a6b630d5571c973\",\r\n    \"trina/tools/__init__.py\": \"2f48745878082a2cc2bfb3abbfa7b82a91e1d0fcdeb31eed6d4ffdfcbddc30c0\",\r\n    \"trina/tools/external.py\": \"8e5244109a471f644325e745b218039902f4bcfdf1698e0a261a43f57033dafa\",\r\n    \"trina/tools/creds.py\": \"177083ff6520be1c33bd232ed10cea9a014298eb2da88d5a39265d7faf3de196\",\r\n    \"trina/tools/http.py\": \"fc5ac1e1d3ead2ae8e6c1930a4994dd0436bc049cf8be291ca39b6571f3c939a\",\r\n    \"trina/hypotheses.py\": \"499caecd5151b560313ac1374bad30b41e6a0108926ce5607de4fcb9e861523d\",\r\n    \"trina/state.py\": \"60f761790d8f1a67dcb8adfb6ac8357fe7d8c4952baf51e9d45273ca5c5660f1\",\r\n    \"trina/tools/exploit.py\": \"144fdae6e19429b7b44297de98a6bf1c467df849f7b52c04f987678de0aef31a\",\r\n    \"trina/brain/goal.py\": \"fca99e53bee5f9ba6cc7e04aac021026697431e6a274cf9d93048cbbc9b4d759\",\r\n    \"trina/audit.py\": \"b9cf788c53394e770706ea9a53c58386793dcea174cccb41a826ccdf6f0b4808\",\r\n    \"trina/session.py\": \"0117c8faa7cbdd8a2972a0416ce5b13b7e0e36bed151c084fd34722752e4794e\",\r\n    \"trina/interactive.py\": \"df727a3c9a9bfb2e45e812b03db9ec04c87a7e278c46ee56560ebe4aa1b70209\",\r\n    \"trina/brain/failure.py\": \"f34408480df23142d7d496ca83662ff184563fa52a10b9066a8d01a618ead91a\",\r\n    \"trina/board.py\": \"7091493f92afb608c6769a5cafa20ae25cb366448e03f5701faed97310869c65\",\r\n    \"trina/brain/scheduler.py\": \"42b9e2c9f4de51e8b58573a67cf6f92950be01fbd39f63129b03261870a92d33\",\r\n    \"trina/collaboration.py\": \"f40d7c0be28920f3804ca4c955cc7dca1f08a47b87e8a879c9e2c569e2ed87e9\",\r\n    \"trina/tools/specialists.py\": \"b76a44f07ab791a203d7724898d86f7197fd0a6afa102efa26ff0fa9781c2771\",\r\n    \"trina/report/markdown.py\": \"3d238360abbc639b5497a46b4daa62fb81d41971855523e40a5be827c815a50e\",\r\n    \"trina/report/builder.py\": \"448944d3d4f535883a61657ba1ed2a3cba576ff1c51dac4fa8bf1c3a507ef9bc\",\r\n    \"trina/report/html.py\": \"c77642f515c2ff2efa0509cd00570215821a6151980a732f267d895da6de59f8\",\r\n    \"trina/review.py\": \"003387154bfeefce49aa05f96626adb7a2a30ee3b2115f980f8ea4e8f9f20875\",\r\n    \"trina/eval/metrics.py\": \"481b3f84e99648d0da1ef6f2882be3e9820530735365f80d4c3aea4d6712bd28\",\r\n    \"trina/eval/harness.py\": \"2b2d7cba456ac45602b8a5d85df6945c0b450e4e4a9707aa852ba2688be7cb03\",\r\n    \"scripts/verify_decision_evidence.py\": \"5b3c35134ea5d1fc055436fac0127ec3de977e408930421dcf580ed4bf2c168b\",\r\n    \"trina/lab/http_target.py\": \"f11c9ac1ea7da85ea30e81d066c696b7bf81e87c15861d030ac5ae26461e8684\",\r\n    \"scripts/verify_course_pack.py\": \"da3d7f52c54439483c4b84dec0668c42ec6571ba157d62b3ec09a84ae4763bb8\"\r\n  }\r\n}\r\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "C:\\Users\\WYH\\Desktop\\网安实训中级\\.venv\\Scripts\\python.exe",
+        "-X",
+        "utf8",
+        "-m",
+        "trina",
+        "audit",
+        "verify",
+        "evidence/20261021-course-pack/round-1/audit.jsonl"
+      ],
+      "exit_code": 0,
+      "stdout": "[通过] evidence\\20261021-course-pack\\round-1\\audit.jsonl\r\n  哈希链完整：25 条记录，末端 670f850aea5c…\r\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "C:\\Users\\WYH\\Desktop\\网安实训中级\\.venv\\Scripts\\python.exe",
+        "-X",
+        "utf8",
+        "-m",
+        "trina",
+        "audit",
+        "verify",
+        "evidence/20261021-course-pack/round-2/audit.jsonl"
+      ],
+      "exit_code": 0,
+      "stdout": "[通过] evidence\\20261021-course-pack\\round-2\\audit.jsonl\r\n  哈希链完整：25 条记录，末端 8f296243e612…\r\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "git",
+        "diff",
+        "--cached",
+        "--check"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    }
+  ],
+  "artifact_sha256": {
+    "evidence/20261021-course-pack/doc-check.json": "73b7a1fcc45a41f325ade7a801d5fdf27cc8d311124a29881895eada03e826b9",
+    "evidence/20261021-course-pack/README.md": "740cccae04762ad56063bc14cd208c00d87eaccb26985c82e6d28f50c35b1e14",
+    "evidence/20261021-course-pack/round-1/audit.jsonl": "5b746bb4a96c6d27c748efa2a8460a99e8beb6874241ce2fcfc5ffb32b79ab02",
+    "evidence/20261021-course-pack/round-1/original-summary.json": "d249868c401c396e367bf53f2b29126dc1ba4a4fb16586e09b67116449488747",
+    "evidence/20261021-course-pack/round-1/provenance.json": "d5eb51ee01f67492653ebcdeb7fc7f1a4d1d23f66592f3b328a08809e1920a80",
+    "evidence/20261021-course-pack/round-1/replay.json": "b868d59540b6043bf7b71ba01bacdd2c3fc9c49ab6994ec9f8510cf3b5f0ce45",
+    "evidence/20261021-course-pack/round-1/report.html": "f790e64829cfba16bc6188be1fa54e9f4671e90a3bfacb80ff82eb764843af17",
+    "evidence/20261021-course-pack/round-1/report.md": "f8dd2afe6cb85c981569042d84b2b79c749b3649c90bb6eca401fca6de4e4e5b",
+    "evidence/20261021-course-pack/round-1/state.json": "b1aa898bf3dafd23e60e7f4886ad81cf59530d6d1825a4294092c1a7785a545e",
+    "evidence/20261021-course-pack/round-1/summary.json": "c3ce70e5a0a3f80b5b20c78c4c42f6ee70c848006f6b58cea3fc93070b5a83d5",
+    "evidence/20261021-course-pack/round-2/audit.jsonl": "9a89c0c50126a2487497afc3a8fef9cd40cf0f6740aa2dd677744f7551d8e874",
+    "evidence/20261021-course-pack/round-2/original-summary.json": "80fcd5c518e40471ba7919149ffd1b81ebc63aa5f93d70c94d4c5ef959e81c76",
+    "evidence/20261021-course-pack/round-2/provenance.json": "1e7107544bb2d72b12650b0a4326bfcf2a89fd39c32e806b953189226145bcb4",
+    "evidence/20261021-course-pack/round-2/replay.json": "7dc5a44346207862f67d74091a01ba774d020595468973b88f0283fd521f21e7",
+    "evidence/20261021-course-pack/round-2/report.html": "1745b92489c25a38bad5491675891aefd56cbe5a917f8fa5a162e1b1e7824dfb",
+    "evidence/20261021-course-pack/round-2/report.md": "c35f0ee597f40dbd2a522bdcce31e24cc1931f96d1ca4abc853a29945921eb32",
+    "evidence/20261021-course-pack/round-2/state.json": "c59346962769a6bc25124ee9720fd90b1c3c193d74ee2aae28735e0adf7efd90",
+    "evidence/20261021-course-pack/round-2/summary.json": "6152483b26b98767b54270451f6c16e547d9881386019b8cc8d4ceec2ce0a6c4",
+    "evidence/20261021-course-pack/structure-negative-check.json": "7a75e0670726c883fbaea6c1257e5fb1620f778cea548bc0f974ee893278963e",
+    "evidence/20261021-course-pack/unit-tests.json": "74663be836b89a680325bc1ac086e23e527f50e470e31ae81b71e466dbda1253",
+    "evidence/20261021-course-pack/unit-tests.log": "3f7ef7e61524f9e2cebc30ec78197b6ecae95fe7054169aeadf6b98f9f2846a2"
+  },
+  "manual_reviews": [
+    {
+      "id": "MR-01",
+      "status": "pending"
+    },
+    {
+      "id": "MR-02",
+      "status": "pending"
+    }
+  ],
+  "limits": "已有 Windows 环境；固定决策机制；未进行收费真实模型评测、跨平台干净安装或独立人工签署"
+}

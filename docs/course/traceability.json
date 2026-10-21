@@ -1,0 +1,652 @@
+{
+  "schema_version": 1,
+  "pack_version": "1.0",
+  "product_baseline": "24fb6371a18ed59c905de25bbf0ac69ba69ec256",
+  "course_source": {
+    "slides": 94,
+    "sha256": "9b711c132d3d7a2bb1919190c974ef90099940b18e2795d93e9aba5330a26d08"
+  },
+  "documents": [
+    "README.md",
+    "开题报告与第一次汇报.md",
+    "docs/course/README.md",
+    "docs/course/intent.md",
+    "docs/course/problem-frame.md",
+    "docs/course/specification.md",
+    "docs/course/scenarios.md",
+    "docs/course/acceptance-matrix.md",
+    "docs/course/state-model.md",
+    "docs/course/impact-map.md",
+    "docs/course/plan.md",
+    "docs/course/tasks.md",
+    "docs/course/repository-map.md",
+    "docs/course/harness-manifest.md",
+    "docs/course/open-questions.md",
+    "docs/course/continuity.md",
+    "docs/course/ai-disclosure.md",
+    "docs/course/course-alignment.md",
+    "design/adr/0019-course-contract-and-dual-harness.md",
+    "evidence/20261021-course-pack/README.md",
+    "review/20261021-course-pack-review.md"
+  ],
+  "tasks": [
+    "TASK-01",
+    "TASK-02",
+    "TASK-03",
+    "TASK-04",
+    "TASK-05",
+    "TASK-06",
+    "TASK-07",
+    "TASK-08"
+  ],
+  "validation_commands": {
+    "V-DOC": "python -m scripts.verify_course_pack",
+    "V-FAST": "python -m unittest discover -s tests -p test_scope.py",
+    "V-POLICY": "python -m unittest discover -s tests -p test_policy.py",
+    "V-HTTP": "python -m unittest discover -s tests -p test_http.py",
+    "V-AUDIT": "python -m unittest discover -s tests -p test_audit.py",
+    "V-FULL": "python -m unittest discover -s tests",
+    "V-E2E": "python -m scripts.verify_decision_evidence --output artifacts/course-pack-demo",
+    "V-CHAIN": "python -m trina audit verify evidence/20261021-course-pack/round-1/audit.jsonl",
+    "V-DIFF": "git diff --check"
+  },
+  "requirements": [
+    {
+      "id": "REQ-01",
+      "title": "任务输入与动作协议",
+      "level": "MUST",
+      "scenarios": [
+        "SC-P01",
+        "SC-N01"
+      ],
+      "task": "TASK-01",
+      "implementation": [
+        "trina/brain/prompts.py",
+        "trina/config.py"
+      ],
+      "tests": [
+        "test_brain.TestParseAction.test_fenced_json",
+        "test_brain.TestReActLoop.test_invalid_json_is_recovered",
+        "test_collaboration.TestCollaboration.test_bad_budget_config_is_rejected"
+      ],
+      "commands": [
+        "V-FULL"
+      ],
+      "limitations": [],
+      "outcome": "合法对象进入执行；坏协议返回反馈，未知配置不被静默接受",
+      "evidence": [
+        "evidence/20261021-course-pack/unit-tests.json"
+      ]
+    },
+    {
+      "id": "REQ-02",
+      "title": "目标范围裁决",
+      "level": "MUST",
+      "scenarios": [
+        "SC-A01"
+      ],
+      "task": "TASK-01",
+      "implementation": [
+        "trina/scope.py",
+        "trina/brain/agent.py"
+      ],
+      "tests": [
+        "test_brain.TestReActLoop.test_out_of_scope_is_blocked_without_llm",
+        "test_brain.TestReActLoop.test_mid_run_pivot_to_out_of_scope_is_denied",
+        "test_scope.TestScopeDecisions.test_public_requires_switch_and_explicit_cidr"
+      ],
+      "commands": [
+        "V-FAST",
+        "V-FULL"
+      ],
+      "limitations": [],
+      "outcome": "预检模型零调用，越界目标工具零调用",
+      "evidence": [
+        "evidence/20261021-course-pack/unit-tests.json"
+      ]
+    },
+    {
+      "id": "REQ-03",
+      "title": "注册项与撤权",
+      "level": "MUST",
+      "scenarios": [
+        "SC-N02",
+        "SC-A07"
+      ],
+      "task": "TASK-01",
+      "implementation": [
+        "trina/policy.py",
+        "configs/ranges/lab.yaml"
+      ],
+      "tests": [
+        "test_policy.TestController.test_strict_requires_registered_test_id",
+        "test_policy.TestController.test_strict_rejects_unregistered_target",
+        "test_policy.TestController.test_test_id_tool_mismatch_is_denied",
+        "test_policy.TestController.test_revocation_blocks_further_checks"
+      ],
+      "commands": [
+        "V-POLICY"
+      ],
+      "limitations": [
+        "OQ-01",
+        "OQ-02"
+      ],
+      "outcome": "非法注册项和撤权目标拒绝；不承诺完整参数绑定",
+      "evidence": [
+        "evidence/20261021-course-pack/unit-tests.json"
+      ]
+    },
+    {
+      "id": "REQ-04",
+      "title": "工具契约与错误隔离",
+      "level": "MUST",
+      "scenarios": [
+        "SC-P01",
+        "SC-N03"
+      ],
+      "task": "TASK-01",
+      "implementation": [
+        "trina/tools/registry.py",
+        "trina/tools/__init__.py"
+      ],
+      "tests": [
+        "test_registry.TestRegistry.test_unknown_param_rejected",
+        "test_registry.TestRegistry.test_missing_required_rejected",
+        "test_registry.TestRegistry.test_type_coercion_and_enum",
+        "test_registry.TestRegistry.test_exception_isolated",
+        "test_registry.TestRegistry.test_timeout"
+      ],
+      "commands": [
+        "V-FULL"
+      ],
+      "limitations": [
+        "OQ-03"
+      ],
+      "outcome": "坏参数零执行，工具异常与超时形成结构化错误",
+      "evidence": [
+        "evidence/20261021-course-pack/unit-tests.json"
+      ]
+    },
+    {
+      "id": "REQ-05",
+      "title": "动态风险与高危参数",
+      "level": "MUST",
+      "scenarios": [
+        "SC-A02"
+      ],
+      "task": "TASK-02",
+      "implementation": [
+        "trina/scope.py",
+        "trina/tools/external.py",
+        "trina/tools/creds.py"
+      ],
+      "tests": [
+        "test_eval_report_lab.TestScopeAwareToolBehaviour.test_dynamic_level_enforced_by_registry",
+        "test_scope.TestForbiddenPatterns.test_payload_in_query_string_is_scanned",
+        "test_scope.TestActionLevels.test_destructive_requires_host_allowlist",
+        "test_scope.TestForbiddenPatterns.test_brute_scale_cap"
+      ],
+      "commands": [
+        "V-FAST",
+        "V-FULL"
+      ],
+      "limitations": [],
+      "outcome": "等级和危险 payload 依据实际参数重新裁决",
+      "evidence": [
+        "evidence/20261021-course-pack/unit-tests.json"
+      ]
+    },
+    {
+      "id": "REQ-06",
+      "title": "HTTP 跳转与重试",
+      "level": "MUST",
+      "scenarios": [
+        "SC-A03"
+      ],
+      "task": "TASK-02",
+      "implementation": [
+        "trina/tools/http.py"
+      ],
+      "tests": [
+        "test_http.TestHttpRedirects.test_cross_origin_redirect_never_contacts_destination",
+        "test_http.TestHttpRedirects.test_303_changes_post_to_get_without_replaying_body",
+        "test_http.TestHttpRedirects.test_307_preserves_form_and_redirect_cookie",
+        "test_http.TestHttpRedirects.test_redirect_loop_is_bounded",
+        "test_http.TestHttpRedirects.test_post_transport_error_is_not_retried"
+      ],
+      "commands": [
+        "V-HTTP"
+      ],
+      "limitations": [],
+      "outcome": "跨源目的端零命中，方法及重试语义正确",
+      "evidence": [
+        "evidence/20261021-course-pack/unit-tests.json"
+      ]
+    },
+    {
+      "id": "REQ-07",
+      "title": "证据与验证对象",
+      "level": "MUST",
+      "scenarios": [
+        "SC-P02",
+        "SC-A04"
+      ],
+      "task": "TASK-03",
+      "implementation": [
+        "trina/hypotheses.py",
+        "trina/state.py",
+        "trina/tools/exploit.py"
+      ],
+      "tests": [
+        "test_decision_evidence.TestEvidenceRun.test_detected_upgrade_confirms_same_id_and_flushes_live_ledger",
+        "test_decision_evidence.TestEvidenceRun.test_unrelated_or_unevidenced_findings_do_not_confirm",
+        "test_probe_integrity.TestProbeIntegrity.test_fixed_sql_error_page_is_not_injection",
+        "test_probe_integrity.TestProbeIntegrity.test_reflected_parameter_is_not_command_execution",
+        "test_decision_evidence.TestEvidenceDecisions.test_confirmation_cannot_be_erased_by_later_timeout"
+      ],
+      "commands": [
+        "V-FULL"
+      ],
+      "limitations": [
+        "OQ-09"
+      ],
+      "outcome": "同对象带证据升级，阴性和超时不伪造或抹去事实",
+      "evidence": [
+        "evidence/20261021-course-pack/unit-tests.json"
+      ]
+    },
+    {
+      "id": "REQ-08",
+      "title": "目标成功与报告结论",
+      "level": "MUST",
+      "scenarios": [
+        "SC-P03",
+        "SC-N04",
+        "SC-A04"
+      ],
+      "task": "TASK-03",
+      "implementation": [
+        "trina/brain/agent.py",
+        "trina/brain/goal.py"
+      ],
+      "tests": [
+        "test_decision_evidence.TestEvidenceRun.test_model_final_cannot_create_flag_or_success",
+        "test_brain.TestReActLoop.test_flag_shortcut_does_not_satisfy_task_goal",
+        "test_policy.TestVerdictAndReview.test_inconclusive_when_nothing_executed",
+        "test_policy.TestVerdictAndReview.test_inconclusive_when_tool_fails",
+        "test_policy.TestVerdictAndReview.test_not_confirmed_when_checks_ran_without_findings"
+      ],
+      "commands": [
+        "V-POLICY",
+        "V-FULL"
+      ],
+      "limitations": [
+        "OQ-01"
+      ],
+      "outcome": "成功和 verdict 分开计算，无证据与受限不伪称安全",
+      "evidence": [
+        "evidence/20261021-course-pack/unit-tests.json"
+      ]
+    },
+    {
+      "id": "REQ-09",
+      "title": "审计链与完整性",
+      "level": "MUST",
+      "scenarios": [
+        "SC-A05"
+      ],
+      "task": "TASK-04",
+      "implementation": [
+        "trina/audit.py"
+      ],
+      "tests": [
+        "test_audit.TestAuditChain.test_chain_valid_after_writes",
+        "test_audit.TestAuditChain.test_tamper_detected",
+        "test_audit.TestAuditChain.test_deleted_record_detected",
+        "test_audit.TestAuditChain.test_resume_continues_chain"
+      ],
+      "commands": [
+        "V-AUDIT",
+        "V-CHAIN"
+      ],
+      "limitations": [],
+      "outcome": "有效链通过，修改/缺失记录检出，外部真实性另验",
+      "evidence": [
+        "evidence/20261021-course-pack/unit-tests.json"
+      ]
+    },
+    {
+      "id": "REQ-10",
+      "title": "人工介入与拒绝",
+      "level": "MUST",
+      "scenarios": [
+        "SC-N05",
+        "SC-P04",
+        "SC-A07"
+      ],
+      "task": "TASK-05",
+      "implementation": [
+        "trina/session.py",
+        "trina/interactive.py"
+      ],
+      "tests": [
+        "test_interactive.TestApprovalModes.test_timeout_is_fail_closed",
+        "test_interactive.TestAgentHumanHooks.test_human_rejection_skips_action",
+        "test_interactive.TestAgentHumanHooks.test_steering_queue_reaches_agent",
+        "test_interactive.TestAgentHumanHooks.test_stop_event_halts_loop",
+        "test_interactive.TestConsole.test_revoke_and_grant"
+      ],
+      "commands": [
+        "V-FULL"
+      ],
+      "limitations": [
+        "OQ-03"
+      ],
+      "outcome": "拒绝和超时不执行，提示进入模型，stop 限制新调度",
+      "evidence": [
+        "evidence/20261021-course-pack/unit-tests.json"
+      ]
+    },
+    {
+      "id": "REQ-11",
+      "title": "预算与无进展停止",
+      "level": "MUST",
+      "scenarios": [
+        "SC-N06"
+      ],
+      "task": "TASK-05",
+      "implementation": [
+        "trina/policy.py",
+        "trina/brain/failure.py"
+      ],
+      "tests": [
+        "test_policy.TestController.test_budget_stops_checks",
+        "test_policy.TestController.test_no_new_evidence_triggers_stop",
+        "test_decision_evidence.TestEvidenceRun.test_repeated_facts_trigger_stop_contract",
+        "test_collaboration.TestCollaboration.test_chat_failure_feedback_is_sent_back_to_model"
+      ],
+      "commands": [
+        "V-POLICY",
+        "V-FULL"
+      ],
+      "limitations": [
+        "OQ-03",
+        "OQ-06"
+      ],
+      "outcome": "预算及重复事实触发停止，费用不声称硬限额",
+      "evidence": [
+        "evidence/20261021-course-pack/unit-tests.json"
+      ]
+    },
+    {
+      "id": "REQ-12",
+      "title": "原子快照与兼容",
+      "level": "MUST",
+      "scenarios": [
+        "SC-N07"
+      ],
+      "task": "TASK-06",
+      "implementation": [
+        "trina/state.py",
+        "trina/brain/agent.py",
+        "trina/board.py"
+      ],
+      "tests": [
+        "test_collaboration.TestCollaboration.test_atomic_save_keeps_previous_snapshot_when_replace_fails",
+        "test_insight.TestStateRoundTrip.test_to_dict_from_dict_round_trip",
+        "test_insight.TestStateRoundTrip.test_from_dict_rejects_error_payload"
+      ],
+      "commands": [
+        "V-FULL"
+      ],
+      "limitations": [
+        "OQ-03"
+      ],
+      "outcome": "替换失败旧文件不变，状态还原可读，不冒称自动续跑",
+      "evidence": [
+        "evidence/20261021-course-pack/unit-tests.json"
+      ]
+    },
+    {
+      "id": "REQ-13",
+      "title": "调度与遵从反馈",
+      "level": "MUST",
+      "scenarios": [
+        "SC-P05"
+      ],
+      "task": "TASK-06",
+      "implementation": [
+        "trina/brain/scheduler.py",
+        "trina/brain/agent.py"
+      ],
+      "tests": [
+        "test_collaboration.TestCollaboration.test_scheduler_consumes_live_controller_coverage",
+        "test_collaboration.TestCollaboration.test_same_tool_with_wrong_test_id_is_not_compliance",
+        "test_insight.TestInsightSwitches.test_scheduler_off_leaves_no_directive"
+      ],
+      "commands": [
+        "V-FULL"
+      ],
+      "limitations": [
+        "OQ-01",
+        "OQ-04"
+      ],
+      "outcome": "当前覆盖驱动下一注册项，明确 ID 错配不算遵从",
+      "evidence": [
+        "evidence/20261021-course-pack/unit-tests.json"
+      ]
+    },
+    {
+      "id": "REQ-14",
+      "title": "咨询建议边界",
+      "level": "MUST",
+      "scenarios": [
+        "SC-P06",
+        "SC-A06"
+      ],
+      "task": "TASK-07",
+      "implementation": [
+        "trina/collaboration.py",
+        "trina/tools/specialists.py"
+      ],
+      "tests": [
+        "test_collaboration.TestCollaboration.test_advice_never_executes_or_mutates_facts",
+        "test_collaboration.TestCollaboration.test_recursion_unregistered_and_cross_role_tools_are_rejected",
+        "test_collaboration.TestCollaboration.test_forged_flags_status_and_findings_are_removed",
+        "test_collaboration.TestCollaboration.test_invalid_response_consumes_budget",
+        "test_collaboration.TestCollaboration.test_parent_must_issue_separate_action_and_record_replays_child"
+      ],
+      "commands": [
+        "V-FULL"
+      ],
+      "limitations": [
+        "OQ-06"
+      ],
+      "outcome": "建议不执行不写事实，预算与回放有界",
+      "evidence": [
+        "evidence/20261021-course-pack/unit-tests.json"
+      ]
+    },
+    {
+      "id": "REQ-15",
+      "title": "已实现位置的脱敏",
+      "level": "MUST",
+      "scenarios": [
+        "SC-P07"
+      ],
+      "task": "TASK-04",
+      "implementation": [
+        "trina/audit.py",
+        "trina/state.py",
+        "trina/tools/specialists.py",
+        "trina/report/markdown.py"
+      ],
+      "tests": [
+        "test_audit.TestAuditChain.test_secrets_redacted",
+        "test_eval_report_lab.TestReport.test_credentials_redacted_in_output",
+        "test_collaboration.TestCollaboration.test_snapshot_is_bounded_and_credential_password_is_absent"
+      ],
+      "commands": [
+        "V-AUDIT",
+        "V-FULL"
+      ],
+      "limitations": [
+        "OQ-05"
+      ],
+      "outcome": "审计/报告/子快照按列明范围保护口令",
+      "evidence": [
+        "evidence/20261021-course-pack/unit-tests.json"
+      ]
+    },
+    {
+      "id": "REQ-16",
+      "title": "报告与只读复核",
+      "level": "MUST",
+      "scenarios": [
+        "SC-P08"
+      ],
+      "task": "TASK-07",
+      "implementation": [
+        "trina/report/builder.py",
+        "trina/report/html.py",
+        "trina/review.py"
+      ],
+      "tests": [
+        "test_eval_report_lab.TestReport.test_sections_and_self_contained_html",
+        "test_eval_report_lab.TestReport.test_save_writes_requested_formats",
+        "test_eval_report_lab.TestReport.test_empty_state_still_renders",
+        "test_policy.TestVerdictAndReview.test_review_flags_claim_without_evidence"
+      ],
+      "commands": [
+        "V-FULL"
+      ],
+      "limitations": [
+        "OQ-09"
+      ],
+      "outcome": "报告可读，review 指出无证据声明且不补测",
+      "evidence": [
+        "evidence/20261021-course-pack/unit-tests.json"
+      ]
+    },
+    {
+      "id": "REQ-17",
+      "title": "真值与指标范围",
+      "level": "MUST",
+      "scenarios": [
+        "SC-P09"
+      ],
+      "task": "TASK-08",
+      "implementation": [
+        "trina/eval/metrics.py",
+        "trina/eval/harness.py"
+      ],
+      "tests": [
+        "test_eval_report_lab.TestMetricsMath.test_fp_and_fn_are_counted",
+        "test_eval_report_lab.TestMetricsMath.test_out_of_scope_not_counted_as_fp",
+        "test_eval_report_lab.TestMetricsMath.test_scenario_without_ground_truth_has_no_false_positives",
+        "test_eval_report_lab.TestMetricsMath.test_alias_normalization_matches_across_spellings"
+      ],
+      "commands": [
+        "V-FULL"
+      ],
+      "limitations": [
+        "OQ-06"
+      ],
+      "outcome": "计数和分母按已声明范围计算",
+      "evidence": [
+        "evidence/20261021-course-pack/unit-tests.json"
+      ]
+    },
+    {
+      "id": "REQ-18",
+      "title": "两轮真实机制验证",
+      "level": "MUST",
+      "scenarios": [
+        "SC-P10"
+      ],
+      "task": "TASK-08",
+      "implementation": [
+        "scripts/verify_decision_evidence.py",
+        "trina/lab/http_target.py"
+      ],
+      "tests": [
+        "test_eval_report_lab.TestLabFixtures.test_autostart_and_stop",
+        "test_eval_report_lab.TestLabFixtures.test_existing_fixture_is_not_touched"
+      ],
+      "commands": [
+        "V-E2E",
+        "V-FULL"
+      ],
+      "limitations": [],
+      "outcome": "新靶机、新端口和新运行均有证据与有效审计",
+      "evidence": [
+        "evidence/20261021-course-pack/round-1/summary.json",
+        "evidence/20261021-course-pack/round-2/summary.json"
+      ]
+    },
+    {
+      "id": "REQ-19",
+      "title": "仓库追踪",
+      "level": "MUST",
+      "scenarios": [
+        "SC-N08"
+      ],
+      "task": "TASK-08",
+      "implementation": [
+        "scripts/verify_course_pack.py",
+        "docs/course/traceability.json"
+      ],
+      "tests": [],
+      "commands": [
+        "V-DOC",
+        "V-DIFF"
+      ],
+      "limitations": [],
+      "outcome": "引用和关系真实存在，坏引用隔离试验能失败",
+      "evidence": [
+        "evidence/20261021-course-pack/doc-check.json",
+        "evidence/20261021-course-pack/structure-negative-check.json"
+      ]
+    },
+    {
+      "id": "REQ-20",
+      "title": "人工连续性交接",
+      "level": "MUST",
+      "scenarios": [
+        "SC-P11"
+      ],
+      "task": "TASK-08",
+      "implementation": [
+        "docs/course/continuity.md",
+        "docs/course/open-questions.md"
+      ],
+      "tests": [],
+      "commands": [
+        "V-DOC"
+      ],
+      "limitations": [
+        "OQ-07",
+        "OQ-08"
+      ],
+      "outcome": "字段与路径检查通过；异机复现和人工签署待完成",
+      "evidence": [
+        "evidence/20261021-course-pack/doc-check.json",
+        "evidence/20261021-course-pack/structure-negative-check.json"
+      ]
+    }
+  ],
+  "manual_reviews": [
+    {
+      "id": "MR-01",
+      "status": "pending",
+      "scope": "三条 MUST 追踪抽查及独立环境两条命令",
+      "authority": "真实同行审查者"
+    },
+    {
+      "id": "MR-02",
+      "status": "pending",
+      "scope": "课程最终接受及评分",
+      "authority": "教师"
+    }
+  ]
+}

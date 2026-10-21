@@ -1,5 +1,7 @@
 # design · ADR、AI 规则、状态与权限
 
+章节 02 的[双层 Harness](../docs/course/harness-manifest.md)、[实际状态模型](../docs/course/state-model.md)及[完整汇报](../开题报告与第一次汇报.md)位于课程包。下文一页图为原有流程概览，具体生命周期以当前状态模型为准。
+
 ## 目录
 - `adr/` — 关键决策记录（为什么这么做，以及被否决的方案）
 - `ai-rules.md` — AI 使用规则与人机责任（O1）
@@ -22,6 +24,7 @@
 | [ADR-0016](adr/0016-deterministic-hypothesis-scheduling.md) | 注册检查项驱动的确定性假设调度 | 排序进入实际调度，记录遵从情况 |
 | [ADR-0017](adr/0017-specialist-consultation-without-blackboard.md) | 按需咨询专职 Agent，执行权集中，不引入协作黑板 | 独立上下文只返回建议，复用原有授权与审计 |
 | [ADR-0018](adr/0018-fact-context-and-atomic-snapshots.md) | 事实摘要、实时覆盖与原子快照 | 减少重复调度、对话丢进展和状态读取竞态 |
+| [ADR-0019](adr/0019-course-contract-and-dual-harness.md) | 同仓库规格、追踪检查与双层 Harness | 让教师从需求直接追到代码、验证事实和未决问题 |
 
 本轮完整审查、外部资料与待解决问题见 [Agent 设计审查](../docs/AGENT_DESIGN_REVIEW.md)。
 

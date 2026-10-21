@@ -1,5 +1,21 @@
 # Trina · 全自动渗透测试 Agent
 
+## 课程提交与第一次汇报（教师检查入口）
+
+**[打开《开题报告与第一次汇报》](开题报告与第一次汇报.md)**：项目背景、目标与范围、需求规格、技术路线、双层 Harness、实施计划、当前成果、验证证据和后续问题。
+
+| 重点材料 | 检查入口 |
+|---|---|
+| 完整开题 / 第一次汇报报告 | **[根目录主报告](开题报告与第一次汇报.md)** |
+| 20 条具体需求与规格 | [需求规格](docs/course/specification.md) |
+| 26 个场景及逐条验证关系 | [验收场景](docs/course/scenarios.md) · [验收矩阵](docs/course/acceptance-matrix.md) |
+| 计划、8 张任务卡、双层 Harness 等完整交付物 | [课程文档目录](docs/course/README.md) |
+| 本轮原始测试、两轮新靶机机制验证及审查 | [验证事实](evidence/20261021-course-pack/README.md) · [审查记录](review/20261021-course-pack-review.md) |
+
+课程材料按章节 02 V1.1 要求整理，版本日期为 **2026-10-21**。产品能力和已知缺口分别说明；详细规格、计划、证据均在仓库中，可直接检查。
+
+## 项目使用说明
+
 自动化渗透测试 Agent：**大模型 ReAct 决策 + 全套工具封装 + 多靶场适配 + 硬性安全护栏 + 标准报告 + 评测框架**。
 
 ```bash
@@ -166,7 +182,7 @@ python3 -m trina ranges list                              # 靶场适配器状�
 python3 -m trina eval run --suite web                     # 跑评测套件（指标 + 报告）
 python3 -m trina eval adversarial --port 9100             # 蓝队对抗代理（WAF/封禁/限速/篡改/蜜罐）
 python3 -m trina lab --http --ssh                         # 本地靶机（HTTP + 弱口令 SSH）
-python3 -m unittest discover -s tests                   # 197 个单元测试
+python3 -m unittest discover -s tests                   # 完整回归，数量和结果以本轮原始输出为准
 ```
 
 ## 可选 omp 集成（在本目录里开启会话）

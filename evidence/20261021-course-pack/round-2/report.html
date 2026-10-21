@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trina 自动渗透测试报告</title>
+<style>
+:root { color-scheme: light; }
+* { box-sizing: border-box; }
+body { margin: 0; padding: 28px 14px 56px; background: #f4f5f8; color: #1f2430;
+  font-family: "Segoe UI", "Microsoft YaHei", -apple-system, "Helvetica Neue", Arial, sans-serif;
+  font-size: 14px; line-height: 1.65; }
+main.report { max-width: 1000px; margin: 0 auto; background: #ffffff; padding: 36px 44px 48px;
+  border: 1px solid #e3e6ec; border-radius: 8px; }
+h1 { margin: 0 0 6px; font-size: 25px; line-height: 1.3; }
+h2 { margin: 34px 0 12px; padding-bottom: 6px; font-size: 19px; border-bottom: 2px solid #e3e6ec; }
+h3 { margin: 26px 0 8px; font-size: 16px; }
+h4 { margin: 16px 0 4px; font-size: 14.5px; }
+p { margin: 8px 0; }
+.meta { color: #5b6472; font-size: 12.5px; }
+table { width: 100%; margin: 10px 0 14px; border-collapse: collapse; }
+th, td { border: 1px solid #dfe3ea; padding: 6px 10px; text-align: left; vertical-align: top; word-break: break-word; }
+th { background: #f0f3f8; font-weight: 600; }
+td.num, th.num { text-align: right; }
+code { background: #f3f4f7; padding: 1px 4px; border-radius: 3px; font-size: 12.5px;
+  font-family: Consolas, "Courier New", monospace; word-break: break-all; }
+pre { margin: 10px 0; padding: 10px 12px; background: #f8f9fb; border: 1px solid #e3e6ec;
+  border-radius: 5px; overflow-x: auto; white-space: pre-wrap; word-break: break-all;
+  font-family: Consolas, "Courier New", monospace; font-size: 12.5px; }
+pre.mermaid-src { background: #fffdf4; border-color: #e5d9a8; }
+.empty { color: #77808f; }
+.warn { margin: 10px 0; padding: 8px 12px; background: #fff6e6; border-left: 4px solid #dc6803; }
+.sev { display: inline-block; padding: 0 7px; border-radius: 9px; color: #ffffff; font-size: 12px; }
+.sev-critical { background: #b91c1c; }
+.sev-high { background: #dc6803; }
+.sev-medium { background: #b7791f; }
+.sev-low { background: #2f7d32; }
+.sev-info { background: #3c6e9f; }
+.chart-wrap { margin: 14px 0 6px; padding: 12px; border: 1px solid #e3e6ec; border-radius: 6px; background: #fbfcfe; }
+.chart { width: 100%; max-width: 680px; height: auto; display: block; }
+.chart-label { font-size: 12px; fill: #3b4252; }
+.chart-value { font-size: 12px; fill: #1f2430; }
+.chart-track { fill: #eceff4; }
+.chart-bar.s-critical { fill: #b91c1c; }
+.chart-bar.s-high { fill: #dc6803; }
+.chart-bar.s-medium { fill: #b7791f; }
+.chart-bar.s-low { fill: #2f7d32; }
+.chart-bar.s-info { fill: #3c6e9f; }
+figcaption { margin-top: 8px; color: #5b6472; font-size: 12.5px; }
+ol.evidence { margin: 8px 0 12px; padding-left: 22px; }
+ol.evidence > li { margin-bottom: 12px; }
+.ev-head { margin-bottom: 4px; }
+.chip { display: inline-block; padding: 0 6px; border-radius: 8px; background: #eef1f6;
+  border: 1px solid #dfe3ea; font-size: 12px; }
+.ev-target { font-size: 12.5px; color: #3b4252; }
+.ev-clock { color: #77808f; font-size: 12px; }
+.ev-line { margin: 2px 0; }
+.ev-key { display: inline-block; min-width: 42px; margin-right: 6px; color: #5b6472; font-size: 12.5px; }
+footer { margin-top: 28px; padding-top: 10px; border-top: 1px solid #e3e6ec; color: #77808f; font-size: 12px; }
+</style>
+</head>
+<body>
+<main class="report">
+<h1>Trina 自动渗透测试报告</h1>
+<p class="meta">最终状态 成功 · 目标 http://127.0.0.1:64187 · Run ID 20261021-144543-6bc995 · 报告生成时间 2026-10-21 14:45:44</p>
+<table><thead><tr><th>项目</th><th>内容</th></tr></thead><tbody><tr><td>报告标题</td><td>Trina 自动渗透测试报告</td></tr><tr><td>目标</td><td>http://127.0.0.1:64187</td></tr><tr><td>目标说明</td><td>确认 SQL 注入并给出证据</td></tr><tr><td>Run ID</td><td>20261021-144543-6bc995</td></tr><tr><td>运行模式</td><td>auto</td></tr><tr><td>开始时间</td><td>2026-10-21 14:45:43</td></tr><tr><td>结束时间</td><td>2026-10-21 14:45:44</td></tr><tr><td>耗时</td><td>0.2 秒</td></tr><tr><td>最终状态</td><td>成功</td></tr><tr><td>Agent 后端 / 模型</td><td>omp / replay</td></tr><tr><td>LLM 调用次数</td><td>3</td></tr><tr><td>Token 用量</td><td>输入 0 / 输出 0 / 缓存读 0</td></tr><tr><td>LLM 成本（美元）</td><td>0.000000</td></tr><tr><td>报告生成时间</td><td>2026-10-21 14:45:44</td></tr><tr><td>生成器</td><td>Trina 0.1.0</td></tr></tbody></table>
+<h2>一、执行摘要</h2>
+<h3>风险统计</h3>
+<table><thead><tr><th>严重度</th><th class="num">数量</th><th class="num">占比</th></tr></thead><tbody><tr><td>严重</td><td class="num">0</td><td class="num">0.0%</td></tr><tr><td>高危</td><td class="num">1</td><td class="num">100.0%</td></tr><tr><td>中危</td><td class="num">0</td><td class="num">0.0%</td></tr><tr><td>低危</td><td class="num">0</td><td class="num">0.0%</td></tr><tr><td>信息</td><td class="num">0</td><td class="num">0.0%</td></tr><tr><td>合计</td><td class="num">1</td><td class="num">100.0%</td></tr></tbody></table>
+<figure class="chart-wrap"><svg class="chart" viewBox="0 0 640 182" width="640" height="182" role="img" aria-label="漏洞严重度分布"><text x="8" y="14" class="chart-label">严重度分布（共 1 条发现）</text><text x="8" y="38" class="chart-label">严重</text><rect x="104" y="26" width="430" height="16" class="chart-track"/><text x="546" y="39" class="chart-value">0</text><text x="8" y="68" class="chart-label">高危</text><rect x="104" y="56" width="430" height="16" class="chart-track"/><rect x="104" y="56" width="430" height="16" class="chart-bar s-high"/><text x="546" y="69" class="chart-value">1</text><text x="8" y="98" class="chart-label">中危</text><rect x="104" y="86" width="430" height="16" class="chart-track"/><text x="546" y="99" class="chart-value">0</text><text x="8" y="128" class="chart-label">低危</text><rect x="104" y="116" width="430" height="16" class="chart-track"/><text x="546" y="129" class="chart-value">0</text><text x="8" y="158" class="chart-label">信息</text><rect x="104" y="146" width="430" height="16" class="chart-track"/><text x="546" y="159" class="chart-value">0</text></svg><figcaption>图 1 漏洞严重度分布（内联 SVG，无外部图表库）</figcaption></figure>
+<h3>关键计数</h3>
+<table><thead><tr><th>项目</th><th>内容</th></tr></thead><tbody><tr><td>主机数</td><td>0</td></tr><tr><td>开放端口数</td><td>0</td></tr><tr><td>凭据数</td><td>0</td></tr><tr><td>Flag 数</td><td>0</td></tr><tr><td>漏洞总数</td><td>1</td></tr><tr><td>总步数</td><td>3</td></tr><tr><td>LLM 调用次数</td><td>2</td></tr><tr><td>LLM 成本（美元）</td><td>0.000000</td></tr></tbody></table>
+<h2>二、授权与合规声明</h2>
+<p>本次测试仅针对下列授权范围内的目标执行；所有主动动作均由护栏（ScopeGuard）判定，放行与拒绝结果写入审计哈希链，未授权目标不产生任何流量。</p>
+<p>护栏判据（与运行时同源，取自 <code>cfg.scope</code>）：</p>
+<pre>授权网段: 127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
+额外授权主机: (无)
+显式拒绝网段: (无)
+允许公网目标: 否
+当前最大动作等级: verify（detect 只读 / verify 可验证 / exploit 可执行命令）
+破坏性动作: 关闭
+全局速率上限: 20.0 req/s，单主机并发 8，爆破尝试上限 800</pre>
+<table><thead><tr><th>项目</th><th>内容</th></tr></thead><tbody><tr><td>授权网段</td><td>127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16</td></tr><tr><td>额外授权主机</td><td>（无）</td></tr><tr><td>显式拒绝网段</td><td>（无）</td></tr><tr><td>允许公网目标</td><td>否</td></tr><tr><td>允许回环地址</td><td>是</td></tr><tr><td>最大动作等级</td><td>verify（detect 只读 / verify 可验证 / exploit 可执行命令）</td></tr><tr><td>破坏性动作</td><td>否</td></tr><tr><td>速率与规模上限</td><td>20.0 req/s，单主机并发 8，爆破尝试上限 800 次</td></tr><tr><td>护栏拒绝次数（运行态）</td><td>0</td></tr><tr><td>护栏拒绝次数（审计）</td><td>（未提供审计摘要）</td></tr></tbody></table>
+<h2>三、攻击路径</h2>
+<pre class="mermaid-src">flowchart LR
+    n1[&quot;目标 http://127.0.0.1:64187&quot;]
+    n2[&quot;发现漏洞 高危 SQL 注入（id，错误型） @ 127.0.0.1:64187&quot;]
+    n3[&quot;sqli_test SQL 注入已验证 错误型 ：http://127.0.0.1:64187/sqli 参数…&quot;]
+    n4[&quot;? SQL 注入已验证 错误型 ：http://127.0.0.1:64187/sqli 参数…&quot;]
+    n5[&quot;? 固定脚本执行结束，结果由工具证据判定&quot;]
+    n1 --&gt; n2
+    n2 --&gt; n3
+    n3 --&gt; n4
+    n4 --&gt; n5</pre>
+<p class="meta">上图为 mermaid 流程图源码；Markdown/HTML 预览器需支持 mermaid 才能渲染（报告不引入任何外部 JS）。</p>
+<table><thead><tr><th class="num">#</th><th>时刻</th><th>类型</th><th>事件</th></tr></thead><tbody><tr><td class="num">1</td><td>14:45:43</td><td>目标</td><td>目标 http://127.0.0.1:64187</td></tr><tr><td class="num">2</td><td>14:45:44</td><td>漏洞</td><td>发现漏洞 高危 SQL 注入（id，错误型） @ 127.0.0.1:64187</td></tr><tr><td class="num">3</td><td>14:45:44</td><td>工具</td><td>sqli_test SQL 注入已验证 错误型 ：http://127.0.0.1:64187/sqli 参数…</td></tr><tr><td class="num">4</td><td>14:45:44</td><td>工具</td><td>? SQL 注入已验证 错误型 ：http://127.0.0.1:64187/sqli 参数…</td></tr><tr><td class="num">5</td><td>14:45:44</td><td>工具</td><td>? 固定脚本执行结束，结果由工具证据判定</td></tr></tbody></table>
+<h2>四、资产清单</h2>
+<p class="empty">（未发现资产）</p>
+<h2>五、漏洞详情</h2>
+<table><thead><tr><th>ID</th><th>标题</th><th>严重度</th><th>置信度</th><th>状态</th><th>类型</th><th>位置</th></tr></thead><tbody><tr><td>TRINA-001</td><td>SQL 注入（id，错误型）</td><td>高危</td><td>高</td><td>已验证</td><td>sqli</td><td>http://127.0.0.1:64187/sqli</td></tr></tbody></table>
+<h3>[TRINA-001] SQL 注入（id，错误型） <span class="sev sev-high">高危</span></h3>
+<table><thead><tr><th>项目</th><th>内容</th></tr></thead><tbody><tr><td>ID</td><td>TRINA-001</td></tr><tr><td>严重度</td><td>高危（high）</td></tr><tr><td>置信度</td><td>高（high）</td></tr><tr><td>状态</td><td>已验证（verified）</td></tr><tr><td>漏洞类型</td><td>sqli（归一: sqli）</td></tr><tr><td>CVSS 向量</td><td>3.1 AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N（内置默认向量）</td></tr><tr><td>CWE</td><td>CWE-89（来自工具）</td></tr><tr><td>目标</td><td>http://127.0.0.1:64187</td></tr><tr><td>URL</td><td>http://127.0.0.1:64187/sqli</td></tr><tr><td>参数 / 方法</td><td>id / GET</td></tr><tr><td>发现工具</td><td>sqli_test</td></tr><tr><td>首次发现</td><td>2026-10-21 14:45:44</td></tr><tr><td>最近确认</td><td>2026-10-21 14:45:44</td></tr></tbody></table>
+<h4>描述</h4><p>注入 &quot;&#x27;&quot; 两次触发新增 DBMS 报错：MySQL, MariaDB；正常参数对照无该报错。</p>
+<h4>影响</h4><p>（未提供影响说明）</p>
+<h4>利用过程与证据</h4>
+<ol class="evidence">
+<li>
+<div class="ev-head"><span class="chip">http</span> <span class="ev-target">http://127.0.0.1:64187/sqli?id=1</span> <span class="ev-clock">-</span></div>
+<div class="ev-line"><span class="ev-key">说明</span><code>正常参数基线</code></div>
+<div class="ev-line"><span class="ev-key">载荷</span><code>1</code></div>
+<div class="ev-line"><span class="ev-key">请求</span><code>GET http://127.0.0.1:64187/sqli?id=1 | 请求头: User-Agent: Trina/0.1 (+authorized-pentest; contact=lab), Accept-Encoding: gzip, deflate, br, zstd, Accept: */*, Connection: close</code></div>
+<div class="ev-line"><span class="ev-key">响应</span><code>状态 200，长度 71｜响应片段: &lt;html&gt;&lt;body&gt;&lt;h2&gt;用户查询结果&lt;/h2&gt;&lt;p&gt;用户名: admin&lt;/p&gt;&lt;p&gt;ID: 1&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</code></div>
+</li>
+<li>
+<div class="ev-head"><span class="chip">http</span> <span class="ev-target">http://127.0.0.1:64187/sqli?id=%27</span> <span class="ev-clock">-</span></div>
+<div class="ev-line"><span class="ev-key">说明</span><code>错误型命中 MySQL,MariaDB</code></div>
+<div class="ev-line"><span class="ev-key">载荷</span><code>&#x27;</code></div>
+<div class="ev-line"><span class="ev-key">请求</span><code>GET http://127.0.0.1:64187/sqli?id=%27 | 请求头: User-Agent: Trina/0.1 (+authorized-pentest; contact=lab), Accept-Encoding: gzip, deflate, br, zstd, Accept: */*, Connection: close</code></div>
+<div class="ev-line"><span class="ev-key">响应</span><code>状态 500，长度 223｜响应片段: Warning: mysqli_query(): (42000/1064): You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near &#x27;&#x27;&#x27; at line 1 in /var/www/…</code></div>
+</li>
+<li>
+<div class="ev-head"><span class="chip">http</span> <span class="ev-target">http://127.0.0.1:64187/sqli?id=%27</span> <span class="ev-clock">-</span></div>
+<div class="ev-line"><span class="ev-key">说明</span><code>相同载荷重复确认</code></div>
+<div class="ev-line"><span class="ev-key">载荷</span><code>&#x27;</code></div>
+<div class="ev-line"><span class="ev-key">请求</span><code>GET http://127.0.0.1:64187/sqli?id=%27 | 请求头: User-Agent: Trina/0.1 (+authorized-pentest; contact=lab), Accept-Encoding: gzip, deflate, br, zstd, Accept: */*, Connection: close</code></div>
+<div class="ev-line"><span class="ev-key">响应</span><code>状态 500，长度 223｜响应片段: Warning: mysqli_query(): (42000/1064): You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near &#x27;&#x27;&#x27; at line 1 in /var/www/…</code></div>
+</li>
+<li>
+<div class="ev-head"><span class="chip">http</span> <span class="ev-target">http://127.0.0.1:64187/sqli?id=1</span> <span class="ev-clock">-</span></div>
+<div class="ev-line"><span class="ev-key">说明</span><code>恢复正常参数后新增报错消失</code></div>
+<div class="ev-line"><span class="ev-key">载荷</span><code>1</code></div>
+<div class="ev-line"><span class="ev-key">请求</span><code>GET http://127.0.0.1:64187/sqli?id=1 | 请求头: User-Agent: Trina/0.1 (+authorized-pentest; contact=lab), Accept-Encoding: gzip, deflate, br, zstd, Accept: */*, Connection: close</code></div>
+<div class="ev-line"><span class="ev-key">响应</span><code>状态 200，长度 71｜响应片段: &lt;html&gt;&lt;body&gt;&lt;h2&gt;用户查询结果&lt;/h2&gt;&lt;p&gt;用户名: admin&lt;/p&gt;&lt;p&gt;ID: 1&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</code></div>
+</li>
+</ol>
+<h4>修复建议（内置默认建议）</h4><p>使用参数化查询/预编译语句，禁止把外部输入拼接进 SQL；对参数做类型与白名单校验；数据库账号按最小权限授权并关闭多语句执行；接入 WAF 并对异常查询告警。</p>
+<h2>六、证据链与假设台账</h2>
+<p class="meta">假设台账：共 1 条（待验证 0、验证中 0、已确认 1、已否定 0、被阻断 0）</p>
+<table><thead><tr><th>ID</th><th>状态</th><th class="num">置信度</th><th class="num">优先级</th><th>假设</th><th>下一步</th><th class="num">证据数</th></tr></thead><tbody><tr><td>H-001</td><td>已确认</td><td class="num">0.90</td><td class="num">0.00</td><td>id 参数可能存在错误型 SQL 注入</td><td>-</td><td class="num">1</td></tr></tbody></table>
+<h3>证据关系图</h3><p class="meta">证据图：9 个节点（check 2，evidence 4，finding 1，hypothesis 1，target 1）、7 条关系</p>
+<table><thead><tr><th>起点</th><th>关系</th><th>终点</th></tr></thead><tbody><tr><td>finding:TRINA-001</td><td>证据</td><td>evi:TRINA-001:1</td></tr><tr><td>finding:TRINA-001</td><td>证据</td><td>evi:TRINA-001:2</td></tr><tr><td>finding:TRINA-001</td><td>证据</td><td>evi:TRINA-001:3</td></tr><tr><td>finding:TRINA-001</td><td>证据</td><td>evi:TRINA-001:4</td></tr><tr><td>check:sqli_test</td><td>产出</td><td>finding:TRINA-001</td></tr><tr><td>target:http://127.0.0.1:64187</td><td>已执行</td><td>check:sqli_recheck</td></tr><tr><td>hypo:H-001</td><td>验证为</td><td>finding:TRINA-001</td></tr></tbody></table>
+<h2>七、凭据与 Flag</h2>
+<h3>有效凭据</h3>
+<p class="empty">（未获取凭据）</p>
+<h3>Flag</h3>
+<p class="empty">（未夺取 flag）</p>
+<h2>八、附录</h2>
+<h3>工具调用时间线</h3>
+<table><thead><tr><th>时刻</th><th>工具</th><th>参数</th><th>结果摘要</th><th class="num">耗时</th></tr></thead><tbody><tr><td>14:45:44</td><td>sqli_test</td><td>url=http://127.0.0.1:64187/sqli param=id method=GET technique=error</td><td>SQL 注入已验证[错误型]：http://127.0.0.1:64187/sqli 参数 id，DBMS≈MySQL,MariaDB，payload=&quot;&#x27;&quot;</td><td class="num">0.19s</td></tr><tr><td>14:45:44</td><td>?</td><td>url=http://127.0.0.1:64187/sqli param=id technique=error</td><td>SQL 注入已验证[错误型]：http://127.0.0.1:64187/sqli 参数 id，DBMS≈MySQL,MariaDB，payload=&quot;&#x27;&quot;</td><td class="num">0.19s</td></tr><tr><td>14:45:44</td><td>?</td><td>-</td><td>固定脚本执行结束，结果由工具证据判定</td><td class="num">0.00s</td></tr></tbody></table>
+<h3>指标</h3>
+<table><thead><tr><th>项目</th><th>内容</th></tr></thead><tbody><tr><td>运行耗时</td><td>0.2 秒</td></tr><tr><td>总步数</td><td>3</td></tr><tr><td>工具调用次数</td><td>1</td></tr><tr><td>LLM 调用次数</td><td>2</td></tr><tr><td>LLM 成本（美元）</td><td>0.000000</td></tr><tr><td>护栏拒绝次数</td><td>0</td></tr><tr><td>错误计数</td><td>0</td></tr><tr><td>主机数</td><td>0</td></tr><tr><td>开放端口数</td><td>0</td></tr><tr><td>凭据数</td><td>0</td></tr><tr><td>Flag 数</td><td>0</td></tr><tr><td>漏洞数</td><td>1</td></tr><tr><td>HTTP 请求数</td><td>8（来源: evidence（受证据上限约束））</td></tr></tbody></table>
+<h3>审计摘要</h3>
+<p class="empty">（未提供审计摘要）</p>
+<footer>本报告由 Trina 0.1.0 生成，内容与审计哈希链同源，可离线归档；页面不含任何外部资源引用。</footer>
+</main>
+</body>
+</html>
