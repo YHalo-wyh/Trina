@@ -3,7 +3,7 @@
 - 状态：已采纳；2026-10-26 补充设计依据，未改变产品执行逻辑。
 - 适用范围：`PentestAgent`、`ChatAgent` 与 `trina.llm` 的职责划分。
 - 关联：[动作协议](0002-text-json-action-protocol.md)、[执行入口](0003-single-execution-chokepoint.md)、[配置授权](0004-policy-from-config-not-prompt.md)、[确定性调度](0016-deterministic-hypothesis-scheduling.md)。
-- 逐步设计说明：[决策层设计说明](../../docs/DECISION_LAYER.md)。
+- 逐步设计说明：[设计决策](../../设计决策.md)。
 
 ## 1. 决策背景
 

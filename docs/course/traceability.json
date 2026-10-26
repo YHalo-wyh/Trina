@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "pack_version": "1.1",
+  "pack_version": "1.2",
   "documentation_revision": {
     "date": "2026-10-26",
     "scope": "决策层设计说明、架构依据及导航；产品行为规格保持 1.0",
@@ -13,7 +13,7 @@
     "sha256": "9b711c132d3d7a2bb1919190c974ef90099940b18e2795d93e9aba5330a26d08"
   },
   "documents": [
-    "docs/DECISION_LAYER.md",
+    "设计决策.md",
     "docs/ARCHITECTURE.md",
     "docs/EVAL.md",
     "design/README.md",
@@ -661,5 +661,10 @@
       "scope": "课程最终接受及评分",
       "authority": "教师"
     }
-  ]
+  ],
+  "navigation_revision": {
+    "date": "2026-10-26",
+    "reference_commit": "4f9a98ddd8954d5631c3a43301f03cb82157f16e",
+    "scope": "设计决策文档移至根目录并在首页置顶；保留原路径导航；正文仅调整标题及相对链接"
+  }
 }
