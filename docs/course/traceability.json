@@ -1,12 +1,25 @@
 {
   "schema_version": 1,
-  "pack_version": "1.0",
+  "pack_version": "1.1",
+  "documentation_revision": {
+    "date": "2026-10-26",
+    "scope": "决策层设计说明、架构依据及导航；产品行为规格保持 1.0",
+    "reference_commit": "cede4efea31edd23f07b18aa7ef351e4594cc9bc",
+    "validation": "evidence/20261026-decision-docs/README.md"
+  },
   "product_baseline": "24fb6371a18ed59c905de25bbf0ac69ba69ec256",
   "course_source": {
     "slides": 94,
     "sha256": "9b711c132d3d7a2bb1919190c974ef90099940b18e2795d93e9aba5330a26d08"
   },
   "documents": [
+    "docs/DECISION_LAYER.md",
+    "docs/ARCHITECTURE.md",
+    "docs/EVAL.md",
+    "design/README.md",
+    "design/adr/0001-brain-own-react-loop.md",
+    "design/adr/0016-deterministic-hypothesis-scheduling.md",
+    "evidence/20261026-decision-docs/README.md",
     "README.md",
     "开题报告与第一次汇报.md",
     "docs/course/README.md",

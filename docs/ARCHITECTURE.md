@@ -1,5 +1,7 @@
 # 架构与模块契约
 
+决策流程及每一步的设计理由详见[《决策层设计说明》](DECISION_LAYER.md)。该文按实际执行顺序展开输入输出、规则、替代方案、失败分支和验证依据；本页保留总体模块契约。相关描述于 2026-10-26 对照实现核对。
+
 ## 1. 总览
 
 ```mermaid
@@ -9,6 +11,8 @@ flowchart TB
     AGENT["trina.brain.agent.PentestAgent<br/>ReAct 循环"]
     PLANNER["trina.brain.planner.Planner<br/>PTES 阶段机（事实驱动）"]
     PROMPTS["trina.brain.prompts<br/>系统提示 + JSON 动作协议 + 容错解析"]
+    POLICY["AuthorizationController<br/>注册、预算、撤权"]
+    APPROVAL["可选人工审批<br/>批准 / 拒绝"]
     REG["trina.tools.registry.ToolRegistry<br/>参数校验→护栏→审计→超时→归一"]
     GUARD["trina.scope.ScopeGuard<br/>唯一放行判据"]
     AUDIT["trina.audit.AuditLog<br/>SHA-256 哈希链"]
@@ -26,7 +30,7 @@ flowchart TB
     OMPEXT --> CLI
     AGENT --> PLANNER --> PROMPTS
     AGENT --> LLM
-    AGENT --> REG
+    AGENT --> POLICY --> APPROVAL --> REG
     REG --> GUARD
     REG --> AUDIT
     REG --> TOOLS
@@ -43,28 +47,27 @@ flowchart TB
 ## 2. 单步数据流
 
 ```
-RunState.summary_for_prompt()  ┐
-Planner.directive(phase)       ├→ user prompt ┐
-上一步观察 + 注入提示          ┘               │
-                                              ├→ LLM → 文本
-system = 角色 + 铁律 + 工具清单 + 授权边界 ────┘        │
-                                                parse_action()（多级容错）
-                                                        │
-                        ┌───────────────────────────────┴────────────┐
-                        │ {"action": …, "params": …}                 │ {"final": …}
-                        ▼                                            ▼
-        ToolRegistry.execute(name, params, ctx)                  收敛与终态判定
-        ├─ 参数校验（未知/缺失/类型/enum）
-        ├─ 可用性（外部二进制缺失→工具自述原因）
-        ├─ 护栏：action_level → destructive → check_target
-        ├─ 审计 tool.start
-        ├─ 执行（线程池 + 超时；异常一律转为结果）
-        ├─ state.absorb(result.facts) / evidence 入账
-        └─ 审计 tool.end（含 stdout 摘要的哈希）
-                        │
-                        ▼
-        ToolResult.to_observation() → 下一步的观察
+人工信号与任务剩余时间
+    → GoalRequirements 缺口 + Planner 阶段 + 台账与方向调度
+    → RunState 摘要 + 上一步观察 + 提示 + 预算
+    → LLM 返回文本 → parse_action()
+        ├─ 非法协议：记录错误并反馈下一轮
+        ├─ final：检查目标缺口，最多拒绝两次提前结束，再按事实收尾
+        └─ action：提取 test_id / target，计算候选动作等级，登记或引用假设
+             → AuthorizationController.check（注册 / 预算 / 撤权）
+             → 可选人工审批
+             → ToolRegistry.execute(name, params, ctx)
+                 ├─ 参数校验（未知 / 缺失 / 类型 / enum）
+                 ├─ 工具可用性
+                 ├─ 根据规范化参数计算等级，检查护栏与目标
+                 ├─ tool.start → 工具执行与等待超时
+                 └─ facts / evidence 吸收 → tool.end
+             → 知识摘要变化、假设更新、失败分类、重复检测、调度遵从
+             → 预算停止合同与周期快照
+             → 下一步观察，或统一收尾
 ```
+
+该顺序对应任务模式。控制器允许发生在完整工具参数校验和实际完成之前，故 `executed` 不能直接用作成功覆盖证明。对话模式共用执行组件，但没有相同的阶段机、方向调度和任务收尾流程。
 
 ## 3. 模块契约
 
@@ -79,7 +82,7 @@ system = 角色 + 铁律 + 工具清单 + 授权边界 ────┘        �
 | `trina.tools.external` | `run_external(argv, ctx, …)`、`which/have` | `shell=False`、先护栏后执行、命令与输出摘要进审计 |
 | `trina.brain.agent` | `PentestAgent(config, registry=, backend=, on_step=).run(target, goal=, max_steps=, max_seconds=, record_path=) -> RunState` | 评测框架与 CLI 都只依赖这个签名 |
 | `trina.brain.planner` | `Planner.tick/objective_met/directive/force_advance/should_finish` | 阶段推进只看**事实**；每阶段有步数预算，停滞可强制推进 |
-| `trina.brain.goal` | `GoalRequirements.parse(goal)`、`unsatisfied(state)/soft_hints/satisfied` | 把任务描述解析成硬条件（漏洞类 / 路径 / 端口 / 凭证）；未满足时不允许收敛，也不允许把"取巧拿到 flag"判为成功；**不使用 ground truth** |
+| `trina.brain.goal` | `GoalRequirements.parse(goal)`、`unsatisfied(state)/soft_hints/satisfied` | 漏洞类与端口形成硬条件；路径在没有类要求时为硬条件，否则为提示；凭据形成验证提示。最终成功依据已表达的条件，不读取 ground truth；关键词解析不能表达全部自然语言语义 |
 | `trina.hypotheses` | `HypothesisLedger.add/from_action/record_tool_outcome/record_outcome/prompt_block/finalize/summary` | 假设的排序/状态机与证据判定；模型仍选择动作，但确定性选取由 `trina.brain.scheduler` 每步派发；任务/对话共用验证对象匹配；`hypothesis_id` 复用台账；无新信息只降优先级，明确反证才能否定 |
 | `trina.brain.failure` | `classify_failure`、`LoopGuard.observe`、`advice_for`、`alternatives_for` | 失败归因（boundary/tool/environment/budget/hypothesis）+ 无新信息重复识别，给出递进建议（换参数→换工具→人工） |
 | `trina.brain.scheduler` | `HypothesisScheduler.decide(ledger, tests, executed_tests=, goal_classes=)`、`observe(decision, test_id=, tool=)` | **确定性假设调度**：只调度能绑定注册检查项的假设；任务要求的漏洞类优先（无假设时直接派该类检查项）；未遵从进审计链与 `state.scheduler` |
@@ -101,42 +104,39 @@ system = 角色 + 铁律 + 工具清单 + 授权边界 ────┘        �
 
 ## 4. 关键设计决策与理由
 
-1. **大脑自研（Python ReAct）而不是把决策交给 omp 内建 agent**
-   护栏、审计、指标、超时、停滞检测都需要确定性控制；评测要求可复现。
-   omp 仍然承担它最强的部分——**模型接入与鉴权**（`omp -p --mode=json`，含 usage/cost）。
-2. **动作协议用文本 JSON**：不依赖各家 function-calling，换模型不改协议；单步动作可解析、可校验、可回放（`--record` / `--replay` 是离线回归的基础设施）。
-3. **工具"外部优先 + 内置兜底"**：实训环境普遍缺 nmap/nuclei/sqlmap/hydra；把能力都实现一遍不现实，
-   但**评测必须能跑**，所以每个能力都有一个纯 Python 的最小可用实现，外部工具存在时自动升级并在结果里标注 `engine`。
-4. **执行链单点收口**：护栏如果有第二个入口，就等于没有。`ToolRegistry.execute()` 之外不允许有出网/执行路径（新增工具走注册表）。
-5. **事实驱动阶段机**：让模型自称"我现在在利用阶段"不可验证；用可观测事实（有端口 / 有技术栈 / 有已验证漏洞 / 有 flag）来推进阶段，并给每阶段步数预算避免原地打转。
-6. **哈希链审计**：实训/竞赛都要求"全程可追溯"，且需要能证明日志未被事后修改；链式哈希是最小代价的方案。
+| 设计选择 | 解决的问题及理由 | 代价和限制 |
+|---|---|---|
+| 宿主自有循环、后端可替换 | 授权、状态和收尾有明确程序入口，模型连接与业务控制解耦 | 需要维护解析、反馈、上下文和不同入口的一致性；通用框架并非天然不能满足要求 |
+| 单步 JSON 动作 | 每次执行后使用新观察，参数可校验，轨迹可录制 | 增加模型往返；解析器仍需容错与语义校验 |
+| 目标约束独立于 final | 防止顺路 flag 或模型自评代替指定验证 | 当前是关键词规则，复杂目标和精确位置语义有限 |
+| 阶段骨架加动态动作 | 用事实和阶段预算组织重点，保留根据新线索调整的空间 | 阶段可以预算推进，进入 exploit 不等于利用成功 |
+| 假设台账与方向调度 | 记录待验证对象，比较期望检查与实际动作 | 优先级是启发式，绑定主要按漏洞类，调度不直接执行 |
+| 控制器、审批与护栏分层 | 注册及预算、操作者判断、实际参数及传输分别裁决 | 提前允许记录与成功完成仍需区分，入口调用关系需要单独核对 |
+| 工具统一契约 | 避免各工具遗漏参数、异常、审计和状态处理 | 仍信任工具返回的事实，尚无通用独立重放验证 |
+| 内置能力与外部工具适配 | 常见能力在缺少外部二进制时可有降级路径 | 各工具能力与依赖不同，不能承诺全部外部能力均有等价内置实现 |
+| 知识摘要与重复指纹 | 时间变化、重复发现不能持续冒充新进展 | 字段归一化不理解全部语义，raw 中变化文本仍可能影响指纹 |
+| 哈希链、快照和报告 | 分别保存过程一致性、当前状态和可读派生视图 | 哈希链没有外部可信锚；快照读取不等于进程续跑 |
+
+各选择的完整依据、计算示例、方案比较和验证见[决策层设计说明](DECISION_LAYER.md)；控制归属见 [ADR-0001](../design/adr/0001-brain-own-react-loop.md)。
 
 ## 5. 错误隔离与收敛
 
 | 情形 | 行为 |
 |---|---|
 | 工具抛异常 | 捕获 → `ToolResult(ok=False, error=…)`，计入 `counters.errors`，审计 `tool.error`，循环继续 |
-| 工具超时 | 线程池 `future.result(timeout)` → 超时结果 + 提示换更快工具（预算取 `min(run.tool_timeout, 剩余时间)`） |
-| LLM 调用失败 | 重试 2 次（1.5s/3s 退避）；累计 3 次失败则终态 `failed` |
+| 工具超时 | `future.result(timeout)` 返回错误；预算为 `min(tool_timeout, max(5.0, remaining))`，未提供任务截止时使用工具预算；后台线程不会因此强制终止 |
+| LLM 调用失败 | 单步最多 5 次尝试，间隔 2/4/6/8 秒；单步仍失败时增加共享 errors，达到 6 进入结束路径。errors 并非只含连续模型失败，最终状态仍依目标分支计算 |
 | 模型输出非 JSON | 多级容错解析 → 仍失败则注入"只输出 JSON"提示并继续（计入 errors） |
 | 动作被护栏拒绝 | 拒绝结果 + `hint` 回灌；计入 `counters.denied`；写入审计 `tool.denied` |
-| 同一动作重复 | 连续 ≥ `llm.stall_limit` 次 → 注入纠正提示 + 强制阶段推进 |
-| 步数/时长耗尽 | 循环退出，按已有事实判定终态（`success` / `partial` / `failed`） |
+| 同一动作重复 | stall 首次为 0，默认阈值 3 通常在连续第 4 次相同动作触发纠正与阶段推进；不等于直接结束任务 |
+| 步数/时长耗尽 | 在相应检查点退出并按事实收尾；模型重试、线程和在途请求具有独立等待边界 |
 | 目标越界 | 预检阶段直接 `blocked`，**不进入 LLM**（模型无权授权） |
 
 ## 6. 状态与终态判定
 
-```
-flags 或 存在 verified/exploited 漏洞 → success
-仅 detected 级漏洞                    → partial
-无任何发现                            → failed
-目标越界被预检拒绝                    → blocked
-```
+`status` 描述任务执行结果：初始化越界直接 blocked，人工停止保留 stopped；存在非空硬性目标时，全部满足为 success，未满足但已有 flag/发现为 partial，其余为 failed。无硬性目标且状态仍为 running 时，有工具 flag 或带证据 verified/exploited 发现为 success，只有发现、主机或拒绝记录为 partial，其余为 failed。
 
-`verified/exploited` 必须同时带证据。存在明确目标时由 `GoalRequirements` 判定，
-用户停止保留 `stopped`；只有主机探测或被拒动作时可为 `partial`。
-模型 `final.status` 与 `final.flags` 仅作声明记录，不改写事实和成功状态。
-本机制仍信任已注册工具的验证结果，独立重放 PoC 与修复复测尚未实现。
+主控收到 final 后最多两次拒绝未达成目标的提前结束，之后可以退出，但仍按实际目标和事实计算状态。模型 `final.status` 与 `final.flags` 不改写事实。任务目标、阶段和漏洞结论是不同概念，具体分支及现有边界见决策层说明第 19 节。
 
 `RunState` 同时是报告的输入：`hosts / findings / credentials / flags / evidence / timeline / steps / ledger / counters / artifacts / verdict / coverage / boundary_events`。
 
@@ -144,16 +144,16 @@ flags 或 存在 verified/exploited 漏洞 → success
 
 | 结论 | 判定 | 报告里必须同时给出 |
 |---|---|---|
-| `CONFIRMED` | 存在 `verified`/`exploited` 且带证据的发现 | 证据、复现命令、影响面 |
-| `NOT_CONFIRMED` | 检查跑完、无失败无受限、无已验证发现 | 「**仅限已执行检查**，不代表全系统安全」 |
-| `INCONCLUSIVE` | 有错误/超时/撤权/被拒，或压根没执行检查 | 缺口清单 + 原因（预算/未调度/撤权） |
+| `CONFIRMED` | 有控制器 executed 记录，且存在 verified/exploited、非空证据发现；优先于后续错误分支 | 已确认对象及证据，同时保留其他检查的缺口 |
+| `NOT_CONFIRMED` | 有 executed 记录、无上述发现，且未命中 errors/failures/撤权/denied 分支 | 结论限于本次记录；不代表全部检查完成或全系统安全 |
+| `INCONCLUSIVE` | 没有 executed 记录，或未确认发现且存在上述受限条件 | 缺口及原因，不将失败当作阴性证明 |
 
-运行状态机（与结论状态正交）：`PLANNED → ALLOWED → RUNNING → EVIDENCE_COLLECTED → {CONFIRMED|NOT_CONFIRMED|INCONCLUSIVE} → STOPPED`。
+实际任务状态包括 running、success、partial、failed、blocked、stopped，verdict 单独保存；对话入口使用 chat 状态。PLANNED、ALLOWED、EVIDENCE_COLLECTED 可用于概念流程说明，不是当前 RunState 的一套完整已实现状态枚举。控制器在实际工具完成前写 executed，故覆盖与结论还受 [OQ-01](course/open-questions.md) 限制。
 
 三类越界的记录方式（`RunState.boundary_events`）：
 - **建议越界**：模型在 thought 里提到越界（只存在于审计的 `react.action.thought`）；
 - **请求越界**：动作参数越界 → 控制器/护栏拒绝 → `boundary_events` 记 `stage=request, result=blocked`；
-- **实际越界**：本系统不产生——执行链单点收口，未获批准的动作不会执行（若出现即视为实现缺陷，需按事故处理）。
+- **实际越界**：设计要求通过执行裁决阻止；如果观察到未获允许的目标行为，必须按实现缺陷记录并修复，不能仅凭架构图排除其可能。
 
 ### 6.2 人工介入点
 
@@ -162,7 +162,7 @@ flags 或 存在 verified/exploited 漏洞 → success
 | 审批闸门 | `PentestAgent(approval=…)` ← `Session.request_approval` | 按动作等级拦截，超时即拒绝 |
 | 实时提示 | `PentestAgent(steer_queue=…)` ← 控制台 `hint` | 下一步注入 `[人工介入]` 提示 |
 | 暂停/停止 | `pause_event` / `stop_event` | 循环边界检查；停止后按已获证据给出结论 |
-| 撤权 | `AuthorizationController.revoke(target_id)` | 执行层立即拒绝该目标的一切检查（减权不绕路） |
+| 撤权 | `AuthorizationController.revoke(target_id)` | 后续控制器 check 拒绝匹配目标，不承诺取消已放行或已在途动作 |
 
 ## 7. 扩展点
 
@@ -182,7 +182,7 @@ flags 或 存在 verified/exploited 漏洞 → success
 主控需要再发出工具动作才能执行；没有第二套共享黑板或子 Agent 直接修改事实的入口。
 `trina.board` 仍是只读视图，`RunState` 与假设台账分别保存事实和未验证问题。
 
-调度使用控制器当前的检查记录，先过滤已执行项再按漏洞类归组；
+调度使用控制器当前的检查记录；目标驱动分支先过滤已记录执行项再按漏洞类归组，假设绑定分支在该假设已有尝试时才过滤旧检查，新假设仍可能重用同类第一项。
 已明确解析出检查 ID 时，不能仅凭同工具名把另一项检查计作遵从。
 对话提示由本轮请求、事实摘要和近期动作/观察构成，失败反馈也直接进入下一次模型输入。
 状态文件采用同目录临时文件写完后替换，避免进度视图读到半份快照。

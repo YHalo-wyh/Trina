@@ -1,0 +1,1099 @@
+{
+  "command": [
+    "C:\\Users\\WYH\\Desktop\\网安实训中级\\.venv\\Scripts\\python.exe",
+    "-X",
+    "utf8",
+    "-m",
+    "unittest",
+    "discover",
+    "-s",
+    "tests",
+    "-v"
+  ],
+  "started_utc": "2026-10-26T03:20:45.225243+00:00",
+  "ended_utc": "2026-10-26T03:21:47.772988+00:00",
+  "python": "3.10.11 (tags/v3.10.11:7d4cc5a, Apr  5 2023, 00:38:17) [MSC v.1929 64 bit (AMD64)]",
+  "platform": "Windows-10-10.0.26300-SP0",
+  "source_reference": "cede4efea31edd23f07b18aa7ef351e4594cc9bc",
+  "exit_code": 0,
+  "tests_run": 267,
+  "runner_seconds": 58.703,
+  "passed": 267,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0,
+  "parsed_cases": 267,
+  "cases": [
+    {
+      "id": "test_audit.TestAuditChain.test_chain_valid_after_writes",
+      "result": "ok"
+    },
+    {
+      "id": "test_audit.TestAuditChain.test_deleted_record_detected",
+      "result": "ok"
+    },
+    {
+      "id": "test_audit.TestAuditChain.test_prev_hash_links",
+      "result": "ok"
+    },
+    {
+      "id": "test_audit.TestAuditChain.test_redact_helper",
+      "result": "ok"
+    },
+    {
+      "id": "test_audit.TestAuditChain.test_resume_continues_chain",
+      "result": "ok"
+    },
+    {
+      "id": "test_audit.TestAuditChain.test_secrets_redacted",
+      "result": "ok"
+    },
+    {
+      "id": "test_audit.TestAuditChain.test_sha256_text_stable",
+      "result": "ok"
+    },
+    {
+      "id": "test_audit.TestAuditChain.test_summary_counts",
+      "result": "ok"
+    },
+    {
+      "id": "test_audit.TestAuditChain.test_tamper_detected",
+      "result": "ok"
+    },
+    {
+      "id": "test_brain.TestGoalRequirements.test_class_requirement_needs_evidenced_finding",
+      "result": "ok"
+    },
+    {
+      "id": "test_brain.TestGoalRequirements.test_credentials_extracted_from_goal",
+      "result": "ok"
+    },
+    {
+      "id": "test_brain.TestGoalRequirements.test_flag_goal_has_no_hard_requirement",
+      "result": "ok"
+    },
+    {
+      "id": "test_brain.TestGoalRequirements.test_nested_and_dotfile_paths",
+      "result": "ok"
+    },
+    {
+      "id": "test_brain.TestGoalRequirements.test_parse_extracts_class_and_path",
+      "result": "ok"
+    },
+    {
+      "id": "test_brain.TestGoalRequirements.test_path_only_requirement_is_hard",
+      "result": "ok"
+    },
+    {
+      "id": "test_brain.TestGoalRequirements.test_path_requirement_is_soft_when_class_present",
+      "result": "ok"
+    },
+    {
+      "id": "test_brain.TestGoalRequirements.test_port_requirement_blocks_until_scanned",
+      "result": "ok"
+    },
+    {
+      "id": "test_brain.TestGoalRequirements.test_port_requirements_extracted_and_ignored_when_unrelated",
+      "result": "ok"
+    },
+    {
+      "id": "test_brain.TestParseAction.test_braces_inside_strings",
+      "result": "ok"
+    },
+    {
+      "id": "test_brain.TestParseAction.test_empty",
+      "result": "ok"
+    },
+    {
+      "id": "test_brain.TestParseAction.test_fenced_json",
+      "result": "ok"
+    },
+    {
+      "id": "test_brain.TestParseAction.test_garbage",
+      "result": "ok"
+    },
+    {
+      "id": "test_brain.TestParseAction.test_json_after_prose",
+      "result": "ok"
+    },
+    {
+      "id": "test_brain.TestParseAction.test_last_valid_object_wins",
+      "result": "ok"
+    },
+    {
+      "id": "test_brain.TestParseAction.test_missing_fields",
+      "result": "ok"
+    },
+    {
+      "id": "test_brain.TestParseAction.test_plain_json",
+      "result": "ok"
+    },
+    {
+      "id": "test_brain.TestPlanner.test_budget_forces_advance",
+      "result": "ok"
+    },
+    {
+      "id": "test_brain.TestPlanner.test_directive_mentions_known_ports",
+      "result": "ok"
+    },
+    {
+      "id": "test_brain.TestPlanner.test_enum_requires_surface_not_just_hosts",
+      "result": "ok"
+    },
+    {
+      "id": "test_brain.TestPlanner.test_force_advance",
+      "result": "ok"
+    },
+    {
+      "id": "test_brain.TestPlanner.test_recon_to_enum_requires_ports",
+      "result": "ok"
+    },
+    {
+      "id": "test_brain.TestPlanner.test_should_finish_after_flags_in_post",
+      "result": "ok"
+    },
+    {
+      "id": "test_brain.TestPlanner.test_vuln_needs_verified_or_three_steps",
+      "result": "ok"
+    },
+    {
+      "id": "test_brain.TestReActLoop.test_denied_action_gets_hints_and_loop_continues",
+      "result": "ok"
+    },
+    {
+      "id": "test_brain.TestReActLoop.test_flag_shortcut_does_not_satisfy_task_goal",
+      "result": "ok"
+    },
+    {
+      "id": "test_brain.TestReActLoop.test_full_loop_reaches_success",
+      "result": "ok"
+    },
+    {
+      "id": "test_brain.TestReActLoop.test_goal_satisfied_yields_success",
+      "result": "ok"
+    },
+    {
+      "id": "test_brain.TestReActLoop.test_invalid_json_is_recovered",
+      "result": "ok"
+    },
+    {
+      "id": "test_brain.TestReActLoop.test_mid_run_pivot_to_out_of_scope_is_denied",
+      "result": "ok"
+    },
+    {
+      "id": "test_brain.TestReActLoop.test_no_goal_keeps_flag_shortcut_success",
+      "result": "ok"
+    },
+    {
+      "id": "test_brain.TestReActLoop.test_out_of_scope_is_blocked_without_llm",
+      "result": "ok"
+    },
+    {
+      "id": "test_brain.TestReActLoop.test_record_round_trip_is_valid_json",
+      "result": "ok"
+    },
+    {
+      "id": "test_brain.TestReActLoop.test_stall_detection_injects_correction",
+      "result": "ok"
+    },
+    {
+      "id": "test_brain.TestReActLoop.test_system_prompt_contains_scope_and_tools",
+      "result": "ok"
+    },
+    {
+      "id": "test_collaboration.TestCollaboration.test_adopting_out_of_scope_advice_still_hits_guard",
+      "result": "ok"
+    },
+    {
+      "id": "test_collaboration.TestCollaboration.test_advice_never_executes_or_mutates_facts",
+      "result": "ok"
+    },
+    {
+      "id": "test_collaboration.TestCollaboration.test_atomic_save_keeps_previous_snapshot_when_replace_fails",
+      "result": "ok"
+    },
+    {
+      "id": "test_collaboration.TestCollaboration.test_bad_budget_config_is_rejected",
+      "result": "ok"
+    },
+    {
+      "id": "test_collaboration.TestCollaboration.test_chat_failure_feedback_is_sent_back_to_model",
+      "result": "ok"
+    },
+    {
+      "id": "test_collaboration.TestCollaboration.test_chat_has_action_observation_pair_and_uses_specialist",
+      "result": "ok"
+    },
+    {
+      "id": "test_collaboration.TestCollaboration.test_chat_preserves_facts_and_current_request_after_history_rolls",
+      "result": "ok"
+    },
+    {
+      "id": "test_collaboration.TestCollaboration.test_consultation_is_registered_and_can_be_hidden",
+      "result": "ok"
+    },
+    {
+      "id": "test_collaboration.TestCollaboration.test_disabled_feature_does_not_call_model",
+      "result": "ok"
+    },
+    {
+      "id": "test_collaboration.TestCollaboration.test_forged_flags_status_and_findings_are_removed",
+      "result": "ok"
+    },
+    {
+      "id": "test_collaboration.TestCollaboration.test_guided_approval_receives_controller_resolved_test_id",
+      "result": "ok"
+    },
+    {
+      "id": "test_collaboration.TestCollaboration.test_invalid_response_consumes_budget",
+      "result": "ok"
+    },
+    {
+      "id": "test_collaboration.TestCollaboration.test_parent_approval_rejects_consultation_before_child_call",
+      "result": "ok"
+    },
+    {
+      "id": "test_collaboration.TestCollaboration.test_parent_must_issue_separate_action_and_record_replays_child",
+      "result": "ok"
+    },
+    {
+      "id": "test_collaboration.TestCollaboration.test_recursion_unregistered_and_cross_role_tools_are_rejected",
+      "result": "ok"
+    },
+    {
+      "id": "test_collaboration.TestCollaboration.test_review_cannot_propose_execution",
+      "result": "ok"
+    },
+    {
+      "id": "test_collaboration.TestCollaboration.test_same_tool_with_wrong_test_id_is_not_compliance",
+      "result": "ok"
+    },
+    {
+      "id": "test_collaboration.TestCollaboration.test_scheduler_consumes_live_controller_coverage",
+      "result": "ok"
+    },
+    {
+      "id": "test_collaboration.TestCollaboration.test_scope_denial_precedes_specialist_model_call",
+      "result": "ok"
+    },
+    {
+      "id": "test_collaboration.TestCollaboration.test_shared_tool_instance_does_not_share_call_budget",
+      "result": "ok"
+    },
+    {
+      "id": "test_collaboration.TestCollaboration.test_snapshot_is_bounded_and_credential_password_is_absent",
+      "result": "ok"
+    },
+    {
+      "id": "test_collaboration.TestCollaboration.test_strict_mode_does_not_whitelist_consultation_implicitly",
+      "result": "ok"
+    },
+    {
+      "id": "test_collaboration.TestCollaboration.test_unknown_role_and_oversized_task_are_rejected",
+      "result": "ok"
+    },
+    {
+      "id": "test_decision_evidence.TestEvidenceDecisions.test_confirmation_cannot_be_erased_by_later_timeout",
+      "result": "ok"
+    },
+    {
+      "id": "test_decision_evidence.TestEvidenceDecisions.test_goal_requires_verified_evidence",
+      "result": "ok"
+    },
+    {
+      "id": "test_decision_evidence.TestEvidenceDecisions.test_knowledge_ignores_duplicate_facts_and_timestamps_but_sees_upgrade",
+      "result": "ok"
+    },
+    {
+      "id": "test_decision_evidence.TestEvidenceDecisions.test_lab_passwd_fixture_is_consistent_between_encodings",
+      "result": "ok"
+    },
+    {
+      "id": "test_decision_evidence.TestEvidenceDecisions.test_loop_fingerprint_does_not_truncate_distinct_inputs_or_results",
+      "result": "ok"
+    },
+    {
+      "id": "test_decision_evidence.TestEvidenceDecisions.test_reference_does_not_overwrite_hypothesis",
+      "result": "ok"
+    },
+    {
+      "id": "test_decision_evidence.TestEvidenceDecisions.test_same_statement_at_different_locations_keeps_separate_hypotheses",
+      "result": "ok"
+    },
+    {
+      "id": "test_decision_evidence.TestEvidenceDecisions.test_structured_subject_matches_exact_location",
+      "result": "ok"
+    },
+    {
+      "id": "test_decision_evidence.TestEvidenceRun.test_chat_uses_same_evidence_rules",
+      "result": "ok"
+    },
+    {
+      "id": "test_decision_evidence.TestEvidenceRun.test_detected_upgrade_confirms_same_id_and_flushes_live_ledger",
+      "result": "ok"
+    },
+    {
+      "id": "test_decision_evidence.TestEvidenceRun.test_model_final_cannot_create_flag_or_success",
+      "result": "ok"
+    },
+    {
+      "id": "test_decision_evidence.TestEvidenceRun.test_repeated_facts_trigger_stop_contract",
+      "result": "ok"
+    },
+    {
+      "id": "test_decision_evidence.TestEvidenceRun.test_unrelated_or_unevidenced_findings_do_not_confirm",
+      "result": "ok"
+    },
+    {
+      "id": "test_eval_report_lab.TestAdaptersAndScoring.test_list_and_load_adapters",
+      "result": "ok"
+    },
+    {
+      "id": "test_eval_report_lab.TestAdaptersAndScoring.test_tsecbench_empty",
+      "result": "ok"
+    },
+    {
+      "id": "test_eval_report_lab.TestAdaptersAndScoring.test_tsecbench_scoring",
+      "result": "ok"
+    },
+    {
+      "id": "test_eval_report_lab.TestAdaptersAndScoring.test_unreachable_range_does_not_raise",
+      "result": "ok"
+    },
+    {
+      "id": "test_eval_report_lab.TestAdversarialProxy.test_modes_block_and_stats",
+      "result": "ok"
+    },
+    {
+      "id": "test_eval_report_lab.TestLabFixtures.test_autostart_and_stop",
+      "result": "ok"
+    },
+    {
+      "id": "test_eval_report_lab.TestLabFixtures.test_existing_fixture_is_not_touched",
+      "result": "ok"
+    },
+    {
+      "id": "test_eval_report_lab.TestLabTarget.test_flag_present",
+      "result": "ok"
+    },
+    {
+      "id": "test_eval_report_lab.TestLabTarget.test_lfi_reads_passwd",
+      "result": "ok"
+    },
+    {
+      "id": "test_eval_report_lab.TestLabTarget.test_rce_echoes_id",
+      "result": "ok"
+    },
+    {
+      "id": "test_eval_report_lab.TestLabTarget.test_soft404_shape",
+      "result": "ok"
+    },
+    {
+      "id": "test_eval_report_lab.TestLabTarget.test_sqli_errors",
+      "result": "ok"
+    },
+    {
+      "id": "test_eval_report_lab.TestMetricsMath.test_alias_normalization_matches_across_spellings",
+      "result": "ok"
+    },
+    {
+      "id": "test_eval_report_lab.TestMetricsMath.test_fp_and_fn_are_counted",
+      "result": "ok"
+    },
+    {
+      "id": "test_eval_report_lab.TestMetricsMath.test_harness_to_result_populates_scope_counts",
+      "result": "ok"
+    },
+    {
+      "id": "test_eval_report_lab.TestMetricsMath.test_in_scope_unmatched_is_fp",
+      "result": "ok"
+    },
+    {
+      "id": "test_eval_report_lab.TestMetricsMath.test_infra_findings_and_success_criteria",
+      "result": "ok"
+    },
+    {
+      "id": "test_eval_report_lab.TestMetricsMath.test_markdown_renders_chinese_table",
+      "result": "ok"
+    },
+    {
+      "id": "test_eval_report_lab.TestMetricsMath.test_out_of_scope_not_counted_as_fp",
+      "result": "ok"
+    },
+    {
+      "id": "test_eval_report_lab.TestMetricsMath.test_perfect_match",
+      "result": "ok"
+    },
+    {
+      "id": "test_eval_report_lab.TestMetricsMath.test_scenario_without_ground_truth_has_no_false_positives",
+      "result": "ok"
+    },
+    {
+      "id": "test_eval_report_lab.TestMetricsMath.test_success_criteria_flags",
+      "result": "ok"
+    },
+    {
+      "id": "test_eval_report_lab.TestReport.test_credentials_redacted_in_output",
+      "result": "ok"
+    },
+    {
+      "id": "test_eval_report_lab.TestReport.test_empty_state_still_renders",
+      "result": "ok"
+    },
+    {
+      "id": "test_eval_report_lab.TestReport.test_save_writes_requested_formats",
+      "result": "ok"
+    },
+    {
+      "id": "test_eval_report_lab.TestReport.test_sections_and_self_contained_html",
+      "result": "ok"
+    },
+    {
+      "id": "test_eval_report_lab.TestScopeAwareToolBehaviour.test_cli_target_fills_declared_param_only",
+      "result": "ok"
+    },
+    {
+      "id": "test_eval_report_lab.TestScopeAwareToolBehaviour.test_dynamic_level_enforced_by_registry",
+      "result": "ok"
+    },
+    {
+      "id": "test_eval_report_lab.TestScopeAwareToolBehaviour.test_internal_subrequest_uses_effective_level",
+      "result": "ok"
+    },
+    {
+      "id": "test_eval_report_lab.TestScopeAwareToolBehaviour.test_robots_disclosure_detection",
+      "result": "ok"
+    },
+    {
+      "id": "test_eval_report_lab.TestScopeAwareToolBehaviour.test_upload_not_reported_on_soft404",
+      "result": "ok"
+    },
+    {
+      "id": "test_eval_report_lab.TestScopeAwareToolBehaviour.test_weak_password_single_credential_is_verify_level",
+      "result": "ok"
+    },
+    {
+      "id": "test_http.TestHttpRedirects.test_303_changes_post_to_get_without_replaying_body",
+      "result": "ok"
+    },
+    {
+      "id": "test_http.TestHttpRedirects.test_307_preserves_form_and_redirect_cookie",
+      "result": "ok"
+    },
+    {
+      "id": "test_http.TestHttpRedirects.test_cross_origin_redirect_never_contacts_destination",
+      "result": "ok"
+    },
+    {
+      "id": "test_http.TestHttpRedirects.test_http_rejects_non_http_schemes_before_transport",
+      "result": "ok"
+    },
+    {
+      "id": "test_http.TestHttpRedirects.test_post_transport_error_is_not_retried",
+      "result": "ok"
+    },
+    {
+      "id": "test_http.TestHttpRedirects.test_read_transport_error_can_retry",
+      "result": "ok"
+    },
+    {
+      "id": "test_http.TestHttpRedirects.test_redirect_loop_is_bounded",
+      "result": "ok"
+    },
+    {
+      "id": "test_http.TestHttpRedirects.test_redirect_query_payload_is_rechecked",
+      "result": "ok"
+    },
+    {
+      "id": "test_http.TestHttpRedirects.test_redirects_can_be_disabled",
+      "result": "ok"
+    },
+    {
+      "id": "test_http.TestHttpRedirects.test_relative_redirects_keep_actual_final_url_and_history",
+      "result": "ok"
+    },
+    {
+      "id": "test_insight.TestBoard.test_render_board_sections",
+      "result": "ok"
+    },
+    {
+      "id": "test_insight.TestBoard.test_summarise_fields",
+      "result": "ok"
+    },
+    {
+      "id": "test_insight.TestEvidenceGraph.test_build_nodes_and_edges",
+      "result": "ok"
+    },
+    {
+      "id": "test_insight.TestEvidenceGraph.test_empty_state_still_renders",
+      "result": "ok"
+    },
+    {
+      "id": "test_insight.TestEvidenceGraph.test_mermaid_is_renderable",
+      "result": "ok"
+    },
+    {
+      "id": "test_insight.TestFailureAndLoopGuard.test_advice_covers_all_kinds",
+      "result": "ok"
+    },
+    {
+      "id": "test_insight.TestFailureAndLoopGuard.test_alternatives_empty_for_unknown_tool",
+      "result": "ok"
+    },
+    {
+      "id": "test_insight.TestFailureAndLoopGuard.test_alternatives_for_prefers_same_category_and_lower_level",
+      "result": "ok"
+    },
+    {
+      "id": "test_insight.TestFailureAndLoopGuard.test_classify_failure_kinds",
+      "result": "ok"
+    },
+    {
+      "id": "test_insight.TestFailureAndLoopGuard.test_loop_guard_escalation_ladder",
+      "result": "ok"
+    },
+    {
+      "id": "test_insight.TestFailureAndLoopGuard.test_loop_guard_ignores_different_results",
+      "result": "ok"
+    },
+    {
+      "id": "test_insight.TestHypothesisLedger.test_blocked_hypothesis_is_marked",
+      "result": "ok"
+    },
+    {
+      "id": "test_insight.TestHypothesisLedger.test_duplicate_is_reused",
+      "result": "ok"
+    },
+    {
+      "id": "test_insight.TestHypothesisLedger.test_finalize_marks_unresolved_without_faking",
+      "result": "ok"
+    },
+    {
+      "id": "test_insight.TestHypothesisLedger.test_from_action_accepts_string_and_dict",
+      "result": "ok"
+    },
+    {
+      "id": "test_insight.TestHypothesisLedger.test_level_words_are_coarsened",
+      "result": "ok"
+    },
+    {
+      "id": "test_insight.TestHypothesisLedger.test_outcome_requires_evidence_to_confirm_or_refute",
+      "result": "ok"
+    },
+    {
+      "id": "test_insight.TestHypothesisLedger.test_priority_formula",
+      "result": "ok"
+    },
+    {
+      "id": "test_insight.TestHypothesisLedger.test_prompt_block_sorted_by_priority",
+      "result": "ok"
+    },
+    {
+      "id": "test_insight.TestHypothesisScheduler.test_alias_normalisation_matches_vuln_class",
+      "result": "ok"
+    },
+    {
+      "id": "test_insight.TestHypothesisScheduler.test_binds_registered_check_for_verifiable_hypothesis",
+      "result": "ok"
+    },
+    {
+      "id": "test_insight.TestHypothesisScheduler.test_compliance_counting_and_escalation",
+      "result": "ok"
+    },
+    {
+      "id": "test_insight.TestHypothesisScheduler.test_descriptive_hypothesis_is_not_scheduled",
+      "result": "ok"
+    },
+    {
+      "id": "test_insight.TestHypothesisScheduler.test_goal_classes_beat_higher_priority_other_class",
+      "result": "ok"
+    },
+    {
+      "id": "test_insight.TestHypothesisScheduler.test_goal_directive_when_no_matching_hypothesis",
+      "result": "ok"
+    },
+    {
+      "id": "test_insight.TestHypothesisScheduler.test_low_priority_is_skipped",
+      "result": "ok"
+    },
+    {
+      "id": "test_insight.TestHypothesisScheduler.test_scheduler_directs_when_binding_exists",
+      "result": "ok"
+    },
+    {
+      "id": "test_insight.TestHypothesisScheduler.test_tried_check_is_not_rebound",
+      "result": "ok"
+    },
+    {
+      "id": "test_insight.TestHypothesisScheduler.test_unbindable_vuln_class_is_not_scheduled",
+      "result": "ok"
+    },
+    {
+      "id": "test_insight.TestInsightSwitches.test_ledger_off_hides_hypothesis_everywhere",
+      "result": "ok"
+    },
+    {
+      "id": "test_insight.TestInsightSwitches.test_ledger_on_registers_hypothesis",
+      "result": "ok"
+    },
+    {
+      "id": "test_insight.TestInsightSwitches.test_loop_guard_off_keeps_metrics_but_silences_advice",
+      "result": "ok"
+    },
+    {
+      "id": "test_insight.TestInsightSwitches.test_scheduler_directs_step_and_counts_miss",
+      "result": "ok"
+    },
+    {
+      "id": "test_insight.TestInsightSwitches.test_scheduler_off_leaves_no_directive",
+      "result": "ok"
+    },
+    {
+      "id": "test_insight.TestInternalMetrics.test_cost_redundancy_and_recovery",
+      "result": "ok"
+    },
+    {
+      "id": "test_insight.TestInternalMetrics.test_metrics_without_cost_data",
+      "result": "ok"
+    },
+    {
+      "id": "test_insight.TestStateRoundTrip.test_from_dict_rejects_error_payload",
+      "result": "ok"
+    },
+    {
+      "id": "test_insight.TestStateRoundTrip.test_to_dict_from_dict_round_trip",
+      "result": "ok"
+    },
+    {
+      "id": "test_interactive.TestAgentHumanHooks.test_approval_allows_action",
+      "result": "ok"
+    },
+    {
+      "id": "test_interactive.TestAgentHumanHooks.test_human_rejection_skips_action",
+      "result": "ok"
+    },
+    {
+      "id": "test_interactive.TestAgentHumanHooks.test_steering_queue_reaches_agent",
+      "result": "ok"
+    },
+    {
+      "id": "test_interactive.TestAgentHumanHooks.test_stop_event_halts_loop",
+      "result": "ok"
+    },
+    {
+      "id": "test_interactive.TestApprovalModes.test_answer_releases_waiter",
+      "result": "ok"
+    },
+    {
+      "id": "test_interactive.TestApprovalModes.test_level_thresholds",
+      "result": "ok"
+    },
+    {
+      "id": "test_interactive.TestApprovalModes.test_off_mode_never_waits",
+      "result": "ok"
+    },
+    {
+      "id": "test_interactive.TestApprovalModes.test_timeout_is_fail_closed",
+      "result": "ok"
+    },
+    {
+      "id": "test_interactive.TestChatAgent.test_controller_denial_is_surfaced_to_model_and_user",
+      "result": "ok"
+    },
+    {
+      "id": "test_interactive.TestChatAgent.test_human_rejection_blocks_tool",
+      "result": "ok"
+    },
+    {
+      "id": "test_interactive.TestChatAgent.test_plain_reply_does_not_call_tools",
+      "result": "ok"
+    },
+    {
+      "id": "test_interactive.TestChatAgent.test_prose_plus_action_is_executed",
+      "result": "ok"
+    },
+    {
+      "id": "test_interactive.TestChatAgent.test_tool_action_then_reply",
+      "result": "ok"
+    },
+    {
+      "id": "test_interactive.TestConsole.test_free_text_goes_to_chat",
+      "result": "ok"
+    },
+    {
+      "id": "test_interactive.TestConsole.test_model_and_backend_switch",
+      "result": "ok"
+    },
+    {
+      "id": "test_interactive.TestConsole.test_model_list_and_history_and_new",
+      "result": "ok"
+    },
+    {
+      "id": "test_interactive.TestConsole.test_revoke_and_grant",
+      "result": "ok"
+    },
+    {
+      "id": "test_interactive.TestConsole.test_run_without_target_explains_usage",
+      "result": "ok"
+    },
+    {
+      "id": "test_interactive.TestConsole.test_running_state_rejects_unrelated_commands",
+      "result": "ok"
+    },
+    {
+      "id": "test_interactive.TestConsole.test_save_persists_backend_and_model",
+      "result": "ok"
+    },
+    {
+      "id": "test_interactive.TestConsole.test_status_and_help_and_quit",
+      "result": "ok"
+    },
+    {
+      "id": "test_interactive.TestConsole.test_unknown_slash_command_is_reported",
+      "result": "ok"
+    },
+    {
+      "id": "test_interactive.TestConsole.test_usage_without_chat_still_reports_ledger",
+      "result": "ok"
+    },
+    {
+      "id": "test_interactive.TestLauncherArgCompatibility.test_commands_without_config_args",
+      "result": "ok"
+    },
+    {
+      "id": "test_interactive.TestLauncherArgCompatibility.test_injected_overrides_parse_for_launcher_subcommands",
+      "result": "ok"
+    },
+    {
+      "id": "test_interactive.TestPlayPlan.test_plan_autostarts_lab_and_reuses_existing",
+      "result": "ok"
+    },
+    {
+      "id": "test_interactive.TestPlayPlan.test_plan_requires_something_to_attack",
+      "result": "ok"
+    },
+    {
+      "id": "test_interactive.TestPlayPlan.test_plan_with_explicit_target",
+      "result": "ok"
+    },
+    {
+      "id": "test_policy.TestController.test_bare_host_inherits_run_target",
+      "result": "ok"
+    },
+    {
+      "id": "test_policy.TestController.test_budget_stops_checks",
+      "result": "ok"
+    },
+    {
+      "id": "test_policy.TestController.test_coverage_reports_untested_reasons",
+      "result": "ok"
+    },
+    {
+      "id": "test_policy.TestController.test_guided_marks_unregistered_tool",
+      "result": "ok"
+    },
+    {
+      "id": "test_policy.TestController.test_guided_resolves_registered_tool",
+      "result": "ok"
+    },
+    {
+      "id": "test_policy.TestController.test_no_new_evidence_triggers_stop",
+      "result": "ok"
+    },
+    {
+      "id": "test_policy.TestController.test_revocation_blocks_further_checks",
+      "result": "ok"
+    },
+    {
+      "id": "test_policy.TestController.test_strict_rejects_unregistered_target",
+      "result": "ok"
+    },
+    {
+      "id": "test_policy.TestController.test_strict_requires_registered_test_id",
+      "result": "ok"
+    },
+    {
+      "id": "test_policy.TestController.test_test_id_tool_mismatch_is_denied",
+      "result": "ok"
+    },
+    {
+      "id": "test_policy.TestPolicyRegistry.test_loads_targets_and_tests_from_ranges",
+      "result": "ok"
+    },
+    {
+      "id": "test_policy.TestPolicyRegistry.test_prompt_block_lists_registered_tests",
+      "result": "ok"
+    },
+    {
+      "id": "test_policy.TestPolicyRegistry.test_target_matching",
+      "result": "ok"
+    },
+    {
+      "id": "test_policy.TestVerdictAndReview.test_inconclusive_when_nothing_executed",
+      "result": "ok"
+    },
+    {
+      "id": "test_policy.TestVerdictAndReview.test_inconclusive_when_tool_fails",
+      "result": "ok"
+    },
+    {
+      "id": "test_policy.TestVerdictAndReview.test_not_confirmed_when_checks_ran_without_findings",
+      "result": "ok"
+    },
+    {
+      "id": "test_policy.TestVerdictAndReview.test_review_conflict_when_confirmed_without_verified",
+      "result": "ok"
+    },
+    {
+      "id": "test_policy.TestVerdictAndReview.test_review_flags_claim_without_evidence",
+      "result": "ok"
+    },
+    {
+      "id": "test_probe_integrity.TestProbeIntegrity.test_error_page_with_file_signature_is_not_lfi",
+      "result": "ok"
+    },
+    {
+      "id": "test_probe_integrity.TestProbeIntegrity.test_fixed_sql_error_page_is_not_injection",
+      "result": "ok"
+    },
+    {
+      "id": "test_probe_integrity.TestProbeIntegrity.test_lfi_has_missing_file_control_and_repeated_evidence",
+      "result": "ok"
+    },
+    {
+      "id": "test_probe_integrity.TestProbeIntegrity.test_reflected_parameter_is_not_command_execution",
+      "result": "ok"
+    },
+    {
+      "id": "test_probe_integrity.TestProbeIntegrity.test_split_command_marker_reproduces_with_fresh_challenge",
+      "result": "ok"
+    },
+    {
+      "id": "test_probe_integrity.TestProbeIntegrity.test_sql_error_must_reproduce_and_disappear_in_control",
+      "result": "ok"
+    },
+    {
+      "id": "test_probe_integrity.TestProbeIntegrity.test_stale_command_output_is_not_confirmed",
+      "result": "ok"
+    },
+    {
+      "id": "test_probe_integrity.TestProbeIntegrity.test_static_file_signature_is_not_lfi",
+      "result": "ok"
+    },
+    {
+      "id": "test_probe_integrity.TestProbeIntegrity.test_transient_sql_error_is_not_confirmed",
+      "result": "ok"
+    },
+    {
+      "id": "test_registry.TestRegistry.test_action_level_gate",
+      "result": "ok"
+    },
+    {
+      "id": "test_registry.TestRegistry.test_denials_are_audited",
+      "result": "ok"
+    },
+    {
+      "id": "test_registry.TestRegistry.test_destructive_switch_off",
+      "result": "ok"
+    },
+    {
+      "id": "test_registry.TestRegistry.test_exception_isolated",
+      "result": "ok"
+    },
+    {
+      "id": "test_registry.TestRegistry.test_missing_required_rejected",
+      "result": "ok"
+    },
+    {
+      "id": "test_registry.TestRegistry.test_out_of_scope_target_denied",
+      "result": "ok"
+    },
+    {
+      "id": "test_registry.TestRegistry.test_prompt_block_and_describe",
+      "result": "ok"
+    },
+    {
+      "id": "test_registry.TestRegistry.test_success_path_absorbs_facts",
+      "result": "ok"
+    },
+    {
+      "id": "test_registry.TestRegistry.test_timeout",
+      "result": "ok"
+    },
+    {
+      "id": "test_registry.TestRegistry.test_type_coercion_and_enum",
+      "result": "ok"
+    },
+    {
+      "id": "test_registry.TestRegistry.test_unknown_param_rejected",
+      "result": "ok"
+    },
+    {
+      "id": "test_registry.TestRegistry.test_unknown_tool",
+      "result": "ok"
+    },
+    {
+      "id": "test_scope.TestActionLevels.test_destructive_requires_host_allowlist",
+      "result": "ok"
+    },
+    {
+      "id": "test_scope.TestActionLevels.test_level_gate",
+      "result": "ok"
+    },
+    {
+      "id": "test_scope.TestActionLevels.test_unknown_level",
+      "result": "ok"
+    },
+    {
+      "id": "test_scope.TestForbiddenPatterns.test_argv_hard_denies",
+      "result": "ok"
+    },
+    {
+      "id": "test_scope.TestForbiddenPatterns.test_argv_target_check",
+      "result": "ok"
+    },
+    {
+      "id": "test_scope.TestForbiddenPatterns.test_benign_argv_allowed",
+      "result": "ok"
+    },
+    {
+      "id": "test_scope.TestForbiddenPatterns.test_brute_scale_cap",
+      "result": "ok"
+    },
+    {
+      "id": "test_scope.TestForbiddenPatterns.test_http_method_policy",
+      "result": "ok"
+    },
+    {
+      "id": "test_scope.TestForbiddenPatterns.test_lfi_passwd_allowed_shadow_denied",
+      "result": "ok"
+    },
+    {
+      "id": "test_scope.TestForbiddenPatterns.test_payload_denies",
+      "result": "ok"
+    },
+    {
+      "id": "test_scope.TestForbiddenPatterns.test_payload_in_query_string_is_scanned",
+      "result": "ok"
+    },
+    {
+      "id": "test_scope.TestRateLimiter.test_bucket_refills",
+      "result": "ok"
+    },
+    {
+      "id": "test_scope.TestRateLimiter.test_waits_are_positive_when_exhausted",
+      "result": "ok"
+    },
+    {
+      "id": "test_scope.TestScopeDecisions.test_authorized_hosts_whitelist",
+      "result": "ok"
+    },
+    {
+      "id": "test_scope.TestScopeDecisions.test_cidr_target_must_be_subset",
+      "result": "ok"
+    },
+    {
+      "id": "test_scope.TestScopeDecisions.test_deny_cidr_overrides_allow",
+      "result": "ok"
+    },
+    {
+      "id": "test_scope.TestScopeDecisions.test_loopback_policy",
+      "result": "ok"
+    },
+    {
+      "id": "test_scope.TestScopeDecisions.test_private_allowed_public_denied",
+      "result": "ok"
+    },
+    {
+      "id": "test_scope.TestScopeDecisions.test_public_requires_switch_and_explicit_cidr",
+      "result": "ok"
+    },
+    {
+      "id": "test_scope.TestScopeDecisions.test_require_target_raises",
+      "result": "ok"
+    },
+    {
+      "id": "test_scope.TestScopeDecisions.test_special_addresses_rejected",
+      "result": "ok"
+    },
+    {
+      "id": "test_scope.TestScopeDecisions.test_unresolvable_host_denied",
+      "result": "ok"
+    },
+    {
+      "id": "test_scope.TestTargetParsing.test_forms",
+      "result": "ok"
+    },
+    {
+      "id": "test_scope.TestTargetParsing.test_invalid",
+      "result": "ok"
+    },
+    {
+      "id": "test_state.TestAbsorb.test_credentials_and_flags_dedup",
+      "result": "ok"
+    },
+    {
+      "id": "test_state.TestAbsorb.test_notes_do_not_crash",
+      "result": "ok"
+    },
+    {
+      "id": "test_state.TestAbsorb.test_ports_and_hosts",
+      "result": "ok"
+    },
+    {
+      "id": "test_state.TestAbsorb.test_services_paths_tech",
+      "result": "ok"
+    },
+    {
+      "id": "test_state.TestEvidenceAndPrompt.test_evidence_cap_enforced",
+      "result": "ok"
+    },
+    {
+      "id": "test_state.TestEvidenceAndPrompt.test_finding_defaults",
+      "result": "ok"
+    },
+    {
+      "id": "test_state.TestEvidenceAndPrompt.test_summary_contains_key_facts",
+      "result": "ok"
+    },
+    {
+      "id": "test_state.TestEvidenceAndPrompt.test_summary_truncated",
+      "result": "ok"
+    },
+    {
+      "id": "test_state.TestEvidenceAndPrompt.test_timeline_and_steps",
+      "result": "ok"
+    },
+    {
+      "id": "test_state.TestEvidenceAndPrompt.test_to_dict_is_json_serializable",
+      "result": "ok"
+    },
+    {
+      "id": "test_state.TestFindings.test_dedup_merges_evidence_and_status",
+      "result": "ok"
+    },
+    {
+      "id": "test_state.TestFindings.test_different_parameter_is_separate_finding",
+      "result": "ok"
+    },
+    {
+      "id": "test_state.TestFindings.test_ids_are_sequential",
+      "result": "ok"
+    },
+    {
+      "id": "test_state.TestFindings.test_missing_title_falls_back_to_class",
+      "result": "ok"
+    },
+    {
+      "id": "test_state.TestFindings.test_severity_mapping_in_dict",
+      "result": "ok"
+    },
+    {
+      "id": "test_state.TestFindings.test_status_only_upgrades",
+      "result": "ok"
+    }
+  ],
+  "raw_log": "unit-tests.log",
+  "raw_sha256": "acec3b325cf1b0c03d70ac715b19b589cd0dfcbf9ca4d282358d1ee2972c3630",
+  "capture_note": "标准 unittest discover 子进程；原始 stderr 后接 stdout，摘要从原始输出解析。"
+}

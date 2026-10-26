@@ -3,6 +3,8 @@
 章节 02 的[双层 Harness](../docs/course/harness-manifest.md)、[实际状态模型](../docs/course/state-model.md)及[完整汇报](../开题报告与第一次汇报.md)位于课程包。下文一页图为原有流程概览，具体生命周期以当前状态模型为准。
 
 ## 目录
+
+- **[决策层设计详解](../docs/DECISION_LAYER.md)**：27 节，逐步解释目标约束、阶段、排序与调度、模型协议、授权审批、证据更新、失败与收尾，并附案例和方案比较。
 - `adr/` — 关键决策记录（为什么这么做，以及被否决的方案）
 - `ai-rules.md` — AI 使用规则与人机责任（O1）
 - 架构与护栏细节：[`docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md)、[`docs/GUARDRAILS.md`](../docs/GUARDRAILS.md)
@@ -12,7 +14,7 @@
 ### 架构决策
 | 编号 | 决定 | 关键理由 |
 |---|---|---|
-| [ADR-0001](adr/0001-brain-own-react-loop.md) | 决策大脑自研 ReAct 循环，omp 只做模型接入 | 护栏/审计/指标/超时需确定性可控 |
+| [ADR-0001](adr/0001-brain-own-react-loop.md) | 宿主掌握决策循环，模型后端可替换 | 明确执行控制、事实写入与模型候选的职责；附方案比较、代价和迁移条件 |
 | [ADR-0002](adr/0002-text-json-action-protocol.md) | 动作协议用文本 JSON，不用 function-calling | 跨模型可移植、可校验、可回放 |
 | [ADR-0003](adr/0003-single-execution-chokepoint.md) | 工具执行单一收口（`ToolRegistry.execute`） | 护栏若有第二个入口等于没有 |
 | [ADR-0004](adr/0004-policy-from-config-not-prompt.md) | 授权判据来自配置与注册表，不来自提示词 | 模型只能申请，不能授权 |

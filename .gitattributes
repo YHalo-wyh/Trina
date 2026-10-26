@@ -3,3 +3,6 @@ evidence/20261021-course-pack/** -text
 # 工具原件与测试原始输出保留自身 CRLF/空白，不按代码格式改写。
 evidence/20261021-course-pack/round-*/** -whitespace
 evidence/20261021-course-pack/unit-tests.log -whitespace
+# 2026-10-26 文档核对的原始输出和派生摘要同样保留归档字节。
+evidence/20261026-decision-docs/** -text
+evidence/20261026-decision-docs/unit-tests.log -whitespace

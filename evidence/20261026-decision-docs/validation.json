@@ -1,0 +1,156 @@
+{
+  "ok": true,
+  "started_utc": "2026-10-26T03:35:53.991788+00:00",
+  "ended_utc": "2026-10-26T03:35:55.511235+00:00",
+  "source_reference": "cede4efea31edd23f07b18aa7ef351e4594cc9bc",
+  "scope": "文档与设计依据核对；未修改产品代码、运行配置和测试实现",
+  "document": {
+    "path": "docs/DECISION_LAYER.md",
+    "numbered_sections": 27,
+    "characters": 32133,
+    "chinese_characters": 18810,
+    "full_test_references": [
+      "test_brain.TestParseAction.test_last_valid_object_wins",
+      "test_brain.TestPlanner.test_enum_requires_surface_not_just_hosts",
+      "test_brain.TestReActLoop.test_flag_shortcut_does_not_satisfy_task_goal",
+      "test_brain.TestReActLoop.test_out_of_scope_is_blocked_without_llm",
+      "test_collaboration.TestCollaboration.test_advice_never_executes_or_mutates_facts",
+      "test_collaboration.TestCollaboration.test_atomic_save_keeps_previous_snapshot_when_replace_fails",
+      "test_collaboration.TestCollaboration.test_chat_preserves_facts_and_current_request_after_history_rolls",
+      "test_collaboration.TestCollaboration.test_same_tool_with_wrong_test_id_is_not_compliance",
+      "test_collaboration.TestCollaboration.test_scheduler_consumes_live_controller_coverage",
+      "test_decision_evidence.TestEvidenceDecisions.test_confirmation_cannot_be_erased_by_later_timeout",
+      "test_decision_evidence.TestEvidenceDecisions.test_knowledge_ignores_duplicate_facts_and_timestamps_but_sees_upgrade",
+      "test_decision_evidence.TestEvidenceRun.test_model_final_cannot_create_flag_or_success",
+      "test_decision_evidence.TestEvidenceRun.test_repeated_facts_trigger_stop_contract",
+      "test_decision_evidence.TestEvidenceRun.test_unrelated_or_unevidenced_findings_do_not_confirm",
+      "test_insight.TestHypothesisScheduler.test_goal_classes_beat_higher_priority_other_class",
+      "test_policy.TestController.test_test_id_tool_mismatch_is_denied",
+      "test_registry.TestRegistry.test_unknown_param_rejected"
+    ],
+    "short_test_references": [
+      "test_braces_inside_strings",
+      "test_budget_forces_advance",
+      "test_class_requirement_needs_evidenced_finding",
+      "test_exception_isolated",
+      "test_mid_run_pivot_to_out_of_scope_is_denied",
+      "test_parent_must_issue_separate_action_and_record_replays_child",
+      "test_path_only_requirement_is_hard",
+      "test_path_requirement_is_soft_when_class_present",
+      "test_port_requirement_blocks_until_scanned",
+      "test_review_cannot_propose_execution"
+    ],
+    "all_references_passed": true
+  },
+  "unit_tests": {
+    "tests_run": 267,
+    "passed": 267,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "runner_seconds": 58.703
+  },
+  "course_check": {
+    "documents": 28,
+    "requirements": 20,
+    "scenarios": {
+      "P": 11,
+      "N": 8,
+      "A": 7
+    },
+    "tasks": 8,
+    "local_links": 284
+  },
+  "historical_evidence_checks": [
+    {
+      "state_file": "evidence/20261021-course-pack/round-1/state.json",
+      "run_id": "20261021-144543-e15b64",
+      "status": "success",
+      "verdict": "CONFIRMED",
+      "scheduler_decisions": 0,
+      "finding_evidence_count": 4,
+      "usage": "历史字段复核，未重新执行"
+    },
+    {
+      "state_file": "evidence/20261021-course-pack/round-2/state.json",
+      "run_id": "20261021-144543-6bc995",
+      "status": "success",
+      "verdict": "CONFIRMED",
+      "scheduler_decisions": 0,
+      "finding_evidence_count": 4,
+      "usage": "历史字段复核，未重新执行"
+    }
+  ],
+  "commands": [
+    {
+      "argv": [
+        "D:\\python310\\python.exe",
+        "-X",
+        "utf8",
+        "-m",
+        "scripts.verify_course_pack"
+      ],
+      "exit_code": 0,
+      "stdout": "课程工件检查：通过\r\n文档 28，要求 20，任务 8，场景 {'P': 11, 'N': 8, 'A': 7}\r\n测试引用 71（去重 71），本地链接 284\r\n检查范围为结构和引用；测试执行与人工验收需独立证据。\r\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "git",
+        "diff",
+        "--cached",
+        "--check"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "git",
+        "diff",
+        "--name-only",
+        "cede4efea31edd23f07b18aa7ef351e4594cc9bc",
+        "--",
+        "trina",
+        "tests",
+        "configs",
+        "pyproject.toml"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    }
+  ],
+  "text_sha256_normalize_crlf_to_lf": {
+    ".gitattributes": "59355dc0dd7c84886b57bbd2362a0639b86cc219b4734fb2fccb73cd63cb4f40",
+    "README.md": "20f9a13b685f7c623a494ecdc841675dd57ed736a89f8e8ed4950d94a3c855e4",
+    "开题报告与第一次汇报.md": "99931bb0ef64b10bd9f6f6eb665f39394eb17e89ebd8d87df7187a1804d1b405",
+    "docs/DECISION_LAYER.md": "d25d6eacedd5c875ec7eb3d36566128b06de7829529c5bd92538cf02888fd730",
+    "docs/ARCHITECTURE.md": "b5dcd1d01bcee8ccde1bb7ad4e46d6e131967efcba5f43435494d5f6cf3cf599",
+    "docs/EVAL.md": "4ba077a538512de914c21423f1f6ae8344bfae2927c9a5bf576e2d1047f4cc7e",
+    "docs/course/README.md": "442e89b67be1e6003246207ee2068a9b43432e9946fd92625dde9dc7836dcc7d",
+    "docs/course/traceability.json": "07bf28805f762330f6af700653f3038aa3101fb25668c7d7f50b4fd6779d78fe",
+    "design/README.md": "1812b8f426c3cabda97520fc6adde06f1e2edc1632134838f647ab33e30960d5",
+    "design/adr/0001-brain-own-react-loop.md": "604a4969330f8cccbdc9906ef974e87a2c182f16c1aa3aec4efe0fbb9ae31501",
+    "design/adr/0016-deterministic-hypothesis-scheduling.md": "695ae7734b8f12354f5de8b148715ddf72610bbd2080687d8df5d6d3f8e188ba",
+    "evidence/20261026-decision-docs/README.md": "4325aa583f10e95ed7051c368d359ef2009ad1fe9205d93cd868dfb7e738cd5c"
+  },
+  "artifact_sha256_raw": {
+    "doc-check.json": "a3ac41f0fc70d20375519565be785c27f011aef583bf542284afc0c46a04f21c",
+    "README.md": "4325aa583f10e95ed7051c368d359ef2009ad1fe9205d93cd868dfb7e738cd5c",
+    "unit-tests.json": "6ed5ff654f8ba9cf71f1d8c4599add146e44310612f51abd3766e428bce818c0",
+    "unit-tests.log": "acec3b325cf1b0c03d70ac715b19b589cd0dfcbf9ca4d282358d1ee2972c3630"
+  },
+  "limits": "未执行新的真实模型效果实验；测试通过不代表已关闭已知产品边界或完成独立人工审查"
+}

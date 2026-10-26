@@ -7,10 +7,12 @@
 | 重点材料 | 检查入口 |
 |---|---|
 | 完整开题 / 第一次汇报报告 | **[根目录主报告](开题报告与第一次汇报.md)** |
+| 决策层每一步的设计理由与实现边界 | **[决策层设计详解（2026-10-26）](docs/DECISION_LAYER.md)** |
 | 20 条具体需求与规格 | [需求规格](docs/course/specification.md) |
 | 26 个场景及逐条验证关系 | [验收场景](docs/course/scenarios.md) · [验收矩阵](docs/course/acceptance-matrix.md) |
 | 计划、8 张任务卡、双层 Harness 等完整交付物 | [课程文档目录](docs/course/README.md) |
-| 本轮原始测试、两轮新靶机机制验证及审查 | [验证事实](evidence/20261021-course-pack/README.md) · [审查记录](review/20261021-course-pack-review.md) |
+| 10 月 26 日决策文档核对及 267 项回归结果 | [决策层文档验证](evidence/20261026-decision-docs/README.md) |
+| 10 月 21 日课程提交的测试、两轮靶机验证及审查 | [验证事实](evidence/20261021-course-pack/README.md) · [审查记录](review/20261021-course-pack-review.md) |
 
 课程材料按章节 02 V1.1 要求整理，版本日期为 **2026-10-21**。产品能力和已知缺口分别说明；详细规格、计划、证据均在仓库中，可直接检查。
 
