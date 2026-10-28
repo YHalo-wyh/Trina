@@ -24,6 +24,7 @@ from typing import Any
 from . import __version__
 from .config import TrinaConfig, PROJECT_ROOT, ConfigError
 from .scope import ScopeGuard
+from .terminal import render_approval, render_message, render_panel, render_step, use_color
 
 # ---------------------------------------------------------------------------
 # 输出helpers（rich 可选）
@@ -42,7 +43,7 @@ def _console():
 def out(message: str = "", style: str = "") -> None:
     console = _console()
     if console and style:
-        console.print(message, style=style)
+        console.print(message, style=style, markup=False, highlight=False)
     else:
         print(message)
 
@@ -59,12 +60,13 @@ def kv_table(rows: list[tuple[str, str]], title: str = "") -> None:
     console = _console()
     if console:
         from rich.table import Table
+        from rich.text import Text
 
         table = Table(title=title or None, show_lines=False)
         table.add_column("项", style="cyan", no_wrap=True)
         table.add_column("值")
         for key, value in rows:
-            table.add_row(key, str(value))
+            table.add_row(Text(str(key)), Text(str(value)))
         console.print(table)
     else:
         if title:
@@ -252,16 +254,14 @@ def cmd_run(args: argparse.Namespace) -> int:
         out(f"[警告] 工具模块 {module} 未加载: {error}", "yellow")
     backend = make_backend(config.llm)
 
-    rule(f"Trina 自动渗透 · {target}")
-    print(f"模型: {config.llm.model}（{config.llm.backend}） · 动作等级上限: {config.scope.exploit_level}"
-          f" · 破坏性: {'开' if config.scope.destructive else '关'}")
-    print(f"目标范围: {', '.join(config.scope.authorized_cidrs)}")
+    print(render_panel("Trina / 任务", rows=[("目标", target), ("任务", goal or "按配置执行"),
+                       ("模型", f"{config.llm.model} · {config.llm.backend}"),
+                       ("动作上限", config.scope.exploit_level)], color=use_color()))
 
     def on_step(step) -> None:
-        mark = "拒" if step.denied else ("OK" if step.ok else "×")
-        out(f"  [{step.index:02d}] {mark} {step.action} — {step.summary[:120]}", "red" if step.denied else "")
+        print(render_step(step, color=use_color()))
 
-    agent = PentestAgent(config, registry=registry, backend=backend, logger=lambda msg: print(f"  · {msg}"), on_step=on_step)
+    agent = PentestAgent(config, registry=registry, backend=backend, logger=lambda msg: print(render_message(msg, label="  ·", color=use_color())), on_step=on_step)
     state = agent.run(
         target,
         goal=goal,
@@ -271,22 +271,8 @@ def cmd_run(args: argparse.Namespace) -> int:
         record_path=args.record,
     )
 
-    rule("结果")
-    kv_table(
-        [
-            ("run_id", state.run_id),
-            ("状态", state.status),
-            ("耗时", f"{state.duration:.0f}s"),
-            ("步数", str(state.counters.get("steps", 0))),
-            ("漏洞", str(len(state.findings))),
-            ("凭据", str(len(state.credentials))),
-            ("flag", str(len(state.flags))),
-            ("被护栏拒绝", str(state.counters.get("denied", 0))),
-            ("LLM 调用/成本", f"{state.ledger.get('calls', 0)} 次 / ${state.ledger.get('cost_usd', 0)}"),
-            ("审计文件", state.artifacts.get("audit_path", "")),
-            ("工作区", state.artifacts.get("workspace", "")),
-        ]
-    )
+    from .board import render_board
+    print(render_board(state, color=use_color()))
     if state.findings:
         rule("漏洞清单")
         for finding in sorted(state.findings, key=lambda f: f.severity):
@@ -528,20 +514,20 @@ def cmd_play(args: argparse.Namespace) -> int:
         )
         return 2
 
-    rule("Trina · 直接开打")
+    print(render_panel("Trina / 准备任务", rows=[("模型", config.llm.model), ("审批", approval_mode)], color=use_color()))
     plan = build_plan(
         config,
         target=getattr(args, "target", None),
         range_name=getattr(args, "range", None),
         goal=getattr(args, "goal", "") or "",
-        log=lambda message: print(message),
+        log=lambda message: print(render_message(message, label="准备", color=use_color())),
     )
     session = Session(approval_mode=approval_mode, emit=lambda message: print(f"[审批] {message}"))
 
     def _ask(request: dict) -> bool:
         """交互式审批：默认（enter）拒绝，避免误放行。"""
-        level = str(request.get("level", ""))
-        question = f"允许执行 {request.get('tool')}（{level}，{request.get('params')}）？[y/N] "
+        print(render_approval(request, None, color=use_color()))
+        question = "允许执行？[y/N] "
         try:
             answer = input(question).strip().lower()
         except (EOFError, KeyboardInterrupt):
@@ -559,11 +545,8 @@ def cmd_play(args: argparse.Namespace) -> int:
             controller=None,
             max_steps=getattr(args, "max_steps", None),
             max_seconds=getattr(args, "max_seconds", None),
-            log=lambda message: print(f"  · {message}"),
-            on_step=lambda step: print(
-                f"  [{step.index:02d}] {'拒' if step.denied else ('OK' if step.ok else '×')} "
-                f"{step.action} — {str(step.summary)[:100]}"
-            ),
+            log=lambda message: print(render_message(message, label="  ·", color=use_color())),
+            on_step=lambda step: print(render_step(step, color=use_color())),
             write_report=not getattr(args, "no_report", False),
         )
     finally:
@@ -572,17 +555,8 @@ def cmd_play(args: argparse.Namespace) -> int:
         else:
             plan.teardown()
 
-    kv_table(
-        [
-            ("结论状态", f"{state.verdict} ({state.status})"),
-            ("耗时", f"{state.duration:.0f}s"),
-            ("步数/漏洞/flag", f"{state.counters.get('steps', 0)} / {len(state.findings)} / {len(state.flags)}"),
-            ("已测/未测检查项", f"{len((state.coverage or {}).get('executed') or [])} / {len((state.coverage or {}).get('untested') or [])}"),
-            ("停止原因", (state.coverage or {}).get("stop_reason") or "正常收敛"),
-            ("被拒动作", str(state.counters.get("denied", 0))),
-            ("审计文件", state.artifacts.get("audit_path", "")),
-        ]
-    )
+    from .board import render_board
+    print(render_board(state, color=use_color()))
     return 0 if state.verdict in ("CONFIRMED", "NOT_CONFIRMED") else 1
 
 
@@ -597,6 +571,8 @@ def cmd_console(args: argparse.Namespace) -> int:
         argv += ["--config", args.config]
     for item in getattr(args, "set", None) or []:
         argv += ["--set", item]
+    if getattr(args, "plain", False):
+        argv += ["--plain"]
     if getattr(args, "no_lab_autostart", False):
         argv += ["--no-lab-autostart"]
     return console_main(argv)
@@ -655,6 +631,7 @@ def cmd_watch(args: argparse.Namespace) -> int:
     import time as _time
 
     from .board import latest_state_file, load_state, render_board
+    from .terminal import use_color
 
     config = build_config(args)
     workspace = config.workspace_dir
@@ -666,14 +643,14 @@ def cmd_watch(args: argparse.Namespace) -> int:
         out("未找到运行状态：先跑一次（trina play / trina run），或指定 run_id", "red")
         return 2
 
-    if args.once:
-        print(render_board(load_state(path)))
+    if args.once or not _sys.stdout.isatty():
+        print(render_board(load_state(path), color=False))
         return 0
 
     out(f"监视 {path.parent.name}（每 {args.interval}s 刷新，Ctrl+C 退出）")
     try:
         while True:
-            board = render_board(load_state(path))
+            board = render_board(load_state(path), color=use_color())
             _sys.stdout.write("\033[2J\033[H" + board + "\n")
             _sys.stdout.flush()
             _time.sleep(max(0.5, float(args.interval)))
@@ -794,6 +771,7 @@ def build_parser() -> argparse.ArgumentParser:
     console = sub.add_parser("console", help="交互式控制台（人工可实时介入）")
     add_common(console)
     console.add_argument("--approve", choices=["off", "exploit", "verify", "all"], default="exploit")
+    console.add_argument("--plain", action="store_true", help="关闭终端颜色")
     console.add_argument("--no-lab-autostart", action="store_true")
     console.set_defaults(func=cmd_console)
 

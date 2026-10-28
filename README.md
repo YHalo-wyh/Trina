@@ -24,6 +24,8 @@
 
 ## 项目使用说明
 
+**CLI 界面更新（2026-10-28）**：[首页、审批与工作台使用说明](docs/CLI_UI.md) · [单主控 / 多 Agent / 黑板研究复核](design/adr/0017-specialist-consultation-without-blackboard.md)
+
 自动化渗透测试 Agent：**大模型 ReAct 决策 + 全套工具封装 + 多靶场适配 + 硬性安全护栏 + 标准报告 + 评测框架**。
 
 ```bash

@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import difflib
 import shlex
 import sys
 import threading
@@ -22,6 +23,10 @@ from typing import Any, Callable
 
 from .config import TrinaConfig
 from .session import APPROVAL_MODES, Session
+from .terminal import (
+    PHASES, clean_text, render_approval, render_home, render_message,
+    render_panel, render_step, terminal_width, use_color,
+)
 
 HELP_TEXT = """这是**对话式**控制台：直接说人话即可（例如「你好」「帮我看看 127.0.0.1:9099 有什么漏洞」「继续」），
 Trina 会回答你；需要动手时它会自己调用工具执行（照样过授权控制器、护栏与审计）。以 / 开头的输入一律当命令。
@@ -52,7 +57,7 @@ Trina 会回答你；需要动手时它会自己调用工具执行（照样过�
   /lab                        本地靶机（故意脆弱，仅回环）
   /help /quit                 帮助 / 退出
 
-运行中可用: y / n 审批 · hint <文本>（或直接说人话＝介入提示）· status · pause · resume · stop"""
+运行中可用: y / n 审批 · hint <文本>（或直接说人话＝介入提示）· status · board · pause · resume · stop"""
 
 #: 已知命令名（用于区分"命令"与"对 Agent 说话"）
 COMMAND_NAMES = {
@@ -77,10 +82,13 @@ class Console:
         registry: Any = None,
         approval_mode: str = "exploit",
         autostart_lab: bool = True,
+        plain: bool = False,
     ):
         self.config = config or TrinaConfig.load()
         self._input = input_fn or input
         self.output = output or (lambda line: print(line, flush=True))
+        self.color = use_color(plain=plain or output is not None)
+        self._live_step: Any = None
         #: 注入的后端（测试用）或按当前会话配置构建的缓存
         self._backend_obj = backend
         #: 测试可注入的后端工厂（形如 make_backend(llm_config) -> LLMBackend）
@@ -92,37 +100,47 @@ class Console:
         self._plan: Any = None
         self._controller: Any = None
         self.chat: Any = None
-        self.session = Session(approval_mode=approval_mode, emit=self._emit)
+        self.session = Session(approval_mode=approval_mode, emit=self._session_emit)
         self.exit_requested = False
 
     # ------------------------------------------------------------------ 输出
-    def _emit(self, message: str, prefix: str = "[trina]") -> None:
+    def _display(self, text: str) -> None:
         with self._lock:
-            self.output(f"{prefix} {message}" if message else "")
+            self.output(text)
+
+    def _emit(self, message: str, prefix: str = "[trina]") -> None:
+        self._display(render_message(message, label=prefix, color=self.color) if message else "")
+
+    def _session_emit(self, message: str) -> None:
+        pending = self.session.pending
+        if pending is not None and message.startswith("[审批] 请求执行"):
+            self._display(render_approval(pending, self.session.approval_timeout, color=self.color))
+        else:
+            self._emit(message)
 
     def _agent_log(self, message: str) -> None:
         self._emit(message, prefix="  ·")
 
     def _on_step(self, step: Any) -> None:
-        mark = "拒" if step.denied else ("OK" if step.ok else "×")
-        self._emit(f"[{step.index:02d}] {mark} {step.action} — {str(step.summary)[:110]}", prefix="[step]")
+        self._live_step = step
+        self._display(render_step(step, color=self.color))
+
+    def _show_help(self) -> None:
+        self._display(render_panel("命令指南", sections=[("", HELP_TEXT.replace("**", ""))], color=self.color))
 
     # ------------------------------------------------------------------ 主循环
     def run(self) -> int:
-        self._emit("Trina 交互控制台（**对话式**）：直接说人话即可，例如「你好」「帮我看看 127.0.0.1:9099 有什么漏洞」；")
-        self._emit("需要动手时我会自己调用工具（照过授权控制器与护栏）。命令仍可用，见 /help。")
-        self._banner()
+        self._display(render_home(self.config, self.session.approval_mode, color=self.color))
         while not self.exit_requested:
             try:
                 raw = self._input(self._prompt())
             except (EOFError, KeyboardInterrupt):
                 if self.session.running and self.session.thread is not None:
-                    # 输入结束时不要立刻掐掉正在进行的对话/任务：等它收尾（最多 20s），避免丢掉最后一轮结果
                     self._emit("输入已结束：等待当前对话/任务收尾（最多 20 秒）…")
                     self.session.thread.join(timeout=20)
-                self._emit("\n再见。")
+                self._emit("再见。")
                 break
-            except StopIteration:  # 测试注入的输入耗尽
+            except StopIteration:
                 break
             if not self.handle(raw):
                 break
@@ -130,16 +148,15 @@ class Console:
         return 0
 
     def _prompt(self) -> str:
-        """提示符带当前模型（omp 风格的状态提示）。"""
-        short = (self.config.llm.model or "?").split("/")[-1]
-        return f"trina[{short}](run)> " if self.session.running else f"trina[{short}]> "
+        short = clean_text((self.config.llm.model or "?").split("/")[-1]).replace("\n", " ")[:28]
+        status = "就绪"
+        if self.session.running:
+            status = "待审批 y/n" if self.session.pending else ("暂停" if self.session.pause_event.is_set() else ("停止中" if self.session.stop_event.is_set() else "运行中"))
+        # 状态在下一次读取输入时刷新；后台进展单独输出，不清空输入缓冲。
+        return f"trina · {status} · {short} > " if terminal_width() >= 60 else f"trina · {status} > "
 
     def _banner(self) -> None:
-        policy = self.config.policy
-        self._emit(
-            f"审批模式={self.session.approval_mode} · 策略={policy.mode} · "
-            f"动作上限={self.config.scope.exploit_level} · 目标范围={', '.join(self.config.scope.authorized_cidrs)}"
-        )
+        self._display(render_home(self.config, self.session.approval_mode, color=self.color))
 
     # ------------------------------------------------------------------ 命令
     def handle(self, raw: str) -> bool:
@@ -147,7 +164,7 @@ class Console:
         if not line:
             self._show_status()
             return True
-        if line in ("quit", "exit", "q"):
+        if line.lstrip("/").strip() in ("quit", "exit", "q"):
             if self.session.running:
                 self._emit("任务仍在运行：先 stop，或再次输入 quit 强制退出。")
                 if not getattr(self, "_quit_warned", False):
@@ -161,14 +178,15 @@ class Console:
         if forced:
             line = line[1:].strip()
         if not line:
-            self.output(HELP_TEXT)
+            self._show_help()
             return True
         try:
             argv = shlex.split(line)
         except ValueError:
-            self._emit(f"命令解析失败，按对话处理: {line[:60]}")
             if forced:
+                self._emit("命令中的引号未闭合；补齐引号后重试，或输入 /help 查看示例。", prefix="错误")
                 return True
+            self._emit(f"命令解析失败，按对话处理: {line[:60]}")
             self._start_chat_turn(line)
             return True
         command, args = argv[0], argv[1:]
@@ -183,8 +201,8 @@ class Console:
             return True
 
         handler = {
-            "help": lambda: self.output(HELP_TEXT),
-            "?": lambda: self.output(HELP_TEXT),
+            "help": self._show_help,
+            "?": self._show_help,
             "play": lambda: self._cmd_play(args),
             "run": lambda: self._cmd_run(args),
             "status": self._show_status,
@@ -218,7 +236,9 @@ class Console:
         }.get(command)
         if handler is None:
             if forced:
-                self._emit(f"未知命令 {command!r}；输入 /help 查看可用命令（不加 / 时按对话处理）。")
+                matches = difflib.get_close_matches(command, sorted(COMMAND_NAMES), n=1, cutoff=0.6)
+                suggestion = f"；是否想输入 /{matches[0]}" if matches else ""
+                self._emit(f"未知命令 {command!r}{suggestion}。输入 /help 查看命令。")
                 return True
             self._start_chat_turn(line)
             return True
@@ -256,11 +276,14 @@ class Console:
         if command == "status":
             self._show_status()
             return True
+        if command == "board":
+            self._cmd_board()
+            return True
         if command == "quit":
             self._emit("任务运行中：先 stop 再退出。")
             return True
         if command in ("help", "?"):
-            self.output(HELP_TEXT)
+            self._show_help()
             return True
         if not forced and command not in COMMAND_NAMES:
             # 运行中说人话 = 人工介入提示（最自然的交互）；已知命令名仍按命令处理
@@ -297,12 +320,15 @@ class Console:
     def _cmd_board(self) -> None:
         from .board import render_board
 
+        if self.session.running and self.session.state is None:
+            self._show_status()
+            return
         state = self._current_state()
         if state is None:
-            self._emit("还没有可展示的内容：先 /play 跑一轮，或直接说句话让我开工")
+            self._display(render_panel("工作台", sections=[("尚无运行记录", "直接输入问题开始对话，或使用 /play 启动任务。")], color=self.color))
             return
-        hypotheses = self.chat.ledger.to_dict() if self.chat is not None else None
-        self.output(render_board(state, hypotheses=hypotheses))
+        hypotheses = self.chat.ledger.to_dict() if self.chat is not None and state is self.chat.state else None
+        self._display(render_board(state, hypotheses=hypotheses, color=self.color))
 
     def _cmd_hypotheses(self) -> None:
         if self.chat is not None:
@@ -526,21 +552,20 @@ class Console:
             return
         chat = self._ensure_chat()
         self.session.reset_for_run()
+        self._live_step = None
         self.session.state = chat.state
         self.session.started_at = time.monotonic()
 
         def _worker() -> None:
             try:
                 reply = chat.ask(text)
-                self._emit("—" * 28, prefix="[Trina]")
-                for line in (reply or "").splitlines() or ["(空回复)"]:
-                    self._emit(line, prefix="[Trina]")
-                self._emit(self._chat_digest(chat), prefix="[Trina]")
+                self._display(render_panel("[Trina] 回复", sections=[("", reply or "(空回复)")], footer=self._chat_digest(chat), color=self.color))
                 self._last_state = chat.state
             except Exception as exc:  # noqa: BLE001 - 对话异常不能杀掉控制台
                 self._emit(f"对话出错: {type(exc).__name__}: {exc}", prefix="[错误]")
 
         self.session.thread = threading.Thread(target=_worker, name="trina-chat", daemon=True)
+        self._emit("正在分析；可输入 /status 查看、直接补充提示或 /stop 停止。", prefix="对话")
         self.session.thread.start()
 
     def _chat_digest(self, chat: Any) -> str:
@@ -554,19 +579,28 @@ class Console:
         )
 
     def _show_status(self) -> None:
-        self._emit(f"状态: {self.session.status_line()}")
-        if not self.session.running and self._last_state is not None:
-            state = self._last_state
-            self._emit(
-                f"上一轮: 结论={state.verdict or '-'} 状态={state.status} 步数={state.counters.get('steps', 0)} "
-                f"漏洞={len(state.findings)} flag={len(state.flags)} 被拒={state.counters.get('denied', 0)}"
-            )
-            coverage = state.coverage or {}
-            if coverage:
-                self._emit(
-                    f"覆盖: 已测 {len(coverage.get('executed') or [])} 项 · 未测 "
-                    f"{len(coverage.get('untested') or [])} 项 · 停止原因 {coverage.get('stop_reason') or '正常收敛'}"
-                )
+        from .board import render_board
+
+        if self.session.running:
+            step = self._live_step
+            phase = PHASES.get(getattr(step, "phase", ""), "准备 / 等待模型")
+            state = self.session.state
+            if state is not None:
+                phase = PHASES.get(state.phase, state.phase)
+            control = "待审批" if self.session.pending else ("已暂停" if self.session.pause_event.is_set() else ("停止中" if self.session.stop_event.is_set() else "运行中"))
+            rows = [("状态", control), ("阶段", phase),
+                    ("目标", (getattr(state, "target", "") if state is not None else getattr(self._plan, "target", "")) or "未指定"),
+                    ("耗时", f"{max(0, time.monotonic() - self.session.started_at):.0f}s")]
+            if step is not None:
+                rows.append(("最近一步", f"第 {step.index} 步 · {step.action} · {step.summary}"))
+            self._display(render_panel("当前任务", rows=rows, footer="/board 查看 · /pause 暂停 · /resume 继续 · /stop 停止；直接输入文字介入。", color=self.color))
+            if self.session.pending:
+                self._display(render_approval(self.session.pending, self.session.approval_timeout, color=self.color))
+        elif self._last_state is not None:
+            self._display(render_board(self._last_state, color=self.color))
+        else:
+            self._display(render_panel("就绪", rows=[("状态", "空闲"), ("模型", self.config.llm.model), ("审批", self.session.approval_mode)],
+                                       footer="输入问题开始对话 · /play 开始任务 · /help 查看命令", color=self.color))
 
     def _cmd_approve(self, args: list[str]) -> None:
         mode = (args[0] if args else "").strip().lower()
@@ -642,6 +676,7 @@ class Console:
             else:
                 self._emit(f"未知审批模式 {approval}，沿用 {self.session.approval_mode}")
         self.session.reset_for_run()
+        self._live_step = None
         self._ensure_controller()
         self._controller.checks_used = 0
         self._controller.started_at = time.monotonic()
@@ -706,23 +741,10 @@ class Console:
         self._emit("任务已在后台运行：y/n 审批 · hint <文本> 介入 · status 查看 · stop 停止")
 
     def _report_summary(self, state: Any) -> None:
-        self._emit("—" * 30, prefix="[任务]")
-        self._emit(
-            f"结论 {state.verdict or '-'} · 运行状态 {state.status} · 步数 {state.counters.get('steps', 0)} · "
-            f"漏洞 {len(state.findings)} · flag {len(state.flags)} · 被拒 {state.counters.get('denied', 0)}",
-            prefix="[任务]",
-        )
-        coverage = state.coverage or {}
-        if coverage:
-            self._emit(
-                f"覆盖：已测 {len(coverage.get('executed') or [])} 项 / 未测 "
-                f"{len(coverage.get('untested') or [])} 项；停止原因：{coverage.get('stop_reason') or '正常收敛'}",
-                prefix="[任务]",
-            )
+        from .board import render_board
+        self._display(render_board(state, color=self.color))
         for finding in state.findings[:8]:
-            self._emit(f"  [{finding.severity}] {finding.vuln_class} {finding.url or finding.target} ({finding.status})",
-                       prefix="[发现]")
-        self._emit(f"产物：{state.artifacts.get('workspace') or '-'}", prefix="[任务]")
+            self._emit(f"[{finding.severity}] {finding.vuln_class} {finding.url or finding.target} ({finding.status})", prefix="发现")
 
     def _cleanup(self) -> None:
         if self.session.running:
@@ -775,6 +797,7 @@ def main(argv: list[str] | None = None) -> int:
                         help="审批模式：off 全自动 / exploit 只审高危 / verify / all（默认 exploit）")
     parser.add_argument("--config", help="配置文件路径")
     parser.add_argument("--set", action="append", metavar="section.field=value", help="临时覆盖配置，可重复")
+    parser.add_argument("--plain", action="store_true", help="关闭终端颜色，适合日志和兼容终端")
     parser.add_argument("--no-lab-autostart", action="store_true", help="play 时不自动起本地 lab 靶机")
     args = parser.parse_args(argv)
 
@@ -785,7 +808,7 @@ def main(argv: list[str] | None = None) -> int:
         key, _, value = item.partition("=")
         overrides[key] = _literal(value)
     config = TrinaConfig.load(args.config, overrides)
-    console = Console(config, approval_mode=args.approve, autostart_lab=not args.no_lab_autostart)
+    console = Console(config, approval_mode=args.approve, autostart_lab=not args.no_lab_autostart, plain=args.plain)
     return console.run()
 
 

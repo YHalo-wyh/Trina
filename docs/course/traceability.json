@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "pack_version": "1.2",
+  "pack_version": "1.3",
   "documentation_revision": {
     "date": "2026-10-26",
     "scope": "决策层设计说明、架构依据及导航；产品行为规格保持 1.0",
@@ -40,7 +40,10 @@
     "docs/course/course-alignment.md",
     "design/adr/0019-course-contract-and-dual-harness.md",
     "evidence/20261021-course-pack/README.md",
-    "review/20261021-course-pack-review.md"
+    "review/20261021-course-pack-review.md",
+    "docs/CLI_UI.md",
+    "design/adr/0017-specialist-consultation-without-blackboard.md",
+    "evidence/20261028-cli-ui/README.md"
   ],
   "tasks": [
     "TASK-01",
@@ -666,5 +669,11 @@
     "date": "2026-10-26",
     "reference_commit": "4f9a98ddd8954d5631c3a43301f03cb82157f16e",
     "scope": "设计决策文档移至根目录并在首页置顶；保留原路径导航；正文仅调整标题及相对链接"
+  },
+  "ui_revision": {
+    "date": "2026-10-28",
+    "reference_commit": "10b3dd823f2a706398c6944a43fb1a5c9274f91c",
+    "scope": "CLI 展示与交互修正；不改变决策、授权或专职咨询默认策略",
+    "validation": "evidence/20261028-cli-ui/README.md"
   }
 }

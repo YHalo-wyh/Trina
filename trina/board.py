@@ -74,7 +74,7 @@ def summarise(state: Any, *, hypotheses: list[dict[str, Any]] | None = None, now
         "phase": _get(state, "phase", ""),
         "duration_seconds": duration,
         "duration": _seconds(duration),
-        "steps": len(steps),
+        "steps": counters.get("steps", sum(1 for item in steps if isinstance(item, dict) and "index" in item)),
         "findings_total": len(findings),
         "findings_verified": verified,
         "by_severity": by_severity,
@@ -96,81 +96,55 @@ def summarise(state: Any, *, hypotheses: list[dict[str, Any]] | None = None, now
         "loop_advice": loop.get("last_advice", ""),
         "scheduler": _get(state, "scheduler") or {},
         "ledger": _get(state, "ledger") or {},
-        "last_steps": steps[-3:],
+        "last_steps": [item for item in steps if isinstance(item, dict) and item.get("kind") == "tool"][-3:],
         "artifacts": _get(state, "artifacts") or {},
     }
 
 
-def render_board(state: Any, *, hypotheses: list[dict[str, Any]] | None = None, width: int = 76, color: bool = False) -> str:
-    """渲染一屏工作台视图（纯文本；`color=True` 时给关键值加 ANSI 色）。"""
-    data = summarise(state, hypotheses=hypotheses)
-    def hl(text: str, code: str = "36") -> str:
-        return f"\033[{code}m{text}\033[0m" if color else text
+def render_board(state: Any, *, hypotheses: list[dict[str, Any]] | None = None, width: int | None = None, color: bool = False) -> str:
+    """按终端宽度渲染结果，控制器的允许记录与完成证据分开表述。"""
+    from .terminal import PHASES, STATUSES, VERDICTS, render_panel
 
-    status = data["status"] or "?"
-    verdict = data["verdict"] or "-"
-    line = "─" * width
-    lines = [
-        line,
-        f" TRINA / WORKSPACE   {hl(data['run_id'], '1')}",
-        f" 目标   {data['target'] or '(未指定)'}   阶段 {data['phase'] or '-'}   状态 {status}   结论 {verdict}",
-        f" 耗时   {data['duration']}   步数 {data['steps']}   检查 {data['checks_used']}   被拒 {data['denied']}   错误 {data['errors']}",
-        line,
-        " 研究成果",
-        f"   漏洞 {data['findings_total']}（已验证 {data['findings_verified']}）"
-        + "｜"
-        + " ".join(f"{SEVERITY_CN[sev]} {data['by_severity'].get(sev, 0)}" for sev in SEVERITY_ORDER),
-        f"   flag {len(data['flags'])}   凭据 {len(data['credentials'])}   主机 {len(data['hosts'])}",
-    ]
+    data = summarise(state, hypotheses=hypotheses)
+    if _get(state, "error"):
+        return render_panel("状态读取失败", sections=[("", str(_get(state, "error")))], width=width, color=color, accent="red")
+    phase = data["phase"]
+    rail = " → ".join(f"【{label}】" if key == phase else label for key, label in PHASES.items())
+    results = (
+        f"发现 {data['findings_total']} · 标记已验证 {data['findings_verified']} · flag {len(data['flags'])} · "
+        f"凭据 {len(data['credentials'])} · 主机 {len(data['hosts'])}\n"
+        + "  ".join(f"{SEVERITY_CN[key]} {data['by_severity'].get(key, 0)}" for key in SEVERITY_ORDER)
+    )
+    coverage = f"获准检查 {len(data['coverage_executed'])} 项 · 未覆盖 {len(data['coverage_untested'])} 项（获准记录不等于执行完成）"
+    if data["coverage_untested"]:
+        ids = [str(item.get("test_id", "?")) if isinstance(item, dict) else str(item) for item in data["coverage_untested"][:5]]
+        coverage += "\n待检查：" + "、".join(ids)
+    if data["coverage_stop_reason"]:
+        coverage += "\n停止原因：" + str(data["coverage_stop_reason"])
+    hypotheses_text = f"待验证 {data['hypotheses_open']} · 已确认 {data['hypotheses_confirmed']} · 已否定 {data['hypotheses_refuted']}"
+    for item in data["top_hypotheses"]:
+        hypotheses_text += f"\n{item.get('id')} · 优先级 {item.get('priority')} · {str(item.get('statement', ''))[:160]}"
+    sections = [("任务流程", rail), ("研究成果", results), ("覆盖", coverage), ("假设台账", hypotheses_text)]
+    scheduler = data["scheduler"]
+    if scheduler.get("decisions"):
+        observed = scheduler.get("followed", 0) + scheduler.get("missed", 0)
+        sections.append(("调度", f"派发 {scheduler['decisions']} 次 · 已观察 {observed} 次 · 遵从 {scheduler.get('followed', 0)} 次"))
+    if data["last_steps"]:
+        sections.append(("最近动作", "\n".join(
+            f"{'OK' if item.get('ok') else '失败'}  {item.get('tool')} · {str(item.get('summary', ''))[:180]}"
+            for item in data["last_steps"])))
     ledger = data["ledger"]
     if ledger:
-        lines.append(
-            f"   模型调用 {ledger.get('calls', 0)} 次 · token 入 {ledger.get('input_tokens', 0)}/出 {ledger.get('output_tokens', 0)}"
-            f" · 成本 ${ledger.get('cost_usd', 0)}"
-        )
-    lines.append(line)
-    lines.append(
-        f" 假设台账   待验证 {data['hypotheses_open']} · 已确认 {data['hypotheses_confirmed']} · "
-        f"已否定 {data['hypotheses_refuted']}（共 {data['hypotheses_total']}）"
-    )
-    for item in data["top_hypotheses"]:
-        statement = str(item.get("statement", ""))[:52]
-        lines.append(f"   - {item.get('id')} P={item.get('confidence')} 优先级={item.get('priority')} {statement}")
-    lines.append(
-        f" 覆盖       已测 {len(data['coverage_executed'])} 项 · 未测 {len(data['coverage_untested'])} 项"
-        + (f" · 停止原因 {data['coverage_stop_reason']}" if data["coverage_stop_reason"] else "")
-    )
-    if data["coverage_untested"]:
-        preview = "、".join(str(item.get("test_id", item)) for item in data["coverage_untested"][:5])
-        lines.append(f"   未测项（前 5）：{preview}")
-    if data["redundant_rate"]:
-        lines.append(f" 循环识别   无新信息重复比例 {data['redundant_rate']:.0%}" + (f" · {data['loop_advice'][:40]}" if data["loop_advice"] else ""))
-    scheduler = data.get("scheduler") or {}
-    if scheduler.get("decisions"):
-        expected = scheduler.get("followed", 0) + scheduler.get("missed", 0)
-        lines.append(
-            f" 调度遵从   决策 {scheduler.get('decisions')} 次 · 按调度执行 {scheduler.get('followed', 0)}"
-            + (f"/{expected}（遵从率 {float(scheduler.get('compliance_rate') or 0):.0%}）" if expected else "")
-            + (f" · 未遵从 {scheduler.get('missed')}" if scheduler.get("missed") else "")
-        )
-        last = scheduler.get("last") or {}
-        if last:
-            lines.append(
-                f"   - 最近调度：验证 {last.get('hypothesis_id')} → "
-                + (f"{last.get('test_id')}（{last.get('tool')}）" if last.get("test_id") else f"自由验证 {last.get('vuln_class')}")
-            )
-    if data["last_steps"]:
-        lines.append(line)
-        lines.append(" 最近动作")
-        for step in data["last_steps"]:
-            if isinstance(step, dict) and step.get("kind") == "tool":
-                mark = "OK" if step.get("ok") else "×"
-                lines.append(f"   [{mark}] {step.get('tool')} — {str(step.get('summary', ''))[:52]}")
-    if data["artifacts"].get("workspace"):
-        lines.append(line)
-        lines.append(f" 工作区 {data['artifacts']['workspace']}")
-    lines.append(line)
-    return "\n".join(lines)
+        sections.append(("模型用量", f"调用 {ledger.get('calls', 0)} · token 入 {ledger.get('input_tokens', 0)} / 出 {ledger.get('output_tokens', 0)} · 记录成本 ${ledger.get('cost_usd', 0)}"))
+    artifacts = data["artifacts"]
+    paths = [(key, value) for key, value in artifacts.items() if key in ("workspace", "state_file", "audit_path") or "report" in key]
+    if paths:
+        sections.append(("产物", "\n".join(f"{key}  {value}" for key, value in paths)))
+    return render_panel("TRINA / WORKSPACE", rows=[
+        ("运行", data["run_id"] or "未开始"), ("目标", data["target"] or "未指定"),
+        ("状态 / 结论", f"{STATUSES.get(data['status'], data['status']) or '未知'} · {VERDICTS.get(data['verdict'], data['verdict']) or '尚无结论'}"),
+        ("进度", f"{data['duration']} · 步数 {data['steps']} · 拒绝 {data['denied']} · 错误 {data['errors']}"),
+    ], sections=sections, width=width, color=color)
 
 
 def load_state(path: str | Path) -> dict[str, Any]:

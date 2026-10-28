@@ -1,0 +1,30 @@
+{
+  "argv": [
+    "C:\\Users\\WYH\\Desktop\\网安实训中级\\.venv\\Scripts\\python.exe",
+    "-X",
+    "utf8",
+    "-m",
+    "unittest",
+    "discover",
+    "-s",
+    "tests",
+    "-v"
+  ],
+  "exit_code": 0,
+  "tests_run": 283,
+  "started_utc": "2026-10-28T01:25:54.747879+00:00",
+  "finished_utc": "2026-10-28T01:26:46.202004+00:00",
+  "seconds": 51.453,
+  "raw_sha256": "97f8e4eee05d288a323e7060e73b37d41ad8df905d631d24b15bc1c827b219a1",
+  "python": "3.10.11",
+  "platform": "Windows-10-10.0.26300-SP0",
+  "source_reference": "10b3dd823f2a706398c6944a43fb1a5c9274f91c",
+  "changed_source_sha256_normalize_crlf": {
+    "trina/terminal.py": "1dcbeb8e9d0dd7e6a1f23e5b87b9145590aba511987981d8c4b9e9da795ab519",
+    "trina/interactive.py": "9b155a4dd80d97183520c75148d6250861d82194f735712ba34335fec74b449f",
+    "trina/board.py": "90e1129233fb9a858bfc2f5d743dde938a201895f2f05649ce849f5aa65635ba",
+    "trina/cli.py": "b0085f15575d763d0d6fbfc89ad2f75a48a744d7f381f4f657c8382ec53c467d",
+    "tests/test_terminal_ui.py": "0d27adb078477f98193f741e7df9966459d97cc8e542781dabcf92ad3c859ea5"
+  },
+  "scope": "本轮 UI 工作区完整回归；未调用真实模型，也未新增共享黑板"
+}
