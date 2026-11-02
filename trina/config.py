@@ -42,6 +42,9 @@ class ScopeConfig:
         ]
     )
     authorized_hosts: list[str] = field(default_factory=list)
+    #: 基准平台控制面主机白名单（只允许答题 API，不允许作为扫描目标）。
+    #: 由 `trina bench` 在启动时从 BENCHMARK_BASE_URL 写入并记入审计。
+    control_plane_hosts: list[str] = field(default_factory=list)
     deny_cidrs: list[str] = field(default_factory=list)
     allow_public: bool = False
     allow_loopback: bool = True

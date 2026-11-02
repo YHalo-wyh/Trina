@@ -177,6 +177,17 @@ python3 -m trina eval adversarial --port 9100   # 只起对抗代理（WAF/封�
 - **零成本离线回归**：`--set llm.backend=replay --set llm.replay_script=<录制脚本>`（`trina run --record` 录制）。
 - 结果落盘：`reports/eval/<suite>-<ts>.md`（中文指标表）与 `.json`（逐场景明细，可机器分析）。
 
+### TSecBench 平台接入（官方 Agent 答题 API）
+
+```bash
+export BENCHMARK_BASE_URL='...' BENCHMARK_TOKEN='...'
+python3 -m trina bench --dry-run                # 只列题目
+python3 -m trina bench --allow-exploit          # 逐题起容器 → 渗透 → 提交 flag → 回收
+```
+
+托管模式镜像与平台操作见 [`docs/TSECBENCH_AGENT.md`](docs/TSECBENCH_AGENT.md)；镜像入口为
+`docker build -t trina-tsecbench .`，平台注入 `BENCHMARK_*` 后容器自动开始解题。
+
 ## 常用命令
 
 ```bash

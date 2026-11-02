@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -560,6 +561,101 @@ def cmd_play(args: argparse.Namespace) -> int:
     return 0 if state.verdict in ("CONFIRMED", "NOT_CONFIRMED") else 1
 
 
+def _bench_int(name: str, default: int) -> int:
+    raw = os.environ.get(name)
+    if raw is None or raw == "":
+        return default
+    return int(raw)
+
+
+def _bench_bool(name: str, default: bool = False) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in ("1", "true", "yes", "on")
+
+
+def _prepare_bench_llm(config: TrinaConfig, *, hosted: bool, force_gateway: bool) -> None:
+    """托管模式把大模型地址改写成平台网关（`.tsecbench.gw` + http）。
+
+    仅在 ``hosted`` 或显式 ``--gateway`` 时执行，避免本地直连被误改。
+    """
+    from urllib.parse import urlsplit, urlunsplit
+
+    if config.llm.backend == "omp" and hosted:
+        config.llm.backend = "openai"
+    base = (config.llm.base_url or os.environ.get("TRINA_LLM_BASE_URL") or "").strip()
+    if not base and os.environ.get("DEEPSEEK_API_KEY"):
+        base = "https://api.deepseek.com/v1"
+        if config.llm.model.startswith("deepseek/"):
+            config.llm.model = os.environ.get("TRINA_LLM_MODEL", "deepseek-chat")
+    if base:
+        parts = urlsplit(base)
+        host = (parts.hostname or "").lower()
+        if host and (hosted or force_gateway) and not host.endswith(".tsecbench.gw"):
+            config.llm.base_url = urlunsplit(("http", f"{host}.tsecbench.gw", parts.path, parts.query, ""))
+        else:
+            config.llm.base_url = base.rstrip("/")
+        if "api.deepseek.com" in host and config.llm.model.startswith("deepseek/"):
+            config.llm.model = os.environ.get("TRINA_LLM_MODEL", "deepseek-chat")
+    if not os.environ.get("TRINA_LLM_API_KEY") and os.environ.get("DEEPSEEK_API_KEY"):
+        config.llm.api_key_env = "DEEPSEEK_API_KEY"
+
+
+def cmd_bench(args: argparse.Namespace) -> int:
+    """接入 TSecBench 答题 API：逐题启动容器 → 渗透 → 提交 flag → 关闭容器。"""
+    from .bench import BenchOptions, BenchmarkError, run_benchmark
+
+    config = build_config(args)
+    base_url = (getattr(args, "base_url", None) or os.environ.get("BENCHMARK_BASE_URL") or "").strip()
+    token = os.environ.get(getattr(args, "token_env", None) or "BENCHMARK_TOKEN", "")
+    if not base_url:
+        out("缺少 BENCHMARK_BASE_URL：请从 TSecBench 评测页获取后注入环境变量", "red")
+        return 2
+    if not token:
+        out("缺少 BENCHMARK_TOKEN：请从 TSecBench 评测页获取后注入环境变量", "red")
+        return 2
+    hosted = _bench_bool("TRINA_BENCH_HOSTED", default=False)
+    _prepare_bench_llm(config, hosted=hosted, force_gateway=bool(getattr(args, "gateway", False)))
+    options = BenchOptions(
+        max_steps=int(getattr(args, "max_steps", None) or _bench_int("TRINA_BENCH_MAX_STEPS", 36)),
+        per_task_seconds=int(
+            getattr(args, "per_task_seconds", None) or _bench_int("TRINA_BENCH_PER_TASK_SECONDS", 420)
+        ),
+        total_seconds=int(getattr(args, "total_seconds", None) or _bench_int("TRINA_BENCH_TOTAL_SECONDS", 6 * 3600)),
+        attempts=int(getattr(args, "attempts", None) or _bench_int("TRINA_BENCH_ATTEMPTS", 1)),
+        use_hints=bool(getattr(args, "use_hints", False) or _bench_bool("TRINA_BENCH_USE_HINTS", False)),
+        limit=int(getattr(args, "limit", None) or _bench_int("TRINA_BENCH_LIMIT", 0)),
+    )
+    print(
+        render_panel(
+            "Trina / TSecBench",
+            rows=[
+                ("答题 API", base_url),
+                ("模型后端", f"{config.llm.backend} / {config.llm.model}"),
+                ("模型地址", config.llm.base_url or "(后端默认)"),
+                ("单题预算", f"{options.per_task_seconds}s × {options.max_steps} 步"),
+                ("总时限", f"{options.total_seconds}s"),
+            ],
+            color=use_color(),
+        )
+    )
+    try:
+        summary = run_benchmark(
+            config,
+            base_url=base_url,
+            token=token,
+            options=options,
+            dry_run=bool(getattr(args, "dry_run", False)),
+            log=lambda message: print(render_message(message, label="bench", color=use_color())),
+        )
+    except (BenchmarkError, ValueError) as exc:
+        out(f"评测失败: {exc}", "red")
+        return 1
+    print(json.dumps(summary.to_dict(), ensure_ascii=False, indent=2))
+    return 0 if not summary.error else 1
+
+
 def cmd_console(args: argparse.Namespace) -> int:
     """进入交互式控制台（人工可介入）。"""
     from .interactive import main as console_main
@@ -767,6 +863,24 @@ def build_parser() -> argparse.ArgumentParser:
     play.add_argument("--no-report", action="store_true", help="不生成报告")
     play.add_argument("--keep-lab", action="store_true", help="结束后保留自动拉起的靶机")
     play.set_defaults(func=cmd_play)
+
+    bench = sub.add_parser("bench", help="接入 TSecBench 答题 API（托管/本地评测）")
+    add_common(bench)
+    bench.add_argument("--base-url", help="答题 API 根地址（默认 BENCHMARK_BASE_URL）")
+    bench.add_argument("--token-env", default="BENCHMARK_TOKEN", help="token 所在环境变量名")
+    bench.add_argument("--max-steps", type=int, help="单轮决策步数上限（默认 36）")
+    bench.add_argument("--per-task-seconds", type=int, help="单题时间预算（默认 420）")
+    bench.add_argument("--total-seconds", type=int, help="整场时间预算（默认 21600）")
+    bench.add_argument("--attempts", type=int, help="单题最多尝试轮次（默认 1）")
+    bench.add_argument("--use-hints", action="store_true", help="补漏轮次前获取平台提示（会扣分）")
+    bench.add_argument("--limit", type=int, help="只跑前 N 题（调试用）")
+    bench.add_argument("--dry-run", action="store_true", help="只列出题目，不启动容器")
+    bench.add_argument("--gateway", action="store_true", help="强制把模型地址改写成 .tsecbench.gw 网关")
+    bench.add_argument("--model", help="覆盖模型名")
+    bench.add_argument("--backend", choices=["omp", "openai", "replay"])
+    bench.add_argument("--allow-exploit", action="store_true", help="动作等级提升到 exploit（答题需要）")
+    bench.add_argument("--json", action="store_true", help="输出 JSON 摘要")
+    bench.set_defaults(func=cmd_bench)
 
     console = sub.add_parser("console", help="交互式控制台（人工可实时介入）")
     add_common(console)

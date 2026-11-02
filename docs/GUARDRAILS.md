@@ -77,6 +77,19 @@ rm -rf                                            删除文件载荷
 - 单主机并发 `max_host_concurrency`（默认 8）。
 - 单次爆破尝试上限 `max_brute_attempts`（默认 800，覆盖默认词表 15×45=675），超限直接拒绝并给出缩小字典的提示。
 
+### 2.5 基准平台控制面 `check_control_plane()`
+
+TSecBench 答题 API 不是渗透目标，不能套用 `authorized_cidrs`（它可能是公网域名，且本地模式
+在 VPN 外也不应可达）。因此单独设置白名单：
+
+- `scope.control_plane_hosts` 只允许由 `BENCHMARK_BASE_URL` 推导出的主机；
+- 只允许 `GET/POST` + `http(s)`，禁止 URL 内嵌凭据，禁止任意主机；
+- 该白名单**不会**让主机变成可扫描目标：`check_target()` 完全不读取它；
+- 每次控制面请求都经 `ScopeGuard._record` 写入审计（`action=control-plane`）。
+
+`trina bench` 启动时把 `BENCHMARK_BASE_URL` 的 host 写入该字段并记录 `bench.start` 审计事件；
+其它入口不会自动放行任何主机。
+
 ## 3. 审计（`trina/audit.py`）
 
 每条记录：

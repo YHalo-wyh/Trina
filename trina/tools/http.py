@@ -145,8 +145,13 @@ class HttpClient:
         required_level: str = "detect",
         payload_label: str = "",
         files: Any = None,
+        control_plane: bool = False,
     ) -> HttpResult:
-        """逐跳、逐次重试校验实际请求；护栏拒绝作为失败结果返回。"""
+        """逐跳、逐次重试校验实际请求；护栏拒绝作为失败结果返回。
+
+        `control_plane=True` 时走 `ScopeGuard.check_control_plane`：只允许显式登记的
+        答题 API 主机，不按靶场目标网段判定（控制面不是渗透目标）。
+        """
         started = time.monotonic()
         history: list[str] = []
 
@@ -179,9 +184,12 @@ class HttpClient:
             # 写入类请求连接失败时可能已被服务端处理，不自动重复提交。
             retries = max(0, self.retries) if prepared.method in ("GET", "HEAD", "OPTIONS") else 0
             for attempt in range(retries + 1):
-                decision = self.guard.check_http(
-                    prepared.url, method=prepared.method, body=body_text, required_level=required_level,
-                )
+                if control_plane:
+                    decision = self.guard.check_control_plane(prepared.url, method=prepared.method)
+                else:
+                    decision = self.guard.check_http(
+                        prepared.url, method=prepared.method, body=body_text, required_level=required_level,
+                    )
                 if decision.denied:
                     return denied(decision, prepared)
                 wait = self.guard.throttle(urlsplit(prepared.url).hostname or "")
@@ -214,7 +222,10 @@ class HttpClient:
                 if len(history) >= self.session.max_redirects:
                     return failure(f"重定向次数超过上限 {self.session.max_redirects}", prepared)
                 history.append(prepared.url)
-                decision = self.guard.check_http_redirect(prepared.url, following.url)
+                if control_plane:
+                    decision = self.guard.check_control_plane(following.url, method=following.method)
+                else:
+                    decision = self.guard.check_http_redirect(prepared.url, following.url)
                 if decision.denied:
                     return denied(decision, following)
                 prepared = following

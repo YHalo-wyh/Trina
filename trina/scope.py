@@ -269,6 +269,7 @@ class ScopeGuard:
         self._cidrs = [ipaddress.ip_network(c, strict=False) for c in scope.authorized_cidrs]
         self._denied = [ipaddress.ip_network(c, strict=False) for c in scope.deny_cidrs]
         self._authorized_hosts = {h.lower() for h in scope.authorized_hosts}
+        self._control_plane_hosts = {h.lower() for h in scope.control_plane_hosts}
         self._destructive_hosts = {h.lower() for h in scope.destructive_hosts}
 
     # ---------------------------------------------------------------- 内部
@@ -410,6 +411,51 @@ class ScopeGuard:
         info.is_loopback = bool(info.ips) and all(ipaddress.ip_address(i).is_loopback for i in info.ips)
         info.is_public = bool(info.ips) and any(ipaddress.ip_address(i).is_global for i in info.ips)
         return info
+
+    def check_control_plane(self, url: str, *, method: str = "GET") -> Decision:
+        """校验答题 API 控制面请求（不是靶场目标，不走目标网段判定）。
+
+        只有显式登记在 `scope.control_plane_hosts` 的主机才可访问；方法与 scheme 也做白名单。
+        控制面主机来自 `BENCHMARK_BASE_URL`，由 `trina bench` 在启动时写入并记入审计。
+        """
+        method = (method or "GET").upper()
+        try:
+            parts = urlsplit(url)
+        except ValueError as exc:
+            return self._record(self._deny("format", f"非法控制面 URL: {exc}", target=url), "control-plane")
+        scheme = parts.scheme.lower()
+        if scheme not in ("http", "https"):
+            return self._record(self._deny("format", "控制面只接受 http(s):// URL", target=url), "control-plane")
+        if parts.username is not None or parts.password is not None:
+            return self._record(self._deny("format", "控制面 URL 不允许内嵌凭据", target=url), "control-plane")
+        host = (parts.hostname or "").lower()
+        if not host:
+            return self._record(self._deny("format", f"控制面 URL 缺少主机: {url}", target=url), "control-plane")
+        if host not in self._control_plane_hosts:
+            return self._record(
+                self._deny(
+                    "control-plane",
+                    f"主机 {host} 不在 control_plane_hosts 白名单",
+                    target=url,
+                    hint="答题 API 地址必须来自 BENCHMARK_BASE_URL，不能由模型指定",
+                ),
+                "control-plane",
+            )
+        if method not in ("GET", "POST"):
+            return self._record(
+                self._deny("control-plane", f"控制面不接受 {method} 方法", target=url),
+                "control-plane",
+            )
+        return self._record(
+            Decision(
+                True,
+                category="control-plane",
+                target=url,
+                reason="答题 API 控制面已授权",
+                detail={"host": host, "method": method},
+            ),
+            "control-plane",
+        )
 
     # ------------------------------------------------------------ 动作等级
     def check_action_level(self, required: str, *, target: str = "", reason: str = "") -> Decision:
