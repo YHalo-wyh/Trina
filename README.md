@@ -196,6 +196,7 @@ python3 -m trina bench --allow-exploit          # 逐题起容器 → 渗透 →
 托管模式镜像与平台操作见 [`docs/TSECBENCH_AGENT.md`](docs/TSECBENCH_AGENT.md)；镜像入口为
 `docker build -t trina-tsecbench .`，平台注入 `BENCHMARK_*` 后容器自动开始解题。
 OpenCode Go 的接入与两轮单题冒烟结果见 [TSecBench × OpenCode Go 记录](docs/TSECBENCH_OPENCODE_GO.md)。
+按日期整理的评测报告、截图和脱敏结果数据见 [评测目录](评测/README.md)。
 
 ## 常用命令
 
