@@ -294,6 +294,40 @@ def cmd_run(args: argparse.Namespace) -> int:
     return 0 if state.status in ("success", "partial") else 1
 
 
+def cmd_swarm(args: argparse.Namespace) -> int:
+    """运行 RASC 任务图或从任务级检查点继续。"""
+    from .swarm import SwarmRuntime, default_tasks, load_manifest
+
+    config = build_config(args)
+    try:
+        if args.resume:
+            runtime = SwarmRuntime.resume(config, args.resume)
+        else:
+            if args.manifest:
+                tasks = load_manifest(args.manifest)
+            else:
+                if not args.target:
+                    out("请提供 --target、--manifest 或 --resume", "red")
+                    return 2
+                tasks = default_tasks(args.target, args.goal, max_steps=args.max_steps, max_seconds=args.max_seconds)
+            runtime = SwarmRuntime(config, tasks, max_workers=args.workers)
+        summary = runtime.run()
+    except (ValueError, KeyError, OSError) as exc:
+        out(f"Swarm 配置错误: {exc}", "red")
+        return 2
+    if args.json:
+        print(json.dumps(summary, ensure_ascii=False, indent=2))
+    else:
+        rule(f"Trina Swarm · {summary['run_id']}")
+        for task_id, item in summary["tasks"].items():
+            out(f"{task_id:18} {item['status']:10} {item['worker'] or '-'}  尝试 {item['attempt']}")
+            if item["error"]:
+                out(f"  {item['error']}", "yellow")
+        out(f"检查点: {summary['checkpoint']}")
+        out(f"Worker 创建 {summary['workers_created']}，复用 {summary['worker_reuses']} 次")
+    return 0 if all(item["status"] == "completed" for item in summary["tasks"].values()) else 1
+
+
 def _write_report(config: TrinaConfig, state, *, meta: dict[str, Any] | None = None) -> list[Path]:
     """生成报告（报告模块缺失时降级为提示，不影响主流程）。"""
     try:
@@ -909,6 +943,22 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--no-report", action="store_true", help="不生成报告")
     run.add_argument("--teardown", action="store_true", help="结束后关闭自建靶场")
     run.set_defaults(func=cmd_run)
+
+    swarm = sub.add_parser("swarm", help="可复用 Worker 并行执行任务 DAG")
+    add_common(swarm)
+    swarm.add_argument("--target", "-t", help="目标（使用默认任务图）")
+    swarm.add_argument("--goal", "-g", default="", help="最终研究目标")
+    swarm.add_argument("--manifest", help="YAML/JSON 任务图文件")
+    swarm.add_argument("--resume", help="从 runs/<id>/swarm.json 继续")
+    swarm.add_argument("--workers", type=int, default=2, help="最大并行 Worker 数（默认 2）")
+    swarm.add_argument("--max-steps", type=int, default=12, help="默认图每任务步数上限")
+    swarm.add_argument("--max-seconds", type=int, default=600, help="默认图每任务秒数上限")
+    swarm.add_argument("--model", help="覆盖模型名")
+    swarm.add_argument("--backend", choices=["omp", "openai", "replay"])
+    swarm.add_argument("--replay", help="离线回放脚本（每个 Worker 独立加载）")
+    swarm.add_argument("--allow-exploit", action="store_true", help="动作等级提升到 exploit")
+    swarm.add_argument("--json", action="store_true", help="输出 JSON 摘要")
+    swarm.set_defaults(func=cmd_swarm)
 
     audit = sub.add_parser("audit", help="审计日志")
     audit_sub = audit.add_subparsers(dest="audit_action", required=True)

@@ -1,6 +1,6 @@
 [project]
 name = "trina"
-version = "0.1.0"
+version = "0.2.0"
 description = "Trina · 全自动渗透测试 Agent"
 requires-python = ">=3.10"
 dependencies = [
@@ -8,6 +8,7 @@ dependencies = [
     "requests>=2.31",
     "paramiko>=3.4",
     "rich>=13.0",
+    "prompt-toolkit>=3.0.45",
     "beautifulsoup4>=4.12",
     "aiohttp>=3.9",
 ]

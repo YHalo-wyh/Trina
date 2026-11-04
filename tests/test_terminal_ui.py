@@ -15,6 +15,7 @@ from unittest.mock import patch
 from trina.board import render_board, summarise
 from trina.brain.agent import StepRecord
 from trina.config import TrinaConfig
+from trina.console_ui import SlashCommandCompleter, command_hint, command_names
 from trina.interactive import Console
 from trina.state import RunState
 from trina.terminal import clean_text, render_approval, render_home, render_message, render_step, use_color
@@ -39,6 +40,53 @@ class TestTerminalUI(unittest.TestCase):
                         if not color:
                             self.assertNotIn("\x1b", text)
         self.assertIn("/board", render_home(TrinaConfig.load(), "all", width=40))
+        self.assertIn("命令索引", render_home(TrinaConfig.load(), "all", width=40))
+
+    def test_slash_index_filters_commands_and_lists_options(self):
+        from prompt_toolkit.document import Document
+
+        completer = SlashCommandCompleter(running=lambda: False)
+
+        def values(text: str) -> list[str]:
+            return [item.text for item in completer.get_completions(Document(text), None)]
+
+        root = values("/")
+        self.assertIn("play", root)
+        self.assertIn("model", root)
+        self.assertNotIn("pause", root, "空闲时不应把仅运行态命令放在首屏")
+        self.assertEqual(values("/sta"), ["status"])
+        self.assertIn("--goal", values("/play --"))
+        self.assertIn("verify", values("/approve v"))
+
+    def test_running_slash_index_is_context_aware(self):
+        from prompt_toolkit.document import Document
+
+        completer = SlashCommandCompleter(running=lambda: True)
+        values = [item.text for item in completer.get_completions(Document("/"), None)]
+        self.assertIn("pause", values)
+        self.assertIn("stop", values)
+        self.assertIn("status", values)
+        self.assertNotIn("play", values)
+
+    def test_enhanced_input_can_be_built_in_a_terminal_session(self):
+        from prompt_toolkit.application.current import create_app_session
+        from prompt_toolkit.input import create_pipe_input
+        from prompt_toolkit.output import DummyOutput
+
+        from trina.console_ui import EnhancedConsoleInput
+
+        with create_pipe_input() as pipe_input, create_app_session(input=pipe_input, output=DummyOutput()):
+            editor = EnhancedConsoleInput(
+                status=lambda: "就绪", running=lambda: False,
+                dynamic_values=lambda _command, _args: (), plain=True,
+            )
+        self.assertIsNotNone(editor.session.completer)
+
+    def test_command_catalog_drives_help_and_toolbar_hint(self):
+        self.assertIn("play", command_names())
+        self.assertIn("clear", command_names())
+        self.assertIn("--max-steps", command_hint("/play"))
+        self.assertIn("输入 /", command_hint("hello"))
 
     def test_external_markup_is_literal_and_terminal_controls_are_removed(self):
         value = "[bold red]原始文本[/bold red]\x1b[2J\x1b]0;伪造标题\x07尾部"
@@ -68,7 +116,8 @@ class TestTerminalUI(unittest.TestCase):
             return original(name, *args, **kwargs)
         with patch("builtins.__import__", side_effect=without_rich):
             text = render_home(TrinaConfig.load(), "all", width=40, color=True)
-        self.assertIn("T R I N A", text)
+        self.assertIn("TRINA", text)
+        self.assertIn("0.2.0", text)
         self.assertIn("/play", text)
         self.assertNotIn("\x1b", text)
 
@@ -134,6 +183,22 @@ class TestTerminalUI(unittest.TestCase):
         text = "\n".join(output)
         self.assertIn("引号未闭合", text)
         self.assertIn("/status", text)
+
+    def test_help_can_show_one_command_with_all_options(self):
+        console, output = self.console()
+        console.handle("/help play")
+        text = "\n".join(output)
+        self.assertIn("命令 /play", text)
+        self.assertIn("--target", text)
+        self.assertIn("--approve", text)
+        self.assertIn("拿到 flag", text)
+
+    def test_dynamic_completion_reads_real_tools_and_ranges(self):
+        console, _ = self.console()
+        tools = [item.value for item in console._completion_values("tool", [])]
+        ranges = [item.value for item in console._completion_values("ranges", ["status"])]
+        self.assertIn("port_scan", tools)
+        self.assertIn("lab", ranges)
 
     def test_prompt_distinguishes_approval_pause_and_stop(self):
         console, _ = self.console()

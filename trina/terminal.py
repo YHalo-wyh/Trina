@@ -6,6 +6,7 @@ import os
 import re
 import shutil
 import sys
+import time
 import unicodedata
 from typing import Any
 
@@ -13,6 +14,25 @@ PHASES = {"recon": "侦察", "enum": "枚举", "vuln": "验证", "exploit": "利
 STATUSES = {"running": "运行中", "chat": "对话", "success": "完成", "partial": "部分完成", "failed": "失败", "blocked": "已阻止", "stopped": "已停止"}
 VERDICTS = {"CONFIRMED": "已确认", "NOT_CONFIRMED": "本轮未确认", "INCONCLUSIVE": "证据不足"}
 _ANSI = re.compile(r"\x1b(?:\][^\x07\x1b]*(?:\x07|\x1b\\)|\[[0-?]*[ -/]*[@-~]|[@-_])")
+
+# 七行字形在普通终端里也能辨认；窄窗口改用五行字形。
+_LOGO_WIDE = (
+    ("███████", "███  ██", "███████", "██   ██", " █████ "),
+    ("   █   ", "██   ██", "   █   ", "███  ██", "██   ██"),
+    ("   █   ", "███  ██", "   █   ", "████ ██", "██   ██"),
+    ("   █   ", "██████ ", "   █   ", "██ ████", "███████"),
+    ("   █   ", "██ ███ ", "   █   ", "██  ███", "██   ██"),
+    ("   █   ", "██  ███", "   █   ", "██   ██", "██   ██"),
+    ("   █   ", "██   ██", "███████", "██   ██", "██   ██"),
+)
+_LOGO_NARROW = (
+    ("█████", "████ ", "█████", "█   █", " ███ "),
+    ("  █  ", "█   █", "  █  ", "██  █", "█   █"),
+    ("  █  ", "████ ", "  █  ", "█ █ █", "█████"),
+    ("  █  ", "█  █ ", "  █  ", "█  ██", "█   █"),
+    ("  █  ", "█   █", "█████", "█   █", "█   █"),
+)
+_LOGO_COLORS = ("#22d3ee", "#38bdf8", "#60a5fa", "#818cf8", "#a78bfa")
 
 
 def clean_text(value: Any) -> str:
@@ -110,18 +130,87 @@ def render_message(message: str, *, label: str = "提示", width: int | None = N
     return stream.getvalue().rstrip("\n")
 
 
-def render_home(config: Any, approval_mode: str, *, width: int | None = None, color: bool = False) -> str:
+def _home_logo(width: int, *, color: bool, sweep: int = -1) -> str:
+    """按终端宽度绘制 TRINA 字形；sweep 用于短暂的入场高光。"""
+    try:
+        from rich.console import Console
+        from rich.text import Text
+    except ImportError:
+        if width < 36:
+            return "T R I N A"
+        glyph = _LOGO_WIDE if width >= 50 else _LOGO_NARROW
+        gap = "  " if width >= 50 else " "
+        return "\n".join(gap.join(row) for row in glyph)
+
+    output = io.StringIO()
+    console = Console(file=output, width=width, force_terminal=color, color_system="truecolor" if color else None,
+                      no_color=not color, legacy_windows=False, highlight=False)
+    if width < 36:
+        console.print(Text("T R I N A", style="bold cyan" if color else ""))
+        return output.getvalue().rstrip("\n")
+    glyph = _LOGO_WIDE if width >= 50 else _LOGO_NARROW
+    gap = "  " if width >= 50 else " "
+    for row in glyph:
+        line = Text()
+        for index, letter in enumerate(row):
+            if index:
+                line.append(gap)
+            style = f"bold {_LOGO_COLORS[index]}" if color else ""
+            if index == sweep:
+                style = "bold #ffffff" if color else ""
+            line.append(letter, style=style)
+        console.print(line, soft_wrap=True)
+    return output.getvalue().rstrip("\n")
+
+
+def render_home(config: Any, approval_mode: str, *, width: int | None = None, color: bool = False,
+                sweep: int = -1) -> str:
+    """无边框品牌首页；静态输出与交互动画共用相同的最终画面。"""
     from . import __version__
+
     actual_width = width if width is not None else terminal_width()
-    shortcuts = ("/play       开始任务      /board     结果与证据\n/model      切换模型      /help      全部命令"
-                 if actual_width >= 76 else "/play    开始任务\n/board   结果与证据\n/model   切换模型\n/help    全部命令")
-    return render_panel(f"T R I N A  /  {__version__}", rows=[
-        ("模型", config.llm.model), ("后端", config.llm.backend),
-        ("执行设置", f"审批 {approval_mode} · 策略 {config.policy.mode} · 等级上限 {config.scope.exploit_level}"),
-        ("授权范围", ", ".join([*config.scope.authorized_cidrs, *config.scope.authorized_hosts]) or "未配置"),
-    ], sections=[("开始", "直接输入问题开始对话，或使用 /play 启动完整任务。"),
-                 ("常用入口", shortcuts)],
-       footer="运行中：直接输入提示介入 · /status 查看 · /pause 暂停 · /stop 停止\n审批时：y 允许 / n 拒绝；回车查看状态。", width=width, color=color)
+    title = f"TRINA  {__version__}  ·  全自动渗透测试 Agent"
+    model = f"模型 {clean_text(config.llm.model)} · 后端 {clean_text(config.llm.backend)}"
+    controls = f"审批 {clean_text(approval_mode)} · 策略 {clean_text(config.policy.mode)} · 等级 {clean_text(config.scope.exploit_level)}"
+    guide = "输入 / 打开命令索引  ·  直接输入问题开始对话"
+    shortcuts = "/play 开始任务  ·  /board 查看结果  ·  /help 查看选项"
+    logo = _home_logo(actual_width, color=color, sweep=sweep)
+    try:
+        from rich.console import Console
+        from rich.text import Text
+    except ImportError:
+        return _wrap("\n".join((logo, "", title, model, controls, guide, shortcuts)), actual_width)
+
+    output = io.StringIO()
+    console = Console(file=output, width=actual_width, force_terminal=color,
+                      color_system="truecolor" if color else None, no_color=not color,
+                      legacy_windows=False, highlight=False)
+    console.print(Text.from_ansi(logo), soft_wrap=True, end="\n\n")
+    console.print(Text(_wrap(title, actual_width), style="bold"), soft_wrap=True)
+    console.print(Text(_wrap(model, actual_width), style="dim"), soft_wrap=True)
+    console.print(Text(_wrap(controls, actual_width), style="dim"), soft_wrap=True, end="\n\n")
+    console.print(Text(_wrap(guide, actual_width), style="bold cyan" if color else ""), soft_wrap=True)
+    console.print(Text(_wrap(shortcuts, actual_width), style="dim"), soft_wrap=True)
+    return output.getvalue().rstrip("\n")
+
+
+def show_home(config: Any, approval_mode: str, *, output, color: bool, animate: bool) -> None:
+    """交互终端播放一次高光掠过；动画结束后留下可读的首页。"""
+    if animate and color:
+        try:
+            from rich.console import Console
+            from rich.live import Live
+            from rich.text import Text
+
+            live_console = Console(file=sys.stdout, width=terminal_width(), force_terminal=True,
+                                   color_system="truecolor", legacy_windows=False)
+            with Live(Text(""), console=live_console, transient=True, refresh_per_second=30) as live:
+                for index in range(5):
+                    live.update(Text.from_ansi(_home_logo(terminal_width(), color=True, sweep=index)), refresh=True)
+                    time.sleep(0.085)
+        except (ImportError, OSError):
+            pass
+    output(render_home(config, approval_mode, color=color))
 
 
 def render_step(step: Any, *, width: int | None = None, color: bool = False) -> str:

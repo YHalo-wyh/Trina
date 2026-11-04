@@ -2,6 +2,10 @@
 
 决策流程及每一步的设计理由详见[《设计决策》](../设计决策.md)。该文按实际执行顺序展开输入输出、规则、替代方案、失败分支和验证依据；本页保留总体模块契约。相关描述于 2026-10-26 对照实现核对。
 
+## V2 首版：Swarm 运行层
+
+`trina swarm` 在现有单 Agent 执行链外增加 `trina.swarm.SwarmRuntime`。Commander 验证任务 DAG、按优先级领取就绪任务、用租约绑定 Worker，并在任务结束时原子写入 `swarm.json`。`WorkerPool` 复用后端资源；每个任务重新创建 `PentestAgent` 与按能力筛选的 `ToolRegistry`，所以 ReAct 上下文、工作目录、状态、审计和报告彼此独立。下游任务只接收前序任务的结构化事实摘要。网络目标和工具动作仍由原有 `ScopeGuard` 与注册表执行链判定。详见 [Swarm 使用说明](SWARM.md)。
+
 ## 1. 总览
 
 ```mermaid

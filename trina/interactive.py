@@ -22,51 +22,18 @@ import time
 from typing import Any, Callable
 
 from .config import TrinaConfig
+from .console_ui import (
+    ChoiceSpec, EnhancedConsoleInput, command_detail_sections, command_help_sections,
+    command_names, enhanced_input_available, find_command,
+)
 from .session import APPROVAL_MODES, Session
 from .terminal import (
     PHASES, clean_text, render_approval, render_home, render_message,
-    render_panel, render_step, terminal_width, use_color,
+    render_panel, render_step, show_home, terminal_width, use_color,
 )
 
-HELP_TEXT = """这是**对话式**控制台：直接说人话即可（例如「你好」「帮我看看 127.0.0.1:9099 有什么漏洞」「继续」），
-Trina 会回答你；需要动手时它会自己调用工具执行（照样过授权控制器、护栏与审计）。以 / 开头的输入一律当命令。
-
-会话与模型:
-  /board                      工作台视图：任务状态、研究成果、假设台账、覆盖、成本一屏看
-  /hypotheses                 假设台账（按优先级排序，含状态与置信度）
-  /graph                      证据关系图（mermaid：结论→证据→检查项/假设）
-  /model [list|<spec>]        看/换模型（如 /model deepseek/deepseek-chat，或 /model list 列出可选）
-  /backend <omp|deepseek>     切换模型后端（omp 复用 omp 鉴权；deepseek 直连官方 API）
-  /save                       把当前后端与模型持久化到 ~/.trina/env（下次启动仍是这个设置）
-  /usage                      查看本次会话的模型调用次数/token/成本
-  /history [n]                查看最近对话（含工具结果摘要）
-  /new | /clear               开启新对话会话（清空上下文，审计另起一个文件）
-
-任务与工具:
-  /play [--target T] [--range NAME] [--goal G] [--max-steps N] [--approve MODE]
-                              一条命令开打：自动准备靶场 → 全自动渗透 → 出报告
-  /run <target> [--goal G] ... 对指定目标跑一轮完整任务（含阶段机与结论/覆盖）
-  /status                     当前状态（空闲时显示上一轮结论与覆盖）
-  /approve <off|exploit|verify|all>   调整审批闸门（默认 exploit）
-  /tools   /tool <name> --params '<json>'   工具清单 / 单工具执行
-  /guard check <target>       授权范围校验
-  /ranges [list|status <name>]  靶场适配器状态
-  /revoke <target_id> /grant <target_id>    撤销/恢复某注册目标的授权
-  /report [--state <f>]       由状态重建报告；  /review [--state <f>]  评价 Agent 复核
-  /audit verify <logs/*.jsonl>  校验审计哈希链
-  /lab                        本地靶机（故意脆弱，仅回环）
-  /help /quit                 帮助 / 退出
-
-运行中可用: y / n 审批 · hint <文本>（或直接说人话＝介入提示）· status · board · pause · resume · stop"""
-
 #: 已知命令名（用于区分"命令"与"对 Agent 说话"）
-COMMAND_NAMES = {
-    "help", "?", "play", "run", "status", "approve", "hint", "pause", "resume", "stop",
-    "revoke", "grant", "y", "yes", "n", "no", "deny", "tools", "tool", "guard", "ranges",
-    "report", "review", "audit", "lab", "quit", "exit", "q",
-    "model", "backend", "history", "new", "usage", "save", "clear",
-    "board", "hypotheses", "graph",
-}
+COMMAND_NAMES = command_names() | {"y", "yes", "n", "no", "deny"}
 
 
 class Console:
@@ -85,7 +52,9 @@ class Console:
         plain: bool = False,
     ):
         self.config = config or TrinaConfig.load()
-        self._input = input_fn or input
+        self._input = input_fn
+        self._enhanced_input: EnhancedConsoleInput | None = None
+        self._plain = plain
         self.output = output or (lambda line: print(line, flush=True))
         self.color = use_color(plain=plain or output is not None)
         self._live_step: Any = None
@@ -125,15 +94,31 @@ class Console:
         self._live_step = step
         self._display(render_step(step, color=self.color))
 
-    def _show_help(self) -> None:
-        self._display(render_panel("命令指南", sections=[("", HELP_TEXT.replace("**", ""))], color=self.color))
+    def _show_help(self, args: list[str] | None = None) -> None:
+        name = (args or [""])[0].lstrip("/")
+        if name:
+            spec = find_command(name)
+            if spec is None:
+                self._emit(f"没有找到命令 /{name}；输入 /help 查看完整索引。")
+                return
+            self._display(render_panel(
+                f"命令 /{spec.name}", sections=command_detail_sections(spec),
+                footer="在输入框键入 / 可实时筛选；Tab 补全，↑↓ 选择。", color=self.color,
+            ))
+            return
+        self._display(render_panel(
+            "命令索引", sections=command_help_sections(),
+            footer="输入 / 打开实时命令索引 · 继续输入可筛选 · Tab 补全 · /help <命令> 查看选项",
+            color=self.color,
+        ))
 
     # ------------------------------------------------------------------ 主循环
     def run(self) -> int:
-        self._display(render_home(self.config, self.session.approval_mode, color=self.color))
+        show_home(self.config, self.session.approval_mode, output=self._display, color=self.color,
+                  animate=self._input is None and self.output is not None)
         while not self.exit_requested:
             try:
-                raw = self._input(self._prompt())
+                raw = self._read_input()
             except (EOFError, KeyboardInterrupt):
                 if self.session.running and self.session.thread is not None:
                     self._emit("输入已结束：等待当前对话/任务收尾（最多 20 秒）…")
@@ -147,13 +132,80 @@ class Console:
         self._cleanup()
         return 0
 
-    def _prompt(self) -> str:
-        short = clean_text((self.config.llm.model or "?").split("/")[-1]).replace("\n", " ")[:28]
+    def _read_input(self) -> str:
+        """测试/重定向走普通输入，真实 TTY 使用带索引的增强输入框。"""
+        if self._input is not None:
+            return self._input(self._prompt())
+        if self._enhanced_input is None and enhanced_input_available():
+            self._enhanced_input = EnhancedConsoleInput(
+                status=self._prompt_status,
+                running=lambda: self.session.running,
+                dynamic_values=self._completion_values,
+                plain=self._plain,
+            )
+        if self._enhanced_input is not None:
+            return self._enhanced_input.read()
+        return input(self._prompt())
+
+    def _prompt_status(self) -> str:
+        """增强输入框底栏的紧凑动态状态。"""
+        short = clean_text((self.config.llm.model or "?").split("/")[-1]).replace("\n", " ")[:24]
         status = "就绪"
         if self.session.running:
-            status = "待审批 y/n" if self.session.pending else ("暂停" if self.session.pause_event.is_set() else ("停止中" if self.session.stop_event.is_set() else "运行中"))
+            status = "待审批 y/n" if self.session.pending else (
+                "暂停" if self.session.pause_event.is_set() else (
+                    "停止中" if self.session.stop_event.is_set() else "运行中"
+                )
+            )
+        return f"{status} · {short} · 审批 {self.session.approval_mode}"
+
+    def _prompt(self) -> str:
+        short = clean_text((self.config.llm.model or "?").split("/")[-1]).replace("\n", " ")[:28]
+        status = self._prompt_status().split(" · ", 1)[0]
         # 状态在下一次读取输入时刷新；后台进展单独输出，不清空输入缓冲。
         return f"trina · {status} · {short} > " if terminal_width() >= 60 else f"trina · {status} > "
+
+    def _completion_values(self, command: str, completed_args: list[str]) -> list[ChoiceSpec]:
+        """补全运行时才能知道的模型、工具、靶场和产物路径。"""
+        from pathlib import Path
+
+        if command == "model" and not completed_args:
+            try:
+                from .models import list_models
+
+                return [ChoiceSpec(item.spec, item.name or item.provider) for item in list_models(limit=40)]
+            except Exception:  # noqa: BLE001 - 补全失败不能影响输入
+                return []
+        if command == "tool" and not completed_args:
+            try:
+                registry = self.registry
+                if registry is None:
+                    from .tools import build_registry
+
+                    registry = build_registry()
+                descriptions = {item["name"]: item.get("description", "") for item in registry.describe()}
+                return [ChoiceSpec(name, descriptions.get(name, "")) for name in registry.names()]
+            except Exception:  # noqa: BLE001
+                return []
+        range_names = []
+        try:
+            range_names = sorted(path.stem for path in (Path(__file__).resolve().parent.parent / "configs" / "ranges").glob("*.yaml"))
+        except OSError:
+            pass
+        if command in ("play",) and completed_args[-1:] in (["--range"], ["-r"]):
+            return [ChoiceSpec(name, "已登记靶场") for name in range_names]
+        if command == "ranges" and completed_args == ["status"]:
+            return [ChoiceSpec(name, "已登记靶场") for name in range_names]
+
+        state_flags = {"--state"}
+        if command in ("report", "review") and completed_args[-1:] and completed_args[-1] in state_flags:
+            paths = sorted(self.config.workspace_dir.glob("*/state.json"), key=lambda item: item.stat().st_mtime, reverse=True)
+            return [ChoiceSpec(str(path), "运行状态") for path in paths[:12]]
+        if command == "audit" and completed_args and completed_args[0] in ("verify", "show", "tail"):
+            if len(completed_args) == 1:
+                paths = sorted(self.config.audit_dir.glob("*.jsonl"), key=lambda item: item.stat().st_mtime, reverse=True)
+                return [ChoiceSpec(str(path), "审计日志") for path in paths[:12]]
+        return []
 
     def _banner(self) -> None:
         self._display(render_home(self.config, self.session.approval_mode, color=self.color))
@@ -201,8 +253,8 @@ class Console:
             return True
 
         handler = {
-            "help": self._show_help,
-            "?": self._show_help,
+            "help": lambda: self._show_help(args),
+            "?": lambda: self._show_help(args),
             "play": lambda: self._cmd_play(args),
             "run": lambda: self._cmd_run(args),
             "status": self._show_status,
@@ -283,7 +335,7 @@ class Console:
             self._emit("任务运行中：先 stop 再退出。")
             return True
         if command in ("help", "?"):
-            self._show_help()
+            self._show_help(args)
             return True
         if not forced and command not in COMMAND_NAMES:
             # 运行中说人话 = 人工介入提示（最自然的交互）；已知命令名仍按命令处理

@@ -1,0 +1,62 @@
+# Trina Swarm 首版使用说明
+
+`trina swarm` 是 V2 RASC 架构的任务级运行入口。Commander 负责 DAG 调度，Worker 运行独立的 `PentestAgent` ReAct 循环。每个任务获得新的运行目录、状态文件、审计日志和报告；Worker 池复用模型后端实例，不继承前一个任务的对话记录。
+
+## 快速运行
+
+```powershell
+.\.venv\Scripts\python.exe -m trina swarm --target http://127.0.0.1:9099 --goal "验证目标并获取 flag" --workers 2
+```
+
+默认任务图包含并行的 `recon`（服务识别）与 `web`（Web 面研究），完成后执行 `verify`。各任务默认最多 12 步、600 秒，可用 `--max-steps` 和 `--max-seconds` 修改。`--workers` 受 `scope.max_host_concurrency` 限制；每个 Worker 的请求速率份额按总 Worker 数分配。动作等级和目标授权仍由配置与现有护栏判定。
+
+## 自定义任务图
+
+将下列内容保存为 `tasks.yaml`：
+
+```yaml
+tasks:
+  - id: app
+    target: http://127.0.0.1:9099
+    goal: 梳理应用结构与入口
+    capabilities: [web]
+    priority: 20
+    max_steps: 8
+  - id: api
+    target: http://127.0.0.1:9099
+    goal: 研究 API 参数与响应
+    capabilities: [web]
+    priority: 10
+    max_steps: 8
+  - id: verify
+    target: http://127.0.0.1:9099
+    goal: 验证前序发现并总结结果
+    capabilities: [verify]
+    depends_on: [app, api]
+    max_steps: 12
+```
+
+```powershell
+.\.venv\Scripts\python.exe -m trina swarm --manifest tasks.yaml --workers 2
+```
+
+能力名：`recon`、`web`、`verify`、`full`。它们按工具类别装配现有 `ToolRegistry`，未知能力、重复研究目标、缺失依赖和依赖环在启动前拒绝。程序接口 `SwarmRuntime.add_task(TaskSpec(...))` 可向尚在运行的图中添加候选研究任务，由 Commander 去重与校验。
+
+## 恢复与产物
+
+```powershell
+.\.venv\Scripts\python.exe -m trina swarm --resume runs\<swarm-id>\swarm.json
+```
+
+恢复保留已完成任务，只重试中断时仍为 `running` 的任务。恢复粒度是整个任务，尚不恢复 ReAct 循环的中间一步。任务结果通过结构化主机、发现、Flag、计数和工件路径传递给下游任务，不共享完整对话。
+
+| 产物 | 路径 |
+|---|---|
+| Commander 检查点 | `runs/<swarm-id>/swarm.json` |
+| Commander 哈希链审计 | `logs/<swarm-id>.jsonl` |
+| Commander 汇总报告 | `reports/<swarm-id>_report.{md,html}` |
+| Worker 状态 | `runs/<swarm-id>-<task-id>-<attempt>/state.json` |
+| Worker 哈希链审计 | `logs/<swarm-id>-<task-id>-<attempt>.jsonl` |
+| Worker 报告 | `reports/<swarm-id>-<task-id>-<attempt>_report.{md,html}` |
+
+当前首版支持任务级并行、能力装配、租约、复用、结构化接力、候选任务 API 和任务级恢复。运行中交互式人工接管、自动从 Worker 结果生成新任务、上下文中途迁移、经验检索与 A/B/C/D 消融评测尚待下一阶段实现。
