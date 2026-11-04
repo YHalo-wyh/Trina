@@ -55,6 +55,18 @@ Trina 通过平台的 `/openapi/v1/challenges/*` 接口接入 TSecBench：
 托管模式下 `trina bench` 会自动把 `https://<厂商域名>/...` 改写成
 `http://<厂商域名>.tsecbench.gw/...`；本地模式需显式 `--gateway` 或设 `TRINA_BENCH_HOSTED=1`。
 
+### OpenCode Go 接入
+
+OpenCode Go 的 OpenAI 兼容接口以 `https://opencode.ai/inference/go/openai/v1` 为 Base URL；
+托管环境对应 `http://opencode.ai.tsecbench.gw/inference/go/openai/v1`。
+模型名使用 Go 套餐中已启用的 ID，例如 `glm-5.3-flash`。
+密钥只通过运行时的 `TRINA_LLM_API_KEY` 注入，不写入镜像、配置或仓库。
+
+Go 要求请求带稳定的 `x-opencode-session`，并用 Agent 自身的 User-Agent 标识客户端。
+`OpenAICompatBackend` 对上述 Go 端点自动发送这两个请求头；同一次后端实例的会话 ID 保持不变。
+接口直连可用不代表托管网关放行：提交完整评测前，应先用 `TRINA_BENCH_LIMIT=1`
+进行短时冒烟，并在平台过程观察中确认出现模型会话。平台页面的 API 白名单也需包含 `opencode.ai`。
+
 ## 3. 本地模式（先做）
 
 1. 在 TSecBench 评测页选择本地模式，创建跑分任务，拿到 `BENCHMARK_BASE_URL`、`BENCHMARK_TOKEN`，连接平台 VPN。

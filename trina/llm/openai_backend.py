@@ -10,6 +10,8 @@ import os
 import time
 import urllib.error
 import urllib.request
+import uuid
+from urllib.parse import urlsplit
 
 from ..config import LLMConfig
 from .base import LLMBackend, LLMResponse, LLMUsage
@@ -21,6 +23,13 @@ class OpenAICompatBackend(LLMBackend):
     def __init__(self, config: LLMConfig):
         super().__init__(config)
         self.base_url = (config.base_url or os.environ.get("TRINA_LLM_BASE_URL") or "").rstrip("/")
+        parts = urlsplit(self.base_url)
+        self._opencode_go = (
+            parts.hostname in {"opencode.ai", "opencode.ai.tsecbench.gw"}
+            and parts.path.rstrip("/") == "/inference/go/openai/v1"
+        )
+        # 同一个后端实例对应一段 Agent 对话；Go 用稳定会话号做路由与缓存。
+        self._session_id = uuid.uuid4().hex if self._opencode_go else ""
 
     def api_key(self) -> str:
         return os.environ.get(self.config.api_key_env, "")
@@ -42,10 +51,16 @@ class OpenAICompatBackend(LLMBackend):
             "max_tokens": max_tokens or self.config.max_tokens,
             "stream": False,
         }
+        headers = {"Content-Type": "application/json"}
+        if self.api_key():
+            headers["Authorization"] = f"Bearer {self.api_key()}"
+        if self._opencode_go:
+            headers["User-Agent"] = "Trina/0.2.0"
+            headers["x-opencode-session"] = self._session_id
         request = urllib.request.Request(
             f"{self.base_url}/chat/completions",
             data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json", **({"Authorization": f"Bearer {self.api_key()}"} if self.api_key() else {})},
+            headers=headers,
             method="POST",
         )
         started = time.monotonic()
