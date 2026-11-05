@@ -52,7 +52,36 @@ class OpenCodeGoHeadersTest(unittest.TestCase):
             self.assertTrue(backend.complete("system", "user").ok)
 
         self.assertIsNone(requests[0].get_header("X-opencode-session"))
-        self.assertIsNone(requests[0].get_header("User-agent"))
+        self.assertEqual(requests[0].get_header("User-agent"), "Trina/0.2.0")
+
+    def test_native_messages_and_responses_protocols(self) -> None:
+        cases = [
+            ("anthropic", {"content": [{"type": "text", "text": "hello"}], "usage": {"input_tokens": 5, "output_tokens": 2}}, "/messages"),
+            ("responses", {"output": [{"content": [{"type": "output_text", "text": "hello"}]}], "usage": {"input_tokens": 5, "output_tokens": 2}}, "/responses"),
+        ]
+        for api, body, endpoint in cases:
+            with self.subTest(api=api):
+                backend = OpenAICompatBackend(LLMConfig(base_url="https://service.example/v1", api=api), key_override="private")
+                with patch("trina.llm.openai_backend.urllib.request.urlopen", return_value=io.BytesIO(json.dumps(body).encode())) as send:
+                    result = backend.complete("system", "user")
+                request = send.call_args.args[0]
+                self.assertTrue(request.full_url.endswith(endpoint))
+                payload = json.loads(request.data)
+                self.assertEqual(result.text, "hello")
+                self.assertEqual(result.usage.input_tokens, 5)
+                if api == "anthropic":
+                    self.assertEqual(payload["system"], "system")
+                    self.assertEqual(request.get_header("X-api-key"), "private")
+                    self.assertTrue(request.get_header("Anthropic-version"))
+
+    def test_http_error_never_echoes_the_key(self) -> None:
+        import urllib.error
+        backend = OpenAICompatBackend(LLMConfig(base_url="https://service.example/v1"), key_override="private-key")
+        error = urllib.error.HTTPError("https://service.example", 403, "denied", {}, io.BytesIO(b'private-key rejected'))
+        with patch("trina.llm.openai_backend.urllib.request.urlopen", side_effect=error):
+            result = backend.complete("system", "user")
+        self.assertFalse(result.ok)
+        self.assertNotIn("private-key", result.error)
 
 
 if __name__ == "__main__":

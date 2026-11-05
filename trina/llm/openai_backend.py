@@ -20,8 +20,9 @@ from .base import LLMBackend, LLMResponse, LLMUsage
 class OpenAICompatBackend(LLMBackend):
     name = "openai"
 
-    def __init__(self, config: LLMConfig):
+    def __init__(self, config: LLMConfig, *, key_override: str | None = None):
         super().__init__(config)
+        self._key_override = key_override
         self.base_url = (config.base_url or os.environ.get("TRINA_LLM_BASE_URL") or "").rstrip("/")
         parts = urlsplit(self.base_url)
         self._opencode_go = (
@@ -32,7 +33,62 @@ class OpenAICompatBackend(LLMBackend):
         self._session_id = uuid.uuid4().hex if self._opencode_go else ""
 
     def api_key(self) -> str:
+        if self._key_override is not None:
+            return self._key_override
+        if self.config.profile:
+            from ..providers import ProfileStore
+            return ProfileStore().key(self.config.profile, self.config.api_key_env)
         return os.environ.get(self.config.api_key_env, "")
+
+    def _headers(self) -> dict[str, str]:
+        headers = {"Content-Type": "application/json", "User-Agent": "Trina/0.2.0"}
+        key = self.api_key()
+        if key:
+            headers["Authorization"] = f"Bearer {key}"
+        if self.config.api == "anthropic":
+            headers["anthropic-version"] = "2023-06-01"
+            if key:
+                headers["x-api-key"] = key
+        if self._opencode_go:
+            headers["x-opencode-session"] = self._session_id
+        return headers
+
+    def _request_json(self, url: str, payload: dict | None = None) -> tuple[dict, str]:
+        request = urllib.request.Request(
+            url, data=json.dumps(payload).encode("utf-8") if payload is not None else None,
+            headers=self._headers(), method="POST" if payload is not None else "GET",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=self.config.timeout) as response:
+                body = json.loads(response.read().decode("utf-8", "replace"))
+                if not isinstance(body, dict):
+                    return {}, "模型响应必须是 JSON 对象"
+                return body, ""
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", "replace")
+            key = self.api_key()
+            if key:
+                detail = detail.replace(key, "<redacted>")
+            return {}, f"HTTP {exc.code}: {detail[:300]}"
+        except Exception as exc:
+            detail = str(exc)
+            key = self.api_key()
+            return {}, f"请求失败: {detail.replace(key, '<redacted>') if key else detail}"
+
+    def list_remote_models(self) -> list[str]:
+        """仅在模型管理页显式刷新时查询当前连接的模型目录。"""
+        base = self.base_url
+        if self._opencode_go:
+            base = base.replace("/go/openai/v1", "/go/v1")
+        body, error = self._request_json(f"{base}/models")
+        if error:
+            raise ValueError(error)
+        rows = body.get("data")
+        if not isinstance(rows, list):
+            raise ValueError("供应商没有返回 data 模型数组；可手动输入模型 ID")
+        return sorted({str(row["id"]) for row in rows
+                       if isinstance(row, dict) and row.get("id")
+                       and not any(tag in str(row["id"]).lower() for tag in ("embed", "whisper", "tts", "rerank"))})
 
     def complete(
         self,
@@ -51,45 +107,49 @@ class OpenAICompatBackend(LLMBackend):
             "max_tokens": max_tokens or self.config.max_tokens,
             "stream": False,
         }
-        headers = {"Content-Type": "application/json"}
-        if self.api_key():
-            headers["Authorization"] = f"Bearer {self.api_key()}"
-        if self._opencode_go:
-            headers["User-Agent"] = "Trina/0.2.0"
-            headers["x-opencode-session"] = self._session_id
-        request = urllib.request.Request(
-            f"{self.base_url}/chat/completions",
-            data=json.dumps(payload).encode("utf-8"),
-            headers=headers,
-            method="POST",
-        )
+        endpoint = "chat/completions"
+        if self.config.api == "anthropic":
+            endpoint = "messages"
+            payload.pop("messages")
+            payload.update(system=system, messages=[{"role": "user", "content": user}])
+        elif self.config.api == "responses":
+            endpoint = "responses"
+            payload = {"model": self.config.model, "instructions": system, "input": user,
+                       "max_output_tokens": max_tokens or self.config.max_tokens, "stream": False}
+        elif self.config.model.startswith(("gpt-5", "gpt-6", "o1", "o3", "o4")):
+            payload["max_completion_tokens"] = payload.pop("max_tokens")
+            payload.pop("temperature")
         started = time.monotonic()
-        try:
-            with urllib.request.urlopen(request, timeout=self.config.timeout) as response:  # noqa: S310 - 用户显式配置的端点
-                body = json.loads(response.read().decode("utf-8", "replace"))
-        except urllib.error.HTTPError as exc:
-            detail = exc.read().decode("utf-8", "replace")[:300]
-            return self._tally(LLMResponse(ok=False, error=f"HTTP {exc.code}: {detail}"))
-        except Exception as exc:  # noqa: BLE001 - 网络层异常统一转为错误响应
-            return self._tally(LLMResponse(ok=False, error=f"请求失败: {exc}"))
+        body, error = self._request_json(f"{self.base_url}/{endpoint}", payload)
+        if error:
+            return self._tally(LLMResponse(ok=False, error=error))
 
         duration = round(time.monotonic() - started, 2)
         try:
-            message = body["choices"][0]["message"]
-        except (KeyError, IndexError, TypeError):
-            return self._tally(LLMResponse(ok=False, error=f"响应格式异常: {str(body)[:200]}", duration=duration))
+            if self.config.api == "anthropic":
+                message = {"content": "\n".join(block.get("text", "") for block in body["content"] if block.get("type") == "text")}
+            elif self.config.api == "responses":
+                message = {"content": "\n".join(block.get("text", "") for row in body["output"] for block in row.get("content", []) if block.get("type") == "output_text")}
+            else:
+                message = body["choices"][0]["message"]
+        except (KeyError, IndexError, TypeError, AttributeError):
+            return self._tally(LLMResponse(ok=False, error="响应格式异常：缺少模型输出字段", duration=duration))
         text = message.get("content") or ""
+        if isinstance(text, list):
+            text = "\n".join(str(block.get("text", "")) for block in text if isinstance(block, dict))
+        if not isinstance(text, str):
+            text = ""
         if not text.strip():
             # 推理型模型（如 DeepSeek 系列）可能把内容放在 reasoning_content
             text = message.get("reasoning_content") or message.get("reasoning") or ""
         if not text.strip():
             return self._tally(
-                LLMResponse(ok=False, error=f"模型返回空内容: {str(message)[:200]}", duration=duration)
+                LLMResponse(ok=False, error="模型返回空内容", duration=duration)
             )
         raw_usage = body.get("usage") or {}
         usage = LLMUsage(
-            input_tokens=int(raw_usage.get("prompt_tokens") or 0),
-            output_tokens=int(raw_usage.get("completion_tokens") or 0),
+            input_tokens=int(raw_usage.get("prompt_tokens") or raw_usage.get("input_tokens") or 0),
+            output_tokens=int(raw_usage.get("completion_tokens") or raw_usage.get("output_tokens") or 0),
             model=str(body.get("model") or self.config.model),
         )
         return self._tally(LLMResponse(text=text, usage=usage, duration=duration, ok=True))

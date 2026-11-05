@@ -3,7 +3,7 @@
 #
 #   bash scripts/install.sh                 # 装到 ~/.local/bin/trina（在 PATH 上，无需 sudo）
 #   bash scripts/install.sh --prefix /usr/local/bin   # 需要写权限（通常要 sudo）
-#   bash scripts/install.sh --api omp       # 默认后端改成 omp（默认 deepseek）
+#   bash scripts/install.sh --api omp       # 无已保存连接时使用 omp
 #   bash scripts/install.sh --uninstall     # 卸载
 #
 # 做三件事：
@@ -14,7 +14,7 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PREFIX="${HOME}/.local/bin"
-DEFAULT_API="deepseek"
+DEFAULT_API="profile"
 UNINSTALL=0
 
 while [[ $# -gt 0 ]]; do

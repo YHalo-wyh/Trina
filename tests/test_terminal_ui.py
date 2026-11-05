@@ -80,13 +80,41 @@ class TestTerminalUI(unittest.TestCase):
                 status=lambda: "就绪", running=lambda: False,
                 dynamic_values=lambda _command, _args: (), plain=True,
             )
-        self.assertIsNotNone(editor.session.completer)
+        self.assertIsNotNone(editor.buffer.completer)
+        self.assertFalse(editor.app.full_screen)
+
+    def test_partial_command_is_visible_below_input_and_enter_expands_it(self):
+        from prompt_toolkit.application.current import create_app_session
+        from prompt_toolkit.input import create_pipe_input
+        from prompt_toolkit.output import DummyOutput
+        from trina.console_ui import EnhancedConsoleInput
+
+        with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
+            editor = EnhancedConsoleInput(status=lambda: "ready", running=lambda: False,
+                                          dynamic_values=lambda *_: (), plain=True)
+            editor.buffer.text = "/h"
+            editor.buffer.cursor_position = 2
+            menu = "".join(text for _, text in editor._menu())
+            self.assertIn("/help", menu)
+            self.assertIn("/history", menu)
+            pipe.send_text("/h\r")
+            self.assertEqual(editor.read(), "/help")
 
     def test_command_catalog_drives_help_and_toolbar_hint(self):
         self.assertIn("play", command_names())
         self.assertIn("clear", command_names())
         self.assertIn("--max-steps", command_hint("/play"))
         self.assertIn("输入 /", command_hint("hello"))
+
+    def test_model_picker_search_and_enter_return_the_matching_id(self):
+        from prompt_toolkit.application.current import create_app_session
+        from prompt_toolkit.input import create_pipe_input
+        from prompt_toolkit.output import DummyOutput
+        from trina.console_ui import ChoiceSpec, select_option
+        with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
+            pipe.send_text("custom\r")
+            self.assertEqual(select_option("providers", [ChoiceSpec("deepseek", "DeepSeek"),
+                                                         ChoiceSpec("custom", "自定义")]), "custom")
 
     def test_external_markup_is_literal_and_terminal_controls_are_removed(self):
         value = "[bold red]原始文本[/bold red]\x1b[2J\x1b]0;伪造标题\x07尾部"

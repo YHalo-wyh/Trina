@@ -4,7 +4,7 @@
 
 | 文档 | 检查内容 |
 |---|---|
-| [需求](需求.md) | 使用者、场景、18 项功能需求、8 项质量要求、当前状态与验收口径 |
+| [需求](需求.md) | 使用者、场景、19 项功能需求、8 项质量要求、当前状态与验收口径 |
 | [规约](规约.md) | CLI 与 Agent 接口、任务清单、状态转换、Worker 租约、检查点、错误分支与测试场景 |
 | [设计决策](设计决策.md) | 原有单 Agent 决策链，以及 0.2.0 的 Agent 更新记录、修改原因、取舍与验证边界 |
 
@@ -37,7 +37,7 @@
 自动化渗透测试 Agent：**大模型 ReAct 决策 + 全套工具封装 + 多靶场适配 + 硬性安全护栏 + 标准报告 + 评测框架**。
 
 ```bash
-bash scripts/install.sh          # 装成全局命令：之后在任意目录敲 `trina` 即可（默认直连 DeepSeek）
+bash scripts/install.sh          # 装成全局命令，使用 /model 选择已保存连接
 trina                            # 交互控制台（人工可随时介入）
 trina play --goal "拿到 flag"     # 一条命令直接开打（自动起靶机 → 渗透 → 报告 → 回收）
 trina doctor                     # 环境自检（后端连通性、外部工具、护栏边界）
@@ -75,7 +75,7 @@ scripts/dev.sh play --api deepseek --goal "拿到 flag 并验证 SQL 注入" --m
 | `omp`（默认） | 本机已有 omp 且配好模型 | 无需（复用 omp 鉴权） | 50s/次全流程 |
 | `openai` + DeepSeek | 想独立于 omp、或要更低延迟/换机器 | `$DEEPSEEK_API_KEY`（`~/.trina/env`，0600，不入库） | **11s** 打穿 lab 并 CONFIRMED |
 
-> 密钥只从环境变量读取（`scripts/dev.sh` 会 source `~/.trina/env`）；仓库里**不含任何密钥**（见 `docs/SUBMISSION.md`）。
+> `/model` 可添加供应商、录入和切换命名 API Key，也支持环境变量。默认保存在仓库外 `~/.trina/providers.json`，详见 [模型管理与 30 个供应商预设](docs/MODELS.md)。临时产物的整理见 [仓库清理记录](docs/REPOSITORY_LAYOUT.md)。
 
 ## 五项能力
 
@@ -195,7 +195,7 @@ python3 -m trina bench --allow-exploit          # 逐题起容器 → 渗透 →
 
 托管模式镜像与平台操作见 [`docs/TSECBENCH_AGENT.md`](docs/TSECBENCH_AGENT.md)；镜像入口为
 `docker build -t trina-tsecbench .`，平台注入 `BENCHMARK_*` 后容器自动开始解题。
-OpenCode Go 的接入与两轮单题冒烟结果见 [TSecBench × OpenCode Go 记录](docs/TSECBENCH_OPENCODE_GO.md)。
+OpenCode Go 的接入与两轮单题冒烟结果见 [2026-11-04 评测报告](评测/2026-11-04_TSecBench_OpenCode_Go/评测报告.md)。
 按日期整理的评测报告、截图和脱敏结果数据见 [评测目录](评测/README.md)。
 
 ## 常用命令

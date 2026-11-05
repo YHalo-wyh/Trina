@@ -2,6 +2,8 @@
 runs/
 logs/
 reports/
+artifacts/
+providers.json
 
 # ---- Python ----
 __pycache__/

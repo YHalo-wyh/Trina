@@ -141,7 +141,7 @@ class Console:
                 status=self._prompt_status,
                 running=lambda: self.session.running,
                 dynamic_values=self._completion_values,
-                plain=self._plain,
+                plain=self._plain or not self.color,
             )
         if self._enhanced_input is not None:
             return self._enhanced_input.read()
@@ -157,7 +157,7 @@ class Console:
                     "停止中" if self.session.stop_event.is_set() else "运行中"
                 )
             )
-        return f"{status} · {short} · 审批 {self.session.approval_mode}"
+        return f"{status} · {self.config.llm.profile or self.config.llm.backend}/{short} · 审批 {self.session.approval_mode}"
 
     def _prompt(self) -> str:
         short = clean_text((self.config.llm.model or "?").split("/")[-1]).replace("\n", " ")[:28]
@@ -171,11 +171,19 @@ class Console:
 
         if command == "model" and not completed_args:
             try:
-                from .models import list_models
+                from .providers import PRESETS, ProfileStore
 
-                return [ChoiceSpec(item.spec, item.name or item.provider) for item in list_models(limit=40)]
+                store = ProfileStore()
+                return ([ChoiceSpec(p.id, f"已保存 · {p.model}") for p in store.profiles.values()]
+                        + [ChoiceSpec(p.id, f"{p.name} · 添加连接") for p in PRESETS])
             except Exception:  # noqa: BLE001 - 补全失败不能影响输入
                 return []
+        if command == "model" and completed_args in (["use"], ["keys"]):
+            from .providers import ProfileStore
+            return [ChoiceSpec(p.id, p.model) for p in ProfileStore().profiles.values()]
+        if command == "backend" and not completed_args:
+            from .providers import PRESETS
+            return [ChoiceSpec(p.id, p.name) for p in PRESETS]
         if command == "tool" and not completed_args:
             try:
                 registry = self.registry
@@ -296,6 +304,8 @@ class Console:
             return True
         try:
             handler()
+        except (KeyboardInterrupt, EOFError):
+            self._emit("已取消当前命令")
         except Exception as exc:  # noqa: BLE001 - 控制台不能因为单条命令崩掉
             self._emit(f"命令执行失败: {type(exc).__name__}: {exc}")
         return True
@@ -446,7 +456,36 @@ class Console:
 
     def _cmd_model(self, args: list[str]) -> None:
         llm = self.config.llm
-        if not args or args[0] in ("list", "ls", "?"):
+        if not args:
+            if self._input is not None or enhanced_input_available():
+                self._model_manager().run()
+            else:
+                self._emit(f"当前 {llm.profile or llm.backend} / {llm.model} · /model add 添加连接 · /model keys 管理密钥 · /model list 查看预设")
+            return
+        if args[0] in ("add", "keys", "use"):
+            manager = self._model_manager()
+            if args[0] == "add":
+                manager.add()
+            elif args[0] == "keys":
+                manager.keys(args[1] if len(args) > 1 else "")
+            elif len(args) > 1:
+                manager.use(args[1])
+            else:
+                manager.run()
+            return
+        from .providers import PRESETS, PRESET_BY_ID, ProfileStore
+        store = ProfileStore()
+        if args[0] in store.profiles:
+            self._model_manager().use(args[0])
+            return
+        if args[0] in PRESET_BY_ID:
+            # 官方预设也可用旧的 /backend <供应商> 直接启用环境变量鉴权。
+            if self._input is not None or enhanced_input_available():
+                self._model_manager().add(args[0])
+            else:
+                self._cmd_backend(args)
+            return
+        if args[0] in ("list", "ls", "?"):
             self._emit(f"当前后端 {llm.backend} · 模型 {llm.model}" + (f" · base_url {llm.base_url}" if llm.backend == "openai" else ""))
             from .models import list_models
 
@@ -458,24 +497,59 @@ class Console:
             for entry in entries:
                 marker = " ←当前" if entry.spec.endswith(llm.model) else ""
                 self.output(f"    {entry.render()}{marker}")
+            self._emit(f"内置 {len(PRESETS)} 个供应商预设 · /model 打开管理页 · /model add 添加连接")
+            for preset in PRESETS:
+                self.output(f"    {preset.id:<16} {preset.name}")
             return
         spec = args[0]
         from .models import normalize_spec
 
-        llm.model = normalize_spec(spec, llm.backend)
+        provider = (store.profiles[llm.profile].provider if llm.profile in store.profiles else
+                    next((p.id for p in PRESETS if p.base_url == llm.base_url), ""))
+        llm.model = normalize_spec(spec, llm.backend, provider=provider)
+        if llm.profile:
+            profile = store.profiles[llm.profile]
+            profile.model = llm.model
+            store.save()
         self._reload_backend()
-        self._emit(f"已切换模型（本会话）：{llm.model}（后端 {llm.backend}）—— 想长期生效用 /save")
+        self._emit(f"已切换模型{'并保存' if llm.profile else '（本会话）'}：{llm.model}（后端 {llm.backend}）"
+                   + ("" if llm.profile else " · /save 持久化"))
+
+    def _model_manager(self):
+        from .model_ui import ModelManager
+        from .console_ui import select_option
+
+        def ask(label, default="", *, secret=False):
+            if self._input is not None:
+                return self._input(label + " › ").strip() or default
+            if secret and not enhanced_input_available():
+                raise ValueError("密钥录入需要交互终端；也可通过供应商环境变量配置")
+            return ModelManager._ask(label, default, secret=secret)
+
+        def choose(title, choices, *, subtitle=""):
+            if self._input is None and enhanced_input_available():
+                return select_option(title, choices, subtitle=subtitle)
+            self._emit(title + (" · " + subtitle if subtitle else ""))
+            for i, item in enumerate(choices, 1):
+                self.output(f"  {i:02d} {item.description or item.value}")
+            value = ask("输入编号或名称，留空返回")
+            if value.isdigit() and 1 <= int(value) <= len(choices):
+                return choices[int(value) - 1].value
+            return next((c.value for c in choices if c.value == value), None)
+
+        return ModelManager(self.config, emit=self._emit, reload=self._reload_backend, ask=ask, choose=choose)
 
     def _cmd_backend(self, args: list[str]) -> None:
         llm = self.config.llm
         if not args:
-            self._emit(f"当前后端：{llm.backend}（可选：omp | deepseek）")
+            self._emit(f"当前后端：{llm.backend}；/model 管理供应商与密钥，/backend omp 复用 omp")
             return
         name = args[0].strip().lower()
         from .models import preset_for
 
         if name == "omp":
             llm.backend = "omp"
+            llm.profile, llm.api = "", "chat"
             if "/" not in llm.model:
                 llm.model = f"deepseek/{llm.model}"
             self._reload_backend()
@@ -483,11 +557,15 @@ class Console:
             return
         preset = preset_for(name)
         if preset is None:
-            self._emit(f"未知后端 {name}（可选 omp | deepseek）")
+            self._emit(f"未知供应商 {name}；使用 /model 添加官方或自定义连接")
+            return
+        if not preset["base_url"] or not preset.get("models"):
+            self._emit(f"{name} 需要选择模型或资源地址；使用 /model add 完成配置")
             return
         import os
 
         llm.backend = "openai"
+        llm.profile, llm.api = "", str(preset.get("api") or "chat")
         llm.base_url = str(preset["base_url"])
         llm.api_key_env = str(preset.get("api_key_env") or llm.api_key_env)
         models = list(preset.get("models") or [])
@@ -549,6 +627,35 @@ class Console:
         import os
         from pathlib import Path as _Path
 
+        if self.config.llm.profile:
+            from .providers import ProfileStore
+            store = ProfileStore()
+            profile = store.profiles[self.config.llm.profile]
+            profile.model = self.config.llm.model
+            store.active = profile.id
+            store.save()
+            self._emit(f"已保存到 {store.path}：连接 {profile.id} · 模型 {profile.model}")
+            return
+        from .providers import ProfileStore
+        store = ProfileStore()
+        if self.config.llm.backend == "openai":
+            from .providers import PRESETS, ProviderProfile
+            llm = self.config.llm
+            name = next((p.id for p in PRESETS if p.base_url == llm.base_url), "custom")
+            base_name, suffix = name, 2
+            while name in store.profiles:
+                name, suffix = f"{base_name}-{suffix}", suffix + 1
+            profile = ProviderProfile(name, base_name, llm.base_url, llm.model, llm.api_key_env, llm.api)
+            profile.validate()
+            store.profiles[name], store.active = profile, name
+            store.save()
+            store.apply(llm)
+            self._emit(f"已保存到 {store.path}：连接 {name} · 模型 {profile.model}")
+            return
+        if store.active:
+            store.active = ""
+            store.save()
+
         path = _Path(os.environ.get("TRINA_ENV_FILE") or (_Path.home() / ".trina" / "env"))
         keep: list[str] = []
         if path.exists():
@@ -558,7 +665,7 @@ class Console:
                 if not line.startswith(("export TRINA_API=", "export TRINA_MODEL="))
             ]
         keep.append(f"export TRINA_API={self.config.llm.backend}")
-        keep.append(f"export TRINA_MODEL={self.config.llm.model}")
+        keep.append(f"export TRINA_MODEL={shlex.quote(self.config.llm.model)}")
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("\n".join(keep).strip() + "\n", encoding="utf-8")
         try:

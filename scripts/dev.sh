@@ -35,8 +35,8 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# 默认后端优先级：命令行 --api > $TRINA_API（可由 ~/.trina/env 持久化）> omp
-API="${API:-${TRINA_API:-omp}}"
+# 默认连接由 Python 配置层载入：已保存连接优先于旧 TRINA_API；命令行 --api 显式覆盖。
+API="${API:-profile}"
 
 # 默认子命令：console（交互控制台）；也允许 `dev.sh --api X` 这种把选项写在最前
 if [[ ${#ARGS[@]} -eq 0 ]]; then
@@ -50,11 +50,13 @@ REST=("${ARGS[@]:1}")
 
 OVERRIDES=()
 case "$API" in
+  profile|openai)
+    # 默认从 ~/.trina/providers.json 载入 /model 选中的连接；无连接时使用 YAML 默认。
+    ;;
   omp)
+    OVERRIDES=(--set llm.backend=omp --set "llm.profile=" --set llm.api=chat)
     echo "== 后端：omp（复用 omp 已配置的模型与鉴权，默认 ${TRINA_MODEL:-deepseek/deepseek-v4-flash}）"
-    if [[ -n "${TRINA_MODEL:-}" ]]; then
-      OVERRIDES+=(--set "llm.model=$TRINA_MODEL")
-    fi
+    OVERRIDES+=(--set "llm.model=${TRINA_MODEL:-deepseek/deepseek-v4-flash}")
     ;;
   deepseek)
     if [[ -z "${DEEPSEEK_API_KEY:-}" ]]; then
@@ -64,6 +66,7 @@ case "$API" in
     fi
     OVERRIDES=(
       --set llm.backend=openai
+      --set "llm.profile="
       --set "llm.model=${TRINA_MODEL:-deepseek-v4-flash}"
       --set llm.base_url=https://api.deepseek.com/v1
       --set llm.api_key_env=DEEPSEEK_API_KEY
@@ -71,7 +74,7 @@ case "$API" in
     echo "== 后端：DeepSeek 官方 API（${TRINA_MODEL:-deepseek-v4-flash}）"
     ;;
   *)
-    echo "!! 未知 --api $API（可选：omp | deepseek）" >&2
+    echo "!! 未知 --api $API（可选：profile | omp | deepseek）" >&2
     exit 2
     ;;
 esac

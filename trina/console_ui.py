@@ -139,12 +139,13 @@ COMMANDS: tuple[CommandSpec, ...] = (
         ),
     ),
     CommandSpec(
-        "model", "会话与模型", "查看或切换当前模型", "model [list|模型规格]",
-        positional_choices=(ChoiceSpec("list", "列出本机可选模型"),),
-        examples=("/model list", "/model deepseek/deepseek-chat"),
+        "model", "会话与模型", "管理供应商、模型和多把 API Key", "model [add|keys|use <连接>|list|模型规格]",
+        positional_choices=(ChoiceSpec("add", "添加官方供应商或自定义连接"), ChoiceSpec("keys", "添加、切换或删除命名 API Key"),
+                            ChoiceSpec("use", "切换已保存连接"), ChoiceSpec("list", "列出模型与供应商")),
+        examples=("/model", "/model add", "/model use deepseek", "/model keys"),
     ),
     CommandSpec(
-        "backend", "会话与模型", "查看或切换模型后端", "backend [omp|deepseek]",
+        "backend", "会话与模型", "查看或切换模型后端", "backend [omp|供应商ID]",
         positional_choices=(
             ChoiceSpec("omp", "复用本机 omp 鉴权"),
             ChoiceSpec("deepseek", "直连 DeepSeek 官方 API"),
@@ -258,6 +259,9 @@ def command_hint(text: str) -> str:
         return "继续输入筛选命令 · ↑↓ 选择 · Tab 补全 · Enter 执行"
     spec = find_command(body.split(None, 1)[0])
     if spec is None:
+        matches = [item for item in COMMANDS if item.name.startswith(body)]
+        if matches:
+            return "匹配 " + " · ".join(f"/{item.name} {item.description}" for item in matches[:3])
         return "未找到命令；继续输入筛选，或使用 /help"
     options = " ".join(item.primary for item in spec.options[:4])
     option_hint = f" · 选项 {options}" if options else ""
@@ -306,7 +310,7 @@ class SlashCommandCompleter(_Completer):
         body = text[1:]
         if not body or not any(ch.isspace() for ch in body):
             prefix = body.lower()
-            for spec in self._visible_commands():
+            for spec in sorted(self._visible_commands(), key=lambda s: (len(s.name), s.name)) if prefix else self._visible_commands():
                 candidates = (spec.name, *spec.aliases)
                 if prefix and not any(item.startswith(prefix) for item in candidates):
                     continue
@@ -390,7 +394,7 @@ class SlashCommandCompleter(_Completer):
 
 
 def enhanced_input_available() -> bool:
-    """只有真实双向 TTY 才启用全屏补全，重定向和测试继续使用普通 input。"""
+    """只有真实双向 TTY 才启用索引输入，重定向继续使用普通 input。"""
     if not bool(getattr(sys.stdin, "isatty", lambda: False)()):
         return False
     if not bool(getattr(sys.stdout, "isatty", lambda: False)()):
@@ -403,95 +407,180 @@ def enhanced_input_available() -> bool:
 
 
 class EnhancedConsoleInput:
-    """OMP 风格的单行输入框：斜杠菜单、历史、参数提示和动态状态底栏。"""
+    """输入行、固定在下方的索引和状态栏，共用同一命令目录。"""
 
-    def __init__(
-        self,
-        *,
-        status: Callable[[], str],
-        running: Callable[[], bool],
-        dynamic_values: DynamicValues,
-        plain: bool = False,
-    ) -> None:
-        from prompt_toolkit import PromptSession
-        from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
+    def __init__(self, *, status, running, dynamic_values, plain: bool = False) -> None:
+        from prompt_toolkit import Application
+        from prompt_toolkit.buffer import Buffer
         from prompt_toolkit.history import InMemoryHistory
         from prompt_toolkit.key_binding import KeyBindings
-        from prompt_toolkit.shortcuts import CompleteStyle
+        from prompt_toolkit.layout import Layout, HSplit, Window, ConditionalContainer
+        from prompt_toolkit.layout.controls import BufferControl, FormattedTextControl
+        from prompt_toolkit.layout.processors import BeforeInput
+        from prompt_toolkit.filters import Condition
         from prompt_toolkit.styles import Style
 
         self.status = status
         self.completer = SlashCommandCompleter(running=running, dynamic_values=dynamic_values)
+        self.dismissed = False
+        self.buffer = Buffer(history=InMemoryHistory(), completer=self.completer,
+                             complete_while_typing=True, multiline=False)
+        self.buffer.on_text_changed += lambda _: self._reopen()
         bindings = KeyBindings()
 
         @bindings.add("tab")
-        def _complete(event) -> None:
-            buffer = event.current_buffer
-            if buffer.complete_state:
-                buffer.complete_next()
-            else:
-                buffer.start_completion(select_first=False)
+        def complete(event):
+            items = self._items()
+            if items:
+                state = self.buffer.complete_state
+                self.buffer.apply_completion(state.current_completion if state and state.current_completion else items[0])
 
+        @bindings.add("up")
         @bindings.add("s-tab")
-        def _complete_previous(event) -> None:
-            buffer = event.current_buffer
-            if buffer.complete_state:
-                buffer.complete_previous()
+        def previous(event):
+            self._move(-1)
+
+        @bindings.add("down")
+        def next_item(event):
+            self._move(1)
+
+        @bindings.add("escape")
+        def dismiss(event):
+            self.buffer.cancel_completion()
+            self.dismissed = True
+
+        @bindings.add("enter")
+        def submit(event):
+            state = self.buffer.complete_state
+            text = self.buffer.text.strip()
+            if state and state.current_completion:
+                self.buffer.apply_completion(state.current_completion)
+            elif text.startswith("/") and not any(c.isspace() for c in text) and not find_command(text):
+                items = self._items()
+                if items:
+                    self.buffer.apply_completion(items[0])
+            event.app.exit(result=self.buffer.text)
+
+        @bindings.add("c-c")
+        def cancel(event):
+            event.app.exit(exception=KeyboardInterrupt())
+
+        @bindings.add("c-d")
+        def eof(event):
+            if not self.buffer.text:
+                event.app.exit(exception=EOFError())
             else:
-                buffer.start_completion(select_first=False)
+                self.buffer.delete()
 
-        @bindings.add("/")
-        def _open_command_index(event) -> None:
-            """首字符 `/` 立即展开索引；URL 等位置的 `/` 仍只是普通字符。"""
-            buffer = event.current_buffer
-            at_start = buffer.cursor_position == 0
-            buffer.insert_text("/")
-            if at_start:
-                buffer.start_completion(select_first=False)
-
-        colors = {
-            "prompt.brand": "bold ansicyan",
-            "prompt.arrow": "bold ansigreen",
-            "toolbar": "bg:#1f2937 #d1d5db",
-            "toolbar.status": "bold #67e8f9",
-            "toolbar.hint": "#d1d5db",
-            "completion-menu.completion": "bg:#111827 #e5e7eb",
-            "completion-menu.completion.current": "bg:#0891b2 #ffffff bold",
-            "completion-menu.meta.completion": "bg:#1f2937 #9ca3af",
-            "completion-menu.meta.completion.current": "bg:#0e7490 #ecfeff",
-        }
-        if plain:
-            colors = {key: "" for key in colors}
-        self.session = PromptSession(
-            history=InMemoryHistory(),
-            auto_suggest=AutoSuggestFromHistory(),
-            completer=self.completer,
-            complete_while_typing=True,
-            complete_style=CompleteStyle.COLUMN,
-            key_bindings=bindings,
-            enable_history_search=True,
-            mouse_support=not plain,
-            reserve_space_for_menu=12,
-            style=Style.from_dict(colors),
+        style = Style.from_dict({} if plain else {
+            "prompt": "bold ansicyan", "index": "ansibrightblack",
+            "selected": "bg:#164e63 #ffffff bold", "hint": "ansibrightblack",
+            "status": "ansicyan", "title": "bold ansicyan",
+        })
+        control = BufferControl(buffer=self.buffer, input_processors=[BeforeInput([("class:prompt", "Trina  › ")])])
+        self.app = Application(
+            layout=Layout(HSplit([
+                Window(control, wrap_lines=True),
+                ConditionalContainer(Window(FormattedTextControl(self._menu), dont_extend_height=True),
+                                     Condition(lambda: bool(self._items()) and not self.dismissed)),
+                Window(FormattedTextControl(lambda: [("class:status", self.status()), ("class:hint", "  ·  " + command_hint(self.buffer.text))]), height=1),
+            ]), focused_element=control),
+            key_bindings=bindings, style=style, full_screen=False, refresh_interval=0.3,
         )
 
-    @staticmethod
-    def _message():
-        return [("class:prompt.brand", "Trina"), ("class:prompt.arrow", "  › ")]
+    def _reopen(self) -> None:
+        self.dismissed = False
 
-    def _bottom_toolbar(self):
-        text = self.session.default_buffer.text
-        return [
-            ("class:toolbar.status", f" {self.status()} "),
-            ("class:toolbar.hint", f" · {command_hint(text)} "),
-        ]
+    def _items(self):
+        if not self.buffer.text.startswith("/"):
+            return []
+        state = self.buffer.complete_state
+        return list(state.completions) if state else list(self.completer.get_completions(self.buffer.document, None))
+
+    def _move(self, direction: int) -> None:
+        if self._items() and not self.dismissed:
+            if self.buffer.complete_state:
+                (self.buffer.complete_next if direction > 0 else self.buffer.complete_previous)()
+            else:
+                self.buffer.start_completion(select_first=direction > 0, select_last=direction < 0)
+        else:
+            (self.buffer.auto_down if direction > 0 else self.buffer.auto_up)()
+
+    def _menu(self):
+        from .terminal import clean_text
+        items = self._items()
+        state = self.buffer.complete_state
+        selected = state.complete_index if state and state.complete_index is not None else 0
+        start = max(0, selected - 5)
+        result = []
+        for index, item in list(enumerate(items))[start:start + 8]:
+            result.extend([("class:selected" if index == selected else "class:index",
+                            f"  {index + 1:02d}  {clean_text(item.display_text):<24} {clean_text(item.display_meta_text)}"), ("", "\n")])
+        result.append(("class:hint", f"  {len(items)} 项 · ↑↓ 选择 · Tab 填入 · Enter 确认 · Esc 收起"))
+        return result
 
     def read(self) -> str:
         from prompt_toolkit.patch_stdout import patch_stdout
-
-        # 后台 Agent 的进度输出会安全地显示在输入框上方，不破坏用户正在输入的内容。
+        self.buffer.reset()
         with patch_stdout(raw=True):
-            return self.session.prompt(message=self._message, bottom_toolbar=self._bottom_toolbar)
+            result = self.app.run()
+        self.buffer.append_to_history()
+        return result
+
+
+def select_option(title: str, choices: list[ChoiceSpec], *, subtitle: str = "") -> str | None:
+    """可搜索的内联选择页；只返回选项标识，不执行任何操作。"""
+    from prompt_toolkit import Application
+    from prompt_toolkit.buffer import Buffer
+    from prompt_toolkit.key_binding import KeyBindings
+    from prompt_toolkit.layout import HSplit, Layout, Window
+    from prompt_toolkit.layout.controls import BufferControl, FormattedTextControl
+    from prompt_toolkit.layout.processors import BeforeInput
+    from prompt_toolkit.styles import Style
+    from .terminal import clean_text, use_color
+
+    search = Buffer(multiline=False)
+    selection = [0]
+    def matches():
+        query = search.text.casefold().split()
+        return [c for c in choices if all(q in (c.value + " " + c.description).casefold() for q in query)]
+    def rows():
+        items = matches()
+        selection[0] = min(selection[0], max(0, len(items) - 1))
+        start = max(0, selection[0] - 6)
+        result = []
+        for i, c in list(enumerate(items))[start:start + 10]:
+            result.extend([("class:chosen" if i == selection[0] else "", f" {'›' if i == selection[0] else ' '} {clean_text(c.description or c.value)}"), ("", "\n")])
+        if not items:
+            result.append(("class:dim", "  没有匹配项\n"))
+        result.append(("class:dim", f"  {len(items)} 项 · ↑↓ 选择 · Enter 确认 · Esc 返回"))
+        return result
+    search.on_text_changed += lambda _: selection.__setitem__(0, 0)
+    bindings = KeyBindings()
+    @bindings.add("up")
+    def up(event):
+        selection[0] = max(0, selection[0] - 1)
+    @bindings.add("down")
+    def down(event):
+        selection[0] = min(max(0, len(matches()) - 1), selection[0] + 1)
+    @bindings.add("enter")
+    def enter(event):
+        items = matches()
+        if items:
+            event.app.exit(result=items[selection[0]].value)
+    @bindings.add("escape")
+    @bindings.add("c-c")
+    @bindings.add("c-d")
+    def back(event):
+        event.app.exit(result=None)
+    control = BufferControl(buffer=search, input_processors=[BeforeInput(" 搜索 › ")])
+    app = Application(layout=Layout(HSplit([
+        Window(FormattedTextControl([("class:title", clean_text(title) + "\n"), ("class:dim", clean_text(subtitle))]), dont_extend_height=True),
+        Window(control, height=1),
+        Window(FormattedTextControl(rows), dont_extend_height=True),
+    ]), focused_element=control), key_bindings=bindings, full_screen=False,
+        style=Style.from_dict({"title": "bold ansicyan", "dim": "ansibrightblack", "chosen": "bg:#164e63 #ffffff bold"} if use_color() else {}))
+    return app.run()
 
 
 __all__ = [

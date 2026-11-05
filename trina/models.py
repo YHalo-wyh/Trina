@@ -18,12 +18,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 #: 内置预设：直连官方 API 时常用的 provider → (base_url, 模型 id)
+from .providers import PRESETS
+
 OPENAI_PRESETS: dict[str, dict[str, object]] = {
-    "deepseek": {
-        "base_url": "https://api.deepseek.com/v1",
-        "models": ["deepseek-v4-flash", "deepseek-chat", "deepseek-reasoner"],
-        "api_key_env": "DEEPSEEK_API_KEY",
-    },
+    p.id: {"base_url": p.base_url, "models": list(p.models), "api_key_env": p.api_key_env, "api": p.api}
+    for p in PRESETS
 }
 
 #: 列不出 omp 模型时的兜底清单（避免命令空转）
@@ -102,17 +101,19 @@ def list_models(*, limit: int = 60, provider_filter: str = "") -> list[ModelEntr
     return unique[:limit]
 
 
-def normalize_spec(spec: str, backend: str) -> str:
+def normalize_spec(spec: str, backend: str, *, provider: str = "") -> str:
     """把用户输入的模型规格规整成当前后端能用的形式。
 
     * `omp`：保留 `provider/model` 原样（omp 自己会解析）。
-    * `openai`：去掉 provider 前缀（绝大多数 OpenAI 兼容端点只认裸模型名）。
+    * `openai`：只去掉当前连接的供应商前缀，保留远端模型的命名空间。
     """
     text = (spec or "").strip()
     if not text:
         return text
-    if backend == "openai" and "/" in text:
-        return text.split("/", 1)[1]
+    if backend == "openai" and provider and text.split("/", 1)[0] == provider and "/" in text:
+        suffix = text.split("/", 1)[1]
+        if suffix in OPENAI_PRESETS.get(provider, {}).get("models", []):
+            return suffix
     return text
 
 

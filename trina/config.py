@@ -89,12 +89,16 @@ class LLMConfig:
     stall_limit: int = 3
     base_url: str = ""
     api_key_env: str = "TRINA_LLM_API_KEY"
+    profile: str = ""
+    api: str = "chat"  # chat | anthropic | responses
     #: replay 后端读取的脚本路径（测试用）
     replay_script: str = ""
 
     def validate(self) -> None:
         if self.backend not in ("omp", "openai", "replay"):
             raise ConfigError(f"llm.backend 必须是 omp|openai|replay，得到 {self.backend!r}")
+        if self.api not in ("chat", "anthropic", "responses"):
+            raise ConfigError("llm.api 必须是 chat|anthropic|responses")
         if self.max_steps <= 0:
             raise ConfigError("llm.max_steps 必须为正整数")
 
@@ -253,6 +257,30 @@ class TrinaConfig:
             raise ConfigError(f"配置文件不存在: {cfg_path}")
 
         cfg = cls._from_mapping(raw)
+        # 仅默认启动载入所选连接；显式配置文件仍控制自己的模型设置。
+        from .providers import ProfileStore
+
+        profile_explicit = bool(cfg.llm.profile) or "TRINA_LLM_PROFILE" in os.environ or "llm.profile" in (overrides or {})
+        requested_profile = (overrides or {}).get("llm.profile", os.environ.get("TRINA_LLM_PROFILE", cfg.llm.profile))
+        if profile_explicit or (path is None and cfg.llm.backend != "replay"):
+            store = ProfileStore()
+            selected = requested_profile if profile_explicit else store.active
+            if selected:
+                if selected not in store.profiles:
+                    raise ConfigError(f"模型连接不存在: {selected}")
+                store.apply(cfg.llm, selected)
+            elif path is None:
+                # 兼容旧启动脚本的环境文件；已保存连接优先于旧 TRINA_API。
+                from .providers import PRESET_BY_ID
+                legacy = os.environ.get("TRINA_API", "")
+                preset = PRESET_BY_ID.get(legacy)
+                if preset and preset.base_url and preset.models:
+                    cfg.llm.backend, cfg.llm.base_url = "openai", preset.base_url
+                    cfg.llm.api_key_env, cfg.llm.api = preset.api_key_env, preset.api
+                    cfg.llm.model = os.environ.get("TRINA_MODEL") or preset.models[0]
+                elif legacy == "omp":
+                    cfg.llm.backend = "omp"
+                    cfg.llm.model = os.environ.get("TRINA_MODEL") or cfg.llm.model
         cfg = cls._apply_env(cfg)
         if overrides:
             cfg = cls._apply_overrides(cfg, overrides)
