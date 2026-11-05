@@ -1,4 +1,4 @@
-"""提示词工程：把「渗透方法论 + 输出协议 + 授权边界」编码成稳定的系统提示。
+"""任务输入与 JSON 动作协议。
 
 要点
 ----
@@ -11,37 +11,26 @@ from __future__ import annotations
 
 import json
 
-SYSTEM_PROMPT_TEMPLATE = """你是 Trina，一名在**授权实训环境**内工作的自动化渗透测试执行体。你像真人渗透工程师一样工作：
-先侦察，再枚举，再验证漏洞，再尝试利用，最后取证收尾。你的每一步都必须调用工具，禁止凭空断言。
+SYSTEM_PROMPT_TEMPLATE = """依据当前任务、状态和工具返回选择下一步。每次只输出一个 JSON 对象。
 
-# 铁律（违反即动作被拒，会被记录）
-1. 只在授权范围内作业。越界目标会被硬拒绝，不要反复尝试越界。
-2. 禁止破坏性操作：删库/删文件/格式化/DoS/拖库导出/写 webshell。只做无害验证。
-3. **证据制**：任何漏洞结论都必须由工具返回的真实证据支撑；没有证据就不要报漏洞。
-4. 不要编造工具输出。你没看到的输出，就是不存在。
-5. 不要重复同样的动作。若同一动作已失败两次，换工具、换参数或换思路。
+# 执行规则
+- 每步最多调用一个工具，收到结果后再决定下一步。
+- 参数名称和类型遵循工具清单。遇到拒绝或失败，根据返回原因调整动作。
+- 结论必须引用实际工具证据，不编造结果；重复失败时换参数、工具或检查方向。
+- 目标完成或没有可继续验证的线索时，以 final 结束。
 
-# 工作方法
-- 每步只做一个动作，然后观察结果再决定下一步（ReAct）。
-- 优先低成本高信息量的动作：端口扫描 → 服务识别 → 目录爆破 → 指纹/PoC → 定向验证。
-- 发现可疑点要**验证**：SQL 注入要用报错/布尔/时间差异确认；命令执行要用无害回显标记确认；文件读取要读到特征内容。
-- 拿到 RCE 后优先确认身份（id/whoami）、再找 flag（/flag、/flag.txt、当前目录、环境变量），不要横向扩大战果。
-- 目标达成（拿到 flag 或完成指定目标）或确认无更多可做时，用 final 结束。
-
-# 输出协议（严格遵守，只输出一个 JSON 对象，不要输出别的文字）
-调用工具：
-{"thought": "一句话推理（为什么做这个动作）", "action": "工具名", "params": {"参数": "值"}}%(hypothesis_field)s
+# 动作格式
+{"thought": "选择该动作的简短理由", "action": "工具名", "params": {"参数": "值"}%(hypothesis_field)s}
 %(hypothesis_note)s
-结束任务：
-{"thought": "一句话总结", "final": {"status": "success|partial|failed", "summary": "结论摘要", "findings": ["关键漏洞"], "flags": ["拿到的flag"]}}
 
-- 参数必须是合法 JSON，字段名与工具清单完全一致，不要传未列出的参数。
-- 不要输出 Markdown 代码块以外的解释文字；若要解释，放在 thought 里。
-- 若某个动作被护栏拒绝，观察里会给出拒绝原因与合规提示，请据此改走合规路径。
+# 结束格式
+{"thought": "简短总结", "final": {"status": "success|partial|failed", "summary": "结论摘要", "findings": ["有证据的发现"], "flags": ["实际获得的 flag"]}}
+
+直接输出 JSON，不使用 Markdown 代码块；解释放在 thought 中。
 """
 
 #: `hypothesis` 字段的两种形态：有台账时展示，无台账时整段消失（对照臂用同一份模板渲染）
-HYPOTHESIS_FIELD_BLOCK = """，
+HYPOTHESIS_FIELD_BLOCK = """,
  "hypothesis": {"statement": "这条动作要验证的假设", "vuln_class": "sqli", "target": "待验证的完整 URL 或主机", "parameter": "id", "confidence": "low|medium|high", "value": "high|medium|low", "info_gain": "high|medium|low", "cost": "high|medium|low", "risk": "high|medium|low", "next_step": "验证成功后打算做什么"}"""
 
 HYPOTHESIS_NOTE_BLOCK = """
@@ -49,7 +38,7 @@ HYPOTHESIS_NOTE_BLOCK = """
 
 
 def render_system_prompt(include_hypothesis: bool = True) -> str:
-    """渲染角色提示词；``include_hypothesis=False`` 时输出"没有假设台账"的基线协议。"""
+    """渲染动作协议；``include_hypothesis=False`` 时省略假设台账字段。"""
     return SYSTEM_PROMPT_TEMPLATE % (
         {"hypothesis_field": HYPOTHESIS_FIELD_BLOCK, "hypothesis_note": HYPOTHESIS_NOTE_BLOCK}
         if include_hypothesis
@@ -57,7 +46,7 @@ def render_system_prompt(include_hypothesis: bool = True) -> str:
     )
 
 
-#: 默认（启用假设台账）的角色提示词由 ``render_system_prompt(True)`` 生成；
+#: 默认（启用假设台账）的动作协议由 ``render_system_prompt(True)`` 生成；
 #: 对照臂用 ``render_system_prompt(False)``，两者同源同模板，不会漂移。
 
 _REMINDER_HEAD = "请输出且仅输出一个 JSON 对象：调用工具用 "
@@ -123,7 +112,7 @@ def build_system_prompt(
     *,
     include_hypothesis: bool = True,
 ) -> str:
-    """拼出系统提示：角色 → 铁律 → 方法论 → 工具清单 → 授权边界。"""
+    """拼出动作协议、配置范围和工具清单。"""
     parts = [render_system_prompt(include_hypothesis), "\n# 授权边界（硬约束，来自配置文件）\n" + scope_block]
     if extra_rules:
         parts.append("\n# 本次任务附加约束\n" + extra_rules)

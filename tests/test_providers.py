@@ -163,3 +163,99 @@ class ProviderTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             store.save()
         self.assertEqual(self.path.read_bytes(), original)
+
+    def test_model_home_masks_keys_and_reveals_only_on_explicit_selection(self):
+        manager, cfg, output = self.manager(["back"], [])
+        item = self.profile("work")
+        manager._commit(item)
+        revealed = []
+        manager.reveal = lambda title, key: revealed.append((title, key))
+        manager.run()
+        status = manager.status_text()
+        self.assertIn("deepseek-chat", status)
+        self.assertIn("DeepSeek", status)
+        self.assertIn("work  ••••••••", status)
+        self.assertNotIn("test-work", status)
+        self.assertEqual(revealed, [])
+        manager.view_key()
+        self.assertEqual(revealed, [("API Key · work", "test-work")])
+        self.assertNotIn("test-work", "\n".join(output))
+        self.assertNotIn("test-work", manager.status_text())
+
+    def test_viewing_other_key_does_not_activate_it_or_write_file(self):
+        manager, cfg, _ = self.manager(["view", "personal"], [])
+        manager._commit(self.profile("work"))
+        original = self.path.read_bytes()
+        revealed = []
+        manager.reveal = lambda _title, key: revealed.append(key)
+        manager.keys()
+        self.assertEqual(revealed, ["test-personal"])
+        self.assertEqual(self.path.read_bytes(), original)
+        self.assertEqual(OpenAICompatBackend(cfg.llm).api_key(), "test-work")
+
+    def test_reasoning_persists_per_profile_and_resets_on_incompatible_model(self):
+        manager, cfg, _ = self.manager([], [])
+        manager._commit(self.profile("work"))
+        manager.set_reasoning("high")
+        self.assertEqual(cfg.llm.reasoning_effort, "high")
+        self.assertEqual(TrinaConfig.load().llm.reasoning_effort, "high")
+        item = manager.current()
+        item.model, item.base_url = "ordinary-chat", "https://service.example/v1"
+        manager._commit(item)
+        self.assertEqual(cfg.llm.reasoning_effort, "default")
+        self.assertEqual(TrinaConfig.load().llm.reasoning_effort, "default")
+
+    def test_omp_model_and_thinking_survive_legacy_launcher_on_restart(self):
+        manager, cfg, _ = self.manager(["provider/model"], [])
+        manager.pick_omp_model()
+        manager.set_reasoning("xhigh")
+        with patch.dict(os.environ, {"TRINA_API": "deepseek", "TRINA_MODEL": "legacy"}):
+            loaded = TrinaConfig.load()
+        self.assertEqual((loaded.llm.backend, loaded.llm.model, loaded.llm.reasoning_effort),
+                         ("omp", "provider/model", "xhigh"))
+
+    def test_legacy_api_connection_can_add_and_delete_current_key(self):
+        manager, cfg, output = self.manager(["work"], ["work", "test-new-key"])
+        cfg.llm.backend, cfg.llm.base_url, cfg.llm.model = "openai", "https://api.deepseek.com/v1", "deepseek-chat"
+        manager.keys(action="add")
+        self.assertEqual(OpenAICompatBackend(cfg.llm).api_key(), "test-new-key")
+        manager.keys(action="remove")
+        self.assertEqual(ProfileStore().profiles[cfg.llm.profile].keys, {})
+        self.assertNotIn("test-new-key", "\n".join(output))
+
+    def test_cancel_key_entry_returns_to_model_home_without_saving(self):
+        manager, cfg, _ = self.manager(["addkey", "back"], [])
+        manager._commit(self.profile("work"))
+        original = self.path.read_bytes()
+        def cancel(*_args, **_kwargs):
+            raise KeyboardInterrupt()
+        manager.ask = cancel
+        manager.run()
+        self.assertEqual(self.path.read_bytes(), original)
+
+    def test_invalid_global_reasoning_does_not_replace_file(self):
+        store = ProfileStore()
+        store.save()
+        original = self.path.read_bytes()
+        store.reasoning_effort = "invalid"
+        with self.assertRaises(ValueError):
+            store.save()
+        self.assertEqual(self.path.read_bytes(), original)
+
+    def test_yaml_reasoning_remains_effective_without_saved_choice(self):
+        explicit = Path(self.temp.name) / "reasoning.yaml"
+        explicit.write_text("llm:\n  backend: openai\n  model: gpt-5.2\n  reasoning_effort: high\n", encoding="utf-8")
+        self.assertEqual(TrinaConfig.load(explicit).llm.reasoning_effort, "high")
+
+    def test_invalid_edit_error_is_visible_inside_model_panel(self):
+        manager, _, _ = self.manager([], ["https://user:pass@example.com/v1"])
+        manager._commit(self.profile("work"))
+        original = self.path.read_bytes()
+        selections, headers = iter(["edit", "chat", "back"]), []
+        def choose(_title, _choices, *, subtitle=""):
+            headers.append(subtitle)
+            return next(selections)
+        manager.choose = choose
+        manager.run()
+        self.assertIn("Base URL 必须", headers[-1])
+        self.assertEqual(self.path.read_bytes(), original)

@@ -116,6 +116,55 @@ class TestTerminalUI(unittest.TestCase):
             self.assertEqual(select_option("providers", [ChoiceSpec("deepseek", "DeepSeek"),
                                                          ChoiceSpec("custom", "自定义")]), "custom")
 
+    def test_boxed_model_screen_restores_terminal_and_never_prints_masked_key(self):
+        from prompt_toolkit.application.current import create_app_session
+        from prompt_toolkit.data_structures import Size
+        from prompt_toolkit.input import create_pipe_input
+        from prompt_toolkit.output.vt100 import Vt100_Output
+        from trina.console_ui import ChoiceSpec, select_option
+        stream = io.StringIO()
+        output = Vt100_Output(stream, lambda: Size(rows=30, columns=90), enable_cpr=False)
+        with create_pipe_input() as pipe, create_app_session(input=pipe, output=output):
+            pipe.send_text("\r")
+            self.assertEqual(select_option("Model", [ChoiceSpec("back", "返回")],
+                             subtitle="模型 gpt-5.2\nAPI Key work ••••••••"), "back")
+        rendered = stream.getvalue()
+        self.assertIn("┌", rendered)
+        self.assertIn("gpt-5.2", rendered)
+        self.assertIn("\x1b[?1049h", rendered)
+        self.assertIn("\x1b[?1049l", rendered)
+
+    def test_secret_input_uses_password_display_and_escape_cancels(self):
+        from prompt_toolkit.application.current import create_app_session
+        from prompt_toolkit.data_structures import Size
+        from prompt_toolkit.input import create_pipe_input
+        from prompt_toolkit.output.vt100 import Vt100_Output
+        from trina.console_ui import edit_field
+        stream = io.StringIO()
+        output = Vt100_Output(stream, lambda: Size(rows=24, columns=80), enable_cpr=False)
+        with create_pipe_input() as pipe, create_app_session(input=pipe, output=output):
+            pipe.send_text("\r")
+            self.assertEqual(edit_field("API Key", "test-private-key", secret=True), "test-private-key")
+        self.assertNotIn("test-private-key", stream.getvalue())
+        with create_pipe_input() as pipe, create_app_session(input=pipe, output=output):
+            pipe.send_text("\x03")
+            with self.assertRaises(KeyboardInterrupt):
+                edit_field("API Key", secret=True)
+
+    def test_explicit_key_view_uses_temporary_screen_and_exits_on_enter(self):
+        from prompt_toolkit.application.current import create_app_session
+        from prompt_toolkit.data_structures import Size
+        from prompt_toolkit.input import create_pipe_input
+        from prompt_toolkit.output.vt100 import Vt100_Output
+        from trina.console_ui import show_secret
+        stream = io.StringIO()
+        output = Vt100_Output(stream, lambda: Size(rows=24, columns=80), enable_cpr=False)
+        with create_pipe_input() as pipe, create_app_session(input=pipe, output=output):
+            pipe.send_text("\r")
+            show_secret("API Key · demo", "test-visible-on-request")
+        self.assertIn("test-visible-on-request", stream.getvalue())
+        self.assertIn("\x1b[?1049l", stream.getvalue())
+
     def test_external_markup_is_literal_and_terminal_controls_are_removed(self):
         value = "[bold red]原始文本[/bold red]\x1b[2J\x1b]0;伪造标题\x07尾部"
         text = render_message(value, width=88)

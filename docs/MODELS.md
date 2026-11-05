@@ -2,11 +2,15 @@
 
 ## 在控制台使用
 
-输入 `/model` 打开管理页。输入关键词搜索，↑↓ 选择，Enter 确认，Esc 返回。已保存连接显示名称、模型和当前密钥名称；「添加供应商连接」提供官方预设和「自定义供应商 / 兼容网关」。
+输入 `/model` 打开居中的方角边框面板。首屏直接显示当前厂商、完整模型 ID、思考档位与 API Key 状态，下面提供切换模型、切换厂商、思考强度、查看 Key、切换 Key、添加 Key、删除 Key 和连接设置。输入关键词搜索，↑↓ 选择，Enter 确认，Esc 返回；更多选项随选择滚动。
 
 添加连接依次填写连接名称、Base URL、API Key 和模型。官方供应商预填地址与协议，回车保留；同一供应商可以保存为多个连接。API Key 隐藏输入，留空时使用页面注明的环境变量。模型页可选择示例 ID、从供应商刷新目录，或手动输入完整模型 ID / 部署名。动态目录以供应商当前返回为准，示例模型不代表账户已获授权。
 
-选择「管理 API Key」可添加命名密钥、切换已保存密钥、使用环境变量或删除密钥。密钥内容不出现在列表、成功提示或命令历史中。新增同名 Key 会被拒绝，原有内容不会被覆盖。选择页按 Esc 返回，字段录入按 Ctrl+C 取消；尚未完成的连接不落盘。
+Key 默认显示名称和 `••••••••`；未配置时显示「未配置」。选择「查看当前 API Key」才在独立临时方框中显示明文，Enter / Esc 隐藏并返回。Key 管理子页也可选择查看某一把已保存 Key，查看不会切换当前 Key。明文不通过普通输出、成功提示或命令历史显示；非交互终端不提供明文查看。
+
+「添加 API Key」以密码输入框录入内容并选择新 Key；「切换 API Key」可选择已保存名称或环境变量；「删除 API Key」选择名称后删除本地保存值，删除当前 Key 后回到环境变量来源。新增同名 Key 会被拒绝，原有内容不会被覆盖。字段录入按 Esc / Ctrl+C 取消并回到模型页；尚未完成的连接不落盘。普通控制台在配置页退出后恢复原屏幕。
+
+使用 omp 后端时，首屏显示其当前模型与「Key 由 omp 管理」。Trina 不读取 omp 的凭据文件；选择「切换厂商」中的官方或自定义连接后，可以在本页管理 Trina 自己的 Key。切回 omp 时可搜索选择本机模型目录，选择与思考档位均可保存。
 
 | 命令 | 行为 |
 |---|---|
@@ -23,9 +27,29 @@
 
 连接与命名密钥保存在用户目录 `~/.trina/providers.json`，文件使用原子替换保存，POSIX 权限为 0600。文件内容是本机 JSON 配置，不作加密存储。默认位置在仓库外；`TRINA_PROVIDERS_FILE` 可以指定独立配置文件。页面不复制或导入其他工具的凭据。
 
-默认启动顺序为项目 YAML → 已选择的本地连接 → `TRINA_LLM_*` 环境变量 → 命令行 `--set`。显式 `--config` 文件仅在指定 `llm.profile` 时读取连接。旧 `~/.trina/env` 中的 `TRINA_API`、`TRINA_MODEL` 在没有已选连接时继续生效；`scripts/dev.sh --api ...` 是显式覆盖。
+默认启动顺序为项目 YAML → 已选择的本地连接 / 已保存的 omp 模型 → `TRINA_LLM_*` 环境变量 → 命令行 `--set`。显式 `--config` 文件仅在指定 `llm.profile` 时读取连接。旧 `~/.trina/env` 中的 `TRINA_API`、`TRINA_MODEL` 在没有已保存选择时继续生效；`scripts/dev.sh --api ...` 是显式覆盖。
 
 每个连接选择了命名 Key 时使用该 Key；选择「使用环境变量」后读取该连接的 `api_key_env`。切换 Key 后后端重建，下一次模型请求立即使用新 Key。模型切换保留原对话历史；正在运行的任务不能通过 `/model` 变更配置。
+
+## 思考强度（2026-11-05）
+
+思考设置保存为 `llm.reasoning_effort`。默认值 `default` 不发送额外思考参数；其他值通过模型接口或 omp CLI 参数生效，不向系统提示词添加「多思考」之类的文字。不同连接各自保存档位；omp 单独保存所选模型与档位。切换到不支持原档位的模型时恢复「默认」。
+
+| 模型 / 接口 | 页面选项与请求行为 |
+|---|---|
+| omp | 默认、关闭、最少、低、中、高、很高、最高；非默认值作为 `--thinking` 传入，仍保留 `--no-tools` |
+| 已识别的 GPT / o 系列 | 按模型提供强度选项；Chat 使用 `reasoning_effort`，Responses 使用 `reasoning.effort`；不向全部型号统一提供关闭选项 |
+| DeepSeek | 默认、关闭、低、高、最高；Chat 的开关为 `thinking.type`，强度为 `reasoning_effort`；Responses / Messages 使用对应字段 |
+| Claude 原生 Messages | 新型号使用 adaptive thinking 与 `output_config.effort`；旧扩展思考型号按低 / 中 / 高分配 1024 / 2048 / 8192 Token 预算，预算必须小于输出上限 |
+| GLM 4.5–4.7 / 5、Kimi K2.5 | 仅提供默认、关闭、开启，通过 `thinking.type` 设置；不展示没有区分作用的中、高档位 |
+| 可切换思考的 Qwen3 / Qwen Plus / Turbo | 默认、关闭、开启，通过 `enable_thinking` 设置；带 coder / thinking / instruct 的固定模式型号只提供默认 |
+| 已识别的 Gemini 思考型号 | 默认、低、中、高，使用官方 OpenAI 兼容接口的 `reasoning_effort` |
+| OpenRouter | 已识别模型沿用对应选项，请求转换为网关的 `reasoning` 对象 |
+| 未识别型号 | 只显示默认，不猜测自定义网关能力 |
+
+Claude 预算型模型的短输出健康检查不足 1024 Token 时关闭本次思考，常规请求仍使用已保存档位。界面按已知模型家族识别能力，网关的别名和部署名可能无法识别；模型权限、支持范围和参数最终以服务端为准。各协议已验证本地请求格式，未使用所有付费账户在线调用。
+
+参数依据：[omp CLI](https://github.com/can1357/oh-my-pi/blob/main/docs/cli-reference.md)、[OpenAI reasoning](https://developers.openai.com/api/docs/guides/reasoning)、[DeepSeek thinking mode](https://api-docs.deepseek.com/guides/thinking_mode/)、[Claude effort](https://platform.claude.com/docs/en/build-with-claude/effort)、[Gemini OpenAI compatibility](https://ai.google.dev/gemini-api/docs/openai)、[OpenRouter reasoning](https://openrouter.ai/docs/guides/best-practices/reasoning-tokens)。
 
 ## 协议与模型目录
 
@@ -74,4 +98,4 @@
 
 参考 [omp 的供应商与凭据设计](https://github.com/can1357/oh-my-pi/blob/main/docs/providers.md) 中的供应商命名空间、模型选择和凭据来源表达，以及 [omp 自动补全接口](https://github.com/can1357/oh-my-pi/blob/main/packages/tui/src/autocomplete.ts) 中的命令与参数目录。Trina 使用现有 Python / prompt_toolkit 实现，没有引入 omp 的 TypeScript 运行栈。
 
-验证入口为 `tests/test_providers.py`、`tests/test_llm_openai.py` 与 `tests/test_terminal_ui.py`：覆盖重启载入、多把 Key 切换、取消录入、自定义命名空间、错误脱敏、协议请求和 `/h` 实际按键输入。工具授权、审计与目标护栏仍由既有执行链处理。
+验证入口为 `tests/test_providers.py`、`tests/test_reasoning.py`、`tests/test_llm_openai.py` 与 `tests/test_terminal_ui.py`：覆盖重启载入、多把 Key 增删切换、显式查看不改变选中值、取消录入、思考参数、协议请求、实际终端边框与临时屏幕恢复，以及 `/h` 实际按键输入。工具授权、审计与目标护栏仍由既有执行链处理。

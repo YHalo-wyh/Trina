@@ -119,6 +119,11 @@ class OpenAICompatBackend(LLMBackend):
         elif self.config.model.startswith(("gpt-5", "gpt-6", "o1", "o3", "o4")):
             payload["max_completion_tokens"] = payload.pop("max_tokens")
             payload.pop("temperature")
+        from .reasoning import apply_reasoning
+        try:
+            apply_reasoning(self.config, payload)
+        except ValueError as exc:
+            return self._tally(LLMResponse(ok=False, error=str(exc)))
         started = time.monotonic()
         body, error = self._request_json(f"{self.base_url}/{endpoint}", payload)
         if error:

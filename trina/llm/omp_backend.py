@@ -56,6 +56,8 @@ class OmpBackend(LLMBackend):
             self.config.model,
             "--no-title",
         ]
+        if self.config.reasoning_effort != "default":
+            argv.extend(["--thinking", self.config.reasoning_effort])
         started = time.monotonic()
         try:
             proc = subprocess.run(

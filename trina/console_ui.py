@@ -529,15 +529,13 @@ class EnhancedConsoleInput:
 
 
 def select_option(title: str, choices: list[ChoiceSpec], *, subtitle: str = "") -> str | None:
-    """可搜索的内联选择页；只返回选项标识，不执行任何操作。"""
-    from prompt_toolkit import Application
+    """方框选择页；只返回选项标识，不执行任何操作。"""
     from prompt_toolkit.buffer import Buffer
     from prompt_toolkit.key_binding import KeyBindings
-    from prompt_toolkit.layout import HSplit, Layout, Window
+    from prompt_toolkit.layout import HSplit, Window
     from prompt_toolkit.layout.controls import BufferControl, FormattedTextControl
     from prompt_toolkit.layout.processors import BeforeInput
-    from prompt_toolkit.styles import Style
-    from .terminal import clean_text, use_color
+    from .terminal import clean_text
 
     search = Buffer(multiline=False)
     selection = [0]
@@ -553,7 +551,7 @@ def select_option(title: str, choices: list[ChoiceSpec], *, subtitle: str = "") 
             result.extend([("class:chosen" if i == selection[0] else "", f" {'›' if i == selection[0] else ' '} {clean_text(c.description or c.value)}"), ("", "\n")])
         if not items:
             result.append(("class:dim", "  没有匹配项\n"))
-        result.append(("class:dim", f"  {len(items)} 项 · ↑↓ 选择 · Enter 确认 · Esc 返回"))
+        result.append(("class:dim", "  ↑↓ 选择 · Enter 确认 · Esc 返回"))
         return result
     search.on_text_changed += lambda _: selection.__setitem__(0, 0)
     bindings = KeyBindings()
@@ -574,13 +572,76 @@ def select_option(title: str, choices: list[ChoiceSpec], *, subtitle: str = "") 
     def back(event):
         event.app.exit(result=None)
     control = BufferControl(buffer=search, input_processors=[BeforeInput(" 搜索 › ")])
-    app = Application(layout=Layout(HSplit([
-        Window(FormattedTextControl([("class:title", clean_text(title) + "\n"), ("class:dim", clean_text(subtitle))]), dont_extend_height=True),
+    body = HSplit([
+        Window(FormattedTextControl([("class:dim", clean_text(subtitle))]), dont_extend_height=True, wrap_lines=True),
         Window(control, height=1),
         Window(FormattedTextControl(rows), dont_extend_height=True),
-    ]), focused_element=control), key_bindings=bindings, full_screen=False,
-        style=Style.from_dict({"title": "bold ansicyan", "dim": "ansibrightblack", "chosen": "bg:#164e63 #ffffff bold"} if use_color() else {}))
-    return app.run()
+    ])
+    return _panel_app(body, title, bindings, control).run()
+
+
+def _panel_app(body, title: str, bindings, focused):
+    """所有模型配置页共用方角边框；退出后恢复主控制台。"""
+    from prompt_toolkit import Application
+    from prompt_toolkit.application.current import get_app
+    from prompt_toolkit.layout import Float, FloatContainer, Layout, Window
+    from prompt_toolkit.styles import Style
+    from prompt_toolkit.widgets import Frame, Box
+    from .terminal import clean_text, use_color
+
+    panel = Frame(Box(body, padding=1), title=clean_text(title), style="class:panel")
+    layout = Layout(FloatContainer(Window(), [Float(
+        content=panel, width=lambda: max(4, min(96, get_app().output.get_size().columns - 2)),
+    )]), focused_element=focused)
+    return Application(layout=layout, key_bindings=bindings, full_screen=True, erase_when_done=True,
+                       style=Style.from_dict({"panel.border": "ansicyan", "panel.label": "bold ansicyan",
+                                              "dim": "ansibrightblack", "chosen": "bg:#164e63 #ffffff bold"} if use_color() else {}))
+
+
+def edit_field(title: str, default: str = "", *, secret: bool = False) -> str:
+    """独立字段输入；密码处理器遮住显示，内容不进入命令历史。"""
+    from prompt_toolkit.buffer import Buffer
+    from prompt_toolkit.document import Document
+    from prompt_toolkit.key_binding import KeyBindings
+    from prompt_toolkit.layout import HSplit, Window
+    from prompt_toolkit.layout.controls import BufferControl, FormattedTextControl
+    from prompt_toolkit.layout.processors import PasswordProcessor, BeforeInput
+
+    value = Buffer(document=Document(default, cursor_position=len(default)), multiline=False)
+    processors = [BeforeInput("› ")]
+    if secret:
+        processors.append(PasswordProcessor())
+    control = BufferControl(buffer=value, input_processors=processors)
+    bindings = KeyBindings()
+    @bindings.add("enter")
+    def accept(event):
+        event.app.exit(result=value.text.strip())
+    @bindings.add("escape")
+    @bindings.add("c-c")
+    @bindings.add("c-d")
+    def cancel(event):
+        event.app.exit(exception=KeyboardInterrupt())
+    return _panel_app(HSplit([Window(control, height=1), Window(FormattedTextControl(
+        "Enter 保存 · Esc 取消"), height=1)]), title, bindings, control).run()
+
+
+def show_secret(title: str, value: str) -> None:
+    """仅在临时屏幕中显示明确请求的密钥，退出后清除该屏幕。"""
+    from prompt_toolkit.key_binding import KeyBindings
+    from prompt_toolkit.layout import HSplit, Window
+    from prompt_toolkit.layout.controls import FormattedTextControl
+    from .terminal import clean_text
+
+    control = FormattedTextControl(clean_text(value), focusable=True)
+    bindings = KeyBindings()
+    @bindings.add("enter")
+    @bindings.add("escape")
+    @bindings.add("c-c")
+    @bindings.add("c-d")
+    def close(event):
+        event.app.exit()
+    _panel_app(HSplit([Window(control, wrap_lines=True, dont_extend_height=True),
+                      Window(FormattedTextControl("Enter / Esc 隐藏并返回"), height=1)]), title, bindings, control).run()
 
 
 __all__ = [

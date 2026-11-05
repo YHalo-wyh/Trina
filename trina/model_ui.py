@@ -5,29 +5,34 @@ import copy
 import os
 from typing import Callable
 
-from .console_ui import ChoiceSpec, enhanced_input_available, select_option
+from .console_ui import ChoiceSpec, edit_field, enhanced_input_available, select_option, show_secret
 from .providers import PRESETS, PRESET_BY_ID, ProfileStore, ProviderProfile
 
 
 class ModelManager:
     def __init__(self, config, *, emit: Callable[[str], None], reload: Callable[[], None],
-                 ask=None, choose=None, store: ProfileStore | None = None):
+                 ask=None, choose=None, reveal=None, store: ProfileStore | None = None):
         self.config, self.emit, self.reload = config, emit, reload
         self.store = store or ProfileStore()
         self.ask = ask or self._ask
         self.choose = choose or select_option
+        self.reveal = reveal or show_secret
 
     @staticmethod
     def _ask(label: str, default: str = "", *, secret: bool = False) -> str:
         if enhanced_input_available():
-            from prompt_toolkit import prompt
-            return prompt(label + " › ", default=default, is_password=secret).strip()
+            return edit_field(label, default, secret=secret)
         if secret:
             import getpass
             return getpass.getpass(label + " › ").strip()
         return input(label + (f" [{default}]" if default else "") + " › ").strip() or default
 
     def _commit(self, profile: ProviderProfile, *, activate: bool = True) -> None:
+        from .llm.reasoning import reasoning_support
+        probe = copy.copy(self.config.llm)
+        probe.backend, probe.model, probe.base_url, probe.api = "openai", profile.model, profile.base_url, profile.api
+        if profile.reasoning_effort not in reasoning_support(probe).levels:
+            profile.reasoning_effort = "default"
         profile.validate()
         self.store.profiles[profile.id] = profile
         if activate:
@@ -43,65 +48,144 @@ class ModelManager:
         self._commit(self.store.profiles[name])
         self.emit(f"已切换连接 {name} · 模型 {self.config.llm.model}")
 
+    def status_text(self) -> str:
+        """模型页首屏数据；这里永远不包含明文 Key。"""
+        from .llm.reasoning import reasoning_support
+        llm = self.config.llm
+        item = self.store.profiles.get(llm.profile)
+        provider = item.provider if item else (llm.model.split("/", 1)[0] if llm.backend == "omp" else
+                                               next((p.id for p in PRESETS if p.base_url.rstrip("/") == llm.base_url.rstrip("/")), "custom"))
+        preset = PRESET_BY_ID.get(provider)
+        name = preset.name if preset else provider
+        if llm.backend == "omp":
+            key_status = "由 omp 管理"
+        else:
+            label, key = self.key_info()
+            key_status = f"{label}  ••••••••" if key else "未配置"
+        support = reasoning_support(llm)
+        effort = support.label(llm.reasoning_effort)
+        return f"厂商    {name}\n模型    {llm.model}\n思考    {effort}\nAPI Key {key_status}"
+
+    def key_info(self, item: ProviderProfile | None = None) -> tuple[str, str]:
+        item = item or self.store.profiles.get(self.config.llm.profile)
+        if item:
+            if item.active_key:
+                return item.active_key, item.keys[item.active_key]
+            return item.api_key_env, os.environ.get(item.api_key_env, "")
+        return self.config.llm.api_key_env, os.environ.get(self.config.llm.api_key_env, "")
+
+    def view_key(self) -> None:
+        if self.config.llm.backend != "openai":
+            self.emit("当前 Key 由 omp 管理")
+            return
+        label, key = self.key_info()
+        if key:
+            self.reveal(f"API Key · {label}", key)
+        else:
+            self.emit("尚未配置 API Key")
+
     def run(self) -> None:
+        notice = ""
         while True:
-            llm = self.config.llm
-            choices = []
-            for p in self.store.profiles.values():
-                key = p.active_key or ((p.api_key_env if os.environ.get(p.api_key_env) else "未配置 " + p.api_key_env) if p.api_key_env else "无需密钥")
-                marker = "● 当前" if llm.profile == p.id else "○"
-                choices.append(ChoiceSpec("use:" + p.id, f"{marker} {p.id}  /  {p.model}  · 密钥 {key}"))
-            choices += [ChoiceSpec("add", "＋ 添加供应商连接（官方预设 / 自定义）"),
-                        ChoiceSpec("models", "切换模型 / 从供应商刷新模型列表"),
-                        ChoiceSpec("keys", "管理 API Key（添加 / 切换 / 删除）"),
-                        ChoiceSpec("edit", "编辑当前连接的地址与协议"),
-                        ChoiceSpec("remove", "删除已保存连接"),
-                        ChoiceSpec("omp", "切换到 omp 后端"), ChoiceSpec("back", "返回对话")]
-            selected = self.choose("模型与供应商", choices, subtitle=f"当前 {llm.profile or llm.backend} / {llm.model} · 配置保存在 ~/.trina/providers.json")
+            choices = [ChoiceSpec("models", "切换模型"), ChoiceSpec("providers", "切换厂商"),
+                       ChoiceSpec("reasoning", "思考强度"), ChoiceSpec("reveal", "查看当前 API Key"),
+                       ChoiceSpec("keys", "切换 API Key"), ChoiceSpec("addkey", "添加 API Key"),
+                       ChoiceSpec("removekey", "删除 API Key"), ChoiceSpec("add", "添加厂商"),
+                       ChoiceSpec("edit", "连接设置"), ChoiceSpec("remove", "删除厂商连接"), ChoiceSpec("back", "返回")]
+            selected = self.choose("Model", choices, subtitle=self.status_text() + ("\n" + notice if notice else ""))
+            notice = ""
             if selected in (None, "back"):
                 return
             try:
-                if selected.startswith("use:"):
-                    self.use(selected[4:])
-                    return
-                if selected == "omp":
-                    self.store.active = ""
-                    self.store.save()
-                    llm.backend, llm.profile, llm.api = "omp", "", "chat"
-                    if "/" not in llm.model:
-                        llm.model = f"deepseek/{llm.model}"
-                    self.reload()
-                    self.emit("已切到 omp 后端")
-                    return
-                if selected == "add":
+                if selected == "providers":
+                    self.pick_provider()
+                elif selected == "reveal":
+                    self.view_key()
+                elif selected == "reasoning":
+                    from .llm.reasoning import reasoning_support
+                    support = reasoning_support(self.config.llm)
+                    level = self.choose("思考强度", [ChoiceSpec(x, ("● " if x == self.config.llm.reasoning_effort else "  ") + support.label(x)) for x in support.levels],
+                                        subtitle="此模型未声明可调思考参数" if support.mode == "none" else self.config.llm.model)
+                    if level:
+                        self.set_reasoning(level)
+                elif selected == "add":
                     self.add()
                 elif selected == "remove":
                     self.remove()
+                elif selected == "models" and self.config.llm.backend == "omp":
+                    self.pick_omp_model()
                 else:
                     item = self.current()
-                    if selected == "keys":
-                        self.keys(item.id)
+                    if selected in ("keys", "addkey", "removekey"):
+                        self.keys(item.id if item.id in self.store.profiles else "", action={"addkey": "add", "removekey": "remove"}.get(selected, ""))
                     elif selected == "models":
                         model = self.pick_model(item)
                         if model:
                             item.model = model
                             self._commit(item)
-                            self.emit(f"已切换模型：{model}")
                     elif selected == "edit":
                         item.base_url = self.ask("Base URL", item.base_url)
                         api = self.choose("接口协议", self.protocol_choices())
                         if api:
                             item.api = api
                             self._commit(item)
-                            self.emit("连接配置已保存")
             except ValueError as exc:
-                self.emit(str(exc))
+                notice = str(exc)
+            except KeyboardInterrupt:
+                continue
+
+    def set_reasoning(self, level: str) -> None:
+        from .llm.reasoning import reasoning_support
+        llm = self.config.llm
+        if level not in reasoning_support(llm).levels:
+            raise ValueError("当前模型不支持该思考档位")
+        if llm.backend == "openai":
+            item = self.current()
+            item.reasoning_effort = level
+            self._commit(item)
+        elif llm.backend == "omp":
+            self.store.active = ""
+            self.store.reasoning_effort = level
+            self.store.omp_model = llm.model
+            self.store.save()
+            llm.reasoning_effort = level
+            self.reload()
+
+    def pick_provider(self) -> None:
+        choices = [ChoiceSpec("use:" + p.id, f"{p.id} · {p.model}") for p in self.store.profiles.values()]
+        choices += [ChoiceSpec("add:" + p.id, p.name) for p in PRESETS]
+        choices += [ChoiceSpec("omp", "omp"), ChoiceSpec("add:custom", "自定义厂商")]
+        selected = self.choose("厂商", choices)
+        if selected and selected.startswith("use:"):
+            self.use(selected[4:])
+        elif selected and selected.startswith("add:"):
+            self.add(selected[4:])
+        elif selected == "omp":
+            self.pick_omp_model()
+
+    def pick_omp_model(self) -> None:
+        from .models import list_models
+        selected = self.choose("模型 · omp", [ChoiceSpec(m.spec, m.render()) for m in list_models(limit=500)])
+        if selected:
+            llm = self.config.llm
+            self.store.active, self.store.omp_model = "", selected
+            self.store.save()
+            llm.backend, llm.profile, llm.model, llm.api = "omp", "", selected, "chat"
+            llm.reasoning_effort = self.store.reasoning_effort
+            self.reload()
 
     def current(self) -> ProviderProfile:
-        name = self.config.llm.profile
-        if name not in self.store.profiles:
-            raise ValueError("当前模型还没有保存为连接；使用「添加供应商连接」录入")
-        return copy.deepcopy(self.store.profiles[name])
+        llm = self.config.llm
+        if llm.profile in self.store.profiles:
+            return copy.deepcopy(self.store.profiles[llm.profile])
+        if llm.backend != "openai":
+            raise ValueError("选择厂商后可在此管理 API Key")
+        provider = next((p.id for p in PRESETS if p.base_url.rstrip("/") == llm.base_url.rstrip("/")), "custom")
+        name, suffix = provider, 2
+        while name in self.store.profiles:
+            name, suffix = f"{provider}-{suffix}", suffix + 1
+        return ProviderProfile(name, provider, llm.base_url, llm.model, llm.api_key_env, llm.api,
+                               reasoning_effort=llm.reasoning_effort)
 
     @staticmethod
     def protocol_choices() -> list[ChoiceSpec]:
@@ -165,16 +249,21 @@ class ModelManager:
                 except ValueError as exc:
                     self.emit(f"刷新失败：{exc}；可继续使用预设或手动输入")
 
-    def keys(self, name: str = "") -> None:
+    def keys(self, name: str = "", *, action: str = "") -> None:
         item = copy.deepcopy(self.store.profiles.get(name)) if name else self.current()
         if item is None:
             raise ValueError("连接不存在")
         choices = [ChoiceSpec("key:" + k, f"{'●' if k == item.active_key else '○'} {k} · 已保存") for k in item.keys]
         choices += [ChoiceSpec("add", "＋ 添加一把 API Key"),
                     ChoiceSpec("env", f"使用环境变量 {item.api_key_env or '（本地免密）'}"),
-                    ChoiceSpec("remove", "删除一把已保存的 Key")]
-        selected = self.choose(f"API Key · {item.id}", choices, subtitle="仅显示密钥名称；选择后立即生效")
+                    ChoiceSpec("view", "查看一把 Key"), ChoiceSpec("remove", "删除一把已保存的 Key")]
+        selected = action or self.choose(f"API Key · {item.id}", choices, subtitle="当前 " + (item.active_key or "环境变量"))
         if selected is None:
+            return
+        if selected == "view":
+            label = self.choose("查看哪把 Key", [ChoiceSpec(k, k) for k in item.keys])
+            if label:
+                self.reveal(f"API Key · {label}", item.keys[label])
             return
         if selected.startswith("key:"):
             item.active_key = selected[4:]
@@ -195,7 +284,7 @@ class ModelManager:
             del item.keys[label]
             if item.active_key == label:
                 item.active_key = ""
-        self._commit(item, activate=self.config.llm.profile == item.id)
+        self._commit(item, activate=self.config.llm.profile == item.id or not name)
         self.emit(f"{item.id} 密钥设置已保存 · 当前 {item.active_key or '环境变量 / 免密'}")
 
     def remove(self) -> None:

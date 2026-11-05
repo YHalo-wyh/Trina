@@ -507,9 +507,13 @@ class Console:
         provider = (store.profiles[llm.profile].provider if llm.profile in store.profiles else
                     next((p.id for p in PRESETS if p.base_url == llm.base_url), ""))
         llm.model = normalize_spec(spec, llm.backend, provider=provider)
+        from .llm.reasoning import reasoning_support
+        if llm.reasoning_effort not in reasoning_support(llm).levels:
+            llm.reasoning_effort = "default"
         if llm.profile:
             profile = store.profiles[llm.profile]
             profile.model = llm.model
+            profile.reasoning_effort = llm.reasoning_effort
             store.save()
         self._reload_backend()
         self._emit(f"已切换模型{'并保存' if llm.profile else '（本会话）'}：{llm.model}（后端 {llm.backend}）"
@@ -517,7 +521,7 @@ class Console:
 
     def _model_manager(self):
         from .model_ui import ModelManager
-        from .console_ui import select_option
+        from .console_ui import select_option, show_secret
 
         def ask(label, default="", *, secret=False):
             if self._input is not None:
@@ -537,7 +541,13 @@ class Console:
                 return choices[int(value) - 1].value
             return next((c.value for c in choices if c.value == value), None)
 
-        return ModelManager(self.config, emit=self._emit, reload=self._reload_backend, ask=ask, choose=choose)
+        def reveal(title, value):
+            if self._input is None and enhanced_input_available():
+                show_secret(title, value)
+            else:
+                self._emit("查看 API Key 需要交互终端")
+
+        return ModelManager(self.config, emit=self._emit, reload=self._reload_backend, ask=ask, choose=choose, reveal=reveal)
 
     def _cmd_backend(self, args: list[str]) -> None:
         llm = self.config.llm
@@ -548,9 +558,15 @@ class Console:
         from .models import preset_for
 
         if name == "omp":
+            from .providers import ProfileStore
+            stored = ProfileStore()
+            stored_model = stored.omp_model
             llm.backend = "omp"
             llm.profile, llm.api = "", "chat"
-            if "/" not in llm.model:
+            llm.reasoning_effort = stored.reasoning_effort
+            if stored_model:
+                llm.model = stored_model
+            elif "/" not in llm.model:
                 llm.model = f"deepseek/{llm.model}"
             self._reload_backend()
             self._emit(f"已切到 omp 后端（复用 omp 鉴权）：模型 {llm.model}")
@@ -571,6 +587,7 @@ class Console:
         models = list(preset.get("models") or [])
         if llm.model not in models:
             llm.model = str(models[0]) if models else llm.model
+        llm.reasoning_effort = "default"
         self._reload_backend()
         has_key = bool(os.environ.get(llm.api_key_env))
         self._emit(
@@ -632,6 +649,7 @@ class Console:
             store = ProfileStore()
             profile = store.profiles[self.config.llm.profile]
             profile.model = self.config.llm.model
+            profile.reasoning_effort = self.config.llm.reasoning_effort
             store.active = profile.id
             store.save()
             self._emit(f"已保存到 {store.path}：连接 {profile.id} · 模型 {profile.model}")
@@ -646,13 +664,19 @@ class Console:
             while name in store.profiles:
                 name, suffix = f"{base_name}-{suffix}", suffix + 1
             profile = ProviderProfile(name, base_name, llm.base_url, llm.model, llm.api_key_env, llm.api)
+            profile.reasoning_effort = llm.reasoning_effort
             profile.validate()
             store.profiles[name], store.active = profile, name
             store.save()
             store.apply(llm)
             self._emit(f"已保存到 {store.path}：连接 {name} · 模型 {profile.model}")
             return
-        if store.active:
+        if self.config.llm.backend == "omp":
+            store.omp_model = self.config.llm.model
+            store.reasoning_effort = self.config.llm.reasoning_effort
+            store.active = ""
+            store.save()
+        elif store.active:
             store.active = ""
             store.save()
 

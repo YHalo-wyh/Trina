@@ -24,6 +24,20 @@ from trina.tools.registry import ParamSpec, Tool, ToolResult, ToolSpec
 
 
 class TestParseAction(unittest.TestCase):
+    def test_prompt_action_examples_are_valid_json_with_or_without_ledger(self):
+        from trina.brain.chat import render_chat_prompt
+        from trina.brain.prompts import render_system_prompt
+        for render in (render_system_prompt, render_chat_prompt):
+            for ledger in (False, True):
+                with self.subTest(render=render.__name__, ledger=ledger):
+                    text = render(ledger)
+                    start = text.index('{"thought"')
+                    action, _ = json.JSONDecoder().raw_decode(text[start:])
+                    self.assertIn("action", action)
+                    self.assertEqual("hypothesis" in action, ledger)
+                    self.assertNotIn("渗透测试助手", text)
+                    self.assertNotIn("你是 Trina", text)
+
     def test_plain_json(self):
         action = parse_action('{"thought": "扫端口", "action": "port_scan", "params": {"target": "127.0.0.1"}}')
         self.assertEqual(action["action"], "port_scan")
@@ -452,7 +466,7 @@ class TestReActLoop(unittest.TestCase):
         prompt = build_system_prompt(self.cfg.scope_prompt_block(), registry.prompt_block())
         self.assertIn("授权网段", prompt)
         self.assertIn("fake_scan", prompt)
-        self.assertIn("禁止破坏性", prompt)
+        self.assertIn(self.cfg.scope_prompt_block(), prompt)
 
 
 if __name__ == "__main__":

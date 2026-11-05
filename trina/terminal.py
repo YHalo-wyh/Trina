@@ -169,7 +169,7 @@ def render_home(config: Any, approval_mode: str, *, width: int | None = None, co
     from . import __version__
 
     actual_width = width if width is not None else terminal_width()
-    title = f"TRINA  {__version__}  ·  全自动渗透测试 Agent"
+    title = f"TRINA  {__version__}"
     model = f"模型 {clean_text(config.llm.model)} · 后端 {clean_text(config.llm.backend)}"
     controls = f"审批 {clean_text(approval_mode)} · 策略 {clean_text(config.policy.mode)} · 等级 {clean_text(config.scope.exploit_level)}"
     guide = "输入 / 打开命令索引  ·  直接输入问题开始对话"

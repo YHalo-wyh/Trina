@@ -69,6 +69,7 @@ class ProviderProfile:
     api: str = "chat"
     keys: dict[str, str] = field(default_factory=dict, repr=False)
     active_key: str = ""
+    reasoning_effort: str = "default"
 
     def validate(self) -> None:
         if not re.fullmatch(r"[\w.-]{1,64}", self.id):
@@ -82,6 +83,9 @@ class ProviderProfile:
             raise ValueError("模型 ID 不能包含控制字符")
         if self.api not in {"chat", "anthropic", "responses"}:
             raise ValueError("接口协议必须为 chat、anthropic 或 responses")
+        from .llm.reasoning import LEVEL_LABELS
+        if self.reasoning_effort not in LEVEL_LABELS:
+            raise ValueError("思考档位无效")
         if self.active_key and self.active_key not in self.keys:
             raise ValueError("当前密钥名称不存在")
         if any(not k.strip() or not isinstance(v, str) or not v.strip() for k, v in self.keys.items()):
@@ -94,6 +98,8 @@ class ProfileStore:
         self.path = path or Path(os.environ.get("TRINA_PROVIDERS_FILE") or Path.home() / ".trina" / "providers.json")
         self.profiles: dict[str, ProviderProfile] = {}
         self.active = ""
+        self.reasoning_effort = "default"
+        self.omp_model = ""
         if self.path.exists():
             raw = json.loads(self.path.read_text(encoding="utf-8"))
             if raw.get("version") != 1:
@@ -105,11 +111,19 @@ class ProfileStore:
                     raise ValueError("供应商连接名称重复")
                 self.profiles[item.id] = item
             self.active = raw.get("active", "")
+            self.reasoning_effort = raw.get("reasoning_effort", "default")
+            self.omp_model = str(raw.get("omp_model") or "")
+            from .llm.reasoning import LEVEL_LABELS
+            if self.reasoning_effort not in LEVEL_LABELS:
+                raise ValueError("默认思考档位无效")
             if self.active and self.active not in self.profiles:
                 raise ValueError("当前供应商连接不存在")
 
     def save(self) -> None:
         from dataclasses import asdict
+        from .llm.reasoning import LEVEL_LABELS
+        if self.reasoning_effort not in LEVEL_LABELS:
+            raise ValueError("默认思考档位无效")
         if self.active and self.active not in self.profiles:
             raise ValueError("当前供应商连接不存在")
         for profile in self.profiles.values():
@@ -118,7 +132,8 @@ class ProfileStore:
         fd, name = tempfile.mkstemp(prefix=".providers-", dir=self.path.parent)
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as stream:
-                json.dump({"version": 1, "active": self.active, "profiles": [asdict(p) for p in self.profiles.values()]}, stream, ensure_ascii=False, indent=2)
+                json.dump({"version": 1, "active": self.active, "reasoning_effort": self.reasoning_effort, "omp_model": self.omp_model,
+                           "profiles": [asdict(p) for p in self.profiles.values()]}, stream, ensure_ascii=False, indent=2)
                 stream.write("\n")
             os.chmod(name, 0o600)
             os.replace(name, self.path)
@@ -131,6 +146,7 @@ class ProfileStore:
         llm.backend, llm.profile = "openai", item.id
         llm.base_url, llm.model = item.base_url, item.model
         llm.api_key_env, llm.api = item.api_key_env, item.api
+        llm.reasoning_effort = item.reasoning_effort
 
     def key(self, name: str, env: str) -> str:
         item = self.profiles.get(name)

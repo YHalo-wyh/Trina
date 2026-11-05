@@ -91,6 +91,7 @@ class LLMConfig:
     api_key_env: str = "TRINA_LLM_API_KEY"
     profile: str = ""
     api: str = "chat"  # chat | anthropic | responses
+    reasoning_effort: str = "default"
     #: replay 后端读取的脚本路径（测试用）
     replay_script: str = ""
 
@@ -99,6 +100,9 @@ class LLMConfig:
             raise ConfigError(f"llm.backend 必须是 omp|openai|replay，得到 {self.backend!r}")
         if self.api not in ("chat", "anthropic", "responses"):
             raise ConfigError("llm.api 必须是 chat|anthropic|responses")
+        from .llm.reasoning import LEVEL_LABELS
+        if self.reasoning_effort not in LEVEL_LABELS:
+            raise ConfigError("llm.reasoning_effort 档位无效")
         if self.max_steps <= 0:
             raise ConfigError("llm.max_steps 必须为正整数")
 
@@ -281,6 +285,9 @@ class TrinaConfig:
                 elif legacy == "omp":
                     cfg.llm.backend = "omp"
                     cfg.llm.model = os.environ.get("TRINA_MODEL") or cfg.llm.model
+                if store.omp_model:
+                    cfg.llm.backend, cfg.llm.model = "omp", store.omp_model
+                    cfg.llm.reasoning_effort = store.reasoning_effort
         cfg = cls._apply_env(cfg)
         if overrides:
             cfg = cls._apply_overrides(cfg, overrides)

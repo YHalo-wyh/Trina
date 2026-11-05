@@ -37,6 +37,8 @@ llm:
   timeout: 180
   temperature: 0.2
   max_tokens: 4096
+  # /model 可调整；default 沿用供应商默认行为
+  reasoning_effort: default
   # 单次任务的决策步数上限与总时长上限
   max_steps: 40
   max_seconds: 1800
