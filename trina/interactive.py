@@ -178,9 +178,12 @@ class Console:
                         + [ChoiceSpec(p.id, f"{p.name} · 添加连接") for p in PRESETS])
             except Exception:  # noqa: BLE001 - 补全失败不能影响输入
                 return []
-        if command == "model" and completed_args in (["use"], ["keys"]):
+        if command == "model" and completed_args in (["use"], ["edit"], ["remove"], ["test"], ["keys"]):
             from .providers import ProfileStore
             return [ChoiceSpec(p.id, p.model) for p in ProfileStore().profiles.values()]
+        if command == "model" and completed_args == ["add"]:
+            from .providers import PRESETS
+            return [ChoiceSpec(p.id, p.name) for p in PRESETS]
         if command == "backend" and not completed_args:
             from .providers import PRESETS
             return [ChoiceSpec(p.id, p.name) for p in PRESETS]
@@ -460,14 +463,21 @@ class Console:
             if self._input is not None or enhanced_input_available():
                 self._model_manager().run()
             else:
-                self._emit(f"当前 {llm.profile or llm.backend} / {llm.model} · /model add 添加连接 · /model keys 管理密钥 · /model list 查看预设")
+                self._emit(f"当前 {llm.profile or llm.backend} / {llm.model} · /model add 添加供应商 · /model edit 编辑供应商 · /model list 查看预设")
             return
-        if args[0] in ("add", "keys", "use"):
+        if args[0] in ("add", "edit", "remove", "test", "keys", "use"):
             manager = self._model_manager()
             if args[0] == "add":
-                manager.add()
-            elif args[0] == "keys":
-                manager.keys(args[1] if len(args) > 1 else "")
+                manager.add(args[1] if len(args) > 1 else "")
+            elif args[0] in ("keys", "edit"):
+                manager.edit(args[1] if len(args) > 1 else "")
+            elif args[0] == "remove":
+                manager.remove(args[1] if len(args) > 1 else "")
+            elif args[0] == "test":
+                if len(args) > 1 and args[1] not in manager.store.profiles:
+                    raise ValueError("供应商不存在")
+                item = manager.store.profiles[args[1]] if len(args) > 1 else manager.current()
+                self._emit(manager.test_connection(item))
             elif len(args) > 1:
                 manager.use(args[1])
             else:
@@ -521,7 +531,7 @@ class Console:
 
     def _model_manager(self):
         from .model_ui import ModelManager
-        from .console_ui import select_option, show_secret
+        from .console_ui import select_option
 
         def ask(label, default="", *, secret=False):
             if self._input is not None:
@@ -541,13 +551,7 @@ class Console:
                 return choices[int(value) - 1].value
             return next((c.value for c in choices if c.value == value), None)
 
-        def reveal(title, value):
-            if self._input is None and enhanced_input_available():
-                show_secret(title, value)
-            else:
-                self._emit("查看 API Key 需要交互终端")
-
-        return ModelManager(self.config, emit=self._emit, reload=self._reload_backend, ask=ask, choose=choose, reveal=reveal)
+        return ModelManager(self.config, emit=self._emit, reload=self._reload_backend, ask=ask, choose=choose)
 
     def _cmd_backend(self, args: list[str]) -> None:
         llm = self.config.llm
@@ -566,7 +570,7 @@ class Console:
             llm.reasoning_effort = stored.reasoning_effort
             if stored_model:
                 llm.model = stored_model
-            elif "/" not in llm.model:
+            if "/" not in llm.model:
                 llm.model = f"deepseek/{llm.model}"
             self._reload_backend()
             self._emit(f"已切到 omp 后端（复用 omp 鉴权）：模型 {llm.model}")

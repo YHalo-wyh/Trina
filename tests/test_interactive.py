@@ -12,6 +12,7 @@ import threading
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from trina.brain.agent import PentestAgent
 from trina.config import LLMConfig, TrinaConfig
@@ -312,6 +313,13 @@ class TestLauncherArgCompatibility(unittest.TestCase):
 
 class TestConsole(unittest.TestCase):
     """控制台命令分发（不需要真 LLM：只验证解析、状态与错误处理）。"""
+
+    def setUp(self):
+        provider_temp = tempfile.TemporaryDirectory()
+        self.addCleanup(provider_temp.cleanup)
+        env = patch.dict("os.environ", {"TRINA_PROVIDERS_FILE": str(Path(provider_temp.name) / "providers.json")})
+        env.start()
+        self.addCleanup(env.stop)
 
     def _console(self, lines: list[str], **kwargs):
         from trina.interactive import Console

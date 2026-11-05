@@ -139,10 +139,11 @@ COMMANDS: tuple[CommandSpec, ...] = (
         ),
     ),
     CommandSpec(
-        "model", "会话与模型", "管理供应商、模型和多把 API Key", "model [add|keys|use <连接>|list|模型规格]",
-        positional_choices=(ChoiceSpec("add", "添加官方供应商或自定义连接"), ChoiceSpec("keys", "添加、切换或删除命名 API Key"),
-                            ChoiceSpec("use", "切换已保存连接"), ChoiceSpec("list", "列出模型与供应商")),
-        examples=("/model", "/model add", "/model use deepseek", "/model keys"),
+        "model", "会话与模型", "以供应商为单位管理地址、Key 和模型", "model [add|edit|remove|test|use <供应商>|list|模型规格]",
+        positional_choices=(ChoiceSpec("add", "添加供应商配置"), ChoiceSpec("edit", "编辑供应商整条配置"),
+                            ChoiceSpec("remove", "删除供应商配置"), ChoiceSpec("test", "测试供应商地址连通性"),
+                            ChoiceSpec("use", "切换供应商"), ChoiceSpec("list", "列出模型与供应商")),
+        examples=("/model", "/model add", "/model edit", "/model test"),
     ),
     CommandSpec(
         "backend", "会话与模型", "查看或切换模型后端", "backend [omp|供应商ID]",
@@ -290,10 +291,11 @@ class SlashCommandCompleter(_Completer):
 
     @staticmethod
     def _choice_completion(choice: ChoiceSpec, prefix: str):
+        import shlex
         from prompt_toolkit.completion import Completion
 
         return Completion(
-            choice.value,
+            shlex.quote(choice.value),
             start_position=-len(prefix),
             display=choice.value,
             display_meta=choice.description,
@@ -580,22 +582,27 @@ def select_option(title: str, choices: list[ChoiceSpec], *, subtitle: str = "") 
     return _panel_app(body, title, bindings, control).run()
 
 
-def _panel_app(body, title: str, bindings, focused):
+def _panel_app(body, title: str, bindings, focused, *, completion_menu: bool = False):
     """所有模型配置页共用方角边框；退出后恢复主控制台。"""
     from prompt_toolkit import Application
     from prompt_toolkit.application.current import get_app
     from prompt_toolkit.layout import Float, FloatContainer, Layout, Window
+    from prompt_toolkit.layout.menus import CompletionsMenu
     from prompt_toolkit.styles import Style
     from prompt_toolkit.widgets import Frame, Box
     from .terminal import clean_text, use_color
 
     panel = Frame(Box(body, padding=1), title=clean_text(title), style="class:panel")
-    layout = Layout(FloatContainer(Window(), [Float(
+    floats = [Float(
         content=panel, width=lambda: max(4, min(96, get_app().output.get_size().columns - 2)),
-    )]), focused_element=focused)
+    )]
+    if completion_menu:
+        floats.append(Float(xcursor=True, ycursor=True, content=CompletionsMenu(max_height=5)))
+    layout = Layout(FloatContainer(Window(), floats), focused_element=focused)
     return Application(layout=layout, key_bindings=bindings, full_screen=True, erase_when_done=True,
                        style=Style.from_dict({"panel.border": "ansicyan", "panel.label": "bold ansicyan",
-                                              "dim": "ansibrightblack", "chosen": "bg:#164e63 #ffffff bold"} if use_color() else {}))
+                                              "dim": "ansibrightblack", "chosen": "bg:#164e63 #ffffff bold",
+                                              "field": "bg:#17212b #e2e8f0", "button.focused": "bg:#164e63 #ffffff bold"} if use_color() else {}))
 
 
 def edit_field(title: str, default: str = "", *, secret: bool = False) -> str:
@@ -623,25 +630,6 @@ def edit_field(title: str, default: str = "", *, secret: bool = False) -> str:
         event.app.exit(exception=KeyboardInterrupt())
     return _panel_app(HSplit([Window(control, height=1), Window(FormattedTextControl(
         "Enter 保存 · Esc 取消"), height=1)]), title, bindings, control).run()
-
-
-def show_secret(title: str, value: str) -> None:
-    """仅在临时屏幕中显示明确请求的密钥，退出后清除该屏幕。"""
-    from prompt_toolkit.key_binding import KeyBindings
-    from prompt_toolkit.layout import HSplit, Window
-    from prompt_toolkit.layout.controls import FormattedTextControl
-    from .terminal import clean_text
-
-    control = FormattedTextControl(clean_text(value), focusable=True)
-    bindings = KeyBindings()
-    @bindings.add("enter")
-    @bindings.add("escape")
-    @bindings.add("c-c")
-    @bindings.add("c-d")
-    def close(event):
-        event.app.exit()
-    _panel_app(HSplit([Window(control, wrap_lines=True, dont_extend_height=True),
-                      Window(FormattedTextControl("Enter / Esc 隐藏并返回"), height=1)]), title, bindings, control).run()
 
 
 __all__ = [

@@ -75,7 +75,7 @@ scripts/dev.sh play --api deepseek --goal "拿到 flag 并验证 SQL 注入" --m
 | `omp`（默认） | 本机已有 omp 且配好模型 | 无需（复用 omp 鉴权） | 50s/次全流程 |
 | `openai` + DeepSeek | 想独立于 omp、或要更低延迟/换机器 | `$DEEPSEEK_API_KEY`（`~/.trina/env`，0600，不入库） | **11s** 打穿 lab 并 CONFIRMED |
 
-> `/model` 在方框面板显示当前厂商、模型、思考档位和遮挡的 Key，可切换模型 / 厂商、调整思考强度，以及主动查看、添加、切换和删除命名 API Key。配置默认保存在仓库外 `~/.trina/providers.json`，详见 [模型管理与 30 个供应商预设](docs/MODELS.md)。临时产物的整理见 [仓库清理记录](docs/REPOSITORY_LAYOUT.md)。
+> `/model` 以供应商为单位添加、编辑、删除和切换配置。名称、请求地址、API Key、模型与备注在同一表单中管理，支持 Key 显隐、地址连通测试及模型验证；主页面保留模型和思考强度选择。配置保存在仓库外 `~/.trina/providers.json`，详见 [供应商配置与 30 个预设](docs/MODELS.md)。临时产物的整理见 [仓库清理记录](docs/REPOSITORY_LAYOUT.md)。
 
 ## 五项能力
 

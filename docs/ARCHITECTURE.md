@@ -97,7 +97,8 @@ flowchart TB
 | `trina.collaboration` | `SpecialistRole/Request/Result`、`Specialist.consult` | 专职 Agent 只持有后端并接收快照，返回不可信建议；recon/web 可建议白名单工具，review 只返回摘要；无工具执行、状态写入或递归委派入口 |
 | `trina.tools.specialists` | `ConsultSpecialist`、`TOOLS` | 注册咨询工具，默认关闭；共享审批/控制器/护栏/审计；子调用数、输出长度与快照长度有界；空 facts/evidence；子响应按实际顺序进入任务录制 |
 | `trina.llm` | `make_backend(LLMConfig)`、`LLMBackend.complete(system, user)`、`LLMUsage` | 后端实现只管"给提示词 → 返回文本 + 用量"；`ledger` 汇总进报告 |
-| `trina.providers` / `trina.model_ui` | `ProviderPreset`、`ProviderProfile`、`ProfileStore`、`ModelManager` | 供应商预设与用户连接、命名密钥和选择页；配置存于仓库外，模型目录请求复用 LLM 后端；当前连接在环境变量和显式覆盖之前装配 |
+| `trina.providers` / `trina.model_ui` | `ProviderPreset`、`ProviderProfile`、`ProfileStore`、`ModelManager` | 以供应商整条配置管理地址、单个 Key、模型、备注与思考档位；v2 文件存于仓库外，v1 多 Key 无损展开为独立供应商；编辑、切换与删除由同一管理层原子保存 |
+| `trina.provider_form` | `ProviderEditor` | 单页草稿表单；测试通过回调复用 LLM 后端，字段修改使旧结果失效，保存前校验，取消和测试不写入配置，不切换当前供应商 |
 | `trina.adapters` | `load_adapter/list_adapters`、`RangeAdapter.prepare/status/ground_truth/check_flag`、`score_tsecbench` | 靶场自描述（目标 + ground truth + flag 模式），评测框架据此自动判分 |
 | `trina.bench` | `BenchmarkClient`、`BenchmarkRunner`、`run_benchmark`、`submission_candidates` | 平台答题 API：控制面鉴权只认 `control_plane_hosts`；逐题串行 start→agent→submit→close，flag 提取优先 state.flags |
 | `trina.policy` | `PolicyRegistry.load()`、`AuthorizationController.check/note_evidence/revoke/coverage`、`Budget` | **计划器提出、控制器批准**：注册目标/检查项 + 预算 + 撤权，逐动作裁决；模型无写权限 |

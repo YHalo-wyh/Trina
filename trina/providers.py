@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -60,23 +59,21 @@ PRESET_BY_ID = {preset.id: preset for preset in PRESETS}
 
 @dataclass
 class ProviderProfile:
-    """一个连接可保存多把命名密钥，repr 不包含密钥内容。"""
+    """供应商是配置和凭据的管理单位；repr 不包含密钥。"""
     id: str
     provider: str
     base_url: str
     model: str
     api_key_env: str = "TRINA_LLM_API_KEY"
     api: str = "chat"
-    keys: dict[str, str] = field(default_factory=dict, repr=False)
-    active_key: str = ""
+    api_key: str = field(default="", repr=False)
     reasoning_effort: str = "default"
+    note: str = ""
 
     def validate(self) -> None:
-        if not re.fullmatch(r"[\w.-]{1,64}", self.id):
-            raise ValueError("连接名称只能包含字母、数字、中文、点、横线和下划线（最多 64 字）")
-        parts = urlsplit(self.base_url)
-        if any(c.isspace() or ord(c) < 32 for c in self.base_url) or parts.scheme not in {"https", "http"} or not parts.hostname or parts.username or parts.password or parts.query or parts.fragment:
-            raise ValueError("Base URL 必须是无账号、查询串或片段的 HTTP(S) 地址")
+        if not self.id.strip() or self.id != self.id.strip() or len(self.id) > 64 or any(ord(c) < 32 or ord(c) == 127 for c in self.id):
+            raise ValueError("供应商名称不能为空、包含控制字符或超过 64 字")
+        validate_address(self.base_url)
         if not self.model.strip():
             raise ValueError("模型 ID 不能为空")
         if any(ord(c) < 32 or ord(c) == 127 for c in self.model):
@@ -86,14 +83,30 @@ class ProviderProfile:
         from .llm.reasoning import LEVEL_LABELS
         if self.reasoning_effort not in LEVEL_LABELS:
             raise ValueError("思考档位无效")
-        if self.active_key and self.active_key not in self.keys:
-            raise ValueError("当前密钥名称不存在")
-        if any(not k.strip() or not isinstance(v, str) or not v.strip() for k, v in self.keys.items()):
-            raise ValueError("密钥名称与内容不能为空")
+        if not isinstance(self.api_key, str) or any(ord(c) < 32 or ord(c) == 127 for c in self.api_key):
+            raise ValueError("API Key 不能包含换行或控制字符")
+        if any(ord(c) < 32 or ord(c) == 127 for c in self.note):
+            raise ValueError("备注不能包含换行或控制字符")
+
+
+def validate_address(value: str) -> None:
+    """请求地址校验独立于模型，允许在填写模型前测试连通性。"""
+    parts = urlsplit(value)
+    if any(c.isspace() or ord(c) < 32 for c in value) or parts.scheme not in {"https", "http"} or not parts.hostname or parts.username or parts.password or parts.query or parts.fragment:
+        raise ValueError("请求地址必须是无账号、查询串或片段的 HTTP(S) 地址")
+
+
+def normalize_endpoint(value: str, api: str) -> tuple[str, str]:
+    """完整模型接口地址与 API 根地址统一保存，避免重复拼接路径。"""
+    value = value.strip().rstrip("/")
+    for suffix, protocol in (("/chat/completions", "chat"), ("/responses", "responses"), ("/messages", "anthropic")):
+        if value.endswith(suffix):
+            return value[:-len(suffix)], protocol
+    return value, api
 
 
 class ProfileStore:
-    """原子保存用户连接；环境变量仅在未选中命名密钥时作为凭据来源。"""
+    """原子保存供应商；旧多 Key 配置在内存中展开为独立供应商。"""
     def __init__(self, path: Path | None = None):
         self.path = path or Path(os.environ.get("TRINA_PROVIDERS_FILE") or Path.home() / ".trina" / "providers.json")
         self.profiles: dict[str, ProviderProfile] = {}
@@ -102,14 +115,31 @@ class ProfileStore:
         self.omp_model = ""
         if self.path.exists():
             raw = json.loads(self.path.read_text(encoding="utf-8"))
-            if raw.get("version") != 1:
+            if raw.get("version") not in (1, 2):
                 raise ValueError("供应商配置版本不受支持")
-            for data in raw.get("profiles", []):
+            rows = raw.get("profiles", [])
+            extras = []
+            for data in rows:
+                data = dict(data)
+                if raw["version"] == 1:
+                    keys, active_key = data.pop("keys", {}), data.pop("active_key", "")
+                    if active_key and active_key not in keys:
+                        raise ValueError("当前密钥名称不存在")
+                    data["api_key"] = keys.get(active_key, "")
+                    extras.extend((dict(data), label, key) for label, key in keys.items() if label != active_key)
                 item = ProviderProfile(**data)
                 item.validate()
                 if item.id in self.profiles:
                     raise ValueError("供应商连接名称重复")
                 self.profiles[item.id] = item
+            for data, label, key in extras:
+                base = (data["id"][:30] + " · " + "".join(c if ord(c) >= 32 else "_" for c in label)[:24]).strip()
+                name, suffix = base, 2
+                while name in self.profiles:
+                    name, suffix = f"{base}-{suffix}", suffix + 1
+                item = ProviderProfile(**dict(data, id=name, api_key=key))
+                item.validate()
+                self.profiles[name] = item
             self.active = raw.get("active", "")
             self.reasoning_effort = raw.get("reasoning_effort", "default")
             self.omp_model = str(raw.get("omp_model") or "")
@@ -132,7 +162,7 @@ class ProfileStore:
         fd, name = tempfile.mkstemp(prefix=".providers-", dir=self.path.parent)
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as stream:
-                json.dump({"version": 1, "active": self.active, "reasoning_effort": self.reasoning_effort, "omp_model": self.omp_model,
+                json.dump({"version": 2, "active": self.active, "reasoning_effort": self.reasoning_effort, "omp_model": self.omp_model,
                            "profiles": [asdict(p) for p in self.profiles.values()]}, stream, ensure_ascii=False, indent=2)
                 stream.write("\n")
             os.chmod(name, 0o600)
@@ -150,6 +180,6 @@ class ProfileStore:
 
     def key(self, name: str, env: str) -> str:
         item = self.profiles.get(name)
-        if item and item.active_key:
-            return item.keys[item.active_key]
+        if item and item.api_key:
+            return item.api_key
         return os.environ.get(env, "") if env else ""

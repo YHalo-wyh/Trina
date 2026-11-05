@@ -106,6 +106,14 @@ class TestTerminalUI(unittest.TestCase):
         self.assertIn("--max-steps", command_hint("/play"))
         self.assertIn("输入 /", command_hint("hello"))
 
+    def test_supplier_names_with_spaces_are_quoted_in_command_completion(self):
+        import shlex
+        from prompt_toolkit.document import Document
+        from trina.console_ui import ChoiceSpec
+        completer = SlashCommandCompleter(dynamic_values=lambda *_: [ChoiceSpec("公司 DeepSeek")])
+        completion = next(completer.get_completions(Document("/model use 公司"), None))
+        self.assertEqual(shlex.split("model use " + completion.text), ["model", "use", "公司 DeepSeek"])
+
     def test_model_picker_search_and_enter_return_the_matching_id(self):
         from prompt_toolkit.application.current import create_app_session
         from prompt_toolkit.input import create_pipe_input
@@ -150,20 +158,6 @@ class TestTerminalUI(unittest.TestCase):
             pipe.send_text("\x03")
             with self.assertRaises(KeyboardInterrupt):
                 edit_field("API Key", secret=True)
-
-    def test_explicit_key_view_uses_temporary_screen_and_exits_on_enter(self):
-        from prompt_toolkit.application.current import create_app_session
-        from prompt_toolkit.data_structures import Size
-        from prompt_toolkit.input import create_pipe_input
-        from prompt_toolkit.output.vt100 import Vt100_Output
-        from trina.console_ui import show_secret
-        stream = io.StringIO()
-        output = Vt100_Output(stream, lambda: Size(rows=24, columns=80), enable_cpr=False)
-        with create_pipe_input() as pipe, create_app_session(input=pipe, output=output):
-            pipe.send_text("\r")
-            show_secret("API Key · demo", "test-visible-on-request")
-        self.assertIn("test-visible-on-request", stream.getvalue())
-        self.assertIn("\x1b[?1049l", stream.getvalue())
 
     def test_external_markup_is_literal_and_terminal_controls_are_removed(self):
         value = "[bold red]原始文本[/bold red]\x1b[2J\x1b]0;伪造标题\x07尾部"

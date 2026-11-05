@@ -53,18 +53,24 @@ class OpenAICompatBackend(LLMBackend):
             headers["x-opencode-session"] = self._session_id
         return headers
 
-    def _request_json(self, url: str, payload: dict | None = None) -> tuple[dict, str]:
+    def _request_json(self, url: str, payload: dict | None = None, *, connectivity: bool = False) -> tuple[dict, str]:
         request = urllib.request.Request(
             url, data=json.dumps(payload).encode("utf-8") if payload is not None else None,
-            headers=self._headers(), method="POST" if payload is not None else "GET",
+            headers={"User-Agent": "Trina/0.2.0"} if connectivity else self._headers(), method="POST" if payload is not None else "GET",
         )
         try:
-            with urllib.request.urlopen(request, timeout=self.config.timeout) as response:
+            timeout = min(max(1, self.config.timeout), 10) if connectivity else self.config.timeout
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                if connectivity:
+                    return {"status": response.status}, ""
                 body = json.loads(response.read().decode("utf-8", "replace"))
                 if not isinstance(body, dict):
                     return {}, "模型响应必须是 JSON 对象"
                 return body, ""
         except urllib.error.HTTPError as exc:
+            if connectivity:
+                exc.close()
+                return {"status": exc.code}, ""
             detail = exc.read().decode("utf-8", "replace")
             key = self.api_key()
             if key:
@@ -89,6 +95,17 @@ class OpenAICompatBackend(LLMBackend):
         return sorted({str(row["id"]) for row in rows
                        if isinstance(row, dict) and row.get("id")
                        and not any(tag in str(row["id"]).lower() for tag in ("embed", "whisper", "tts", "rerank"))})
+
+    def check_connectivity(self) -> tuple[bool, str]:
+        """只测试配置地址是否可达，不发送凭据或生成模型输出。"""
+        from ..providers import validate_address
+        validate_address(self.base_url)
+        started = time.monotonic()
+        body, error = self._request_json(self.base_url, connectivity=True)
+        if error:
+            return False, f"地址不可达：{error}"
+        elapsed = round((time.monotonic() - started) * 1000)
+        return True, f"地址可达 · HTTP {body['status']} · {elapsed} ms；Key / 模型未验证"
 
     def complete(
         self,
