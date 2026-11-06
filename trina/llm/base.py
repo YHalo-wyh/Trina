@@ -88,7 +88,7 @@ class LLMBackend(ABC):
     def health(self) -> tuple[bool, str]:
         """自检：返回 (是否可用, 说明)。"""
         try:
-            response = self.complete("You are a health probe. Be terse.", "Reply with exactly: TRINA_OK", max_tokens=16)
+            response = self.complete("", "Reply with exactly: TRINA_OK", max_tokens=16)
         except Exception as exc:  # noqa: BLE001 - 自检需吞掉一切异常
             return False, f"{self.name} 后端异常: {exc}"
         if not response.ok:

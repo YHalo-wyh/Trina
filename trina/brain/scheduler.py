@@ -7,7 +7,7 @@ E4 实测与 `docs/TARGET_PROGRESS.md` 的缺口一致：台账把假设写进�
 
 1. 从台账里挑一条**可确定性验证**的最高优先级假设（必须绑定 `vuln_class` + `target`）；
 2. 把它映射到注册检查项（`RegisteredTest.expect_finding` ↔ 假设的 `vuln_class`，用与评分同一套归一化）；
-3. 生成调度指令进提示词（含 `test_id` 与目标），并要求模型要么执行、要么说明为什么换路；
+3. 将本步检查项以结构化数据传给模型（含 `test_id` 与目标）；
 4. 记录**遵从率**：模型是否按调度执行，进 `state.counters["scheduler_miss"]`、`state.scheduler` 与审计。
 
 刻意保守的边界
@@ -16,7 +16,7 @@ E4 实测与 `docs/TARGET_PROGRESS.md` 的缺口一致：台账把假设写进�
 * 只调度"有验证对象"的假设（无 `vuln_class`/`target` 的描述性假设不参与，避免瞎指挥）；
 * 同类检查项试过且该假设已有尝试过 → 不再重复绑定同一 `test_id`（与循环守卫同口径，避免打转），
   改为"自由验证"（让模型提高验证强度）；
-* 连续未遵从 ≥ `escalate_after` 次时升级为硬提示，但**不阻断工具、不代模型编造证据**。
+* 连续未遵从 ≥ `escalate_after` 次时标记 `required`，不阻断工具，也不代模型编造证据。
 
 遵从判据（可测量、可复核）
 --------------------------
@@ -27,6 +27,7 @@ E4 实测与 `docs/TARGET_PROGRESS.md` 的缺口一致：台账把假设写进�
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -58,25 +59,13 @@ class ScheduleDecision:
 
     # ------------------------------------------------------------------ 视图
     def prompt_block(self) -> str:
-        """进单步提示词的调度指令。"""
-        lines = ["## 调度指令（确定性调度：本步优先验证最高优先级假设）"]
-        if self.hypothesis_id:
-            lines.append(f"- 待验证：{self.hypothesis_id}（优先级 {self.score:.2f}）：{self.statement}")
-        else:
-            lines.append(f"- 任务硬性要求：{self.statement}")
-        lines.append(
-            f"- 注册检查项：{self.test_id}（工具 {self.tool}，等级 {self.level or '-'}；"
-            f"期望产出 {self.vuln_class} 类发现）→ 请在动作里带 \"test_id\": \"{self.test_id}\""
-        )
-        if self.required:
-            lines.append(
-                "- **本步必须执行上述检查项**：若确有理由换路，必须在 thought 里说明理由（未遵从会记入审计）"
-            )
-        else:
-            lines.append("- 若该检查项不可用（工具缺失/目标不符），可改用仍能产出同类证据的动作，并在 thought 里说明理由。")
-        if self.reason:
-            lines.append(f"- 选它的理由：{self.reason}")
-        return "\n".join(lines)
+        """提供本步检查项的数据，不重复作业说明。"""
+        title = "## 本步检查项" if self.hypothesis_id else "## 本步检查项（任务硬性要求）"
+        return title + "\n" + json.dumps({
+            "hypothesis_id": self.hypothesis_id, "test_id": self.test_id, "tool": self.tool,
+            "target": self.target, "parameter": self.parameter, "vuln_class": self.vuln_class,
+            "required": self.required, "statement": self.statement,
+        }, ensure_ascii=False)
 
     def matches_action(self, *, test_id: str = "", tool: str = "") -> bool:
         """动作是否遵从调度（见模块 docstring 的判据）。"""

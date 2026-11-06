@@ -166,6 +166,19 @@ class TestRegistry(unittest.TestCase):
         described = {item["name"] for item in self.registry.describe()}
         self.assertIn("echo_tool", described)
 
+    def test_runtime_tool_definitions_keep_parameters_without_tutorial_examples(self):
+        class ExampleTool(_Echo):
+            spec = ToolSpec(name="example_tool", summary="功能说明", params=_Echo.spec.params,
+                            examples=["TUTORIAL_ONLY"], notes="CLI_ONLY")
+        registry = ToolRegistry([ExampleTool()])
+        block = registry.prompt_block()
+        for field in ("target", "count", "取值=a|b", "功能说明"):
+            self.assertIn(field, block)
+        self.assertNotIn("TUTORIAL_ONLY", block)
+        self.assertNotIn("CLI_ONLY", block)
+        self.assertIn("TUTORIAL_ONLY", ExampleTool.spec.render())
+        self.assertIn("CLI_ONLY", registry.prompt_block(verbose=True))
+
 
 if __name__ == "__main__":
     unittest.main()

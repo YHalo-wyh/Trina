@@ -266,8 +266,8 @@ class TestCollaboration(unittest.TestCase):
         state = PentestAgent(self.cfg, registry=self.registry, backend=backend, controller=controller).run(
             TARGET, goal="验证 SQL 注入", max_steps=2, run_id="schedule",
         )
-        self.assertIn("注册检查项：first", backend.inputs[0][1])
-        self.assertIn("注册检查项：second", backend.inputs[1][1])
+        self.assertIn('"test_id": "first"', backend.inputs[0][1])
+        self.assertIn('"test_id": "second"', backend.inputs[1][1])
         self.assertEqual(state.coverage["executed"], ["first", "second"])
 
     def test_same_tool_with_wrong_test_id_is_not_compliance(self):

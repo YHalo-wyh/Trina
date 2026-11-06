@@ -1,4 +1,4 @@
-"""PTES 阶段机：把「像真人一样渗透」编码成可验证的阶段目标。
+"""基于工具事实跟踪阶段与停止条件。
 
 阶段推进**由事实驱动**，不由模型自称：
     recon  有开放端口 → enum
@@ -14,9 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from ..state import RunState
-from .prompts import PHASE_DIRECTIVES, PHASE_TOOL_CATEGORIES
-
-PHASES = tuple(PHASE_DIRECTIVES)
+PHASES = ("recon", "enum", "vuln", "exploit", "post", "report")
 
 
 @dataclass
@@ -113,41 +111,3 @@ class Planner:
         if self.stagnant_steps >= max(3, self.max_steps_per_phase):
             return True
         return False
-
-    # ------------------------------------------------------------------ 视图
-    def directive(self, state: RunState, phase: str | None = None) -> str:
-        phase = phase or self.phase
-        base = PHASE_DIRECTIVES.get(phase, "")
-        extra: list[str] = []
-        if phase == "enum":
-            for host, hs in state.hosts.items():
-                if hs.ports:
-                    ports = ", ".join(f"{p}/{i.get('service', '?')}" for p, i in sorted(hs.ports.items()))
-                    extra.append(f"{host} 已开放端口：{ports}")
-        elif phase == "vuln":
-            surfaces = [p for hs in state.hosts.values() for p in hs.web_paths[-10:]]
-            if surfaces:
-                extra.append("已知路径：" + ", ".join(surfaces[:10]))
-            if state.hosts:
-                params = sorted({f.parameter for f in state.findings if f.parameter})
-                if params:
-                    extra.append("已确认有漏洞的参数：" + ", ".join(params))
-            if state.credentials:
-                extra.append("已获得凭据（可用于登录验证）：" + ", ".join(f"{c.service}:{c.username}" for c in state.credentials[:3]))
-        elif phase == "exploit":
-            if state.findings:
-                extra.append(
-                    "待利用的漏洞："
-                    + "; ".join(f"{f.vuln_class}@{f.url or f.target}(param={f.parameter or '-'},status={f.status})" for f in state.findings[:6])
-                )
-            else:
-                extra.append("尚无已确认漏洞：先用 sqli_test / cmd_inject_test / lfi_test 定向验证，或 weak_password_brute 试弱口令。")
-        elif phase == "post":
-            if state.flags:
-                extra.append(f"已获得 flag：{', '.join(f['value'][:40] for f in state.flags[:3])}")
-            else:
-                extra.append("尚未拿到 flag：优先 flag_hunt，或确认是否有可读文件/命令执行能力。")
-        return base + (("\n参考信息：\n" + "\n".join(f"- {e}" for e in extra)) if extra else "")
-
-    def tools_categories(self, phase: str | None = None) -> tuple[str, ...]:
-        return PHASE_TOOL_CATEGORIES.get(phase or self.phase, ("utility",))

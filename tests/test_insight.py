@@ -404,8 +404,8 @@ class TestInsightSwitches(unittest.TestCase):
         )
         state = agent.run("127.0.0.1:9099", max_steps=3)
 
-        scheduled = [user for _sys, user in recorder.prompts if "调度指令" in user]
-        self.assertTrue(scheduled, "调度指令应进提示词")
+        scheduled = [user for _sys, user in recorder.prompts if "## 本步检查项" in user]
+        self.assertTrue(scheduled, "本步检查项数据应进入上下文")
         self.assertIn("sqli_probe", scheduled[0])
         self.assertEqual(state.scheduler.get("missed"), 1, "模型没执行 sqli_probe → 记一次未遵从")
         self.assertEqual(state.counters.get("scheduler_miss"), 1)
@@ -437,7 +437,7 @@ class TestInsightSwitches(unittest.TestCase):
         state = agent.run("127.0.0.1", max_steps=2)
         self.assertEqual(state.scheduler, {}, "关闭调度后不应有调度统计")
         for _sys, user in recorder.prompts:
-            self.assertNotIn("调度指令", user)
+            self.assertNotIn("## 本步检查项", user)
 
 
 class _RecordingBackend:
@@ -513,6 +513,10 @@ class TestHypothesisScheduler(unittest.TestCase):
         self.assertEqual(decision.test_id, "sqli_probe")
         self.assertEqual(decision.tool, "sqli_test")
         self.assertIn("test_id", decision.prompt_block())
+        prompt_data = json.loads(decision.prompt_block().split("\n", 1)[1])
+        self.assertEqual(prompt_data["test_id"], decision.test_id)
+        self.assertEqual(prompt_data["target"], decision.target)
+        self.assertEqual(prompt_data["required"], decision.required)
         self.assertTrue(decision.matches_action(test_id="sqli_probe"))
         self.assertTrue(decision.matches_action(tool="sqli_test"))
         self.assertFalse(decision.matches_action(test_id="lfi_probe", tool="lfi_test"))

@@ -346,8 +346,8 @@ class HypothesisLedger:
         """给模型的台账摘要：按优先级排序的待验证假设。"""
         open_items = self.open_items()
         if not open_items:
-            return "（暂无待验证假设：可以先提出 1—3 个可验证的假设，再动手）"
-        lines = ["待验证假设（按优先级排序；用 hypothesis_id 复用编号，hypothesis 字段新增假设）:"]
+            return "无待验证假设。"
+        lines = ["待验证假设:"]
         for item in open_items[:limit]:
             lines.append(
                 f"  - {item.id}（优先级 {item.priority(self.risk_aversion):.2f}）{item.statement}"

@@ -31,12 +31,14 @@ class TestParseAction(unittest.TestCase):
             for ledger in (False, True):
                 with self.subTest(render=render.__name__, ledger=ledger):
                     text = render(ledger)
-                    start = text.index('{"thought"')
+                    start = text.index('{"action"')
                     action, _ = json.JSONDecoder().raw_decode(text[start:])
                     self.assertIn("action", action)
                     self.assertEqual("hypothesis" in action, ledger)
                     self.assertNotIn("渗透测试助手", text)
                     self.assertNotIn("你是 Trina", text)
+                    self.assertNotIn("thought", action)
+                    self.assertLess(len(text), 400)
 
     def test_plain_json(self):
         action = parse_action('{"thought": "扫端口", "action": "port_scan", "params": {"target": "127.0.0.1"}}')
@@ -136,12 +138,17 @@ class TestPlanner(unittest.TestCase):
         planner.phase = "recon"
         self.assertFalse(planner.should_finish(self.state))
 
-    def test_directive_mentions_known_ports(self):
-        planner = Planner()
-        planner.phase = "enum"
+    def test_step_keeps_known_ports_without_repeating_action_protocol(self):
+        from trina.brain.prompts import build_step_prompt
         self.state.host("127.0.0.1").add_port(80, service="http")
-        directive = planner.directive(self.state)
-        self.assertIn("80/http", directive)
+        prompt = build_step_prompt(state_digest=self.state.summary_for_prompt(), last_observation="HTTP 200",
+                                   hints=["检查首页"], budget={"剩余秒": 30})
+        self.assertIn("80/http", prompt)
+        self.assertIn("HTTP 200", prompt)
+        self.assertIn("检查首页", prompt)
+        self.assertIn("剩余秒=30", prompt)
+        self.assertNotIn('{"action"', prompt)
+        self.assertNotIn("先用 port_scan", prompt)
 
 
 # ---------------------------------------------------------------------------
@@ -350,6 +357,17 @@ class TestReActLoop(unittest.TestCase):
         log = AuditLog(Path(state.artifacts["audit_path"]), state.run_id)
         ok, detail = log.verify()
         self.assertTrue(ok, detail)
+
+    def test_minimal_actions_execute_without_thought_or_role_fields(self):
+        agent = self._agent([
+            {"response": json.dumps({"action": "fake_scan", "params": {"target": "127.0.0.1"}})},
+            {"response": json.dumps({"action": "fake_leak", "params": {"target": "127.0.0.1"}})},
+            {"response": json.dumps({"final": {"summary": "done"}})},
+        ])
+        state = agent.run("127.0.0.1", goal="拿 flag")
+        self.assertEqual(state.status, "success")
+        self.assertEqual(state.counters["tool_calls"], 2)
+        self.assertEqual(len(state.flags), 1)
 
     def test_out_of_scope_is_blocked_without_llm(self):
         agent = self._agent([{"response": '{"thought": "x", "final": {}}'}])

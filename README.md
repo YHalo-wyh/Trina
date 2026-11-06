@@ -77,6 +77,8 @@ scripts/dev.sh play --api deepseek --goal "拿到 flag 并验证 SQL 注入" --m
 
 > `/model` 以供应商为单位添加、编辑、删除和切换配置。名称、请求地址、API Key、模型与备注在同一表单中管理，支持 Key 显隐、地址连通测试及模型验证；主页面保留模型和思考强度选择。配置保存在仓库外 `~/.trina/providers.json`，详见 [供应商配置与 30 个预设](docs/MODELS.md)。临时产物的整理见 [仓库清理记录](docs/REPOSITORY_LAYOUT.md)。
 
+运行时只提供简短调用协议、工具参数和任务上下文，不再附带角色扮演、分阶段攻略或每轮重复的 JSON 教程。当前网页工具使用 `requests` / `aiohttp` 与 `BeautifulSoup`，尚未封装真实浏览器；浏览器自动化拟采用 **Playwright Python + Chromium**，状态说明见 [架构文档](docs/ARCHITECTURE.md#9-浏览器能力状态)。
+
 ## 五项能力
 
 | 能力 | 落地位置 | 关键设计 |

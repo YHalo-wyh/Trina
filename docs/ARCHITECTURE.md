@@ -85,14 +85,14 @@ flowchart TB
 | `trina.tools.http` | `HttpClient.request/get/post`、`HttpResult.as_evidence()` | 出网唯一出口：护栏 → 限速 → 请求 → 证据化；护栏拒绝时返回带 `error` 的结果而不是抛异常 |
 | `trina.tools.external` | `run_external(argv, ctx, …)`、`which/have` | `shell=False`、先护栏后执行、命令与输出摘要进审计 |
 | `trina.brain.agent` | `PentestAgent(config, registry=, backend=, on_step=).run(target, goal=, max_steps=, max_seconds=, record_path=) -> RunState` | 评测框架与 CLI 都只依赖这个签名 |
-| `trina.brain.planner` | `Planner.tick/objective_met/directive/force_advance/should_finish` | 阶段推进只看**事实**；每阶段有步数预算，停滞可强制推进 |
+| `trina.brain.planner` | `Planner.tick/objective_met/force_advance/should_finish` | 阶段推进只看**事实**；每阶段有步数预算，停滞可推进；不向模型注入阶段作业攻略 |
 | `trina.brain.goal` | `GoalRequirements.parse(goal)`、`unsatisfied(state)/soft_hints/satisfied` | 漏洞类与端口形成硬条件；路径在没有类要求时为硬条件，否则为提示；凭据形成验证提示。最终成功依据已表达的条件，不读取 ground truth；关键词解析不能表达全部自然语言语义 |
 | `trina.hypotheses` | `HypothesisLedger.add/from_action/record_tool_outcome/record_outcome/prompt_block/finalize/summary` | 假设的排序/状态机与证据判定；模型仍选择动作，但确定性选取由 `trina.brain.scheduler` 每步派发；任务/对话共用验证对象匹配；`hypothesis_id` 复用台账；无新信息只降优先级，明确反证才能否定 |
 | `trina.brain.failure` | `classify_failure`、`LoopGuard.observe`、`advice_for`、`alternatives_for` | 失败归因（boundary/tool/environment/budget/hypothesis）+ 无新信息重复识别，给出递进建议（换参数→换工具→人工） |
 | `trina.brain.scheduler` | `HypothesisScheduler.decide(ledger, tests, executed_tests=, goal_classes=)`、`observe(decision, test_id=, tool=)` | **确定性假设调度**：只调度能绑定注册检查项的假设；任务要求的漏洞类优先（无假设时直接派该类检查项）；未遵从进审计链与 `state.scheduler` |
 | `trina.evidence_graph` | `build(state, registry=, hypotheses=)`、`EvidenceGraph.to_mermaid/to_dict` | 结论可反向追溯：目标→主机→端口→路径→发现→证据，另有检查项/假设→发现；构建失败不影响报告 |
 | `trina.board` | `render_board(state, hypotheses=)`、`summarise`、`latest_state_file`、`load_run_state` | 工作台视图的**唯一**渲染实现（控制台 `/board` 与 `trina watch` 共用）；`load_run_state` 把 state.json 还原成 `RunState` |
-| `trina.brain.prompts` | `render_system_prompt(include_hypothesis)`、`build_system_prompt`、`build_step_prompt`、`parse_action`、`protocol_reminder` | 动作协议与阶段指引的**唯一**文本源；`include_hypothesis=False` 即基线口径（对照实验用），两条臂同模板渲染、不会漂移 |
+| `trina.brain.prompts` | `action_example`、`render_system_prompt(include_hypothesis)`、`build_system_prompt`、`build_step_prompt`、`parse_action` | 共用最小动作协议；系统只说明一次调用与结束格式，单步只传状态、预算、任务及结果；`thought` 非必填；关闭台账时省略假设字段 |
 | `trina.brain.chat` | `ChatAgent(config, registry=, backend=, approval=, steer_queue=, controller=).ask(text) -> str` | **对话式大脑**：共用护栏/控制器/审计/审批；每条消息最多 12 个动作；本轮请求 + 事实摘要 + 有界历史，保存动作/观察关系并回灌失败建议；不宣称具有任务模式的阶段机 |
 | `trina.collaboration` | `SpecialistRole/Request/Result`、`Specialist.consult` | 专职 Agent 只持有后端并接收快照，返回不可信建议；recon/web 可建议白名单工具，review 只返回摘要；无工具执行、状态写入或递归委派入口 |
 | `trina.tools.specialists` | `ConsultSpecialist`、`TOOLS` | 注册咨询工具，默认关闭；共享审批/控制器/护栏/审计；子调用数、输出长度与快照长度有界；空 facts/evidence；子响应按实际顺序进入任务录制 |
@@ -199,3 +199,9 @@ flowchart TB
 [Agent 设计审查](AGENT_DESIGN_REVIEW.md)、
 [ADR-0017](../design/adr/0017-specialist-consultation-without-blackboard.md) 和
 [ADR-0018](../design/adr/0018-fact-context-and-atomic-snapshots.md)。
+
+## 9. 浏览器能力状态
+
+2026-11-06 核对：当前工具注册表没有浏览器工具，依赖中也没有 Playwright / Selenium。HTTP 获取和并发请求使用 `requests` / `aiohttp`，页面解析使用 `BeautifulSoup`；这条路径不能执行页面 JavaScript，也不能代替真实浏览器的点击、输入和渲染截图。
+
+浏览器封装拟采用 **Playwright Python + Chromium**，沿用 Python 工具体系，按实际需要提供导航、页面快照、点击、输入和截图等操作。[Playwright 官方文档](https://playwright.dev/python/docs/intro)提供 Python 自动化接口，且[支持 Chromium](https://playwright.dev/python/docs/browsers)。此处是选型，尚未添加依赖或注册对应工具；接入时仍应复用 `ToolRegistry`、范围校验、审计与运行目录。

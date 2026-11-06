@@ -80,14 +80,14 @@ class ToolSpec:
     examples: list[str] = field(default_factory=list)
     notes: str = ""
 
-    def render(self, verbose: bool = False) -> str:
+    def render(self, verbose: bool = False, *, include_examples: bool = True) -> str:
         head = f"### {self.name} [{self.category}/{self.action_level}]"
         lines = [head, self.summary]
         if self.params:
             lines.append("参数:")
             for pname, pspec in self.params.items():
                 lines.append(f"  - {pname}: {pspec.render()}")
-        if self.examples:
+        if self.examples and include_examples:
             lines.append("示例: " + " | ".join(self.examples[:3]))
         if self.external_bin and verbose:
             lines.append(f"外部工具: {self.external_bin}（缺失时自动降级到内置引擎）")
@@ -331,7 +331,7 @@ class ToolRegistry:
             if not visible:
                 continue
             blocks.append(f"## {category}")
-            blocks.extend(spec.render(verbose=verbose) for spec in visible)
+            blocks.extend(spec.render(verbose=verbose, include_examples=verbose) for spec in visible)
         return "\n".join(blocks)
 
     def describe(self) -> list[dict[str, Any]]:
