@@ -24,7 +24,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Iterable
+from typing import Any, Callable
 from urllib.parse import urljoin
 
 from ..scope import parse_target
@@ -36,7 +36,6 @@ from .registry import (
     ToolResult,
     ToolSpec,
     denied_result,
-    register,
 )
 
 # ---------------------------------------------------------------------------
@@ -66,8 +65,6 @@ CONNECT_TIMEOUT = 5.0
 FLAG_RE = re.compile(r"(?i)flag\{[^}\n]{1,120}\}|[A-Za-z0-9_]{8,40}\{[^}\n]{4,80}\}")
 
 #: 缺依赖时使用的兜底小字典（词表文件不存在时）
-_FALLBACK_USERS = ("admin", "root", "test", "guest")
-_FALLBACK_PASSWORDS = ("123456", "admin", "password", "root", "12345678", "123456789", "guest")
 
 #: 内置 flag 路径清单（本地文件系统 + Web 路径共用；仅读不写）
 FLAG_PATHS: tuple[str, ...] = (
@@ -169,22 +166,6 @@ def _have_module(name: str) -> bool:
         return False
 
 
-def _read_wordlist(path: Path, fallback: Iterable[str]) -> list[str]:
-    """读词表；文件不存在/为空时退回内置字典。"""
-    try:
-        if path.is_file():
-            lines = [
-                line.strip()
-                for line in path.read_text(encoding="utf-8", errors="replace").splitlines()
-            ]
-            values = [line for line in lines if line and not line.startswith("#")]
-            if values:
-                return values
-    except OSError:
-        pass
-    return list(fallback)
-
-
 def _clean_list(values: Any) -> list[str]:
     if not values:
         return []
@@ -204,18 +185,14 @@ def _load_candidates(
     if username:
         user_list = [str(username)]
     else:
-        user_list = _clean_list(users) or _read_wordlist(
-            ctx.config.tools.wordlist_path("users"), _FALLBACK_USERS
-        )
+        user_list = _clean_list(users)
 
     if password is not None and password != "":
         pwd_list = [str(password)]
     elif password == "":
         pwd_list = [""]
     else:
-        pwd_list = _clean_list(passwords) or _read_wordlist(
-            ctx.config.tools.wordlist_path("passwords"), _FALLBACK_PASSWORDS
-        )
+        pwd_list = _clean_list(passwords)
     return user_list, pwd_list
 
 
@@ -1190,6 +1167,3 @@ class FlagHunt(Tool):
 # ---------------------------------------------------------------------------
 
 TOOLS: list[Tool] = [WeakPasswordBrute(), HTTPFormLogin(), FlagHunt()]
-
-for _tool in TOOLS:  # 模块级注册（import 即生效）
-    register(_tool)

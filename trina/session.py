@@ -23,6 +23,10 @@ APPROVAL_MODES = ("off", "exploit", "verify", "all")
 DEFAULT_APPROVAL_TIMEOUT = 300.0
 
 
+class GoalUpdate(str):
+    """显式目标更新，与普通补充分开传递，不修改任何授权范围。"""
+
+
 def level_needs_approval(mode: str, level: str) -> bool:
     """按模式判断某个动作等级是否需要人工批准。"""
     mode = (mode or "off").strip().lower()
@@ -114,6 +118,10 @@ class Session:
             return
         self.steers.put(note)
         self.emit(f"[补充] 已发送：{note}")
+
+    def update_goal(self, value: str) -> None:
+        self.steers.put(GoalUpdate(value))
+        self.emit("[目标] 已更新，将在下一决策点接收")
 
     def request_stop(self) -> None:
         self.stop_event.set()

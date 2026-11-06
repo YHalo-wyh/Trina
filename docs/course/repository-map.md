@@ -16,7 +16,7 @@
 |---|---|---|
 | 命令怎样转成任务 | `trina/cli.py`、`trina/play.py`、`trina/interactive.py` | `tests/test_interactive.py`，运行手册 |
 | 模型怎样选择动作 | `trina/brain/agent.py`、`chat.py`、`prompts.py`、`planner.py`、`goal.py` | `tests/test_brain.py`、`test_decision_evidence.py` |
-| 检查从哪里获得授权 | `trina/config.py`、`trina/policy.py`、`configs/ranges/*.yaml` | `tests/test_policy.py`，REQ-03、REQ-11 |
+| 检查从哪里获得授权 | `trina/config.py`、`trina/policy.py`、显式 `policy.registry_dirs` | `tests/test_policy.py`、`tests/policy_fixtures.py`，REQ-03、REQ-11 |
 | 范围和高风险动作在哪里拒绝 | `trina/scope.py`，HTTP 和外部工具包装器 | `tests/test_scope.py`、`test_http.py`，护栏手册 |
 | 工具怎样装配和执行 | `trina/tools/__init__.py`、`registry.py` 及 recon/web/vuln/exploit/creds | `tests/test_registry.py`、`test_probe_integrity.py` |
 | 事实和假设怎样区分 | `trina/state.py`、`trina/hypotheses.py`、`brain/failure.py` | `tests/test_state.py`、`test_insight.py`、`test_decision_evidence.py` |

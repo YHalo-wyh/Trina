@@ -30,3 +30,6 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["trina"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"configs/trina.yaml" = "trina/defaults.yaml"

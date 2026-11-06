@@ -43,6 +43,17 @@ class ConsoleSessionTests(unittest.TestCase):
         view.model_finished(LLMUsage(input_tokens=10, cost=.1))
         self.assertIn("费用 ≥$0.1000", view.footer(120))
 
+    def test_individual_missing_fields_are_not_rendered_as_zero(self):
+        input_only = ConsoleState()
+        input_only.model_finished(LLMUsage(input_tokens=25, input_reported=True))
+        self.assertIn("入 25 / 出 未提供", input_only.footer(88))
+        cache_write_only = ConsoleState()
+        cache_write_only.model_finished(LLMUsage(input_tokens=25, cache_write_tokens=5,
+                                                 input_reported=True, cache_write_reported=True))
+        footer = cache_write_only.footer(100)
+        self.assertIn("缓存命中 未提供", footer)
+        self.assertIn("缓存读 未提供 / 写 5", footer)
+
     def test_request_phase_covers_real_wait_and_recovers_after_an_exception(self):
         view = ConsoleState()
         entered, release = threading.Event(), threading.Event()

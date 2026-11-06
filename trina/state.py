@@ -350,6 +350,8 @@ class RunState:
     def summary_for_prompt(self, max_chars: int = 4000) -> str:
         """给大模型的状态摘要（严格控制体积）。"""
         lines: list[str] = [f"目标: {self.target}", f"阶段: {self.phase}", f"状态: {self.status}"]
+        if self.goal:
+            lines.append(f"任务目标: {self.goal[:2000]}")
         lines.append(f"已用步数: {self.counters['steps']}，耗时 {self.duration:.0f}s")
         for host, hs in self.hosts.items():
             ports = ", ".join(

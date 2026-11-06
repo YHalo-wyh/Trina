@@ -13,7 +13,7 @@
 
 注册表来源（人可读、可审查）
 --------------------------
-* `configs/ranges/*.yaml` 的 `targets:` 段 → 目标与地址白名单
+* 操作者显式配置的策略 YAML `targets:` 段 → 目标与地址白名单
 * 同文件的 `tests:` 段 → 该靶场的注册检查项（test_id → 工具 + 参数）
 
 用法：`mode: strict`（只认注册表，演示/评分推荐）或 `mode: guided`（注册表是提示，护栏仍兜底）。
@@ -123,13 +123,10 @@ class PolicyRegistry:
     @classmethod
     def load(cls, config: Any = None, *, extra_dirs: list[str] | None = None) -> "PolicyRegistry":
         registry = cls()
-        ranges_dir = PROJECT_ROOT / "configs" / "ranges"
         paths: list[Path] = []
-        if ranges_dir.exists():
-            paths.extend(sorted(ranges_dir.glob("*.yaml")))
         for raw in extra_dirs or []:
             directory = Path(raw)
-            directory = directory if directory.is_absolute() else PROJECT_ROOT / directory
+            directory = directory if directory.is_absolute() else Path.cwd() / directory
             if directory.exists():
                 paths.extend(sorted(directory.glob("*.yaml")))
         for path in paths:
@@ -310,6 +307,16 @@ class AuthorizationController:
         if self.elapsed >= self.budget.logic_seconds:
             return self._deny("budget", f"逻辑预算已用尽（{self.budget.logic_seconds}s）", target_id, test_id)
 
+        if self.mode == "strict" and self.registry.empty:
+            return self._deny("test", "strict 模式没有显式检查项，拒绝执行", target_id, test_id)
+
+        action_host, action_port, _ = _split_address(target_raw)
+        for revoked in self.revoked:
+            if revoked not in self.registry.targets:
+                host, port, _ = _split_address(revoked)
+                if host and host == action_host and (port is None or port == action_port):
+                    return self._deny("revoked", "目标授权已撤销", revoked, test_id)
+
         # 2) 授权撤销（减权，不绕路）
         if target_id and target_id in self.revoked:
             return self._deny(
@@ -331,7 +338,7 @@ class AuthorizationController:
                         f"目标 {target_raw} 不在注册表中（strict 模式只接受注册的 target_id）",
                         target_id,
                         test_id,
-                        hint="请只对注册靶场动作；新增目标需先写入 configs/ranges/*.yaml",
+                        hint="请只对显式注册目标动作；新增目标需先写入 policy.registry_dirs 指向的 YAML",
                     )
             elif not target_id:
                 target_id = target.target_id

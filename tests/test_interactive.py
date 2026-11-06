@@ -12,6 +12,7 @@ import threading
 import time
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from trina.brain.agent import PentestAgent
@@ -317,7 +318,10 @@ class TestConsole(unittest.TestCase):
     def setUp(self):
         provider_temp = tempfile.TemporaryDirectory()
         self.addCleanup(provider_temp.cleanup)
-        env = patch.dict("os.environ", {"TRINA_PROVIDERS_FILE": str(Path(provider_temp.name) / "providers.json")})
+        env = patch.dict("os.environ", {
+            "TRINA_PROVIDERS_FILE": str(Path(provider_temp.name) / "providers.json"),
+            "TRINA_TASKS_FILE": str(Path(provider_temp.name) / "tasks.json"),
+        })
         env.start()
         self.addCleanup(env.stop)
 
@@ -420,8 +424,11 @@ class TestConsole(unittest.TestCase):
                 blob = "\n".join(output)
                 self.assertIn("已保存到", blob)
                 content = env_file.read_text(encoding="utf-8")
-                self.assertIn("export TRINA_MODEL=deepseek-chat", content)
-                self.assertIn("export TRINA_API=", content)
+                from trina.providers import ProfileStore
+                stored = ProfileStore()
+                self.assertEqual(stored.active, "")
+                self.assertEqual(stored.omp_model, console.config.llm.model)
+                self.assertNotIn("export TRINA_MODEL=", content)
                 self.assertIn("DEEPSEEK_API_KEY=sk-test", content, "既有内容不能被覆盖")
                 self.assertNotIn("# keep me\n# keep me", content)
             finally:
@@ -432,12 +439,40 @@ class TestConsole(unittest.TestCase):
         console.run()
         self.assertTrue(any("模型调用" in line for line in output))
 
+    def test_goal_persists_and_running_update_uses_typed_steer(self):
+        from trina.session import GoalUpdate
+
+        console, output = self._console([])
+        console.handle("/goal set 验证登录流程")
+        self.assertEqual(console.task_store.goal(), "验证登录流程")
+        console.session.thread = SimpleNamespace(is_alive=lambda: True)
+        console.handle("/goal set 追加检查会话失效")
+        update = console.session.steers.get_nowait()
+        self.assertIsInstance(update, GoalUpdate)
+        self.assertEqual(str(update), "追加检查会话失效")
+        self.assertIn("追加检查会话失效", "\n".join(output))
+
     def test_revoke_and_grant(self):
         console, output = self._console(["revoke lab-http", "grant lab-http", "quit"])
         console.run()
         blob = "\n".join(output)
         self.assertIn("已撤销 lab-http", blob)
         self.assertIn("已恢复 lab-http", blob)
+
+    def test_scheduled_config_rebuilds_policy_controller(self):
+        console, _output = self._console([])
+        interactive = console._ensure_controller()
+        interactive.revoke("lab-http")
+        scheduled_config = console.config.with_overrides(policy__max_checks=7)
+
+        scheduled = console._ensure_controller(scheduled_config)
+        self.assertIsNot(scheduled, interactive)
+        self.assertEqual(scheduled.budget.max_checks, 7)
+        self.assertNotIn("lab-http", scheduled.revoked)
+
+        restored = console._ensure_controller()
+        self.assertIsNot(restored, scheduled)
+        self.assertEqual(restored.budget.max_checks, console.config.policy.max_checks)
 
     def test_run_without_target_explains_usage(self):
         console, output = self._console(["run", "quit"])

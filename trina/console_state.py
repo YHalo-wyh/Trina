@@ -32,7 +32,11 @@ class ConsoleState:
     since: float = field(default_factory=time.monotonic)
     pending: int = 0
     missing_tokens: int = 0
+    missing_input: int = 0
+    missing_output: int = 0
     missing_cache: int = 0
+    missing_cache_read: int = 0
+    missing_cache_write: int = 0
     missing_cost: int = 0
     _lock: Any = field(default_factory=threading.RLock, repr=False)
 
@@ -50,7 +54,11 @@ class ConsoleState:
             usage = usage or LLMUsage()
             self.usage = self.usage.merge(usage)
             self.missing_tokens += int(not usage.tokens_reported)
+            self.missing_input += int(not usage.input_reported)
+            self.missing_output += int(not usage.output_reported)
             self.missing_cache += int(not usage.cache_reported)
+            self.missing_cache_read += int(not usage.cache_read_reported)
+            self.missing_cache_write += int(not usage.cache_write_reported)
             self.missing_cost += int(not usage.cost_reported)
             self.pending = max(0, self.pending - 1)
             if not self.pending:
@@ -63,27 +71,36 @@ class ConsoleState:
     def reset(self) -> None:
         with self._lock:
             self.usage = LLMUsage(calls=0)
-            self.missing_tokens = self.missing_cache = self.missing_cost = self.pending = 0
+            self.missing_tokens = self.missing_input = self.missing_output = 0
+            self.missing_cache = self.missing_cache_read = self.missing_cache_write = 0
+            self.missing_cost = self.pending = 0
             self.set_activity("idle", "就绪")
 
     def usage_data(self) -> dict[str, Any]:
         with self._lock:
-            return {**self.usage.to_dict(), "missing_tokens": self.missing_tokens, "missing_cache": self.missing_cache, "missing_cost": self.missing_cost}
+            return {**self.usage.to_dict(), "missing_tokens": self.missing_tokens,
+                    "missing_input": self.missing_input, "missing_output": self.missing_output,
+                    "missing_cache": self.missing_cache, "missing_cache_read": self.missing_cache_read,
+                    "missing_cache_write": self.missing_cache_write, "missing_cost": self.missing_cost}
 
     def footer(self, width: int, compact: bool = False) -> str:
         data = self.usage_data()
         known = data["tokens_reported"] or not data["calls"]
-        prefix = "≥" if data["missing_tokens"] and known else ""
+        prefix = "≥" if (data["missing_tokens"] or data["missing_input"] or data["missing_output"]) and known else ""
         total = prefix + _number(data["total_tokens"]) if known else "未提供"
         rate = data["cache_hit_rate"]
-        cache = f"{rate:.1%}" if rate is not None else "—" if data["cache_reported"] or not data["calls"] else "未提供"
+        cache = f"{rate:.1%}" if rate is not None else "—" if not data["calls"] else "未提供"
         if rate is not None and data["missing_cache"]:
             cache += "（部分）"
         groups = [f"会话 Token {total}", f"缓存命中 {cache}"]
         if not compact:
-            groups.insert(1, f"入 {prefix + _number(data['input_tokens']) if known else '—'} / 出 {prefix + _number(data['output_tokens']) if known else '—'}")
+            incoming = (("≥" if data["missing_input"] else "") + _number(data["input_tokens"])) if data["input_reported"] else "未提供"
+            outgoing = (("≥" if data["missing_output"] else "") + _number(data["output_tokens"])) if data["output_reported"] else "未提供"
+            groups.insert(1, f"入 {incoming} / 出 {outgoing}")
             if data["cache_reported"]:
-                groups.append(f"缓存读 {_number(data['cache_read_tokens'])} / 写 {_number(data['cache_write_tokens'])}")
+                read = (("≥" if data["missing_cache_read"] else "") + _number(data["cache_read_tokens"])) if data["cache_read_reported"] else "未提供"
+                write = (("≥" if data["missing_cache_write"] else "") + _number(data["cache_write_tokens"])) if data["cache_write_reported"] else "未提供"
+                groups.append(f"缓存读 {read} / 写 {write}")
             if data["cost_reported"]:
                 groups.append(f"费用 {'≥' if data['missing_cost'] else ''}${data['cost_usd']:.4f}")
         lines, line = [], ""

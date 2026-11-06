@@ -28,7 +28,6 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from .base import (
-    PROJECT_ROOT,
     GroundTruthItem,
     RangeAdapter,
     RangeInfo,
@@ -193,7 +192,7 @@ class TSecBenchAdapter(RangeAdapter):
         self.mode = str(self.spec.get("mode") or tsb.mode or "local").strip().lower()
         bundle_raw = str(self.spec.get("bundle_dir") or "runs/tsecbench")
         bundle = Path(bundle_raw)
-        self.bundle_dir = bundle if bundle.is_absolute() else PROJECT_ROOT / bundle
+        self.bundle_dir = bundle if bundle.is_absolute() else Path.cwd() / bundle
         self.base_url = str(self.spec.get("base_url") or tsb.base_url).rstrip("/")
         self.api_key_env = str(self.spec.get("api_key_env") or tsb.api_key_env)
         self.per_task_timeout = int(self.spec.get("per_task_timeout") or tsb.per_task_timeout)

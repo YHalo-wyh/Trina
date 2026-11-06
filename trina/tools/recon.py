@@ -26,7 +26,7 @@ from typing import Any
 from ..scope import parse_target
 from .external import run_external, which
 from .http import normalize_url
-from .registry import ParamSpec, Tool, ToolContext, ToolResult, ToolSpec, register
+from .registry import ParamSpec, Tool, ToolContext, ToolResult, ToolSpec
 
 # ---------------------------------------------------------------------------
 # 常量：端口 → 服务名映射与默认端口集
@@ -1140,8 +1140,6 @@ TOOLS: list[Tool] = [
     TlsInfoTool(),
 ]
 
-for _tool in TOOLS:
-    register(_tool)
 
 __all__ = [
     "TOOLS",

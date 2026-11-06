@@ -132,7 +132,7 @@
       "task": "TASK-01",
       "implementation": [
         "trina/policy.py",
-        "configs/ranges/lab.yaml"
+        "tests/policy_fixtures.py"
       ],
       "tests": [
         "test_policy.TestController.test_strict_requires_registered_test_id",

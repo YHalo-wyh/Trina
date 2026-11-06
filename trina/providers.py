@@ -106,7 +106,7 @@ def normalize_endpoint(value: str, api: str) -> tuple[str, str]:
 
 
 class ProfileStore:
-    """原子保存供应商；旧多 Key 配置在内存中展开为独立供应商。"""
+    """原子保存当前供应商格式。"""
     def __init__(self, path: Path | None = None):
         self.path = path or Path(os.environ.get("TRINA_PROVIDERS_FILE") or Path.home() / ".trina" / "providers.json")
         self.profiles: dict[str, ProviderProfile] = {}
@@ -115,31 +115,16 @@ class ProfileStore:
         self.omp_model = ""
         if self.path.exists():
             raw = json.loads(self.path.read_text(encoding="utf-8"))
-            if raw.get("version") not in (1, 2):
+            if raw.get("version") != 2:
                 raise ValueError("供应商配置版本不受支持")
             rows = raw.get("profiles", [])
-            extras = []
             for data in rows:
                 data = dict(data)
-                if raw["version"] == 1:
-                    keys, active_key = data.pop("keys", {}), data.pop("active_key", "")
-                    if active_key and active_key not in keys:
-                        raise ValueError("当前密钥名称不存在")
-                    data["api_key"] = keys.get(active_key, "")
-                    extras.extend((dict(data), label, key) for label, key in keys.items() if label != active_key)
                 item = ProviderProfile(**data)
                 item.validate()
                 if item.id in self.profiles:
                     raise ValueError("供应商连接名称重复")
                 self.profiles[item.id] = item
-            for data, label, key in extras:
-                base = (data["id"][:30] + " · " + "".join(c if ord(c) >= 32 else "_" for c in label)[:24]).strip()
-                name, suffix = base, 2
-                while name in self.profiles:
-                    name, suffix = f"{base}-{suffix}", suffix + 1
-                item = ProviderProfile(**dict(data, id=name, api_key=key))
-                item.validate()
-                self.profiles[name] = item
             self.active = raw.get("active", "")
             self.reasoning_effort = raw.get("reasoning_effort", "default")
             self.omp_model = str(raw.get("omp_model") or "")

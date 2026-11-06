@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from ..tools.external import installed, run_external, which
-from .base import PROJECT_ROOT, RangeAdapter, RangeInfo, RangeTarget, parse_targets, tcp_probe
+from .base import RangeAdapter, RangeInfo, RangeTarget, parse_targets, tcp_probe
 
 
 class _ExecContext:
@@ -81,7 +81,7 @@ class DockerComposeRangeAdapter(RangeAdapter):
         if not text:
             return ""
         path = Path(text)
-        return str(path if path.is_absolute() else PROJECT_ROOT / path)
+        return str(path if path.is_absolute() else Path.cwd() / path)
 
     def _parse_instances(self) -> list[dict[str, Any]]:
         raw_instances = self.spec.get("instances") or []

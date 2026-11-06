@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import unittest
+from tests.policy_fixtures import sample_policy
 from pathlib import Path
 
 from trina.board import render_board, summarise
@@ -302,6 +303,7 @@ class TestInsightSwitches(unittest.TestCase):
 
     def _agent(self, script: list[dict], *, ledger: bool, guard: bool):
         from trina.brain.agent import PentestAgent
+        from trina.policy import AuthorizationController
         from trina.llm.replay_backend import ReplayBackend
         from trina.tools.registry import ToolRegistry
 
@@ -313,7 +315,8 @@ class TestInsightSwitches(unittest.TestCase):
             ReplayBackend(LLMConfig(backend="replay", replay_script=str(script_path)))
         )
         agent = PentestAgent(
-            self.cfg, registry=ToolRegistry([_SwitchScanTool(), _SwitchFailTool()]), backend=recorder
+            self.cfg, registry=ToolRegistry([_SwitchScanTool(), _SwitchFailTool()]), backend=recorder,
+            controller=AuthorizationController(sample_policy(), mode="guided")
         )
         return agent, recorder
 
@@ -491,7 +494,7 @@ class TestHypothesisScheduler(unittest.TestCase):
     def setUp(self):
         from trina.policy import PolicyRegistry
 
-        self.registry = PolicyRegistry.load()
+        self.registry = sample_policy()
         self.tests = self.registry.tests_for("lab-http")
 
     def _ledger(self):
@@ -648,7 +651,7 @@ class TestHypothesisScheduler(unittest.TestCase):
             "怀疑 /sqli 参数 id 存在错误型注入",
             confidence="high", vuln_class="sqli", target="http://127.0.0.1:9099/sqli", parameter="id",
         )
-        decision = HypothesisScheduler().decide(ledger, PolicyRegistry.load().tests_for("lab-http"))
+        decision = HypothesisScheduler().decide(ledger, sample_policy().tests_for("lab-http"))
         self.assertEqual(decision.test_id, "sqli_probe")
         self.assertIn('"test_id": "sqli_probe"', decision.prompt_block())
 

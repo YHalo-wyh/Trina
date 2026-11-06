@@ -34,7 +34,7 @@ flowchart LR
 | CLI | `trina` 的 run/play/console/tools/guard/eval/review 等子命令被启动器、用户和可选扩展调用 | 参数名和注入范围被测试依赖；本次只引用实际命令，不修改 parser 或脚本入口 |
 | 模型动作 | 主控从文本 JSON 读取 action/params/test_id/final，回放文件复用同协议 | 删字段或改变动作名会破坏录制；本次增加协议解释，保留既有样本 |
 | 配置覆盖 | YAML、`--set` 和已有环境变量接口由 config 装载 | 默认策略、等级或超时会改变评测结果；本次不改配置，原值写入 Harness |
-| 检查注册 | `configs/ranges` 的 targets/tests 提供 ID、工具、等级与参数提示 | 改 ID 影响调度、覆盖、review 和测试；清单引用真实 ID，不创建虚构注册项 |
+| 检查注册 | `policy.registry_dirs` 指向的显式 YAML 提供 targets/tests；测试使用最小内存夹具 | 改 ID 影响调度、覆盖、review 和测试；仓库不预装真实目标清单 |
 | 工具规格 | build_registry、主控提示词、CLI 描述及工具执行共享 ToolSpec | 不注册的新工具会旁路校验；本次文档脚本只检查本地资料，不作为目标工具加入注册表 |
 | 状态 JSON | watch、board、报告、复核和历史证据读取 RunState | 字段类型与默认值是兼容面；本次不迁移，解释缺省字段和凭据风险 |
 | 审计 JSONL | verify、summary、复核及精选证据依赖原始链 | 改写事件会破坏链；本次原样保存，解释放在独立 Markdown |

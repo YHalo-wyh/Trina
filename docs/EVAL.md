@@ -8,14 +8,14 @@
 
 | 专项 | 靶场 | 适配器配置 | 关注点 |
 |---|---|---|---|
-| Web 漏洞 | Pikachu | `configs/ranges/pikachu.yaml` | 全类型 Web 漏洞（SQLi/XSS/上传/RCE/文件包含/弱口令） |
-| Web 漏洞 | DVWA | `configs/ranges/dvwa.yaml` | 分级难度，可随安全等级（low/medium/high）调参 |
-| Web 漏洞 | Vulhub | `configs/ranges/vulhub.yaml` | CVE 复现类（Java/中间件/框架），需 docker |
+| Web 漏洞 | Pikachu | 操作者自有适配 YAML | 全类型 Web 漏洞（SQLi/XSS/上传/RCE/文件包含/弱口令） |
+| Web 漏洞 | DVWA | 操作者自有适配 YAML | 分级难度，可随安全等级（low/medium/high）调参 |
+| Web 漏洞 | Vulhub | 操作者自有适配 YAML | CVE 复现类（Java/中间件/框架），需 docker |
 | Web 漏洞 | Bugku 线上题集 | 用 `http_range` 填 `base_url` | 通用性验证（不依赖本地部署） |
-| 主机渗透 | VulnStack | `configs/ranges/vulnstack.yaml` | 内网多主机、域环境、横向 |
+| 主机渗透 | VulnStack | 操作者自有适配 YAML | 内网多主机、域环境、横向 |
 | 主机渗透 | 自建 Linux/Windows | `local` 适配器 + `targets` | SSH/MySQL/RDP/SMB 弱口令与服务漏洞 |
 | 主机渗透 | 墨者学院主机专项 | `http_range`/`local` | 真题口径 |
-| 自证/回归 | Trina 内置 lab | `configs/ranges/lab.yaml` | 每次改动后的端到端冒烟（无需外部靶场） |
+| 自证/回归 | Trina lab fixture | `trina/eval/scenarios/*.yaml` | 每次改动后的端到端冒烟（无需静态靶场注册表） |
 
 ### 1.2 指标口径（`trina/eval/metrics.py`）
 
@@ -185,5 +185,5 @@ python3 -m trina eval adversarial --upstream http://127.0.0.1:9099 --port 9100 -
 
 - 每次评测落盘：`reports/eval/<suite>-<ts>.md`（人读）、`.json`（机读，含逐场景明细与指标）。
 - 报告必须能回答：得分多少、错在哪、是模型问题还是工具/护栏问题。因此逐场景保留 `gt_hit/gt_miss/fp/out_of_scope/steps/denied/error`。
-- **口径一致性**：同一份场景 YAML + 同一份代码 = 同一份分数；外部靶场的真值写在 `configs/ranges/*.yaml`，不写在提示词里（避免"泄题式"评测）。
+- **口径一致性**：同一份场景 YAML + 同一份代码 = 同一份分数；内置回归真值由 `trina/eval/scenarios/*.yaml` 声明，外部靶场真值由操作者显式提供的适配 YAML 声明，不写在提示词里。
 - 护栏拒绝（`denied`）在评测中单独统计：它既不是成功也不是失败，而是"Agent 触碰了边界"的证据，用于评估自主性的安全上限。

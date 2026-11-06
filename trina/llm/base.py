@@ -27,11 +27,36 @@ class LLMUsage:
     cache_reported: bool = False
     cost_reported: bool = False
     cache_input_tokens: int | None = None
+    input_reported: bool = False
+    output_reported: bool = False
+    cache_read_reported: bool = False
+    cache_write_reported: bool = False
+    input_reported_calls: int = 0
+    output_reported_calls: int = 0
+    cache_read_reported_calls: int = 0
+    cache_write_reported_calls: int = 0
+    cost_reported_calls: int = 0
 
     def __post_init__(self) -> None:
-        self.tokens_reported = self.tokens_reported or bool(self.input_tokens or self.output_tokens)
-        self.cache_reported = self.cache_reported or bool(self.cache_read_tokens or self.cache_write_tokens)
+        self.input_reported = self.input_reported or bool(self.input_tokens)
+        self.output_reported = self.output_reported or bool(self.output_tokens)
+        if self.tokens_reported and not (self.input_reported or self.output_reported):
+            self.input_reported = self.output_reported = True
+        self.tokens_reported = self.tokens_reported or self.input_reported or self.output_reported
+        self.cache_read_reported = self.cache_read_reported or bool(self.cache_read_tokens)
+        self.cache_write_reported = self.cache_write_reported or bool(self.cache_write_tokens)
+        if self.cache_reported and not (self.cache_read_reported or self.cache_write_reported):
+            self.cache_read_reported = self.cache_write_reported = True
+        self.cache_reported = self.cache_reported or self.cache_read_reported or self.cache_write_reported
         self.cost_reported = self.cost_reported or bool(self.cost)
+        for name, reported in (
+            ("input_reported_calls", self.input_reported), ("output_reported_calls", self.output_reported),
+            ("cache_read_reported_calls", self.cache_read_reported),
+            ("cache_write_reported_calls", self.cache_write_reported),
+            ("cost_reported_calls", self.cost_reported),
+        ):
+            if reported and not getattr(self, name) and self.calls:
+                setattr(self, name, self.calls)
         if self.cache_input_tokens is None:
             self.cache_input_tokens = self.input_tokens if self.cache_reported else 0
 
@@ -48,6 +73,39 @@ class LLMUsage:
             cache_reported=self.cache_reported or other.cache_reported,
             cost_reported=self.cost_reported or other.cost_reported,
             cache_input_tokens=(self.cache_input_tokens or 0) + (other.cache_input_tokens or 0),
+            input_reported=self.input_reported or other.input_reported,
+            output_reported=self.output_reported or other.output_reported,
+            cache_read_reported=self.cache_read_reported or other.cache_read_reported,
+            cache_write_reported=self.cache_write_reported or other.cache_write_reported,
+            input_reported_calls=self.input_reported_calls + other.input_reported_calls,
+            output_reported_calls=self.output_reported_calls + other.output_reported_calls,
+            cache_read_reported_calls=self.cache_read_reported_calls + other.cache_read_reported_calls,
+            cache_write_reported_calls=self.cache_write_reported_calls + other.cache_write_reported_calls,
+            cost_reported_calls=self.cost_reported_calls + other.cost_reported_calls,
+        )
+
+    def delta(self, before: dict[str, Any]) -> "LLMUsage":
+        """所有可加用量字段在此统一求任务差量，派生字段重新计算。"""
+        input_calls = max(0, self.input_reported_calls - int(before.get("input_reported_calls", 0)))
+        output_calls = max(0, self.output_reported_calls - int(before.get("output_reported_calls", 0)))
+        read_calls = max(0, self.cache_read_reported_calls - int(before.get("cache_read_reported_calls", 0)))
+        write_calls = max(0, self.cache_write_reported_calls - int(before.get("cache_write_reported_calls", 0)))
+        cost_calls = max(0, self.cost_reported_calls - int(before.get("cost_reported_calls", 0)))
+        return LLMUsage(
+            input_tokens=max(0, self.input_tokens - int(before.get("input_tokens", 0))),
+            output_tokens=max(0, self.output_tokens - int(before.get("output_tokens", 0))),
+            cache_read_tokens=max(0, self.cache_read_tokens - int(before.get("cache_read_tokens", 0))),
+            cache_write_tokens=max(0, self.cache_write_tokens - int(before.get("cache_write_tokens", 0))),
+            cache_input_tokens=max(0, (self.cache_input_tokens or 0) - int(before.get("cache_input_tokens") or 0)),
+            calls=max(0, self.calls - int(before.get("calls", 0))),
+            cost=round(max(0, self.cost - float(before.get("cost_usd", 0))), 6),
+            model=self.model, tokens_reported=bool(input_calls or output_calls),
+            cache_reported=bool(read_calls or write_calls), cost_reported=bool(cost_calls),
+            input_reported=bool(input_calls), output_reported=bool(output_calls),
+            cache_read_reported=bool(read_calls), cache_write_reported=bool(write_calls),
+            input_reported_calls=input_calls, output_reported_calls=output_calls,
+            cache_read_reported_calls=read_calls, cache_write_reported_calls=write_calls,
+            cost_reported_calls=cost_calls,
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -61,9 +119,18 @@ class LLMUsage:
             "tokens_reported": self.tokens_reported,
             "cache_reported": self.cache_reported,
             "cost_reported": self.cost_reported,
+            "input_reported": self.input_reported,
+            "output_reported": self.output_reported,
+            "cache_read_reported": self.cache_read_reported,
+            "cache_write_reported": self.cache_write_reported,
+            "input_reported_calls": self.input_reported_calls,
+            "output_reported_calls": self.output_reported_calls,
+            "cache_read_reported_calls": self.cache_read_reported_calls,
+            "cache_write_reported_calls": self.cache_write_reported_calls,
+            "cost_reported_calls": self.cost_reported_calls,
             "cache_input_tokens": self.cache_input_tokens,
             "cache_hit_rate": (min(1.0, self.cache_read_tokens / self.cache_input_tokens)
-                               if self.cache_reported and self.cache_input_tokens else None),
+                               if self.cache_read_reported and self.cache_input_tokens else None),
             "cost_usd": round(self.cost, 6),
             "model": self.model,
         }
@@ -138,8 +205,4 @@ def make_backend(config: LLMConfig) -> LLMBackend:
     raise ValueError(f"未知 LLM 后端: {config.backend!r}")
 
 
-__all__ = ["LLMBackend", "LLMResponse", "LLMUsage", "make_backend", "start_timer"]
-
-
-def start_timer() -> float:
-    return time.monotonic()
+__all__ = ["LLMBackend", "LLMResponse", "LLMUsage", "make_backend"]

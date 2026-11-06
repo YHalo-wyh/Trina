@@ -190,9 +190,9 @@ class ChatAgent:
             + self.config.scope_prompt_block()
             + "\n\n# 已注册检查项\n"
             + registered
-            + ("\n\n# 假设台账\n" + self.ledger.prompt_block() if self.use_ledger else "")
             + "\n\n# 可用工具\n"
             + tool_block
+            + ("\n\n# 假设台账\n" + self.ledger.prompt_block() if self.use_ledger else "")
         )
         # 用事实摘要跨越滑动窗口，并保留本轮原始要求；不靠额外 LLM 总结制造新事实。
         recent = "\n\n".join(f"[{item['role']}] {item['content'][:2000]}" for item in self.history[-12:])
@@ -213,7 +213,11 @@ class ChatAgent:
                 note = self.steer_queue.get_nowait()
             except Exception:  # noqa: BLE001 - 队列空
                 break
-            if note:
+            from ..session import GoalUpdate
+            if isinstance(note, GoalUpdate):
+                self.state.goal = str(note)
+                notes.append("任务目标更新：" + (str(note) or "已清除"))
+            elif note:
                 notes.append(str(note))
         return "；".join(notes)
 

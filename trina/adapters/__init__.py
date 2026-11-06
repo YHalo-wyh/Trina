@@ -16,7 +16,6 @@ from __future__ import annotations
 from .base import (
     DEFAULT_FLAG_PATTERNS,
     DEFAULT_RANGES_DIR,
-    PROJECT_ROOT,
     RANGE_KINDS,
     GroundTruthItem,
     RangeAdapter,
@@ -61,7 +60,6 @@ __all__ = [
     "GroundTruthItem",
     "HttpRangeAdapter",
     "LocalRangeAdapter",
-    "PROJECT_ROOT",
     "RANGE_KINDS",
     "RangeAdapter",
     "RangeError",

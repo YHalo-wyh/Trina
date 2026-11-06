@@ -53,7 +53,7 @@
 
 ### REQ-03 的 Sensor
 
-执行入口：`V-POLICY`。实现位置：[trina/policy.py](../../trina/policy.py)、[configs/ranges/lab.yaml](../../configs/ranges/lab.yaml)。
+执行入口：`V-POLICY`。实现位置：[trina/policy.py](../../trina/policy.py)、[测试策略夹具](../../tests/policy_fixtures.py)。历史基线曾引用已删除的内置 lab 注册表；当前测试用最小内存夹具验证同一裁决语义。
 
 - `test_policy.TestController.test_strict_requires_registered_test_id`
 - `test_policy.TestController.test_strict_rejects_unregistered_target`

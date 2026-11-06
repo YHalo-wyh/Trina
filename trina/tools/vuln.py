@@ -19,7 +19,7 @@ from urllib.parse import urljoin, urlsplit
 from ..scope import ScopeViolation
 from ..state import SEVERITIES
 from .external import run_external, which
-from .registry import ParamSpec, Tool, ToolResult, ToolSpec, denied_result, register
+from .registry import ParamSpec, Tool, ToolResult, ToolSpec, denied_result
 
 # ---------------------------------------------------------------------------
 # PoC 定义
@@ -518,8 +518,6 @@ class NucleiScanTool(Tool):
 
 TOOLS: list[Tool] = [PocScanTool(), NucleiScanTool()]
 
-for _tool in TOOLS:  # 兼容模块级全局注册表
-    register(_tool)
 
 __all__ = [
     "TOOLS",

@@ -231,7 +231,8 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     config = build_config(args)
     target = args.target
-    goal = args.goal or ""
+    from .tasks import TaskStore
+    goal = args.goal if args.goal is not None else TaskStore().goal()
     adapter = None
 
     if args.range:
@@ -537,6 +538,7 @@ def cmd_play(args: argparse.Namespace) -> int:
     import time
 
     from .play import build_plan, run_plan
+    from .tasks import TaskStore
     from .session import Session, level_needs_approval
 
     config = build_config(args)
@@ -554,7 +556,7 @@ def cmd_play(args: argparse.Namespace) -> int:
         config,
         target=getattr(args, "target", None),
         range_name=getattr(args, "range", None),
-        goal=getattr(args, "goal", "") or "",
+        goal=(getattr(args, "goal", None) if getattr(args, "goal", None) is not None else TaskStore().goal()),
         log=lambda message: print(render_message(message, label="准备", color=use_color())),
     )
     session = Session(approval_mode=approval_mode, emit=lambda message: print(f"[审批] {message}"))
@@ -846,6 +848,52 @@ def _state_from_dict(data: dict[str, Any]):
 # ---------------------------------------------------------------------------
 
 
+def cmd_goal(args: argparse.Namespace) -> int:
+    from .tasks import TaskStore
+    store = TaskStore()
+    if args.goal_action == "set":
+        text = " ".join(args.text).strip()
+        if not text:
+            raise ConfigError("goal set 需要目标文本")
+        store.set_goal(text)
+    elif args.goal_action == "clear":
+        store.set_goal("")
+    print(render_panel("Goal", sections=[("当前目标", store.goal() or "未设置")]))
+    return 0
+
+
+def cmd_schedule(args: argparse.Namespace) -> int:
+    from dataclasses import asdict
+    from .tasks import TaskStore, TaskScheduler
+    store = TaskStore()
+    if args.schedule_action == "add":
+        task = store.add(args.target, args.at, goal=args.goal, max_steps=args.max_steps,
+                         approve=args.approve, config=build_config(args))
+        print(render_panel("定时任务已创建", rows=[("ID", task.id), ("开始时间", task.run_at),
+              ("目标", task.target), ("Goal", task.goal or "未设置")]))
+    elif args.schedule_action == "cancel":
+        store.cancel(args.task_id)
+        out(f"已取消 {args.task_id}")
+    elif args.schedule_action == "run":
+        scheduler = TaskScheduler(store)
+        try:
+            if args.once:
+                scheduler.tick()
+            else:
+                scheduler.serve()
+        finally:
+            scheduler.stop_event.set()
+    else:
+        rows = store.list()
+        if getattr(args, "json", False):
+            print(json.dumps([asdict(task) for task in rows], ensure_ascii=False, indent=2))
+        else:
+            print(render_panel("定时任务", sections=[("", "\n".join(
+                f"{task.id} · {task.run_at} · {task.status} · {task.target}"
+                + (f" · 结果 {task.outcome}" if task.outcome else "") for task in rows) or "暂无定时任务")]))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="trina", description="Trina · 全自动渗透测试 Agent")
     parser.add_argument("--version", action="version", version=f"trina {__version__}")
@@ -889,7 +937,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_common(play)
     play.add_argument("--target", "-t", help="目标（默认自动起本地 lab 靶机）")
     play.add_argument("--range", "-r", help="靶场适配器名（lab/dvwa/pikachu/...）")
-    play.add_argument("--goal", "-g", default="", help="任务目标")
+    play.add_argument("--goal", "-g", default=None, help="任务目标（未提供时沿用当前项目 Goal）")
     play.add_argument("--max-steps", type=int, default=None)
     play.add_argument("--max-seconds", type=int, default=None)
     play.add_argument("--approve", choices=["off", "exploit", "verify", "all"], default="off",
@@ -926,7 +974,7 @@ def build_parser() -> argparse.ArgumentParser:
     run = sub.add_parser("run", help="对目标执行全自动渗透")
     add_common(run)
     run.add_argument("--target", "-t", help="目标（host:port 或 URL）")
-    run.add_argument("--goal", "-g", default="", help="本次任务目标（自然语言）")
+    run.add_argument("--goal", "-g", default=None, help="本次任务目标（未提供时沿用当前项目 Goal）")
     run.add_argument("--range", "-r", help="使用靶场适配器（如 lab/dvwa/pikachu）")
     run.add_argument("--max-steps", type=int, default=None)
     run.add_argument("--max-seconds", type=int, default=None)
@@ -1020,6 +1068,31 @@ def build_parser() -> argparse.ArgumentParser:
     report_rebuild.add_argument("--state", required=True)
     report_rebuild.set_defaults(func=cmd_report)
 
+    goal = sub.add_parser("goal", help="保存、查看或清除当前项目目标")
+    goal.add_argument("goal_action", choices=("show", "set", "clear"), nargs="?", default="show")
+    goal.add_argument("text", nargs="*")
+    goal.set_defaults(func=cmd_goal)
+
+    schedule = sub.add_parser("schedule", aliases=["scheduled", "schedualed"], help="一次性定时任务")
+    schedule_sub = schedule.add_subparsers(dest="schedule_action", required=True)
+    listing = schedule_sub.add_parser("list")
+    listing.add_argument("--json", action="store_true")
+    listing.set_defaults(func=cmd_schedule)
+    create = schedule_sub.add_parser("add")
+    add_common(create)
+    create.add_argument("--at", required=True, help="HH:MM、ISO 日期时间或 +10m")
+    create.add_argument("--target", required=True)
+    create.add_argument("--goal")
+    create.add_argument("--max-steps", type=int, default=12)
+    create.add_argument("--approve", choices=("off", "exploit", "verify", "all"), default="exploit")
+    create.set_defaults(func=cmd_schedule)
+    cancel = schedule_sub.add_parser("cancel")
+    cancel.add_argument("task_id")
+    cancel.set_defaults(func=cmd_schedule)
+    serve = schedule_sub.add_parser("run")
+    serve.add_argument("--once", action="store_true", help="仅领取一次已到点任务")
+    serve.set_defaults(func=cmd_schedule)
+
     return parser
 
 
@@ -1034,7 +1107,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         return args.func(args)
-    except ConfigError as exc:
+    except (ConfigError, ValueError) as exc:
         out(f"配置错误: {exc}", "red")
         return 2
     except KeyboardInterrupt:

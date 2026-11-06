@@ -18,7 +18,7 @@ from trina.config import TrinaConfig
 from trina.console_ui import SlashCommandCompleter, command_hint, command_names
 from trina.interactive import Console
 from trina.state import RunState
-from trina.terminal import clean_text, render_approval, render_home, render_message, render_step, use_color
+from trina.terminal import clean_text, render_approval, render_home, render_message, render_panel, render_step, use_color
 
 
 class TestTerminalUI(unittest.TestCase):
@@ -81,6 +81,28 @@ class TestTerminalUI(unittest.TestCase):
             )
         self.assertIsNotNone(editor.buffer.completer)
         self.assertTrue(editor.app.full_screen)
+
+    def test_transcript_reflows_existing_panels_after_resize(self):
+        from prompt_toolkit.application.current import create_app_session
+        from prompt_toolkit.data_structures import Size
+        from prompt_toolkit.formatted_text import fragment_list_to_text
+        from prompt_toolkit.input import create_pipe_input
+        from prompt_toolkit.output.vt100 import Vt100_Output
+        from rich.cells import cell_len
+        from trina.console_ui import EnhancedConsoleInput
+
+        size = [Size(rows=30, columns=88)]
+        output = Vt100_Output(io.StringIO(), lambda: size[0], enable_cpr=False)
+        with create_pipe_input() as pipe, create_app_session(input=pipe, output=output):
+            editor = EnhancedConsoleInput(status=lambda: "ready", running=lambda: False,
+                                          dynamic_values=lambda *_: (), plain=True)
+            editor.write(render_panel("结果", sections=[("", "较长内容" * 30)]))
+            wide = fragment_list_to_text(editor._transcript())
+            size[0] = Size(rows=30, columns=40)
+            narrow = fragment_list_to_text(editor._transcript())
+        self.assertNotEqual(wide, narrow)
+        self.assertLessEqual(max(cell_len(line) for line in narrow.splitlines()), 40)
+        self.assertIn("结果", narrow)
 
     def test_partial_command_is_visible_below_input_and_enter_expands_it(self):
         from prompt_toolkit.application.current import create_app_session
@@ -295,7 +317,7 @@ class TestTerminalUI(unittest.TestCase):
         tools = [item.value for item in console._completion_values("tool", [])]
         ranges = [item.value for item in console._completion_values("ranges", ["status"])]
         self.assertIn("port_scan", tools)
-        self.assertIn("lab", ranges)
+        self.assertEqual(ranges, [])
 
     def test_prompt_distinguishes_approval_pause_and_stop(self):
         console, _ = self.console()

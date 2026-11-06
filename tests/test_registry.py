@@ -67,6 +67,20 @@ class _Destructive(Tool):
         return ToolResult(ok=True, summary="已执行")
 
 
+class _LateMutation(Tool):
+    spec = ToolSpec(name="late_mutation", summary="超时后写状态", action_level="detect",
+                    params={"target": ParamSpec("str", required=True)})
+
+    def run(self, ctx, **params):
+        time.sleep(.2)
+        ctx.state.note("late", "不应提交")
+        try:
+            ctx.log("不应写入")
+        except RuntimeError:
+            pass
+        return ToolResult(ok=True, summary="late")
+
+
 class TestRegistry(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -84,7 +98,7 @@ class TestRegistry(unittest.TestCase):
             workspace=Path(self.tmp.name),
             deadline=time.monotonic() + 30,
         )
-        self.registry = ToolRegistry([_Echo(), _Boom(), _Slow(), _Destructive()])
+        self.registry = ToolRegistry([_Echo(), _Boom(), _Slow(), _Destructive(), _LateMutation()])
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -160,11 +174,28 @@ class TestRegistry(unittest.TestCase):
         self.assertFalse(result.ok)
         self.assertIn("超时", result.error)
 
+    def test_timeout_cannot_commit_late_state_or_log(self):
+        logged = []
+        self.ctx._logger = logged.append
+        result = self.registry.execute("late_mutation", {"target": "127.0.0.1"}, self.ctx, timeout=.05)
+        self.assertFalse(result.ok)
+        time.sleep(.3)
+        self.assertFalse(any(item.get("kind") == "late" for item in self.state.timeline))
+        self.assertEqual(logged, [])
+
     def test_prompt_block_and_describe(self):
         block = self.registry.prompt_block()
         self.assertIn("echo_tool", block)
         described = {item["name"] for item in self.registry.describe()}
         self.assertIn("echo_tool", described)
+
+    def test_module_subset_is_not_polluted_by_previous_full_build(self):
+        from trina.tools import build_registry
+
+        full = build_registry()
+        web = build_registry(["web"])
+        self.assertGreater(len(full.names()), len(web.names()))
+        self.assertEqual(web.names(), ["dir_bruteforce", "param_reflect_scan", "web_surface"])
 
     def test_runtime_tool_definitions_keep_parameters_without_tutorial_examples(self):
         class ExampleTool(_Echo):

@@ -22,7 +22,7 @@ import aiohttp
 from bs4 import BeautifulSoup, Comment
 
 from .http import DEFAULT_HEADERS
-from .registry import ParamSpec, Tool, ToolResult, ToolSpec, denied_result, register
+from .registry import ParamSpec, Tool, ToolResult, ToolSpec, denied_result
 
 # ---------------------------------------------------------------------------
 # 常量
@@ -116,26 +116,16 @@ async def _fetch(
     timeout: float = REQUEST_TIMEOUT,
     throttle: Callable[[str], float] | None = None,
     host: str = "",
+    client=None,
 ) -> dict[str, Any]:
     """发起一次同源请求并归一化结果；任何网络异常都降级为 error 记录。"""
-    if throttle is not None and host:
-        try:
-            wait = float(throttle(host))
-        except Exception:  # noqa: BLE001 - 限速实现异常不应中断扫描
-            wait = 0.0
-        if wait > 0:
-            await asyncio.sleep(min(wait, 5.0))
-    try:
-        async with session.request(
-            method,
-            url,
-            allow_redirects=False,
-            timeout=aiohttp.ClientTimeout(total=timeout),
-        ) as resp:
-            body = await resp.read()
-            return {"url": url, "method": method, "status": resp.status, "length": len(body), "error": ""}
-    except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as exc:
-        return {"url": url, "method": method, "status": 0, "length": 0, "error": f"{type(exc).__name__}: {exc}"}
+    from .http import HttpClient
+    from ..scope import ScopeGuard
+    from ..config import ScopeConfig
+    client = client or HttpClient(ScopeGuard(ScopeConfig()))
+    result = await client.arequest(session, method, url, timeout=timeout)
+    return {"url": url, "method": method, "status": result.status, "length": len(result.body.encode("utf-8")), "error": result.error}
+
 
 
 async def _build_baseline(
@@ -146,13 +136,14 @@ async def _build_baseline(
     throttle: Callable[[str], float] | None,
     host: str,
     probes: int = 3,
+    client=None,
 ) -> list[tuple[int, int]]:
     """用随机路径建立软 404 基线：(status, content-length)。"""
     token = uuid.uuid4().hex
     candidates = [f"{base}/{token}.html", f"{base}/trina-notfound-{token}/", f"{base}/{token[:8]}.php"]
     baseline: list[tuple[int, int]] = []
     for url in candidates[:probes]:
-        result = await _fetch(session, "GET", url, timeout=timeout, throttle=throttle, host=host)
+        result = await _fetch(session, "GET", url, timeout=timeout, throttle=throttle, host=host, client=client)
         if not result["error"] and result["status"]:
             baseline.append((int(result["status"]), int(result["length"])))
     return baseline
@@ -167,6 +158,7 @@ async def _scan_core(
     methods: Any,
     timeout: float = REQUEST_TIMEOUT,
     throttle: Callable[[str], float] | None = None,
+    client=None,
 ) -> dict[str, Any]:
     """并发扫描 + 软 404 过滤。返回 {results, baseline, scanned, raw_count}。"""
     host = _host_of(base_url)
@@ -177,11 +169,11 @@ async def _scan_core(
     timeout_cfg = aiohttp.ClientTimeout(total=timeout)
 
     async with aiohttp.ClientSession(connector=connector, timeout=timeout_cfg, headers=DEFAULT_HEADERS) as session:
-        baseline = await _build_baseline(session, base_url.rstrip("/"), timeout=timeout, throttle=throttle, host=host)
+        baseline = await _build_baseline(session, base_url.rstrip("/"), timeout=timeout, throttle=throttle, host=host, client=client)
 
         async def _one(url: str, method: str) -> dict[str, Any]:
             async with semaphore:
-                return await _fetch(session, method, url, timeout=timeout, throttle=throttle, host=host)
+                return await _fetch(session, method, url, timeout=timeout, throttle=throttle, host=host, client=client)
 
         tasks = [_one(url, method) for url in targets for method in method_list]
         raw = await asyncio.gather(*tasks) if tasks else []
@@ -213,14 +205,15 @@ class DirBruteforceTool(Tool):
         action_level="detect",
         params={
             "url": ParamSpec("str", "目标 base URL（可省略 scheme）", required=True),
-            "wordlist": ParamSpec("str", "字典文件路径", required=False),
+            "wordlist": ParamSpec("str", "目录字典路径", required=True),
             "extensions": ParamSpec("list", "附加扩展名（含空串表示原样）", required=False, default=list(DEFAULT_EXTENSIONS)),
             "match_status": ParamSpec("list", "视为有效的状态码", required=False, default=list(DEFAULT_MATCH_STATUS)),
             "concurrency": ParamSpec("int", "并发数", required=False),
             "methods": ParamSpec("list", "HTTP 方法", required=False, default=["GET"]),
         },
         produces=["paths"],
-        examples=["dir_bruteforce url=http://10.0.0.5:8080", "dir_bruteforce url=http://10.0.0.5 extensions=[.php,.bak] concurrency=10"],
+        examples=["dir_bruteforce url=http://10.0.0.5:8080 wordlist=./dirs.txt",
+                  "dir_bruteforce url=http://10.0.0.5 wordlist=./dirs.txt extensions=[.php,.bak] concurrency=10"],
         notes="先对 base 做一次护栏校验，随后对同源路径并发请求；随机路径建立基线以过滤软 404。",
     )
 
@@ -244,7 +237,9 @@ class DirBruteforceTool(Tool):
         method_list = [str(m).upper() for m in (methods or ["GET"])]
         conc = int(concurrency) if concurrency else min(20, int(ctx.config.scope.max_host_concurrency))
 
-        wl_path = Path(wordlist) if wordlist else ctx.config.tools.wordlist_path("dirs")
+        if not wordlist:
+            return ToolResult(ok=False, error="请显式指定 wordlist 路径", summary="未提供目录字典，未发起请求")
+        wl_path = Path(wordlist)
         try:
             words = _load_wordlist(wl_path)
         except OSError as exc:
@@ -254,7 +249,7 @@ class DirBruteforceTool(Tool):
                 summary=f"字典不可读: {wl_path}",
                 error=f"{type(exc).__name__}: {exc}",
                 data={"wordlist": str(wl_path)},
-                next_hints=["确认字典路径，或留空使用默认字典"],
+                next_hints=["确认字典路径可读，并由参数显式传入"],
             )
         if not words:
             return ToolResult(ok=False, category="web", summary=f"字典为空: {wl_path}", error="字典为空")
@@ -276,6 +271,7 @@ class DirBruteforceTool(Tool):
                     methods=method_list,
                     timeout=REQUEST_TIMEOUT,
                     throttle=ctx.guard.throttle,
+                    client=ctx.http,
                 )
             )
         except RuntimeError as exc:  # 事件循环冲突（正常调用链不会触发）
@@ -591,8 +587,6 @@ class ParamReflectScanTool(Tool):
 
 TOOLS: list[Tool] = [DirBruteforceTool(), WebSurfaceTool(), ParamReflectScanTool()]
 
-for _tool in TOOLS:  # 兼容模块级全局注册表
-    register(_tool)
 
 __all__ = [
     "TOOLS",

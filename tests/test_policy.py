@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from tests.policy_fixtures import sample_policy
 from pathlib import Path
 
 from trina.brain.agent import PentestAgent
@@ -21,7 +22,7 @@ from trina.tools import build_registry
 
 class TestPolicyRegistry(unittest.TestCase):
     def test_loads_targets_and_tests_from_ranges(self):
-        registry = PolicyRegistry.load()
+        registry = sample_policy()
         self.assertIn("lab-http", registry.targets)
         self.assertIn("lab-ssh", registry.targets)
         self.assertIn("sqli_probe", registry.tests)
@@ -31,14 +32,14 @@ class TestPolicyRegistry(unittest.TestCase):
         self.assertEqual(test.level, "verify")
 
     def test_target_matching(self):
-        registry = PolicyRegistry.load()
+        registry = sample_policy()
         self.assertIsNotNone(registry.match_target("http://127.0.0.1:9099"))
         self.assertIsNotNone(registry.match_target("http://127.0.0.1:9099/sqli?id=1"))
         self.assertIsNotNone(registry.match_target("ssh://127.0.0.1:2222"))
         self.assertIsNone(registry.match_target("http://127.0.0.1:8081"))
 
     def test_prompt_block_lists_registered_tests(self):
-        registry = PolicyRegistry.load()
+        registry = sample_policy()
         block = registry.prompt_block("lab-http")
         self.assertIn("sqli_probe", block)
         self.assertIn("flag_read", block)
@@ -46,7 +47,7 @@ class TestPolicyRegistry(unittest.TestCase):
 
 class TestController(unittest.TestCase):
     def setUp(self):
-        self.registry = PolicyRegistry.load()
+        self.registry = sample_policy()
 
     def _controller(self, mode="strict", **budget):
         return AuthorizationController(
@@ -171,7 +172,7 @@ class TestVerdictAndReview(unittest.TestCase):
         path = Path(self.tmp.name) / "replay.json"
         path.write_text(json.dumps({"steps": script}, ensure_ascii=False), encoding="utf-8")
         backend = ReplayBackend(LLMConfig(backend="replay", replay_script=str(path)))
-        agent = PentestAgent(self.cfg, registry=build_registry(), backend=backend)
+        agent = PentestAgent(self.cfg, registry=build_registry(), backend=backend, controller=AuthorizationController(sample_policy(), mode="guided"))
         return agent.run("http://127.0.0.1:9099", max_steps=4)
 
     def test_not_confirmed_when_checks_ran_without_findings(self):

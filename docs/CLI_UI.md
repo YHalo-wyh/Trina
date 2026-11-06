@@ -90,6 +90,14 @@ python -m trina console --plain
 
 ## 独立监视与日志
 
+## 项目 Goal 与定时启动
+
+`/goal set <文本>` 保存当前项目目标，`/goal show` 查看，`/goal clear` 清除。也可以直接输入 `/goal <文本>`。后续 `/run`、`/play` 未带 `--goal` 时沿用；任务运行中修改会在下一决策点生效，并使修改前尚未提交的模型候选失效。Goal 只描述任务成果，不扩大目标范围或动作权限。
+
+`/schedule add --at +10m --target 127.0.0.1` 创建一次性任务；`/schedule list` 查看，`/schedule cancel <ID>` 取消尚未启动的任务。`scheduled` 和 `schedualed` 是同一命令的别名。控制台打开时，调度器等当前任务空闲后启动；需要关闭控制台后继续等待时，在另一个终端运行 `trina schedule run`。崩溃时已经处于 running 的任务标记为 interrupted，不自动重放。
+
+窗口改变宽度时，内容区已经显示的首页、结果卡片和过程文本会按新宽度重新排版；底部输入、命令索引、状态和用量保持固定。历史很长时按字符上限删除最早内容，同宽度新增输出只解析新增块。
+
 ```bash
 python -m trina watch --once
 python -m trina watch <run_id>

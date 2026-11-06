@@ -15,7 +15,7 @@ import requests
 
 from ..scope import Decision, ScopeGuard
 
-DEFAULT_UA = "Trina/0.1 (+authorized-pentest; contact=lab)"
+DEFAULT_UA = "Trina/0.2.0"
 DEFAULT_HEADERS = {
     "User-Agent": DEFAULT_UA,
     "Accept": "*/*",
@@ -197,9 +197,11 @@ class HttpClient:
                     time.sleep(min(wait, 5.0))
                 self.requests_made += 1
                 try:
+                    from ..scope import execution_budget
+                    request_timeout = execution_budget(timeout or self.timeout)
                     settings = self.session.merge_environment_settings(prepared.url, {}, False, None, None)
                     response = self.session.send(
-                        prepared, allow_redirects=False, timeout=timeout or self.timeout, **settings,
+                        prepared, allow_redirects=False, timeout=request_timeout, **settings,
                     )
                     break
                 except requests.exceptions.RequestException as exc:
@@ -231,6 +233,33 @@ class HttpClient:
                 prepared = following
             finally:
                 response.close()
+
+    async def arequest(self, session, method: str, url: str, *, timeout: float = 8.0) -> HttpResult:
+        """异步扫描的传输适配；不自动跟随重定向，每次出网独立校验。"""
+        import asyncio
+        import aiohttp
+        decision = self.guard.check_http(url, method=method, required_level="detect")
+        if decision.denied:
+            self.denials.append(decision)
+            return HttpResult(url=url, method=method, error=decision.reason)
+        wait = self.guard.throttle(urlsplit(url).hostname or "")
+        if wait > 0:
+            await asyncio.sleep(wait)
+        decision = self.guard.check_http(url, method=method, required_level="detect")
+        if decision.denied:
+            return HttpResult(url=url, method=method, error=decision.reason)
+        from ..scope import execution_budget
+        timeout = execution_budget(timeout)
+        self.requests_made += 1
+        started = time.monotonic()
+        try:
+            async with session.request(method, url, allow_redirects=False, timeout=aiohttp.ClientTimeout(total=timeout)) as response:
+                raw = await response.content.read(200_000)
+                self.bytes_received += len(raw)
+                return HttpResult(url=url, method=method, status=response.status, headers=dict(response.headers),
+                                  body=raw.decode("utf-8", "replace"), elapsed=time.monotonic() - started)
+        except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as exc:
+            return HttpResult(url=url, method=method, error=f"{type(exc).__name__}: {exc}")
 
     # ------------------------------------------------------------------ 便捷
     def get(self, url: str, **kwargs: Any) -> HttpResult:

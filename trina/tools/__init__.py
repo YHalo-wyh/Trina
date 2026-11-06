@@ -17,8 +17,6 @@ from .registry import (
     ToolResult,
     ToolSpec,
     denied_result,
-    register,
-    registry,
 )
 
 #: 工具子模块（顺序即提示词中的分组顺序）
@@ -48,8 +46,6 @@ def build_registry(modules: Iterable[str] | None = None) -> ToolRegistry:
         LOAD_ERRORS.pop(name, None)
         if loaded == 0:
             LOAD_ERRORS[name] = "模块未导出 TOOLS"
-    for tool in registry().values():  # 模块级 register() 的工具
-        tools.register(tool)
     return tools
 
 
@@ -66,7 +62,5 @@ __all__ = [
     "ToolSpec",
     "build_registry",
     "denied_result",
-    "register",
-    "registry",
     "tool_names",
 ]

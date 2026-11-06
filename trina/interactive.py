@@ -28,6 +28,7 @@ from .console_ui import (
     command_names, enhanced_input_available, find_command,
 )
 from .session import APPROVAL_MODES, Session
+from .tasks import TaskStore, TaskScheduler
 from .terminal import (
     PHASES, clean_text, render_approval, render_message,
     render_panel, render_step, render_answer, render_process, show_home, terminal_width, use_color,
@@ -72,9 +73,16 @@ class Console:
         self._last_state: Any = None
         self._plan: Any = None
         self._controller: Any = None
+        self._controller_config: TrinaConfig | None = None
         self.chat: Any = None
         self.session = Session(approval_mode=approval_mode, emit=self._session_emit)
         self.exit_requested = False
+        self.task_store = TaskStore()
+        self._goal_text = self.task_store.goal()
+        self._launch_lock = threading.RLock()
+        self._scheduler = None
+        self._scheduler_thread = None
+        self._task_config = None
 
     # ------------------------------------------------------------------ 输出
     def _display(self, text: str) -> None:
@@ -140,6 +148,7 @@ class Console:
             )
             original_output = self.output
             self.output = self._enhanced_input.write
+            self._start_scheduler()
             show_home(output=self._display, color=self.color)
             try:
                 self._enhanced_input.run(self.handle)
@@ -185,7 +194,8 @@ class Console:
 
     def _prompt_status(self) -> str:
         """增强输入框底栏的紧凑动态状态。"""
-        short = clean_text((self.config.llm.model or "?").split("/")[-1]).replace("\n", " ")[:24]
+        llm = (self._task_config or self.config).llm
+        short = clean_text((llm.model or "?").split("/")[-1]).replace("\n", " ")[:24]
         status = "就绪"
         if self.session.running:
             status = "待审批 y/n" if self.session.pending else (
@@ -195,7 +205,7 @@ class Console:
             )
         pending = self.session.steers.qsize()
         queued = f" · 补充 {pending} 条待处理" if pending else ""
-        return f"{status}{queued} · {self.config.llm.profile or self.config.llm.backend}/{short} · 审批 {self.session.approval_mode}"
+        return f"{status}{queued} · {llm.profile or llm.backend}/{short} · 审批 {self.session.approval_mode}"
 
     def _prompt(self) -> str:
         short = clean_text((self.config.llm.model or "?").split("/")[-1]).replace("\n", " ")[:28]
@@ -238,7 +248,8 @@ class Console:
                 return []
         range_names = []
         try:
-            range_names = sorted(path.stem for path in (Path(__file__).resolve().parent.parent / "configs" / "ranges").glob("*.yaml"))
+            from .adapters import available_range_names
+            range_names = available_range_names(self.config)
         except OSError:
             pass
         if command in ("play",) and completed_args[-1:] in (["--range"], ["-r"]):
@@ -331,6 +342,10 @@ class Console:
             "clear": self._cmd_new,
             "usage": self._cmd_usage,
             "save": self._cmd_save,
+            "goal": lambda: self._cmd_goal(args),
+            "schedule": lambda: self._cmd_schedule(args),
+            "scheduled": lambda: self._cmd_schedule(args),
+            "schedualed": lambda: self._cmd_schedule(args),
             "board": self._cmd_board,
             "hypotheses": self._cmd_hypotheses,
             "graph": self._cmd_graph,
@@ -352,6 +367,12 @@ class Console:
         return True
 
     def _handle_running(self, command: str, args: list[str], line: str, *, forced: bool = False) -> bool:
+        if command == "goal":
+            self._cmd_goal(args)
+            return True
+        if command in ("schedule", "scheduled", "schedualed"):
+            self._cmd_schedule(args)
+            return True
         if command in ("y", "yes", "approve") and (command != "approve" or not args or forced):
             if not self.session.answer(True):
                 self._emit("当前没有待审批的动作")
@@ -672,17 +693,14 @@ class Console:
         self._display(render_panel("会话用量", rows=[
             ("模型调用", data["calls"]),
             ("会话 Token", data["total_tokens"] if data["tokens_reported"] or not data["calls"] else "未提供"),
-            ("输入 / 输出", f"{data['input_tokens']} / {data['output_tokens']}" if data["tokens_reported"] else "未提供"),
+            ("输入 / 输出", f"{data['input_tokens'] if data['input_reported'] else '未提供'} / {data['output_tokens'] if data['output_reported'] else '未提供'}"),
             ("缓存命中率", f"{rate:.1%}" + ("（部分请求）" if data["missing_cache"] else "") if rate is not None else "未提供"),
-            ("缓存读 / 写", f"{data['cache_read_tokens']} / {data['cache_write_tokens']}" if data["cache_reported"] else "未提供"),
+            ("缓存读 / 写", f"{data['cache_read_tokens'] if data['cache_read_reported'] else '未提供'} / {data['cache_write_tokens'] if data['cache_write_reported'] else '未提供'}"),
             ("费用", f"{'≥' if data['missing_cost'] else ''}${data['cost_usd']:.6f}" if data["cost_reported"] else "未提供"),
         ], color=self.color))
 
     def _cmd_save(self) -> None:
-        """把当前后端/模型持久化到 ~/.trina/env（仓库外，0600）——下次启动仍是这个设置。"""
-        import os
-        from pathlib import Path as _Path
-
+        """把当前供应商或 omp 模型写入唯一的 v2 供应商配置。"""
         if self.config.llm.profile:
             from .providers import ProfileStore
             store = ProfileStore()
@@ -719,23 +737,75 @@ class Console:
             store.active = ""
             store.save()
 
-        path = _Path(os.environ.get("TRINA_ENV_FILE") or (_Path.home() / ".trina" / "env"))
-        keep: list[str] = []
-        if path.exists():
-            keep = [
-                line
-                for line in path.read_text(encoding="utf-8").splitlines()
-                if not line.startswith(("export TRINA_API=", "export TRINA_MODEL="))
-            ]
-        keep.append(f"export TRINA_API={self.config.llm.backend}")
-        keep.append(f"export TRINA_MODEL={shlex.quote(self.config.llm.model)}")
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("\n".join(keep).strip() + "\n", encoding="utf-8")
-        try:
-            os.chmod(path, 0o600)
-        except OSError:
-            pass
-        self._emit(f"已保存到 {path}：后端 {self.config.llm.backend} · 模型 {self.config.llm.model}（下次启动生效）")
+        self._emit(f"已保存到 {store.path}：模型 {self.config.llm.model}")
+
+    def _cmd_goal(self, args: list[str]) -> None:
+        if args and args[0] not in ("show",):
+            value = "" if args[0] == "clear" else " ".join(args[1:] if args[0] == "set" else args).strip()
+            if args[0] != "clear" and not value:
+                raise ValueError("goal set 需要目标文本")
+            self.task_store.set_goal(value)
+            self._goal_text = value
+            if self.session.running:
+                self.session.update_goal(value)
+        self._display(render_panel("Goal", sections=[("当前目标", self._goal_text or "未设置")], color=self.color))
+
+    def _cmd_schedule(self, args: list[str]) -> None:
+        command = args[0] if args else "list"
+        if command == "add":
+            import argparse
+            class ScheduleParser(argparse.ArgumentParser):
+                def error(self, message):
+                    raise ValueError(f"/schedule add 参数错误: {message}")
+            parser = ScheduleParser(prog="/schedule add", exit_on_error=False)
+            parser.add_argument("--at", required=True)
+            parser.add_argument("--target", required=True)
+            parser.add_argument("--goal")
+            parser.add_argument("--max-steps", type=int, default=12)
+            parser.add_argument("--approve", choices=APPROVAL_MODES, default=self.session.approval_mode)
+            values = parser.parse_args(args[1:])
+            task = self.task_store.add(values.target, values.at, goal=values.goal, max_steps=values.max_steps,
+                                       approve=values.approve, config=self.config)
+            self._display(render_panel("定时任务已创建", rows=[("ID", task.id), ("开始时间", task.run_at),
+                          ("目标", task.target), ("Goal", task.goal or "未设置")], color=self.color))
+        elif command == "cancel" and len(args) == 2:
+            self.task_store.cancel(args[1])
+            self._emit(f"已取消定时任务 {args[1]}")
+        elif command == "list":
+            tasks = self.task_store.list()
+            self._display(render_panel("定时任务", sections=[("", "\n".join(
+                f"{task.id} · {task.run_at} · {task.status} · {task.target}" + (f" · {task.outcome}" if task.outcome else "")
+                for task in tasks) or "暂无定时任务")], color=self.color))
+        else:
+            raise ValueError("用法: /schedule add --at +10m --target <地址>；/schedule list；/schedule cancel <ID>")
+
+    def _start_scheduler(self) -> None:
+        self._scheduler = TaskScheduler(self.task_store, execute=self._execute_scheduled,
+                                        ready=lambda: not self.session.running, log=self._agent_log)
+        def loop():
+            while not self._scheduler.stop_event.is_set():
+                try:
+                    with self._launch_lock:
+                        self._scheduler.tick()
+                except Exception as exc:
+                    self._emit(f"定时队列读取失败: {exc}", prefix="错误")
+                self._scheduler.stop_event.wait(1)
+        self._scheduler_thread = threading.Thread(target=loop, name="trina-scheduler", daemon=True)
+        self._scheduler_thread.start()
+
+    def _execute_scheduled(self, task):
+        from .scope import ScopeGuard
+        config = TrinaConfig.load(task.config_path or None)
+        decision = ScopeGuard(config.scope).check_target(task.target)
+        if decision.denied:
+            raise ValueError(decision.reason)
+        if not self._start_task(target=task.target, goal=task.goal, max_steps=task.max_steps,
+                                approval=task.approve, config=config):
+            raise ValueError("定时任务未能启动")
+        self.session.thread.join()
+        if self._last_state is None:
+            raise ValueError("任务未产生运行结果")
+        return self._last_state
 
     # ------------------------------------------------------------------ 子命令
     # ------------------------------------------------------------------ 对话
@@ -778,6 +848,7 @@ class Console:
         self.session.reset_for_run()
         self.view.set_activity("processing", "准备回复")
         self._live_step = None
+        chat.state.goal = self._goal_text
         self.session.state = chat.state
         self.session.started_at = time.monotonic()
 
@@ -841,21 +912,23 @@ class Console:
             self._controller.grant(target_id)
             self._emit(f"已恢复 {target_id} 的授权")
 
-    def _ensure_controller(self) -> Any:
-        if self._controller is None:
+    def _ensure_controller(self, config: TrinaConfig | None = None) -> Any:
+        owner_config = config or self.config
+        if self._controller is None or self._controller_config is not owner_config:
             from .policy import AuthorizationController, Budget, PolicyRegistry
 
-            policy = self.config.policy
+            policy = owner_config.policy
             self._controller = AuthorizationController(
-                PolicyRegistry.load(self.config, extra_dirs=list(policy.registry_dirs)),
+                PolicyRegistry.load(owner_config, extra_dirs=list(policy.registry_dirs)),
                 mode=policy.mode,
                 budget=Budget(policy.max_checks, policy.logic_seconds, policy.stop_on_no_new_evidence),
             )
+            self._controller_config = owner_config
         return self._controller
 
     def _cmd_play(self, args: list[str]) -> None:
         parsed = _parse_play_args(args)
-        self._start_task(target=parsed.get("target"), range_name=parsed.get("range"), goal=parsed.get("goal", ""),
+        self._start_task(target=parsed.get("target"), range_name=parsed.get("range"), goal=parsed.get("goal", self._goal_text),
                          max_steps=parsed.get("max_steps"), approval=parsed.get("approve"))
 
     def _cmd_run(self, args: list[str]) -> None:
@@ -864,7 +937,7 @@ class Console:
             return
         target = args[0]
         parsed = _parse_play_args(args[1:])
-        self._start_task(target=target, range_name=None, goal=parsed.get("goal", ""),
+        self._start_task(target=target, range_name=None, goal=parsed.get("goal", self._goal_text),
                          max_steps=parsed.get("max_steps"), approval=parsed.get("approve"))
 
     def _delegate(self, argv: list[str]) -> None:
@@ -886,18 +959,24 @@ class Console:
             self._emit(f"（命令退出码 {code}）")
 
     # ------------------------------------------------------------------ 任务
-    def _start_task(
+    def _start_task(self, **kwargs) -> bool:
+        with self._launch_lock:
+            return self._start_task_locked(**kwargs)
+
+    def _start_task_locked(
         self,
         *,
         target: str | None,
         range_name: str | None,
         goal: str,
+        config: TrinaConfig | None = None,
         max_steps: int | None,
         approval: str | None,
-    ) -> None:
+    ) -> bool:
+        task_config = config or self.config
         if self.session.running:
             self._emit("已有任务在运行：先 stop 或等它结束")
-            return
+            return False
         if approval:
             if approval.lower() in APPROVAL_MODES:
                 self.session.approval_mode = approval.lower()
@@ -905,17 +984,19 @@ class Console:
                 self._emit(f"未知审批模式 {approval}，沿用 {self.session.approval_mode}")
         self.session.reset_for_run()
         self._live_step = None
-        self._ensure_controller()
+        # 调度任务会重新载入入队时记录的配置；控制器也必须跟随该配置，
+        # 不能复用交互会话里可能已经过期的范围、模式或预算。
+        self._ensure_controller(task_config)
         self._controller.checks_used = 0
         self._controller.started_at = time.monotonic()
         try:
             from .play import build_plan
         except ImportError as exc:  # pragma: no cover
             self._emit(f"无法加载 play 模块: {exc}")
-            return
+            return False
         try:
             plan = build_plan(
-                self.config,
+                task_config,
                 target=target,
                 range_name=range_name,
                 goal=goal,
@@ -924,7 +1005,9 @@ class Console:
             )
         except Exception as exc:  # noqa: BLE001 - 靶场准备失败要给出可读原因
             self._emit(f"靶场准备失败: {type(exc).__name__}: {exc}")
-            return
+            return False
+        self._task_config = task_config
+        self._last_state = None
         self._plan = plan
         self.session.state = None
         self.session.started_at = time.monotonic()
@@ -933,6 +1016,7 @@ class Console:
 
         def _worker() -> None:
             from .play import run_plan
+            from .llm import make_backend
 
             self._emit(
                 f"开始任务：{plan.target}"
@@ -942,9 +1026,9 @@ class Console:
             )
             try:
                 state = run_plan(
-                    self.config,
+                    task_config,
                     plan,
-                    backend=self._backend(),
+                    backend=(TrackedBackend(make_backend(task_config.llm), self.view) if config is not None else self._backend()),
                     registry=self.registry,
                     approval=self.session.request_approval,
                     steer_queue=self.session.steers,
@@ -961,6 +1045,7 @@ class Console:
             except Exception as exc:  # noqa: BLE001 - 任务异常必须回显而不是杀掉控制台
                 self._emit(f"任务异常: {type(exc).__name__}: {exc}", prefix="[错误]")
             finally:
+                self._task_config = None
                 self.view.set_activity("idle", "就绪")
                 if teardown_after:
                     plan.teardown()
@@ -970,6 +1055,8 @@ class Console:
         self.session.thread.start()
         self._emit("任务已在后台运行：y/n 审批 · hint <文本> 介入 · status 查看 · stop 停止")
 
+        return True
+
     def _report_summary(self, state: Any) -> None:
         from .board import render_board
         self._display(render_board(state, color=self.color))
@@ -977,10 +1064,14 @@ class Console:
             self._emit(f"[{finding.severity}] {finding.vuln_class} {finding.url or finding.target} ({finding.status})", prefix="发现")
 
     def _cleanup(self) -> None:
+        if self._scheduler is not None:
+            self._scheduler.stop_event.set()
         if self.session.running:
             self.session.request_stop()
             assert self.session.thread is not None
             self.session.thread.join(timeout=5)
+        if self._scheduler_thread is not None and self._scheduler_thread is not threading.current_thread():
+            self._scheduler_thread.join(timeout=2)
         if self._plan is not None and self._plan.started_fixtures:
             self._plan.teardown()
 

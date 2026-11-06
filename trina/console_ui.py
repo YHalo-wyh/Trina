@@ -98,6 +98,16 @@ COMMANDS: tuple[CommandSpec, ...] = (
         ),
         examples=('/run http://127.0.0.1:9099 --goal "拿到 flag"',),
     ),
+    CommandSpec("goal", "任务", "保存或修改当前项目的任务目标", "goal [set <目标>|show|clear]",
+                positional_choices=(ChoiceSpec("show", "查看目标"), ChoiceSpec("set", "设置目标"), ChoiceSpec("clear", "清除目标")),
+                examples=('/goal 检查登录流程并记录证据',), availability="always"),
+    CommandSpec("schedule", "任务", "定时启动任务", "schedule <add|list|cancel> [选项]",
+                aliases=("scheduled", "schedualed"), availability="always",
+                positional_choices=(ChoiceSpec("add", "安排任务"), ChoiceSpec("list", "查看任务"), ChoiceSpec("cancel", "取消任务")),
+                options=(OptionSpec(("--at",), "开始时间", "<HH:MM|日期时间|+10m>"),
+                         OptionSpec(("--target",), "执行目标", "<地址>"), OptionSpec(("--goal",), "任务目标", "<文本>"),
+                         OptionSpec(("--max-steps",), "决策步数", "<整数>"), OptionSpec(("--approve",), "审批模式", "<模式>", APPROVAL_CHOICES)),
+                examples=('/schedule add --at +10m --target http://127.0.0.1:9099',)),
     CommandSpec("status", "任务", "查看当前任务或上一轮结果", "status", availability="always"),
     CommandSpec("board", "任务", "打开状态、证据、覆盖和成本工作台", "board", availability="always"),
     CommandSpec("hypotheses", "研究", "按优先级查看假设台账", "hypotheses"),
@@ -436,8 +446,10 @@ class EnhancedConsoleInput:
         self._dispatching = False
         self._queue = None
         self._chunks: list[str] = []
+        self._char_count = 0
         self._content_lock = threading.RLock()
         self._fragments = None
+        self._fragment_width = 0
         self._line_count = 1
         self._scrollback = 0
         self.running = running
@@ -573,24 +585,50 @@ class EnhancedConsoleInput:
         """后台只追加内容并请求重绘，不打印到终端或覆盖输入缓冲。"""
         if not text:
             return
+        from .terminal import ResponsiveText
+        source = text
+        initial = str(source).rstrip("\n") + "\n\n"
+        if hasattr(source, "at_width"):
+            chunk = ResponsiveText(initial, lambda width, item=source:
+                                  item.at_width(width).rstrip("\n") + "\n\n")
+        else:
+            chunk = initial
         with self._content_lock:
-            self._chunks.append(str(text).rstrip("\n") + "\n\n")
-            while len(self._chunks) > 1 and sum(map(len, self._chunks)) > 250_000:
-                self._chunks.pop(0)
+            self._chunks.append(chunk)
+            self._char_count += len(chunk)
+            pruned = False
+            while len(self._chunks) > 1 and self._char_count > 250_000:
+                self._char_count -= len(self._chunks.pop(0))
+                pruned = True
             if len(self._chunks[0]) > 250_000:
                 self._chunks[0] = self._chunks[0][-250_000:]
+                self._char_count = len(self._chunks[0])
+                pruned = True
             previous_lines = self._line_count
             self._line_count = max(1, "".join(self._chunks).rstrip("\n").count("\n") + 1)
             if self._scrollback:
                 self._scrollback = max(0, self._scrollback + self._line_count - previous_lines)
-            self._fragments = None
+            # 同宽度时只解析新增 ANSI 块；宽度变化时由 _transcript 统一重排。
+            if self._fragments is not None and self._fragment_width and not pruned:
+                from prompt_toolkit.formatted_text import ANSI, to_formatted_text
+                rendered = chunk.at_width(self._fragment_width) if hasattr(chunk, "at_width") else str(chunk)
+                self._fragments.extend(to_formatted_text(ANSI(rendered)))
+            else:
+                self._fragments = None
         self.app.invalidate()
 
     def _transcript(self):
         from prompt_toolkit.formatted_text import ANSI, to_formatted_text
         with self._content_lock:
-            if self._fragments is None:
-                self._fragments = to_formatted_text(ANSI("".join(self._chunks).rstrip("\n")))
+            width = max(20, self.app.output.get_size().columns)
+            if self._fragments is None or self._fragment_width != width:
+                rendered = "".join(
+                    chunk.at_width(width) if hasattr(chunk, "at_width") else str(chunk)
+                    for chunk in self._chunks
+                ).rstrip("\n")
+                self._fragments = to_formatted_text(ANSI(rendered))
+                self._fragment_width = width
+                self._line_count = max(1, rendered.count("\n") + 1)
             return self._fragments
 
     async def _consume(self) -> None:

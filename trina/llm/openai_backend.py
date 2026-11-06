@@ -199,6 +199,12 @@ def _parse_usage(raw: Any, api: str, model: str) -> LLMUsage:
     return LLMUsage(
         input_tokens=inputs, output_tokens=count(raw.get("completion_tokens", raw.get("output_tokens"))),
         cache_read_tokens=cached, cache_write_tokens=written,
+        input_reported=any(raw.get(key) is not None for key in ("input_tokens", "prompt_tokens")),
+        output_reported=any(raw.get(key) is not None for key in ("output_tokens", "completion_tokens")),
+        cache_read_reported=(details.get("cached_tokens") is not None or any(
+            raw.get(key) is not None for key in ("prompt_cache_hit_tokens", "cache_read_input_tokens"))),
+        cache_write_reported=(details.get("cache_write_tokens") is not None or
+                              raw.get("cache_creation_input_tokens") is not None),
         tokens_reported=any(raw.get(key) is not None for key in ("input_tokens", "prompt_tokens", "output_tokens", "completion_tokens")),
         cache_reported=cache_known, cache_input_tokens=inputs if cache_known else 0,
         cost=cost_value, cost_reported=cost is not None, model=model,

@@ -50,7 +50,7 @@ python3 -m trina review --state runs/$(ls -t runs | head -1)/state.json
 - **不挂宿主凭据**：执行环境不需要、也不应提供宿主 SSH key 或云凭证；
 - **不暴露 Docker socket**：容器名不构成安全证明，本项目的执行层不依赖容器特权；
 - **无开放外网**：默认只允许回环 + RFC1918；公网目标需要显式改配置（`allow_public` + 网段授权，双重闸门）；
-- **模型没有写权限**：注册表（`configs/ranges/*.yaml`）与预算是文件，模型只能用 `test_id` 提议。
+- **模型没有写权限**：显式配置的注册 YAML 与预算由操作者维护，模型只能用 `test_id` 提议。
 
 ## 6. 已知问题（诚实清单）
 | 问题 | 影响 | 现状/规避 |

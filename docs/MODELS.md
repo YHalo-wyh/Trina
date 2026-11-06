@@ -36,9 +36,9 @@ Tab / Shift+Tab 切换字段与按钮，Ctrl+S 保存，Esc / Ctrl+C 取消。Ke
 
 ## 存储和配置顺序
 
-供应商配置保存在用户目录 `~/.trina/providers.json`，格式为 `version=2`，每条配置有一个 `api_key`，使用原子替换保存，POSIX 权限为 0600。文件是本机 JSON，不作加密存储；`TRINA_PROVIDERS_FILE` 可以指定独立文件，默认位置在仓库外。旧 `version=1` 文件载入时在内存转换：保留当前选中 Key 对应的供应商名称，其他命名 Key 各自展开为「原名称 · Key名称」供应商，重名时追加数字。读取本身不改文件，下一次保存写入 v2，不丢弃旧 Key。
+供应商配置保存在用户目录 `~/.trina/providers.json`，格式为 `version=2`，每条配置有一个 `api_key`，使用原子替换保存，POSIX 权限为 0600。文件是本机 JSON，不作加密存储；`TRINA_PROVIDERS_FILE` 可以指定独立文件，默认位置在仓库外。旧 `version=1` 文件不再自动迁移，载入时会明确报“供应商配置版本不受支持”；需要的连接应在 `/model` 中按供应商整条重新添加。
 
-默认启动顺序为项目 YAML → 已选择的本地连接 / 已保存的 omp 模型 → `TRINA_LLM_*` 环境变量 → 命令行 `--set`。显式 `--config` 文件仅在指定 `llm.profile` 时读取连接。旧 `~/.trina/env` 中的 `TRINA_API`、`TRINA_MODEL` 在没有已保存选择时继续生效；`scripts/dev.sh --api ...` 是显式覆盖。
+默认启动顺序为项目 YAML → 已选择的本地连接 / 已保存的 omp 模型 → `TRINA_LLM_*` 环境变量 → 命令行 `--set`。显式 `--config` 文件仅在指定 `llm.profile` 时读取连接。`TRINA_API`、`TRINA_MODEL` 和启动脚本的旧选择参数不再参与装配。
 
 配置有非空 `api_key` 时使用保存值，否则读取其 `api_key_env`。当前供应商的编辑、切换会重建后端，下一次请求立即生效，并保留聊天历史；运行中拒绝模型管理命令。旧 `/model keys` 仅作为进入供应商编辑页的兼容入口，不再维护独立 Key 对象。
 
@@ -111,4 +111,4 @@ Claude 预算型模型的短输出健康检查不足 1024 Token 时关闭本次�
 
 供应商整条表单参考 [CC Switch 添加供应商](https://github.com/farion1231/cc-switch/blob/main/docs/user-manual/en/2-providers/2.1-add.md)，地址测试与实际模型调用的区别参考其[连通性检查说明](https://github.com/farion1231/cc-switch/blob/main/docs/user-manual/en/4-proxy/4.5-model-test.md)。
 
-验证入口为 `tests/test_providers.py`、`tests/test_provider_form.py`、`tests/test_reasoning.py`、`tests/test_llm_openai.py` 与 `tests/test_terminal_ui.py`。覆盖供应商增删编辑、v1 迁移、草稿隔离、测试语义、异步结果失效、实际按键及终端屏幕恢复。工具授权、审计与目标护栏继续由既有执行链处理。
+验证入口为 `tests/test_providers.py`、`tests/test_provider_form.py`、`tests/test_reasoning.py`、`tests/test_llm_openai.py` 与 `tests/test_terminal_ui.py`。覆盖供应商增删编辑、拒绝旧格式、草稿隔离、测试语义、异步结果失效、实际按键及终端屏幕恢复。工具授权、审计与目标护栏继续由既有执行链处理。

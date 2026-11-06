@@ -11,9 +11,9 @@
 |---|---|---|
 | 目标范围 | 仅 `configs/trina.yaml#scope.authorized_cidrs` / `authorized_hosts`；公网默认拒绝 | `trina/scope.py` |
 | 动作等级 | `detect` < `verify` < `exploit`，默认上限 `verify`；破坏性动作另需显式开关 + 主机白名单 | `configs/trina.yaml#scope` |
-| 授权策略 | `free` / `guided`（默认）/ `strict`；strict 只接受注册 `target_id` + `test_id` | `configs/trina.yaml#policy` |
+| 授权策略 | `free`（默认）/ `guided` / `strict`；strict 只接受显式注册的 `target_id` + `test_id` | `configs/trina.yaml#policy` |
 | 预算与停止 | 检查数上限、逻辑预算秒数、连续无新增证据即停 | 同上 |
-| 检查项来源 | 靶场 yaml 的 `targets:` / `tests:` 段（人可读、可审查） | `configs/ranges/*.yaml` |
+| 检查项来源 | 操作者在 `policy.registry_dirs` 指定的 YAML `targets:` / `tests:` 段 | 自有注册 YAML；仓库不预装 |
 | 模拟器优先 | 先在 `trina lab`（内置故意脆弱靶机）验证，再接入授权端点 | `trina/lab/`、`release/README.md` |
 
 **不做**：真实目标、未授权扫描、DoS/删库/写 webshell/拖库导出（硬禁止清单，配置无法开启）、真实凭据与业务数据。

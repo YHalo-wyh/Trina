@@ -75,7 +75,7 @@ rm -rf                                            删除文件载荷
 
 - 全局 `max_qps`（默认 20/s），单主机桶同额；`HttpClient` 与 `run_external` 都会先 `throttle()`。
 - 单主机并发 `max_host_concurrency`（默认 8）。
-- 单次爆破尝试上限 `max_brute_attempts`（默认 800，覆盖默认词表 15×45=675），超限直接拒绝并给出缩小字典的提示。
+- 单次爆破尝试上限 `max_brute_attempts`（默认 800）；用户名、口令与目录字典都由调用者显式提供，超限直接拒绝并给出缩小输入的提示。
 
 ### 2.5 基准平台控制面 `check_control_plane()`
 
@@ -121,6 +121,6 @@ TSecBench 答题 API 不是渗透目标，不能套用 `authorized_cidrs`（它�
 ## 5. 明确不覆盖的范围（诚实声明）
 
 - 护栏判据基于**参数与载荷**的正则与策略，不解析工具内部行为；一个新工具如果自己拼命令并绕过 `run_external`，护栏拦不住 —— 这也是"出网/执行必须走统一出口"成为硬规则的原因。
-- `dir_bruteforce` 等批量请求工具对 base URL 做一次护栏校验，后续同源请求不再逐条校验（同源由构造保证）；异源重定向不会自动跟随（`allow_redirects=False`）。
+- `dir_bruteforce` 的并发请求统一经 `HttpClient.arequest()`，每个请求都检查执行租约、范围并计入限速与统计；重定向不会自动跟随（`allow_redirects=False`）。
 - omp 扩展里的 bash 拦截是**第二道防线**，只认正则，不解析 shell 语法（重排参数、别名、间接执行可能绕过）；真正的边界始终是 Python 侧。
 - 审计链防的是"事后篡改单条记录"，不能防"运行期被完全替换的伪造实现"。

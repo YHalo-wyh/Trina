@@ -450,16 +450,16 @@ class TestAdaptersAndScoring(unittest.TestCase):
 
         config = TrinaConfig.load()
         names = {item["name"] for item in list_adapters(config)}
-        for expected in ("lab", "dvwa", "pikachu", "vulhub", "vulnstack", "tsecbench"):
-            self.assertIn(expected, names)
-        adapter = load_adapter(config, "lab")
-        self.assertIsInstance(adapter.status(), dict)
-        self.assertGreaterEqual(len(adapter.ground_truth()), 1)
+        self.assertEqual(names, set())
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "custom.yaml"
+            path.write_text("name: custom\nkind: local\ntargets:\n  - host: 127.0.0.1\n    port: 1\n", encoding="utf-8")
+            adapter = load_adapter(config, str(path))
+            self.assertIsInstance(adapter.status(), dict)
 
     def test_unreachable_range_does_not_raise(self):
-        from trina.adapters import load_adapter
-
-        info = load_adapter(TrinaConfig.load(), "dvwa").prepare()
+        from trina.adapters import HttpRangeAdapter
+        info = HttpRangeAdapter(TrinaConfig.load(), {"name": "fixture", "base_url": "http://127.0.0.1:1"}).prepare()
         self.assertGreaterEqual(len(info.targets), 1)
 
     def test_tsecbench_scoring(self):

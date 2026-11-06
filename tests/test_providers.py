@@ -60,9 +60,9 @@ class ProviderTests(unittest.TestCase):
             item.api_key = ''
             self.assertEqual(store.key(item.id, item.api_key_env), 'env-key')
 
-    def test_saved_provider_takes_precedence_over_legacy_launcher(self):
+    def test_removed_launcher_variables_do_not_select_a_provider(self):
         with patch.dict(os.environ, {'TRINA_API': 'deepseek', 'TRINA_MODEL': 'legacy'}):
-            self.assertEqual(TrinaConfig.load().llm.model, 'legacy')
+            self.assertNotEqual(TrinaConfig.load().llm.model, 'legacy')
             manager, _, _ = self.manager()
             manager._commit(self.profile())
             self.assertEqual(TrinaConfig.load().llm.model, 'deepseek-chat')
@@ -189,22 +189,15 @@ class ProviderTests(unittest.TestCase):
         with patch.dict(os.environ, {'TRINA_API': 'deepseek'}):
             self.assertEqual(TrinaConfig.load().llm.backend, 'omp')
 
-    def test_legacy_multi_key_file_migrates_without_losing_any_key(self):
+    def test_version_one_provider_file_is_rejected_without_rewrite(self):
         raw = {'version': 1, 'active': 'work', 'profiles': [
             {'id': 'work', 'provider': 'deepseek', 'base_url': 'https://api.deepseek.com/v1', 'model': 'deepseek-chat', 'keys': {'company': 'test-company', 'personal': 'test-personal'}, 'active_key': 'company'},
             {'id': 'work · personal', 'provider': 'deepseek', 'base_url': 'https://api.deepseek.com/v1', 'model': 'deepseek-chat', 'keys': {}, 'active_key': ''}]}
         self.path.write_text(json.dumps(raw), encoding='utf-8')
         original = self.path.read_bytes()
-        store = ProfileStore()
+        with self.assertRaisesRegex(ValueError, "版本不受支持"):
+            ProfileStore()
         self.assertEqual(self.path.read_bytes(), original)
-        self.assertEqual(store.active, 'work')
-        self.assertEqual(store.profiles['work'].api_key, 'test-company')
-        self.assertEqual(store.profiles['work · personal-2'].api_key, 'test-personal')
-        store.save()
-        saved = json.loads(self.path.read_text())
-        self.assertEqual(saved['version'], 2)
-        self.assertTrue(all('keys' not in p and 'active_key' not in p for p in saved['profiles']))
-        self.assertEqual(ProfileStore().profiles['work · personal-2'].api_key, 'test-personal')
 
     def test_model_home_has_provider_actions_without_independent_key_menus(self):
         manager, _, _ = self.manager()
@@ -229,7 +222,7 @@ class ProviderTests(unittest.TestCase):
         manager._commit(item, previous_id=item.id)
         self.assertEqual(cfg.llm.reasoning_effort, 'default')
 
-    def test_omp_model_and_thinking_survive_legacy_launcher(self):
+    def test_saved_omp_settings_ignore_removed_launcher_variables(self):
         manager, cfg, _ = self.manager(['provider/model'])
         manager.pick_omp_model()
         manager.set_reasoning('xhigh')

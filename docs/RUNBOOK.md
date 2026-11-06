@@ -170,7 +170,7 @@ python3 -m trina play --goal "验证 SQL 注入并拿到 flag" --set run.hypothe
 ```bash
 python3 -m trina tools --verbose                                  # 工具与参数表
 python3 -m trina tool port_scan --target 127.0.0.1 --param ports=quick
-python3 -m trina tool dir_bruteforce --params '{"url":"http://127.0.0.1:9099"}'
+python3 -m trina tool dir_bruteforce --params '{"url":"http://127.0.0.1:9099","wordlist":"./dirs.txt"}'
 python3 -m trina tool weak_password_brute --params '{"service":"ssh","target":"127.0.0.1","port":2222,"username":"trina","password":"trina123"}'
 python3 -m trina tool rce_exec --params '{"url":"http://127.0.0.1:9099/rce","param":"cmd","prefix":";","command":"id"}'
 ```
@@ -182,14 +182,14 @@ python3 -m trina tool rce_exec --params '{"url":"http://127.0.0.1:9099/rce","par
 ### 4.1 Web 靶场（Pikachu / DVWA / Bugku / 墨者）
 
 1. 在任意可达位置（宿主机 phpstudy、另一台虚拟机、容器）把靶场跑起来；
-2. 编辑对应的 `configs/ranges/<name>.yaml`，填 `base_url`（以及 DVWA 的登录凭据，适配器会先登录拿 cookie）；
+2. 在 `~/.trina/ranges/<name>.yaml` 新建自己的适配配置，填 `base_url`（以及 DVWA 的登录凭据，适配器会先登录拿 cookie），或直接用 YAML 路径；
 3. 确认授权：`python3 -m trina guard check <靶机IP>` —— 若靶机不在 127.0.0.0/8 或 RFC1918 内，需要把它加进 `scope.authorized_cidrs`；
 4. `python3 -m trina ranges status pikachu` 看连通性与 ground truth 条数；
 5. `python3 -m trina run --range pikachu --goal "逐模块验证漏洞"`。
 
 ### 4.2 主机靶机（VulnStack / 自建 Linux+Windows）
 
-`configs/ranges/vulnstack.yaml` 里填 `targets`（host/port/service），例如内网 22/3306/3389/445。
+在自有 VulnStack YAML 里填 `targets`（host/port/service），例如内网 22/3306/3389/445。
 弱口令验证示例（注意动作等级为 `exploit`，需要 `--allow-exploit`）：
 
 ```bash
@@ -201,7 +201,7 @@ python3 -m trina run --allow-exploit --range vulnstack --goal "对 192.168.1.10 
 ```bash
 # 本机有 docker（WSL 需启用 Docker Desktop 集成）：
 python3 -m trina ranges status vulhub     # 会尝试 docker compose up
-# 无 docker：在宿主机/另一台机器起容器，把 IP/URL 填进 configs/ranges/*.yaml
+# 无 docker：在宿主机/另一台机器起容器，把 IP/URL 填进自有适配 YAML
 ```
 
 ## 5. 评测

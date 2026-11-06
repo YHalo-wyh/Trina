@@ -94,8 +94,10 @@ def run_external(
 
     budget = timeout or ctx.config.run.tool_timeout
     if ctx.remaining() is not None:
-        budget = min(budget, max(5.0, ctx.remaining()))
+        budget = min(budget, max(.001, ctx.remaining()))
 
+    from ..scope import execution_budget
+    budget = execution_budget(budget)
     started = time.monotonic()
     try:
         proc = subprocess.run(

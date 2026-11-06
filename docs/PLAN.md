@@ -184,7 +184,7 @@ flowchart TB
   指标：各类漏洞通过率、平均完成耗时、误报率 = FP/(TP+FP)、遗漏率 = FN/(TP+FN)。
 - **主机专项**：VulnStack 内网、自建 Linux/Windows 靶机（SSH/MySQL/RDP/SMB）、墨者学院。
   指标：权限获取成功率、flag 获取率、端口扫描完整度（发现端口/真实开放端口）、服务识别准确率。
-- **口径**：每个场景由 `configs/ranges/*.yaml` 声明 ground truth（漏洞类型、路径、flag 校验方式），
+- **口径**：内置场景由 `trina/eval/scenarios/*.yaml` 声明 ground truth；外部靶场由操作者提供的适配 YAML 声明，
   评测框架据此自动判定 TP/FP/FN，**避免人工口径漂移**。
 
 ### 6.2 轮次二：TSecBench 权威基准 + 蓝队对抗

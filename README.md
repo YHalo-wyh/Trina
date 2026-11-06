@@ -4,7 +4,7 @@
 
 | 文档 | 检查内容 |
 |---|---|
-| [需求](需求.md) | 使用者、场景、19 项功能需求、8 项质量要求、当前状态与验收口径 |
+| [需求](需求.md) | 使用者、场景、20 项功能需求、8 项质量要求、当前状态与验收口径 |
 | [规约](规约.md) | CLI 与 Agent 接口、任务清单、状态转换、Worker 租约、检查点、错误分支与测试场景 |
 | [设计决策](设计决策.md) | 原有单 Agent 决策链，以及 0.2.0 的 Agent 更新记录、修改原因、取舍与验证边界 |
 
@@ -37,9 +37,11 @@
 自动化渗透测试 Agent：**大模型 ReAct 决策 + 全套工具封装 + 多靶场适配 + 硬性安全护栏 + 标准报告 + 评测框架**。
 
 ```bash
-bash scripts/install.sh          # 装成全局命令，使用 /model 选择已保存连接
+scripts/install.sh               # 装成全局命令，使用 /model 选择已保存连接
 trina                            # 交互控制台（人工可随时介入）
-trina play --goal "拿到 flag"     # 一条命令直接开打（自动起靶机 → 渗透 → 报告 → 回收）
+trina goal set "验证登录流程"     # 保存当前项目目标；后续 run/play 默认沿用
+trina play --target 127.0.0.1    # 一条命令执行并生成报告
+trina schedule add --at +10m --target 127.0.0.1  # 一次性定时启动
 trina doctor                     # 环境自检（后端连通性、外部工具、护栏边界）
 trina review                     # 评价 Agent：只读复核最近一次运行
 ```
@@ -47,28 +49,19 @@ trina review                     # 评价 Agent：只读复核最近一次运行
 也可以直接用本地启动器（不装全局命令）：
 
 ```bash
-bash scripts/dev.sh              # 控制台（后端=omp）
-bash scripts/dev.sh --api deepseek   # 控制台（直连 DeepSeek 官方 API）
+scripts/dev.sh                   # 控制台
+scripts/dev.sh doctor            # 环境自检
 ```
 
 也可以用完整流程（复用 omp 已配置的模型与鉴权，无需额外 API Key）：
 
 ```bash
-scripts/dev.sh doctor            # 环境自检（后端=omp）
-scripts/dev.sh                   # 交互控制台（后端=omp）
-scripts/dev.sh play              # 一条命令直接开打（后端=omp）
+scripts/dev.sh doctor
+scripts/dev.sh
+scripts/dev.sh play --target 127.0.0.1
 ```
 
-### 换成直连 DeepSeek 官方 API（同一个模型）
-
-```bash
-mkdir -p ~/.trina && cp scripts/env.example ~/.trina/env && chmod 600 ~/.trina/env
-# 编辑 ~/.trina/env → export DEEPSEEK_API_KEY=sk-xxxx
-
-scripts/dev.sh doctor --api deepseek      # 应显示：后端=openai，模型=deepseek-v4-flash，连通性 OK
-scripts/dev.sh --api deepseek             # 交互控制台（直连 DeepSeek）
-scripts/dev.sh play --api deepseek --goal "拿到 flag 并验证 SQL 注入" --max-steps 12
-```
+直连模型在 `/model` 中以一条供应商配置保存请求地址、API Key、模型和思考强度；无需再维护启动脚本参数或旧 `~/.trina/env` 选择项。
 
 | 后端 | 何时用 | 密钥 | 实测 |
 |---|---|---|---|
@@ -103,7 +96,7 @@ scripts/dev.sh play --api deepseek --goal "拿到 flag 并验证 SQL 注入" --m
 |---|---|---|
 | 1. 自动决策大脑 | `trina/brain/` | ReAct 循环 + PTES 阶段机（事实驱动推进）+ **假设台账**（按价值×置信度×信息增量排序验证）+ 失败分类与循环守卫（无新信息就打转→换参数→换工具→请人介入）+ 预算收敛；动作协议是**文本 JSON**，跨模型可移植、可回放 |
 | 2. 工具统一封装 | `trina/tools/` | 17 个目标分析工具 + 1 个可选专职 Agent 咨询工具，统一 `ToolSpec/ToolResult` 契约；**外部二进制优先 + 内置 Python 引擎兜底**（本机无 nmap/nuclei/sqlmap/hydra 也能跑） |
-| 3. 多靶场适配 | `trina/adapters/` + `configs/ranges/` | `local` / `docker-compose` / `http-range` / `tsecbench` 四类适配器，内置 Pikachu、DVWA、Vulhub、VulnStack、lab、TSecBench 六套注册表（含 ground truth） |
+| 3. 靶场适配 | `trina/adapters/` | `local` / `docker-compose` / `http-range` / `tsecbench` 四类适配器；仓库不再携带静态靶场注册表，按需从 `~/.trina/ranges` 或显式 YAML 载入 |
 | 4. 安全合规护栏 | `trina/scope.py` + `trina/audit.py` | 授权网段白名单硬校验、动作分级、破坏性闸门、DoS/删库硬禁止、限速与爆破规模上限、SHA-256 哈希链审计 |
 | 5. 标准报告 | `trina/report/` | Markdown + 自包含 HTML（内联 CSS/SVG，无外部依赖），含执行摘要、攻击路径、漏洞详情（CVSS/CWE/证据/复现/修复）、**证据链与假设台账**（mermaid 关系图，结论可反向追溯）、凭据与 flag、工具时间线、合规声明 |
 
@@ -167,9 +160,9 @@ strict 模式下咨询工具也需要显式注册检查项。尚无实测数据�
 
 ## 授权策略：计划器提出，控制器批准
 
-- 目标与检查项来自**人可读的注册表**：`configs/ranges/*.yaml` 的 `targets:` 与 `tests:` 段。
+- 默认 `policy.mode=free`，真实范围始终由 `ScopeGuard` 裁决。需要检查项约束时，在 `policy.registry_dirs` 显式配置自有 YAML；仓库不预装目标或检查项。
 - 控制器（`trina/policy.py`）在执行层逐动作批准：注册 → 预算 → 撤权；模型**没有写权限**，
-  也不能用"这应该安全"当许可。模式：`free` / `guided`(默认) / `strict`（只接受注册 `target_id` + `test_id`）。
+  也不能用"这应该安全"当许可。模式：`free`（默认）/ `guided` / `strict`（只接受显式注册的 `target_id` + `test_id`；空注册表直接拒绝）。
 - 预算与停止合同：`policy.max_checks` / `logic_seconds` / `stop_on_no_new_evidence`，到点即停并留下**已测/未测/原因**。
 - 撤权 = 减权不绕路：`revoke <target_id>` 后对该目标的一切检查被拒（换地址/换工具同样被拒）。
 - 结论三分类：`CONFIRMED`（有证据）/ `NOT_CONFIRMED`（**仅限已执行检查**）/ `INCONCLUSIVE`（缺口、工具失败、授权受限）。
@@ -261,7 +254,7 @@ tests/          单元测试（护栏/审计/注册表/大脑/状态/报告/评�
 - Python ≥ 3.10，已装：`pyyaml requests paramiko rich`（本机另有 `bs4 aiohttp httpx`）。
   缺失可选依赖时对应能力会**明确降级**而不是崩溃（如无 `pymysql` 则跳过 MySQL 弱口令验证）。
 - 外部工具（nmap / nuclei / sqlmap / hydra / ffuf / nmap 等）**非必需**：存在即优先使用，缺失自动降级到内置引擎并在结果里标注 `engine=builtin`。
-- Docker（Vulhub/VulnStack 一键起靶场）可选；WSL 需启用 Docker Desktop 集成，或把靶场跑在宿主机后按 `configs/ranges/*.yaml` 填 URL。
+- Docker 靶场可选；WSL 需启用 Docker Desktop 集成。自定义适配配置放在 `~/.trina/ranges` 或通过 `--range <YAML路径>` 显式传入。
 
 ## 安全边界（务必阅读 `docs/GUARDRAILS.md`）
 

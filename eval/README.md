@@ -6,8 +6,8 @@
 | 内容 | 位置 | 说明 |
 |---|---|---|
 | 评测场景（用例） | `trina/eval/scenarios/web.yaml`、`host.yaml`、`integrated.yaml` | 每个场景 = 目标 + 任务 + ground truth + 期望端口/服务 |
-| 注册检查项 | `configs/ranges/*.yaml` 的 `tests:` 段 | 控制器只批准注册项；`expect_finding` 声明"跑它期望发现什么" |
-| 真值（ground truth） | `configs/ranges/*.yaml` 的 `ground_truth:` 段 | **真值不喂给 Agent**，只用于判分 |
+| 注册检查项 | `policy.registry_dirs` 指向的自有 YAML `tests:` 段 | `guided/strict` 控制器按显式注册项裁决；仓库不预装目标注册表 |
+| 真值（ground truth） | `trina/eval/scenarios/*.yaml` 的 `ground_truth:` 段 | **真值不喂给 Agent**，只用于判分 |
 | 判定口径 | `docs/EVAL.md`、`trina/eval/metrics.py` | precision/recall/FPR/遗漏率/覆盖度，按场景声明范围评分 |
 
 ## 验收ID（与 `brief/README.md` 对应）

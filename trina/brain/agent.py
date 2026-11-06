@@ -132,6 +132,7 @@ class PentestAgent:
             resume=False,
         )
         guard = ScopeGuard(self.config.scope, audit=audit)
+        usage_before = self.backend.ledger.to_dict()
         state = RunState(run_id=run_id, target=target, goal=goal, max_evidence=self.config.run.max_evidence)
         workspace = self.config.workspace_dir / run_id
         workspace.mkdir(parents=True, exist_ok=True)
@@ -258,6 +259,8 @@ class PentestAgent:
         ctx.extra["model_response_observer"] = record_response
 
         def accept_steers() -> bool:
+            nonlocal requirements
+            from ..session import GoalUpdate
             accepted = False
             if self.steer_queue is not None:
                 while True:
@@ -265,6 +268,13 @@ class PentestAgent:
                         note = self.steer_queue.get_nowait()
                     except Exception:  # noqa: BLE001 - 队列空
                         break
+                    if isinstance(note, GoalUpdate):
+                        state.goal = str(note)
+                        requirements = GoalRequirements.parse(state.goal)
+                        audit.append("human.goal", decision="allow", goal=state.goal[:2000])
+                        hints.append(f"[目标更新] {state.goal or '已清除'}")
+                        accepted = True
+                        continue
                     if note:
                         hints.append(f"[人工介入] {note}")
                         state.note("human", f"人工补充：{note}")
@@ -663,7 +673,7 @@ class PentestAgent:
                 state.status = "partial"
             else:
                 state.status = "failed"
-        state.ledger = self.backend.ledger.to_dict()
+        state.ledger = self.backend.ledger.delta(usage_before).to_dict()
         unfinished = ledger.finalize()
         if unfinished:
             state.note(
@@ -690,7 +700,7 @@ class PentestAgent:
         executed = list(coverage.get("executed") or [])
         error_count = state.counters.get("errors", 0)
         failures = state.counters.get("failures", 0)
-        if state.status == "blocked" or not executed:
+        if state.status == "blocked" or not any(step.get("kind") == "tool" and step.get("ok") for step in state.steps):
             verdict = "INCONCLUSIVE"
         elif verified:
             verdict = "CONFIRMED"

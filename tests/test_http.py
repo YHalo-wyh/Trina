@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import tempfile
 import threading
 import unittest
@@ -156,6 +157,19 @@ class TestHttpRedirects(unittest.TestCase):
         self.assertFalse(result.ok)
         self.assertIn("护栏拒绝", result.error)
         send.assert_not_called()
+
+    def test_async_request_uses_same_guard_and_request_counter(self):
+        import aiohttp
+
+        async def fetch():
+            async with aiohttp.ClientSession() as session:
+                return await self.client.arequest(session, "GET", self.base + "/async", timeout=2)
+
+        result = asyncio.run(fetch())
+        self.assertTrue(result.ok, result.error)
+        self.assertEqual(result.status, 200)
+        self.assertEqual(self.client.requests_made, 1)
+        self.assertEqual(len(self.servers[0].visits), 1)
 
 
 if __name__ == "__main__":

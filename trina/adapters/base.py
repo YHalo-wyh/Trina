@@ -5,18 +5,18 @@
 1. **适配器只负责「把靶场变成目标 + ground truth」**，不负责打靶；打靶是 brain + tools 的事。
 2. **绝不抛异常给调用方**：靶场没起来、docker 缺失、远端 API 连不上，都通过
    `status()["ready"] is False` + `detail` 表达，`prepare()` 返回「空 targets + notes」而不是崩溃。
-3. **ground truth 与 flag 校验同源**：评测器的 TP/FP/FN 口径完全来自 `configs/ranges/*.yaml`，
+3. **ground truth 与 flag 校验同源**：评测器的 TP/FP/FN 口径来自操作者显式提供的靶场 YAML，
    避免人工口径漂移。
 4. 适配器本身不绕过护栏：所有出网/执行外部命令的动作都走 `trina.tools`（HTTP 探测除外，
    本地接口探测属于靶场自带能力，见各子模块说明）。
 
 加载器
 ------
-    load_adapter(cfg, "dvwa")                       # configs/ranges/dvwa.yaml
-    load_adapter(cfg, "configs/ranges/dvwa.yaml")   # 相对项目根
+    load_adapter(cfg, "dvwa")                       # ~/.trina/ranges/dvwa.yaml
+    load_adapter(cfg, "my-ranges/dvwa.yaml")        # 相对当前目录
     load_adapter(cfg, "/abs/path/to/dvwa.yaml")
     load_adapter(cfg, None)                         # 环境变量 TRINA_RANGE → default.yaml → local.yaml
-    list_adapters(cfg)                              # 扫描 configs/ranges/*.yaml
+    list_adapters(cfg)                              # 扫描显式 ranges_dir
 """
 
 from __future__ import annotations
@@ -33,11 +33,8 @@ import yaml
 
 from ..config import TrinaConfig
 
-#: 项目根目录（`trina/adapters/base.py` → parents[2]）。
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-
-#: 靶场注册表默认目录（相对项目根）。
-DEFAULT_RANGES_DIR = "configs/ranges"
+#: 靶场注册表默认目录（用户目录，仓库不预装清单）。
+DEFAULT_RANGES_DIR = str(Path.home() / ".trina" / "ranges")
 
 #: 靶场配置文件的默认名（`load_adapter(cfg, None)` 时按序查找）。
 DEFAULT_RANGE_FILENAMES = ("default.yaml", "default.yml", "local.yaml", "local.yml")
@@ -372,12 +369,12 @@ class RangeAdapter(ABC):
 
 
 def ranges_dir(config: TrinaConfig | None = None) -> Path:
-    """靶场注册表目录（来自 `config.eval.ranges_dir`，相对项目根解析）。"""
+    """靶场注册表目录（来自 `config.eval.ranges_dir`，相对当前目录解析）。"""
     raw = ""
     if config is not None:
         raw = str(getattr(config.eval, "ranges_dir", "") or "")
     path = Path(raw or DEFAULT_RANGES_DIR)
-    return path if path.is_absolute() else PROJECT_ROOT / path
+    return path if path.is_absolute() else Path.cwd() / path
 
 
 def read_range_spec(path: str | Path) -> dict[str, Any]:
@@ -423,12 +420,12 @@ def resolve_range_path(config: TrinaConfig, name: str | Path | None = None) -> P
     text = str(candidate).strip()
     looks_like_path = Path(text).is_absolute() or text.lower().endswith((".yaml", ".yml")) or "/" in text or "\\" in text
     if looks_like_path:
-        for option in (Path(text), PROJECT_ROOT / text):
-            if option.exists():
-                return option
+        option = Path(text)
+        if option.exists():
+            return option
         raise RangeError(f"靶场配置不存在: {text}")
 
-    for option in (directory / f"{text}.yaml", directory / f"{text}.yml", PROJECT_ROOT / f"{text}.yaml"):
+    for option in (directory / f"{text}.yaml", directory / f"{text}.yml"):
         if option.exists():
             return option
     raise RangeError(f"未知靶场 {text!r}；可用: {available_range_names(config)}")
@@ -509,7 +506,7 @@ def empty_local_adapter(config: TrinaConfig) -> "RangeAdapter":
         "notes": (
             f"未指定靶场且 {ranges_dir(config)} 下没有 "
             f"{'/'.join(DEFAULT_RANGE_FILENAMES)}；请 export TRINA_RANGE=<name>、"
-            "或创建 configs/ranges/local.yaml 声明 targets，或用 --range <name> 显式指定"
+            "或在配置的 ranges_dir 创建 local.yaml 声明 targets，或用 --range <路径> 显式指定"
         ),
     }
     return adapter_classes()["LocalRangeAdapter"](config, spec, None)
@@ -520,7 +517,7 @@ def load_adapter(config: TrinaConfig, name: str | Path | None = None) -> RangeAd
 
     `name` 取值：
       - `"dvwa"` → `<ranges_dir>/dvwa.yaml`
-      - `"configs/ranges/dvwa.yaml"` → 相对项目根
+      - `"my-ranges/dvwa.yaml"` → 相对当前工作目录
       - 绝对路径
       - `None` → 环境变量 `TRINA_RANGE` → `default.yaml` → `local.yaml` → 兜底 local（空靶场）
     """
@@ -536,7 +533,7 @@ def load_adapter(config: TrinaConfig, name: str | Path | None = None) -> RangeAd
 
 
 def list_adapters(cfg: TrinaConfig) -> list[dict]:
-    """扫描 `configs/ranges/*.yaml`，返回每个靶场的 `name/kind/source/ready`。"""
+    """扫描显式配置的 ranges_dir，返回每个靶场的 `name/kind/source/ready`。"""
     directory = ranges_dir(cfg)
     entries: list[dict] = []
     if not directory.is_dir():
@@ -578,7 +575,6 @@ __all__ = [
     "DEFAULT_FLAG_PATTERNS",
     "DEFAULT_RANGES_DIR",
     "GroundTruthItem",
-    "PROJECT_ROOT",
     "RANGE_KINDS",
     "RangeAdapter",
     "RangeError",

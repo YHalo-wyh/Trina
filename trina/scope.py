@@ -16,6 +16,9 @@
 from __future__ import annotations
 
 import ipaddress
+from contextlib import contextmanager
+from contextvars import ContextVar
+import threading
 import re
 import socket
 import time
@@ -24,6 +27,42 @@ from typing import Any, Callable, Iterable
 from urllib.parse import unquote_plus, urlsplit
 
 from .config import ACTION_LEVELS, ScopeConfig
+
+@dataclass
+class ExecutionLease:
+    """单次工具调用的可撤销执行租约，不是目标授权来源。"""
+    deadline: float
+    cancelled: threading.Event = field(default_factory=threading.Event)
+
+    def check(self) -> None:
+        if self.cancelled.is_set() or time.monotonic() >= self.deadline:
+            raise RuntimeError("本次工具调用已超时或取消")
+
+
+_EXECUTION: ContextVar[ExecutionLease | None] = ContextVar("trina_execution", default=None)
+
+
+def ensure_execution_active() -> None:
+    lease = _EXECUTION.get()
+    if lease is not None:
+        lease.check()
+
+
+def execution_budget(timeout: float) -> float:
+    ensure_execution_active()
+    lease = _EXECUTION.get()
+    return min(timeout, max(.001, lease.deadline - time.monotonic())) if lease else timeout
+
+
+@contextmanager
+def execution_window(lease: ExecutionLease):
+    lease.check()
+    token = _EXECUTION.set(lease)
+    try:
+        yield
+    finally:
+        _EXECUTION.reset(token)
+
 
 # ---------------------------------------------------------------------------
 # 硬禁止清单：任何配置都无法放行
@@ -274,6 +313,7 @@ class ScopeGuard:
 
     # ---------------------------------------------------------------- 内部
     def _record(self, decision: Decision, action: str) -> Decision:
+        ensure_execution_active()
         if decision.allowed:
             self.stats["allowed"] += 1
         else:
@@ -596,6 +636,7 @@ class ScopeGuard:
     # ---------------------------------------------------------------- 限速
     def throttle(self, host: str = "", tokens: float = 1.0) -> float:
         """消耗令牌并返回建议等待秒数（调用方决定是否 sleep）。"""
+        ensure_execution_active()
         return self.limiter.acquire(host, tokens)
 
     def check_brute_scale(self, attempts: int, *, target: str = "") -> Decision:

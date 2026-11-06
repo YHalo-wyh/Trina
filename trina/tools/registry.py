@@ -5,7 +5,7 @@
 
 新增工具的写法（放在 `trina/tools/` 下并在 `trina/tools/__init__.py` 导入）::
 
-    from .registry import ParamSpec, Tool, ToolResult, ToolSpec, register
+    from .registry import ParamSpec, Tool, ToolResult, ToolSpec
 
     class MyTool(Tool):
         spec = ToolSpec(
@@ -21,12 +21,13 @@
             return ToolResult(ok=result.ok, summary=f"GET {url} -> {result.status}",
                               data=result.to_dict(), evidence=[result.as_evidence()])
 
-    register(MyTool())
+    TOOLS = [MyTool()]
 """
 
 from __future__ import annotations
 
 import inspect
+import copy
 import time
 import traceback
 from abc import ABC, abstractmethod
@@ -169,6 +170,31 @@ def denied_result(decision: Decision, *, tool: str = "") -> ToolResult:
 # ---------------------------------------------------------------------------
 
 
+class _LeaseProxy:
+    """即便工具派生线程调用上下文服务，也沿用同一撤销租约。"""
+    def __init__(self, value: Any, lease):
+        self._value, self._lease = value, lease
+
+    def __getattr__(self, name: str):
+        self._lease.check()
+        value = getattr(self._value, name)
+        if not callable(value):
+            return value
+        from ..scope import execution_window
+        if inspect.iscoroutinefunction(value):
+            async def async_call(*args, **kwargs):
+                with execution_window(self._lease):
+                    return await value(*args, **kwargs)
+            return async_call
+        def call(*args, **kwargs):
+            with execution_window(self._lease):
+                return value(*args, **kwargs)
+        return call
+
+
+_TOOL_EXECUTOR = ThreadPoolExecutor(max_workers=16, thread_name_prefix="trina-tool")
+
+
 class ToolContext:
     """工具执行上下文：护栏、审计、状态、HTTP 客户端、工作区。"""
 
@@ -207,6 +233,8 @@ class ToolContext:
 
     # -------------------------------------------------------------- 便捷方法
     def log(self, message: str) -> None:
+        from ..scope import ensure_execution_active
+        ensure_execution_active()
         self._logger(message)
 
     def remaining(self) -> float | None:
@@ -220,6 +248,8 @@ class ToolContext:
             time.sleep(min(wait, 5.0))
 
     def save_artifact(self, name: str, content: str) -> Path:
+        from ..scope import ensure_execution_active
+        ensure_execution_active()
         safe = "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in name)[:80]
         path = self.workspace / safe
         path.write_text(content, encoding="utf-8", errors="replace")
@@ -263,25 +293,6 @@ class Tool(ABC):
         return ""
 
 
-_REGISTRY: dict[str, Tool] = {}
-
-
-def register(tool: Tool) -> Tool:
-    """注册到全局表（模块导入时调用）。"""
-    if not isinstance(tool, Tool):
-        raise TypeError(f"必须注册 Tool 实例，得到 {type(tool)!r}")
-    if not tool.spec.name:
-        raise ValueError("工具必须有名字")
-    if tool.spec.action_level not in ACTION_LEVELS:
-        raise ValueError(f"{tool.spec.name}: 非法动作等级 {tool.spec.action_level!r}")
-    _REGISTRY[tool.spec.name] = tool
-    return tool
-
-
-def registry() -> dict[str, Tool]:
-    return _REGISTRY
-
-
 # ---------------------------------------------------------------------------
 # 注册表与执行链
 # ---------------------------------------------------------------------------
@@ -297,6 +308,10 @@ class ToolRegistry:
 
     # -------------------------------------------------------------- 管理
     def register(self, tool: Tool) -> None:
+        if not isinstance(tool, Tool) or not tool.spec.name or tool.spec.action_level not in ACTION_LEVELS:
+            raise ValueError("工具需要合法的名称、动作等级和 Tool 契约")
+        if tool.spec.name in self._tools:
+            raise ValueError(f"工具名称重复: {tool.spec.name}")
         self._tools[tool.spec.name] = tool
 
     def get(self, name: str) -> Tool | None:
@@ -448,7 +463,7 @@ class ToolRegistry:
         # 5) 执行（带超时）
         budget = timeout if timeout is not None else ctx.config.run.tool_timeout
         if ctx.remaining() is not None:
-            budget = min(budget, max(5.0, ctx.remaining()))
+            budget = min(budget, max(.001, ctx.remaining()))
         result = self._run_with_timeout(tool, validated, ctx, budget, started)
 
         # 6) 吸收事实 + 审计
@@ -525,11 +540,25 @@ class ToolRegistry:
             kwargs = dict(params)
         else:
             kwargs = {k: v for k, v in params.items() if k in signature.parameters}
-        executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix=f"trina-{tool.spec.name}")
-        future = executor.submit(tool.run, ctx, **kwargs)
+        from ..scope import ExecutionLease, execution_window
+        lease = ExecutionLease(time.monotonic() + timeout)
+        working = copy.copy(ctx)
+        baseline = copy.deepcopy(ctx.state)
+        working.state = copy.deepcopy(baseline)
+        working.extra = dict(ctx.extra)
+        working.deadline = min(ctx.deadline, lease.deadline) if ctx.deadline else lease.deadline
+        working.guard = _LeaseProxy(ctx.guard, lease)
+        working.audit = _LeaseProxy(ctx.audit, lease)
+        working.http = _LeaseProxy(ctx.http, lease)
+        def run():
+            with execution_window(lease):
+                return tool.run(working, **kwargs)
+        future = _TOOL_EXECUTOR.submit(run)
         try:
             result = future.result(timeout=timeout)
         except FutureTimeout:
+            lease.cancelled.set()
+            future.cancel()
             ctx.state.counters["errors"] = ctx.state.counters.get("errors", 0) + 1
             return ToolResult(
                 ok=False,
@@ -552,9 +581,13 @@ class ToolRegistry:
                 duration=time.monotonic() - started,
             )
         finally:
-            executor.shutdown(wait=False)
+            lease.cancelled.set()
         if not isinstance(result, ToolResult):
             return ToolResult(ok=False, error=f"工具返回值类型错误: {type(result)!r}", summary="工具契约违反")
+        for key, value in working.state.__dict__.items():
+            if value != baseline.__dict__.get(key):
+                setattr(ctx.state, key, value)
+        ctx.extra.update(working.extra)
         result.duration = result.duration or (time.monotonic() - started)
         return result
 
@@ -599,7 +632,5 @@ __all__ = [
     "ToolContext",
     "Tool",
     "ToolRegistry",
-    "register",
-    "registry",
     "denied_result",
 ]

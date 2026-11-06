@@ -19,7 +19,8 @@ from typing import Any
 import yaml
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_CONFIG_PATH = PROJECT_ROOT / "configs" / "trina.yaml"
+DEFAULT_CONFIG_PATH = (PROJECT_ROOT / "configs" / "trina.yaml" if (PROJECT_ROOT / "configs" / "trina.yaml").exists()
+                       else Path(__file__).with_name("defaults.yaml"))
 
 #: 动作等级，从低到高。工具声明所需等级，护栏比较后放行/拒绝。
 ACTION_LEVELS = ("detect", "verify", "exploit")
@@ -146,21 +147,17 @@ class RunConfig:
 @dataclass
 class ToolsConfig:
     prefer_external: bool = True
-    wordlists: dict[str, str] = field(
-        default_factory=lambda: {
-            "dirs": "configs/wordlists/dirs.txt",
-            "users": "configs/wordlists/users.txt",
-            "passwords": "configs/wordlists/passwords.txt",
-        }
-    )
+    wordlists: dict[str, str] = field(default_factory=dict)
     port_ranges: dict[str, str] = field(
         default_factory=lambda: {"quick": "22,80,443,3306,6379,8080", "full": "1-65535"}
     )
 
     def wordlist_path(self, kind: str) -> Path:
         raw = self.wordlists.get(kind, "")
+        if not raw:
+            raise ConfigError(f"未配置 {kind} 字典，请显式指定输入")
         path = Path(raw)
-        return path if path.is_absolute() else PROJECT_ROOT / path
+        return path if path.is_absolute() else Path.cwd() / path
 
 
 @dataclass
@@ -200,11 +197,11 @@ class PolicyConfig:
     * `registry_dirs`: 注册表来源目录（靶场 yaml 里的 targets/tests 段）
     """
 
-    mode: str = "guided"
+    mode: str = "free"
     max_checks: int = 40
     logic_seconds: int = 900
     stop_on_no_new_evidence: int = 4
-    registry_dirs: list[str] = field(default_factory=lambda: ["configs/ranges"])
+    registry_dirs: list[str] = field(default_factory=list)
 
     def validate(self) -> None:
         from .policy import POLICY_MODES
@@ -228,7 +225,7 @@ class TSecBenchConfig:
 @dataclass
 class EvalConfig:
     scenarios_dir: str = "trina/eval/scenarios"
-    ranges_dir: str = "configs/ranges"
+    ranges_dir: str = ""
     output_dir: str = "reports/eval"
     repeat: int = 1
     tsecbench: TSecBenchConfig = field(default_factory=TSecBenchConfig)
@@ -274,17 +271,6 @@ class TrinaConfig:
                     raise ConfigError(f"模型连接不存在: {selected}")
                 store.apply(cfg.llm, selected)
             elif path is None:
-                # 兼容旧启动脚本的环境文件；已保存连接优先于旧 TRINA_API。
-                from .providers import PRESET_BY_ID
-                legacy = os.environ.get("TRINA_API", "")
-                preset = PRESET_BY_ID.get(legacy)
-                if preset and preset.base_url and preset.models:
-                    cfg.llm.backend, cfg.llm.base_url = "openai", preset.base_url
-                    cfg.llm.api_key_env, cfg.llm.api = preset.api_key_env, preset.api
-                    cfg.llm.model = os.environ.get("TRINA_MODEL") or preset.models[0]
-                elif legacy == "omp":
-                    cfg.llm.backend = "omp"
-                    cfg.llm.model = os.environ.get("TRINA_MODEL") or cfg.llm.model
                 if store.omp_model:
                     cfg.llm.backend, cfg.llm.model = "omp", store.omp_model
                     cfg.llm.reasoning_effort = store.reasoning_effort
@@ -428,4 +414,4 @@ def _coerce(value: str, type_hint: Any) -> Any:
 
 def _resolve(raw: str) -> Path:
     path = Path(raw)
-    return path if path.is_absolute() else PROJECT_ROOT / path
+    return path if path.is_absolute() else Path.cwd() / path

@@ -264,10 +264,7 @@ class SwarmRuntime:
         usage_before = worker.backend.ledger.to_dict()
         state = agent.run(task.target, goal=task.goal, max_steps=task.max_steps, max_seconds=task.max_seconds, seed_hints=hints, run_id=run_id)
         if state.ledger:
-            usage_after = worker.backend.ledger.to_dict()
-            state.ledger = dict(usage_after)
-            for key in ("calls", "input_tokens", "output_tokens", "cache_read_tokens", "cost_usd"):
-                state.ledger[key] = round(usage_after[key] - usage_before[key], 6)
+            state.ledger = worker.backend.ledger.delta(usage_before).to_dict()
         from .report import build_report
 
         paths = build_report(state, worker_config, meta={"swarm": self.run_id, "task": task.id}).save()
