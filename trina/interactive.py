@@ -22,6 +22,7 @@ import time
 from typing import Any, Callable
 
 from .config import TrinaConfig
+from .console_state import ConsoleState, TrackedBackend
 from .console_ui import (
     ChoiceSpec, EnhancedConsoleInput, command_detail_sections, command_help_sections,
     command_names, enhanced_input_available, find_command,
@@ -29,7 +30,7 @@ from .console_ui import (
 from .session import APPROVAL_MODES, Session
 from .terminal import (
     PHASES, clean_text, render_approval, render_message,
-    render_panel, render_step, show_home, terminal_width, use_color,
+    render_panel, render_step, render_answer, render_process, show_home, terminal_width, use_color,
 )
 
 #: 已知命令名（用于区分"命令"与"对 Agent 说话"）
@@ -60,6 +61,9 @@ class Console:
         self._live_step: Any = None
         #: 注入的后端（测试用）或按当前会话配置构建的缓存
         self._backend_obj = backend
+        self._tracked_backend = None
+        self.view = ConsoleState()
+        self._custom_output = output is not None
         #: 测试可注入的后端工厂（形如 make_backend(llm_config) -> LLMBackend）
         self._backend_factory = None
         self.registry = registry
@@ -88,7 +92,21 @@ class Console:
             self._emit(message)
 
     def _agent_log(self, message: str) -> None:
-        self._emit(message, prefix="  ·")
+        if message.startswith("[用户] "):
+            self._display(render_message(message[5:], label="你", color=self.color))
+        elif "想法：" in message:
+            self._display(render_process(message.split("想法：", 1)[1].strip(), label="思考摘要", color=self.color))
+        else:
+            import re
+            if message.startswith("[动作 ") or re.match(r"^\[\d+/\d+\]", message):
+                self.view.set_activity("tool", "工具处理中")
+                label = "执行"
+            elif message.lstrip().startswith("→"):
+                self.view.set_activity("processing", "整理结果")
+                label = "结果"
+            else:
+                label = "过程"
+            self._display(render_process(message.strip(), label=label, color=self.color))
 
     def _on_step(self, step: Any) -> None:
         self._live_step = step
@@ -114,6 +132,23 @@ class Console:
 
     # ------------------------------------------------------------------ 主循环
     def run(self) -> int:
+        if self._input is None and not self._custom_output and enhanced_input_available():
+            self._enhanced_input = EnhancedConsoleInput(
+                status=self._prompt_status, running=lambda: self.session.running,
+                dynamic_values=self._completion_values, plain=self._plain or not self.color,
+                usage=self.view.footer, activity=self._activity,
+            )
+            original_output = self.output
+            self.output = self._enhanced_input.write
+            show_home(output=self._display, color=self.color)
+            try:
+                self._enhanced_input.run(self.handle)
+            except (EOFError, KeyboardInterrupt):
+                pass
+            finally:
+                self._cleanup()
+                self.output = original_output
+            return 0
         show_home(output=self._display, color=self.color)
         while not self.exit_requested:
             try:
@@ -132,19 +167,21 @@ class Console:
         return 0
 
     def _read_input(self) -> str:
-        """测试/重定向走普通输入，真实 TTY 使用带索引的增强输入框。"""
+        """测试和重定向使用普通输入；真实终端由持久界面接管。"""
         if self._input is not None:
             return self._input(self._prompt())
-        if self._enhanced_input is None and enhanced_input_available():
-            self._enhanced_input = EnhancedConsoleInput(
-                status=self._prompt_status,
-                running=lambda: self.session.running,
-                dynamic_values=self._completion_values,
-                plain=self._plain or not self.color,
-            )
-        if self._enhanced_input is not None:
-            return self._enhanced_input.read()
         return input(self._prompt())
+
+    def _activity(self) -> tuple[str, str, float]:
+        if self.session.pending:
+            return "approval", "等待审批 · y 允许 / n 拒绝", 0
+        if self.session.stop_event.is_set() and self.session.running:
+            return "stopping", "停止中", 0
+        if self.session.pause_event.is_set() and self.session.running:
+            return "paused", "已暂停", 0
+        if not self.session.running:
+            return "idle", "就绪", 0
+        return self.view.activity()
 
     def _prompt_status(self) -> str:
         """增强输入框底栏的紧凑动态状态。"""
@@ -449,14 +486,15 @@ class Console:
             from .llm import make_backend
 
             self._backend_obj = self._backend_factory(self.config.llm) if self._backend_factory else make_backend(self.config.llm)
-        return self._backend_obj
+        if self._tracked_backend is None or self._tracked_backend.backend is not self._backend_obj:
+            self._tracked_backend = TrackedBackend(self._backend_obj, self.view)
+        return self._tracked_backend
 
     def _reload_backend(self) -> None:
-        self._backend_obj = None
-        if self.chat is not None:  # 保留对话历史，只换大脑后端
-            from .llm import make_backend
-
-            self.chat.backend = make_backend(self.config.llm)
+        self._backend_obj = self._tracked_backend = None
+        if self.chat is not None:
+            self.chat.backend = self._backend()
+            self.chat.ctx.extra["llm_backend"] = self.chat.backend
 
     def _cmd_model(self, args: list[str]) -> None:
         llm = self.config.llm
@@ -625,24 +663,20 @@ class Console:
             self._emit("有任务在跑：先 /stop 再开新会话")
             return
         self.chat = None
+        self.view.reset()
         self._emit("已开启新对话会话（历史与审计都重新开始；上一次的审计文件仍在 logs/ 下）")
 
     def _cmd_usage(self) -> None:
-        backend = self._backend()
-        ledger = getattr(backend, "ledger", None)
-        if ledger is not None:
-            data = ledger.to_dict()
-            self._emit(
-                f"模型调用 {data.get('calls', 0)} 次 · 输入 {data.get('input_tokens', 0)} tokens · "
-                f"输出 {data.get('output_tokens', 0)} tokens · 缓存读 {data.get('cache_read_tokens', 0)} · "
-                f"成本 ${data.get('cost_usd', 0)}"
-            )
-        else:
-            self._emit("当前后端未统计用量")
-        if self.chat is not None:
-            self._emit(self._chat_digest(self.chat))
-        if self._last_state is not None:
-            self._emit(f"上一轮任务：结论={self._last_state.verdict or '-'} 状态={self._last_state.status}")
+        data = self.view.usage_data()
+        rate = data["cache_hit_rate"]
+        self._display(render_panel("会话用量", rows=[
+            ("模型调用", data["calls"]),
+            ("会话 Token", data["total_tokens"] if data["tokens_reported"] or not data["calls"] else "未提供"),
+            ("输入 / 输出", f"{data['input_tokens']} / {data['output_tokens']}" if data["tokens_reported"] else "未提供"),
+            ("缓存命中率", f"{rate:.1%}" + ("（部分请求）" if data["missing_cache"] else "") if rate is not None else "未提供"),
+            ("缓存读 / 写", f"{data['cache_read_tokens']} / {data['cache_write_tokens']}" if data["cache_reported"] else "未提供"),
+            ("费用", f"{'≥' if data['missing_cost'] else ''}${data['cost_usd']:.6f}" if data["cost_reported"] else "未提供"),
+        ], color=self.color))
 
     def _cmd_save(self) -> None:
         """把当前后端/模型持久化到 ~/.trina/env（仓库外，0600）——下次启动仍是这个设置。"""
@@ -720,7 +754,6 @@ class Console:
                 logger=self._agent_log,
                 on_tool=self._on_tool_result,
             )
-            self._emit(f"对话会话已建立（审计：{self.chat.audit.path.name}）")
         return self.chat
 
     def _on_tool_result(self, result: Any) -> None:
@@ -739,7 +772,11 @@ class Console:
             self._emit("有任务在跑：先 stop，或直接把这句话作为介入提示（无需命令前缀）")
             return
         chat = self._ensure_chat()
+        if not isinstance(chat.backend, TrackedBackend):
+            chat.backend = TrackedBackend(chat.backend, self.view)
+            chat.ctx.extra["llm_backend"] = chat.backend
         self.session.reset_for_run()
+        self.view.set_activity("processing", "准备回复")
         self._live_step = None
         self.session.state = chat.state
         self.session.started_at = time.monotonic()
@@ -747,24 +784,17 @@ class Console:
         def _worker() -> None:
             try:
                 reply = chat.ask(text)
-                self._display(render_panel("[Trina] 回复", sections=[("", reply or "(空回复)")], footer=self._chat_digest(chat), color=self.color))
+                self._display(render_answer(reply or "(空回复)", color=self.color))
                 self._last_state = chat.state
             except Exception as exc:  # noqa: BLE001 - 对话异常不能杀掉控制台
                 self._emit(f"对话出错: {type(exc).__name__}: {exc}", prefix="[错误]")
+            finally:
+                self.view.set_activity("idle", "就绪")
 
         self.session.thread = threading.Thread(target=_worker, name="trina-chat", daemon=True)
-        self._emit("正在分析；可输入 /status 查看、直接补充提示或 /stop 停止。", prefix="对话")
+        if self._enhanced_input is None:
+            self._emit("思考中…", prefix="过程")
         self.session.thread.start()
-
-    def _chat_digest(self, chat: Any) -> str:
-        snap = chat.snapshot()
-        executed = "、".join(snap.get("executed") or []) or "—"
-        hypotheses = snap.get("hypotheses") or {}
-        return (
-            f"会话 {snap['run_id']}｜轮次 {snap['turns']}｜目标 {snap['target'] or '未指定'}｜"
-            f"发现 {snap['findings']}｜flag {snap['flags']}｜已用检查 {snap['checks_used']}（{executed}）｜"
-            f"假设 待验证 {hypotheses.get('open', 0)}/已确认 {hypotheses.get('confirmed', 0)}/已否定 {hypotheses.get('refuted', 0)}"
-        )
 
     def _show_status(self) -> None:
         from .board import render_board
@@ -841,7 +871,17 @@ class Console:
         """把无状态命令交给 CLI 同一实现（保证行为一致）。"""
         from . import cli
 
-        code = cli.main(argv)
+        if self._enhanced_input is not None:
+            import contextlib
+            import io
+            stream = io.StringIO()
+            try:
+                with contextlib.redirect_stdout(stream), contextlib.redirect_stderr(stream):
+                    code = cli.main(argv)
+            finally:
+                self._display(stream.getvalue())
+        else:
+            code = cli.main(argv)
         if code not in (0, None):
             self._emit(f"（命令退出码 {code}）")
 
@@ -889,6 +929,7 @@ class Console:
         self.session.state = None
         self.session.started_at = time.monotonic()
         teardown_after = bool(plan.started_fixtures)
+        self.view.set_activity("processing", "准备任务")
 
         def _worker() -> None:
             from .play import run_plan
@@ -920,6 +961,7 @@ class Console:
             except Exception as exc:  # noqa: BLE001 - 任务异常必须回显而不是杀掉控制台
                 self._emit(f"任务异常: {type(exc).__name__}: {exc}", prefix="[错误]")
             finally:
+                self.view.set_activity("idle", "就绪")
                 if teardown_after:
                     plan.teardown()
                     self._emit("已回收本次自动拉起的靶机", prefix="[靶场]")

@@ -22,6 +22,18 @@ class LLMUsage:
     cost: float = 0.0
     model: str = ""
     calls: int = 1
+    cache_write_tokens: int = 0
+    tokens_reported: bool = False
+    cache_reported: bool = False
+    cost_reported: bool = False
+    cache_input_tokens: int | None = None
+
+    def __post_init__(self) -> None:
+        self.tokens_reported = self.tokens_reported or bool(self.input_tokens or self.output_tokens)
+        self.cache_reported = self.cache_reported or bool(self.cache_read_tokens or self.cache_write_tokens)
+        self.cost_reported = self.cost_reported or bool(self.cost)
+        if self.cache_input_tokens is None:
+            self.cache_input_tokens = self.input_tokens if self.cache_reported else 0
 
     def merge(self, other: "LLMUsage") -> "LLMUsage":
         return LLMUsage(
@@ -31,6 +43,11 @@ class LLMUsage:
             cost=round(self.cost + other.cost, 6),
             model=other.model or self.model,
             calls=self.calls + other.calls,
+            cache_write_tokens=self.cache_write_tokens + other.cache_write_tokens,
+            tokens_reported=self.tokens_reported or other.tokens_reported,
+            cache_reported=self.cache_reported or other.cache_reported,
+            cost_reported=self.cost_reported or other.cost_reported,
+            cache_input_tokens=(self.cache_input_tokens or 0) + (other.cache_input_tokens or 0),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -39,6 +56,14 @@ class LLMUsage:
             "input_tokens": self.input_tokens,
             "output_tokens": self.output_tokens,
             "cache_read_tokens": self.cache_read_tokens,
+            "cache_write_tokens": self.cache_write_tokens,
+            "total_tokens": self.input_tokens + self.output_tokens,
+            "tokens_reported": self.tokens_reported,
+            "cache_reported": self.cache_reported,
+            "cost_reported": self.cost_reported,
+            "cache_input_tokens": self.cache_input_tokens,
+            "cache_hit_rate": (min(1.0, self.cache_read_tokens / self.cache_input_tokens)
+                               if self.cache_reported and self.cache_input_tokens else None),
             "cost_usd": round(self.cost, 6),
             "model": self.model,
         }
@@ -65,7 +90,7 @@ class LLMBackend(ABC):
 
     def __init__(self, config: LLMConfig):
         self.config = config
-        self.ledger = LLMUsage(model=config.model)
+        self.ledger = LLMUsage(model=config.model, calls=0)
         self.errors: list[str] = []
 
     @abstractmethod

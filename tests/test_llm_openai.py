@@ -74,6 +74,57 @@ class OpenCodeGoHeadersTest(unittest.TestCase):
                     self.assertEqual(request.get_header("X-api-key"), "private")
                     self.assertTrue(request.get_header("Anthropic-version"))
 
+    def test_cache_usage_is_normalized_without_double_counting(self):
+        cases = [
+            ("openai", {"prompt_tokens": 1000, "completion_tokens": 200, "prompt_tokens_details": {"cached_tokens": 600}}, 1000, 600, 0),
+            ("responses", {"input_tokens": 1000, "output_tokens": 200, "input_tokens_details": {"cached_tokens": 400, "cache_write_tokens": 200}}, 1000, 400, 200),
+            ("anthropic", {"input_tokens": 100, "output_tokens": 200, "cache_read_input_tokens": 600, "cache_creation_input_tokens": 300}, 1000, 600, 300),
+            ("openai", {"prompt_tokens": 1000, "completion_tokens": 200, "prompt_cache_hit_tokens": 750}, 1000, 750, 0),
+        ]
+        for api, usage, inputs, cached, written in cases:
+            with self.subTest(api=api, usage=usage):
+                body = {"usage": usage, "choices": [{"message": {"content": "answer"}}],
+                        "content": [{"type": "text", "text": "answer"}],
+                        "output": [{"content": [{"type": "output_text", "text": "answer"}]}]}
+                backend = OpenAICompatBackend(LLMConfig(base_url="https://service.example/v1", api=api), key_override="test")
+                with patch.object(backend, "_request_json", return_value=(body, "")):
+                    response = backend.complete("system", "user")
+                self.assertEqual(response.usage.input_tokens, inputs)
+                self.assertEqual(response.usage.cache_read_tokens, cached)
+                self.assertEqual(response.usage.cache_write_tokens, written)
+                self.assertEqual(response.usage.to_dict()["total_tokens"], inputs + 200)
+                self.assertAlmostEqual(response.usage.to_dict()["cache_hit_rate"], cached / inputs)
+                self.assertEqual(backend.ledger.calls, 1)
+
+    def test_missing_cache_is_distinct_from_reported_zero_and_invalid_output_still_has_usage(self):
+        backend = OpenAICompatBackend(LLMConfig(base_url="https://service.example/v1"), key_override="test")
+        for details, reported in (({}, False), ({"prompt_tokens_details": {"cached_tokens": 0}}, True), ({"prompt_tokens_details": {"cached_tokens": None}}, False)):
+            body = {"usage": {"prompt_tokens": 100, **details}, "choices": [{"message": {"content": "answer"}}]}
+            with patch.object(backend, "_request_json", return_value=(body, "")):
+                response = backend.complete("s", "u")
+            self.assertEqual(response.usage.cache_reported, reported)
+            self.assertEqual(response.usage.to_dict()["cache_hit_rate"], 0 if reported else None)
+        for body in (
+            {"choices": [{"message": {"content": "", "reasoning_content": "not an answer"}}], "usage": {"prompt_tokens": 20, "completion_tokens": 30}},
+            {"choices": [], "usage": {"prompt_tokens": 20, "completion_tokens": 30}},
+        ):
+            with patch.object(backend, "_request_json", return_value=(body, "")):
+                response = backend.complete("s", "u")
+            self.assertFalse(response.ok)
+            self.assertEqual(response.text, "")
+            self.assertEqual(response.usage.input_tokens, 20)
+            self.assertEqual(response.usage.output_tokens, 30)
+
+    def test_omp_cache_is_part_of_total_input_and_zero_denominator_stays_unknown(self):
+        from trina.llm.base import LLMUsage
+        from trina.llm.omp_backend import _usage_from
+        usage = _usage_from({"input": 100, "output": 20, "cacheRead": 600, "cacheWrite": 300}, LLMUsage())
+        self.assertEqual(usage.input_tokens, 1000)
+        self.assertEqual(usage.to_dict()["cache_hit_rate"], .6)
+        known_zero = LLMUsage(input_tokens=0, cache_reported=True, cache_input_tokens=0)
+        unknown_input = LLMUsage(input_tokens=1000)
+        self.assertIsNone(known_zero.merge(unknown_input).to_dict()["cache_hit_rate"])
+
     def test_http_error_never_echoes_the_key(self) -> None:
         import urllib.error
         backend = OpenAICompatBackend(LLMConfig(base_url="https://service.example/v1"), key_override="private-key")

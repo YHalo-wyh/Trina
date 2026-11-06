@@ -119,6 +119,38 @@ def render_message(message: str, *, label: str = "提示", width: int | None = N
     return stream.getvalue().rstrip("\n")
 
 
+def render_process(message: str, *, label: str = "过程", width: int | None = None, color: bool = False) -> str:
+    """过程与动作摘要使用轻量缩进，和正式输出的卡片保持区别。"""
+    width = max(20, width if width is not None else terminal_width())
+    content = _wrap(f"{clean_text(label)}  {clean_text(message)}", width - 3)
+    text = "\n".join("┊ " + line for line in content.splitlines())
+    if color:
+        rgb = ";".join(str(int(THEME["muted"][index:index + 2], 16)) for index in (1, 3, 5))
+        return f"\x1b[38;2;{rgb}m" + text + "\x1b[0m"
+    return text
+
+
+def render_answer(message: str, *, width: int | None = None, color: bool = False) -> str:
+    """正式输出渲染 Markdown，清除终端控制字符，不附会话统计。"""
+    width = max(20, width if width is not None else terminal_width())
+    try:
+        from rich.console import Console
+        from rich.markdown import Markdown
+        from rich.panel import Panel
+        from rich.text import Text
+        from rich import box
+    except ImportError:
+        return render_panel("[Trina] 输出", sections=[("", message)], width=width, color=False)
+    stream = io.StringIO()
+    console = Console(file=stream, width=width, force_terminal=color, no_color=not color,
+                      color_system="truecolor" if color else None, legacy_windows=False)
+    console.print(Panel(Markdown(clean_text(message), hyperlinks=False),
+                        title=Text("[Trina] 输出", style="bold " + THEME["rose"]), title_align="left",
+                        border_style=THEME["lilac"], box=box.ROUNDED,
+                        padding=(1, 2) if width >= 48 else (0, 1)))
+    return stream.getvalue().rstrip("\n")
+
+
 def render_home(*, width: int | None = None, color: bool = False) -> str:
     """首页仅显示终端字符字标与版本。"""
     from . import __version__

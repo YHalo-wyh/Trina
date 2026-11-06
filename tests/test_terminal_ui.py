@@ -80,7 +80,7 @@ class TestTerminalUI(unittest.TestCase):
                 dynamic_values=lambda _command, _args: (), plain=True,
             )
         self.assertIsNotNone(editor.buffer.completer)
-        self.assertFalse(editor.app.full_screen)
+        self.assertTrue(editor.app.full_screen)
 
     def test_partial_command_is_visible_below_input_and_enter_expands_it(self):
         from prompt_toolkit.application.current import create_app_session

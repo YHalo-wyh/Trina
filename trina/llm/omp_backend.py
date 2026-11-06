@@ -155,9 +155,14 @@ def _usage_from(raw: dict[str, Any], fallback: LLMUsage) -> LLMUsage:
     else:
         total_cost = float(cost or 0.0)
     return LLMUsage(
-        input_tokens=int(raw.get("input") or raw.get("inputTokens") or 0),
+        input_tokens=(int(raw.get("input") or raw.get("inputTokens") or 0)
+                      + int(raw.get("cacheRead") or 0) + int(raw.get("cacheWrite") or 0)),
         output_tokens=int(raw.get("output") or raw.get("outputTokens") or 0),
         cache_read_tokens=int(raw.get("cacheRead") or 0),
+        cache_write_tokens=int(raw.get("cacheWrite") or 0),
+        tokens_reported=any(key in raw for key in ("input", "inputTokens", "output", "outputTokens")),
+        cache_reported="cacheRead" in raw or "cacheWrite" in raw,
+        cost_reported="cost" in raw,
         cost=total_cost,
         model=str(raw.get("model") or ""),
     )

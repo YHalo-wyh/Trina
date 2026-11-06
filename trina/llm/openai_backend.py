@@ -11,6 +11,7 @@ import time
 import urllib.error
 import urllib.request
 import uuid
+from typing import Any
 from urllib.parse import urlsplit
 
 from ..config import LLMConfig
@@ -147,6 +148,7 @@ class OpenAICompatBackend(LLMBackend):
             return self._tally(LLMResponse(ok=False, error=error))
 
         duration = round(time.monotonic() - started, 2)
+        usage = _parse_usage(body.get("usage"), self.config.api, str(body.get("model") or self.config.model))
         try:
             if self.config.api == "anthropic":
                 message = {"content": "\n".join(block.get("text", "") for block in body["content"] if block.get("type") == "text")}
@@ -155,23 +157,49 @@ class OpenAICompatBackend(LLMBackend):
             else:
                 message = body["choices"][0]["message"]
         except (KeyError, IndexError, TypeError, AttributeError):
-            return self._tally(LLMResponse(ok=False, error="响应格式异常：缺少模型输出字段", duration=duration))
+            return self._tally(LLMResponse(ok=False, error="响应格式异常：缺少模型输出字段", duration=duration, usage=usage))
         text = message.get("content") or ""
         if isinstance(text, list):
             text = "\n".join(str(block.get("text", "")) for block in text if isinstance(block, dict))
         if not isinstance(text, str):
             text = ""
         if not text.strip():
-            # 推理型模型（如 DeepSeek 系列）可能把内容放在 reasoning_content
-            text = message.get("reasoning_content") or message.get("reasoning") or ""
-        if not text.strip():
-            return self._tally(
-                LLMResponse(ok=False, error="模型返回空内容", duration=duration)
-            )
-        raw_usage = body.get("usage") or {}
-        usage = LLMUsage(
-            input_tokens=int(raw_usage.get("prompt_tokens") or raw_usage.get("input_tokens") or 0),
-            output_tokens=int(raw_usage.get("completion_tokens") or raw_usage.get("output_tokens") or 0),
-            model=str(body.get("model") or self.config.model),
-        )
+            return self._tally(LLMResponse(ok=False, error="模型未返回正式输出", usage=usage, duration=duration))
         return self._tally(LLMResponse(text=text, usage=usage, duration=duration, ok=True))
+
+
+def _parse_usage(raw: Any, api: str, model: str) -> LLMUsage:
+    """将不同协议的输入统一为总输入，缓存读写是其中的子集。"""
+    if not isinstance(raw, dict):
+        return LLMUsage(model=model)
+
+    def count(value: Any) -> int:
+        try:
+            return max(0, int(value or 0))
+        except (TypeError, ValueError, OverflowError):
+            return 0
+
+    details = raw.get("prompt_tokens_details") or raw.get("input_tokens_details") or {}
+    if not isinstance(details, dict):
+        details = {}
+    cached = count(details.get("cached_tokens", raw.get("prompt_cache_hit_tokens", raw.get("cache_read_input_tokens"))))
+    written = count(details.get("cache_write_tokens", raw.get("cache_creation_input_tokens")))
+    inputs = count(raw.get("prompt_tokens", raw.get("input_tokens")))
+    if api == "anthropic":
+        inputs += cached + written
+    cache_known = any(details.get(key) is not None for key in ("cached_tokens", "cache_write_tokens")) or any(
+        raw.get(key) is not None for key in ("prompt_cache_hit_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"))
+    cost = raw.get("cost")
+    if isinstance(cost, dict):
+        cost = cost.get("total")
+    try:
+        cost_value = max(0.0, float(cost or 0))
+    except (TypeError, ValueError, OverflowError):
+        cost_value = 0.0
+    return LLMUsage(
+        input_tokens=inputs, output_tokens=count(raw.get("completion_tokens", raw.get("output_tokens"))),
+        cache_read_tokens=cached, cache_write_tokens=written,
+        tokens_reported=any(raw.get(key) is not None for key in ("input_tokens", "prompt_tokens", "output_tokens", "completion_tokens")),
+        cache_reported=cache_known, cache_input_tokens=inputs if cache_known else 0,
+        cost=cost_value, cost_reported=cost is not None, model=model,
+    )

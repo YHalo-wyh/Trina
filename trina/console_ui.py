@@ -5,7 +5,10 @@
 """
 from __future__ import annotations
 
+import asyncio
 import sys
+import threading
+import time
 from dataclasses import dataclass
 from typing import Callable, Iterable
 
@@ -409,15 +412,17 @@ def enhanced_input_available() -> bool:
 
 
 class EnhancedConsoleInput:
-    """输入行、固定在下方的索引和状态栏，共用同一命令目录。"""
+    """可滚动内容区与固定底部的活动、输入、索引和会话用量。"""
 
-    def __init__(self, *, status, running, dynamic_values, plain: bool = False) -> None:
+    def __init__(self, *, status, running, dynamic_values, plain: bool = False, usage=None, activity=None) -> None:
         from prompt_toolkit import Application
         from prompt_toolkit.buffer import Buffer
         from prompt_toolkit.history import InMemoryHistory
         from prompt_toolkit.key_binding import KeyBindings
         from prompt_toolkit.layout import Layout, HSplit, Window, ConditionalContainer
         from prompt_toolkit.layout.controls import BufferControl, FormattedTextControl
+        from prompt_toolkit.layout.dimension import Dimension
+        from prompt_toolkit.data_structures import Point
         from prompt_toolkit.layout.processors import BeforeInput
         from prompt_toolkit.filters import Condition
         from prompt_toolkit.styles import Style
@@ -425,6 +430,16 @@ class EnhancedConsoleInput:
         from .terminal import THEME
 
         self.status = status
+        self.usage = usage or (lambda _width, _compact=False: "")
+        self.activity = activity or (lambda: ("processing", "运行中", 0) if running() else ("idle", "就绪", 0))
+        self._handler = None
+        self._dispatching = False
+        self._queue = None
+        self._chunks: list[str] = []
+        self._content_lock = threading.RLock()
+        self._fragments = None
+        self._line_count = 1
+        self._scrollback = 0
         self.running = running
         self.completer = SlashCommandCompleter(running=running, dynamic_values=dynamic_values)
         self.dismissed = False
@@ -464,7 +479,13 @@ class EnhancedConsoleInput:
                 items = self._items()
                 if items:
                     self.buffer.apply_completion(items[0])
-            event.app.exit(result=self.buffer.text)
+            value = self.buffer.text
+            if self._handler is None:
+                event.app.exit(result=value)
+            else:
+                self.buffer.append_to_history()
+                self.buffer.reset()
+                self._queue.put_nowait(value)
 
         @bindings.add("c-c")
         def cancel(event):
@@ -477,23 +498,135 @@ class EnhancedConsoleInput:
             else:
                 self.buffer.delete()
 
+        @bindings.add("pageup")
+        def page_up(event):
+            self._scrollback = min(self._line_count - 1, self._scrollback + max(1, event.app.output.get_size().rows // 2))
+
+        @bindings.add("pagedown")
+        def page_down(event):
+            self._scrollback = max(0, self._scrollback - max(1, event.app.output.get_size().rows // 2))
+
+        @bindings.add("c-end")
+        def follow_latest(event):
+            self._scrollback = 0
+
         style = Style.from_dict({} if plain else {
             "prompt": "bold " + THEME["rose"], "index": THEME["muted"],
             "selected": "bg:" + THEME["selected"] + " " + THEME["text"] + " bold", "hint": THEME["muted"],
             "status": THEME["lilac"], "title": "bold " + THEME["rose"],
+            "thinking": "bold " + THEME["rose"], "thinking.dim": THEME["violet"],
+            "border": THEME["violet"], "usage": THEME["muted"], "usage.value": THEME["lilac"],
         })
         control = BufferControl(buffer=self.buffer, input_processors=[BeforeInput(
             lambda: [("class:prompt", "补充  › " if self.running() else "Trina  › ")])])
+        transcript = FormattedTextControl(self._transcript, show_cursor=False,
+            get_cursor_position=lambda: Point(x=0, y=max(0, self._line_count - 1 - self._scrollback)))
+        self.output_window = Window(transcript, wrap_lines=True, always_hide_cursor=True)
+        self.activity_window = Window(FormattedTextControl(self._activity), height=1)
+        self.input_window = Window(control, wrap_lines=True, height=Dimension(min=1, max=3), dont_extend_height=True)
+        self.usage_window = Window(FormattedTextControl(self._usage), wrap_lines=True, dont_extend_height=True)
         self.app = Application(
             layout=Layout(HSplit([
-                Window(control, wrap_lines=True),
-                ConditionalContainer(Window(FormattedTextControl(self._menu), dont_extend_height=True),
+                self.output_window,
+                self.activity_window,
+                Window(height=1, char="─", style="class:border"),
+                self.input_window,
+                ConditionalContainer(Window(FormattedTextControl(self._menu), dont_extend_height=True,
+                                             height=lambda: Dimension(max=max(2, min(8, self.app.output.get_size().rows - 10)))),
                                      Condition(lambda: bool(self._items()) and not self.dismissed)),
-                Window(FormattedTextControl(lambda: [("class:status", self.status()), ("class:hint", "  ·  " + self._hint())]), height=1),
+                Window(FormattedTextControl(lambda: [("class:hint", self._hint())]), height=1),
+                Window(FormattedTextControl(self._status), height=1),
+                self.usage_window,
             ]), focused_element=control),
-            key_bindings=bindings, style=style, full_screen=False, refresh_interval=0.3,
+            key_bindings=bindings, style=style, full_screen=True, refresh_interval=0.2,
             color_depth=None if plain else ColorDepth.DEPTH_24_BIT,
         )
+
+    def _status(self):
+        from .terminal import clean_text
+        return [("class:status", clean_text(self.status()).replace("\n", " "))]
+
+    def _usage(self):
+        size = self.app.output.get_size()
+        import re
+        return [("class:usage.value" if index % 2 else "class:usage", part)
+                for index, part in enumerate(re.split(r"([≥]?\d[\d.,]*(?:[kM%])?)", self.usage(size.columns, size.rows < 16)))
+                if part]
+
+    def _activity(self):
+        from .terminal import clean_text
+        phase, label, seconds = self.activity()
+        if phase == "idle" and self._dispatching:
+            phase, label = "processing", "准备中"
+        if phase == "idle":
+            return []
+        if phase == "thinking":
+            frame = int(time.monotonic() * 4) % 4
+            marker = ("·", "✧", "✦", "✧")[frame]
+            style = "class:thinking" if frame == 2 else "class:thinking.dim"
+        else:
+            marker, style = ("↳", "class:status") if phase == "tool" else ("·", "class:hint")
+        elapsed = f"  {seconds:.1f}s" if phase not in ("idle", "paused", "approval") else ""
+        return [(style, f" {marker} {clean_text(label).replace(chr(10), ' ')}{elapsed}")]
+
+    def write(self, text: str) -> None:
+        """后台只追加内容并请求重绘，不打印到终端或覆盖输入缓冲。"""
+        if not text:
+            return
+        with self._content_lock:
+            self._chunks.append(str(text).rstrip("\n") + "\n\n")
+            while len(self._chunks) > 1 and sum(map(len, self._chunks)) > 250_000:
+                self._chunks.pop(0)
+            if len(self._chunks[0]) > 250_000:
+                self._chunks[0] = self._chunks[0][-250_000:]
+            previous_lines = self._line_count
+            self._line_count = max(1, "".join(self._chunks).rstrip("\n").count("\n") + 1)
+            if self._scrollback:
+                self._scrollback = max(0, self._scrollback + self._line_count - previous_lines)
+            self._fragments = None
+        self.app.invalidate()
+
+    def _transcript(self):
+        from prompt_toolkit.formatted_text import ANSI, to_formatted_text
+        with self._content_lock:
+            if self._fragments is None:
+                self._fragments = to_formatted_text(ANSI("".join(self._chunks).rstrip("\n")))
+            return self._fragments
+
+    async def _consume(self) -> None:
+        from prompt_toolkit.application import run_in_terminal
+        from prompt_toolkit.eventloop import run_in_executor_with_context
+        while True:
+            text = await self._queue.get()
+            self._dispatching = True
+            try:
+                call = lambda: self._handler(text)
+                command = text.strip().lstrip("/").split(maxsplit=1)[0] if text.strip() else ""
+                # 模型表单暂时接管终端，结束后恢复同一内容区和未提交输入。
+                keep = await run_in_terminal(call, in_executor=True) if command == "model" and not self.running() else await run_in_executor_with_context(call)
+                if not keep:
+                    self.app.exit()
+                    return
+            except SystemExit as exc:
+                if exc.code not in (None, 0):
+                    from .terminal import render_message
+                    self.write(render_message(f"命令退出码 {exc.code}", label="错误"))
+            except Exception as exc:
+                from .terminal import render_message
+                self.write(render_message(str(exc), label="错误"))
+            finally:
+                self._dispatching = False
+                self._queue.task_done()
+
+    def run(self, handler) -> None:
+        """保持同一个应用存活，回车提交后底栏与输入区不退出。"""
+        self._handler = handler
+        self._queue = asyncio.Queue()
+        try:
+            self.app.run(pre_run=lambda: self.app.create_background_task(self._consume()))
+        finally:
+            self._handler = None
+
 
     def _reopen(self) -> None:
         self.dismissed = False
@@ -523,9 +656,10 @@ class EnhancedConsoleInput:
         items = self._items()
         state = self.buffer.complete_state
         selected = state.complete_index if state and state.complete_index is not None else 0
-        start = max(0, selected - 5)
+        limit = max(1, min(6, self.app.output.get_size().rows - 12))
+        start = max(0, selected - limit + 1)
         result = []
-        for index, item in list(enumerate(items))[start:start + 8]:
+        for index, item in list(enumerate(items))[start:start + limit]:
             result.extend([("class:selected" if index == selected else "class:index",
                             f"  {index + 1:02d}  {clean_text(item.display_text):<24} {clean_text(item.display_meta_text)}"), ("", "\n")])
         result.append(("class:hint", f"  {len(items)} 项 · ↑↓ 选择 · Tab 填入 · Enter 确认 · Esc 收起"))
