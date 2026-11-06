@@ -205,3 +205,5 @@ flowchart TB
 2026-11-06 核对：当前工具注册表没有浏览器工具，依赖中也没有 Playwright / Selenium。HTTP 获取和并发请求使用 `requests` / `aiohttp`，页面解析使用 `BeautifulSoup`；这条路径不能执行页面 JavaScript，也不能代替真实浏览器的点击、输入和渲染截图。
 
 浏览器封装拟采用 **Playwright Python + Chromium**，沿用 Python 工具体系，按实际需要提供导航、页面快照、点击、输入和截图等操作。[Playwright 官方文档](https://playwright.dev/python/docs/intro)提供 Python 自动化接口，且[支持 Chromium](https://playwright.dev/python/docs/browsers)。此处是选型，尚未添加依赖或注册对应工具；接入时仍应复用 `ToolRegistry`、范围校验、审计与运行目录。
+
+资料检索入口选用 **Google / Bing**，检索后打开来源页面核对内容。搜索引擎负责找资料，Playwright 负责浏览器操作；该选择记录在工具接入约定中，不增加模型角色或搜索攻略提示词。当前尚未实现搜索工具，不能把选型记录当成已有运行能力。

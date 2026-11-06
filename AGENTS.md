@@ -7,6 +7,7 @@
 - 想知道能做什么 → 读 `.omp/skills/pentest-agent/SKILL.md`（已作为技能自动加载）；或 `python3 -m trina tools`
 - 想跑一次渗透 → 优先用扩展工具 `trina_run`（等价于 `trina play --target ...`）；想边聊边干 → `trina`（对话式控制台，说人话即可，它会自己调工具）
 - 改代码前 → 先读 `docs/ARCHITECTURE.md` 的模块契约；护栏相关改动必读 `docs/GUARDRAILS.md`
+- 查资料使用 Google / Bing，打开检索结果核对原文；项目浏览器的资料搜索入口也采用这两个来源。
 
 ## 不可协商的规则
 

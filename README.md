@@ -79,6 +79,8 @@ scripts/dev.sh play --api deepseek --goal "拿到 flag 并验证 SQL 注入" --m
 
 运行时只提供简短调用协议、工具参数和任务上下文，不再附带角色扮演、分阶段攻略或每轮重复的 JSON 教程。当前网页工具使用 `requests` / `aiohttp` 与 `BeautifulSoup`，尚未封装真实浏览器；浏览器自动化拟采用 **Playwright Python + Chromium**，状态说明见 [架构文档](docs/ARCHITECTURE.md#9-浏览器能力状态)。
 
+资料检索使用 **Google / Bing**；项目搜索工具尚未接入，这两个来源已纳入浏览器接入约定。
+
 ## 五项能力
 
 | 能力 | 落地位置 | 关键设计 |
