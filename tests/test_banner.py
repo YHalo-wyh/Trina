@@ -11,13 +11,15 @@ from trina.terminal import render_home, show_home
 
 class BannerTests(unittest.TestCase):
     def test_plain_art_is_filled_text_and_fits_available_columns(self):
-        for width in (20, 40, 64, 88, 120):
+        for width in (20, 35, 36, 40, 50, 51, 64, 88, 120):
             with self.subTest(width=width):
                 text = render_home(width=width)
                 self.assertTrue(all(character == "\n" or character.isprintable()
                                     for character in text))
                 if width >= 40:
-                    self.assertEqual(set("".join(text.splitlines()[:-1])), {" ", "█"})
+                    characters = set("".join(text.splitlines()[:-1]))
+                    self.assertLessEqual(characters, set(" █▓▀▄·✦"))
+                    self.assertTrue({"█", "▓"} <= characters)
                 self.assertLessEqual(max(map(len, text.splitlines())), width)
                 self.assertEqual(text.splitlines()[-1].strip(), "0.2.0")
         self.assertGreater(len(render_home(width=88).splitlines()),
@@ -25,7 +27,7 @@ class BannerTests(unittest.TestCase):
 
     def test_color_changes_only_foreground_and_preserves_all_characters(self):
         foreground_sgr = re.compile(r"\x1b\[(?:0|38;2;\d+;\d+;\d+)m")
-        for width in (20, 40, 64, 88, 120):
+        for width in (20, 35, 36, 40, 50, 51, 64, 88, 120):
             with self.subTest(width=width):
                 colored = render_home(width=width, color=True)
                 self.assertIn("\x1b[38;2;", colored)
