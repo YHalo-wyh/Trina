@@ -112,9 +112,11 @@ class TestTerminalUI(unittest.TestCase):
             pipe.send_text("\x1b[200~" + text + "\x1b[201~\r")
             self.assertEqual(editor.read(), text)
 
-    def test_home_uses_provided_art_and_only_version_below_it(self):
+    def test_home_uses_shell_lettering_and_only_version_below_it(self):
         text = render_home(width=88, color=True)
-        self.assertIn("▄", text)
+        self.assertIn("o888o", clean_text(text))
+        for pixel in ("▄", "▀", "█"):
+            self.assertNotIn(pixel, text)
         self.assertEqual(text.splitlines()[-1].strip(), "0.2.0")
         self.assertNotIn("睡莲紫雾", text)
         self.assertNotIn("模型", text)
@@ -207,11 +209,15 @@ class TestTerminalUI(unittest.TestCase):
                 raise ImportError("simulated missing optional dependency")
             return original(name, *args, **kwargs)
         with patch("builtins.__import__", side_effect=without_rich):
-            text = render_home(width=40, color=True)
-        self.assertIn("TRINA", text)
+            text = render_home(width=40)
+            message = render_message("很长的无依赖提示" * 12, width=20, color=True)
+        self.assertGreater(len(text.splitlines()), 2)
         self.assertIn("0.2.0", text)
         self.assertNotIn("/play", text)
         self.assertNotIn("\x1b", text)
+        from rich.cells import cell_len
+        self.assertLessEqual(max(cell_len(line) for line in message.splitlines()), 20)
+        self.assertNotIn("\x1b", message)
 
     def test_board_uses_real_step_counter_and_recent_tool_records(self):
         state = RunState(run_id="counts", target="127.0.0.1")

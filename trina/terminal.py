@@ -120,35 +120,17 @@ def render_message(message: str, *, label: str = "提示", width: int | None = N
 
 
 def render_home(*, width: int | None = None, color: bool = False) -> str:
-    """首页仅显示指定字标与版本，普通终端使用同图的字符适配。"""
+    """首页仅显示终端字符字标与版本。"""
     from . import __version__
+    from .banner import render_banner
 
     width = max(20, width if width is not None else terminal_width())
-    logo = _center("TRINA", width)
-    if color and os.environ.get("TRINA_LOGO_MODE") != "text":
-        try:
-            import rich  # noqa: F401 - 缺少展示依赖时保留纯文本降级
-            from .banner import render_blocks
-            logo = render_blocks(width)
-        except (ImportError, OSError):
-            pass
+    logo = render_banner(width, color=color, colors=(THEME["rose"], THEME["violet"]))
     return logo + "\n" + _center(__version__, width)
 
 
 def show_home(*, output, color: bool) -> None:
-    """图片终端使用原图，其他终端保留可读启动页。"""
-    if color:
-        try:
-            import rich  # noqa: F401
-            from . import __version__
-            from .banner import native_protocol, render_native
-            protocol = native_protocol()
-            if protocol:
-                width = terminal_width()
-                output(render_native(width, protocol) + _center(__version__, width))
-                return
-        except (ImportError, OSError, ValueError):
-            pass
+    """字符输出不依赖终端图片能力，也不探测标准输入。"""
     output(render_home(color=color))
 
 

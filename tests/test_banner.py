@@ -1,81 +1,59 @@
-"""用户字标的随包资源、显示协议、尺寸和纯文本降级。"""
+"""字符首页的布局、无色输出和终端兼容性。"""
 from __future__ import annotations
 
-import base64
 import builtins
-import io
 import re
 import unittest
 from unittest.mock import patch
 
-from PIL import Image
-from rich.cells import cell_len
-from rich.text import Text
-
-from trina.banner import layout, logo_bytes, native_protocol, render_blocks, render_native
 from trina.terminal import render_home, show_home
 
 
 class BannerTests(unittest.TestCase):
-    def test_packaged_art_is_a_wide_png(self):
-        data = logo_bytes()
-        self.assertTrue(data.startswith(b"\x89PNG\r\n\x1a\n"))
-        with Image.open(io.BytesIO(data)) as image:
-            self.assertGreater(image.width, 800)
-            self.assertGreater(image.width / image.height, 2)
+    def test_plain_art_is_printable_ascii_and_fits_available_columns(self):
+        for width in (20, 40, 64, 88, 120):
+            with self.subTest(width=width):
+                text = render_home(width=width)
+                self.assertTrue(all(character == "\n" or " " <= character <= "~"
+                                    for character in text))
+                self.assertLessEqual(max(map(len, text.splitlines())), width)
+                self.assertEqual(text.splitlines()[-1].strip(), "0.2.0")
+        self.assertGreater(len(render_home(width=88).splitlines()),
+                           len(render_home(width=40).splitlines()))
 
-    def test_color_adaptation_fits_narrow_wide_and_short_terminals(self):
-        for columns in (20, 40, 88, 120):
-            for rows in (12, 24):
-                rendered = Text.from_ansi(render_blocks(columns, rows)).plain.splitlines()
-                self.assertLessEqual(len(rendered), rows - 6)
-                self.assertLessEqual(max(cell_len(line) for line in rendered), columns)
+    def test_color_changes_only_foreground_and_preserves_all_characters(self):
+        foreground_sgr = re.compile(r"\x1b\[(?:0|38;2;\d+;\d+;\d+)m")
+        for width in (20, 40, 64, 88, 120):
+            with self.subTest(width=width):
+                colored = render_home(width=width, color=True)
+                self.assertIn("\x1b[38;2;", colored)
+                self.assertEqual(foreground_sgr.sub("", colored), render_home(width=width))
 
-    def test_native_detection_and_explicit_portable_mode(self):
-        with patch.dict("os.environ", {"WT_SESSION": "test", "TRINA_LOGO_MODE": "auto", "KITTY_WINDOW_ID": "", "TERM_PROGRAM": "", "TERM": "xterm", "WEZTERM_PANE": ""}):
-            self.assertEqual(native_protocol(), "sixel")
-            with patch.dict("os.environ", {"TRINA_LOGO_MODE": "ansi"}):
-                self.assertIsNone(native_protocol())
+    def test_terminal_graphics_settings_do_not_change_character_output(self):
+        for mode in ("auto", "sixel", "kitty", "iterm"):
+            with self.subTest(mode=mode), patch.dict("os.environ", {
+                "TRINA_LOGO_MODE": mode, "WT_SESSION": "test",
+                "KITTY_WINDOW_ID": "1", "TERM_PROGRAM": "iTerm.app",
+            }), patch("trina.terminal.terminal_width", return_value=88):
+                output = []
+                show_home(output=output.append, color=True)
+                self.assertEqual(output, [render_home(width=88, color=True)])
 
-    def test_iterm_payload_contains_original_png_unchanged(self):
-        rendered = render_native(88, "iterm")
-        encoded = rendered.split("preserveAspectRatio=1:", 1)[1].split("\x07", 1)[0]
-        self.assertEqual(base64.b64decode(encoded), logo_bytes())
-
-    def test_kitty_chunks_preserve_original_art(self):
-        rendered = render_native(88, "kitty")
-        packets = re.findall(r"\x1b_G([^;]+);([^\x1b]+)\x1b\\", rendered)
-        self.assertTrue(packets)
-        self.assertTrue(packets[-1][0].endswith("m=0"))
-        self.assertTrue(all(len(data) <= 4096 for _, data in packets))
-        self.assertEqual(base64.b64decode("".join(data for _, data in packets)), logo_bytes())
-
-    def test_sixel_raster_keeps_aspect_and_is_bounded(self):
-        rendered = render_native(88, "sixel")
-        raster = re.search(r'\x1bP0;1;0q"1;1;(\d+);(\d+)', rendered)
-        self.assertIsNotNone(raster)
-        width, height = map(int, raster.groups())
-        with Image.open(io.BytesIO(logo_bytes())) as image:
-            self.assertAlmostEqual(width / height, image.width / image.height, delta=.02)
-        self.assertLess(len(rendered), 500000)
-        self.assertLessEqual(height, layout(88)[1] * 16)
-
-    def test_plain_mode_never_emits_native_control_sequences(self):
-        output = []
-        with patch.dict("os.environ", {"TRINA_LOGO_MODE": "sixel", "WT_SESSION": "test"}):
-            show_home(output=output.append, color=False)
-        self.assertEqual([line.strip() for line in output[0].splitlines()], ["TRINA", "0.2.0"])
-        self.assertNotIn("\x1b", output[0])
-
-    def test_missing_image_dependency_keeps_plain_version(self):
+    def test_home_needs_no_image_or_rich_dependency(self):
         original = builtins.__import__
-        def missing_pillow(name, *args, **kwargs):
-            if name == "PIL" or name.startswith("PIL."):
-                raise ImportError("test missing Pillow")
+
+        def without_display_dependencies(name, *args, **kwargs):
+            if name.split(".")[0] in {"PIL", "rich"}:
+                raise ImportError("simulated missing display dependency")
             return original(name, *args, **kwargs)
-        with patch("builtins.__import__", side_effect=missing_pillow):
-            text = render_home(width=39, color=True)
-        self.assertEqual([line.strip() for line in text.splitlines()], ["TRINA", "0.2.0"])
+
+        expected = render_home(width=88, color=True)
+        with patch("builtins.__import__", side_effect=without_display_dependencies):
+            self.assertEqual(render_home(width=88, color=True), expected)
+
+    def test_narrow_terminal_keeps_name_and_version_readable(self):
+        self.assertEqual([line.strip() for line in render_home(width=20).splitlines()],
+                         ["TRINA", "0.2.0"])
 
 
 if __name__ == "__main__":

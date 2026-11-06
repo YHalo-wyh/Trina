@@ -8,7 +8,6 @@ dependencies = [
     "requests>=2.31",
     "paramiko>=3.4",
     "rich>=13.0",
-    "pillow>=10.0",
     "prompt-toolkit>=3.0.45",
     "beautifulsoup4>=4.12",
     "aiohttp>=3.9",

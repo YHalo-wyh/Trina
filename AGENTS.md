@@ -24,7 +24,7 @@
 ## 代码风格
 
 - 中文 docstring/注释；`from __future__ import annotations`；dataclass；类型注解。
-- 只要 Python 标准库 + 已装依赖（requests / paramiko / bs4 / aiohttp / pyyaml / rich / pillow）。
+- 只要 Python 标准库 + 已装依赖（requests / paramiko / bs4 / aiohttp / pyyaml / rich）。
 - 单文件聚焦一个主题；新增能力优先扩展已有模块而不是再造一套约定。
 
 ## 常见坑
