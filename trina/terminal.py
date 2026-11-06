@@ -126,7 +126,7 @@ def render_home(*, width: int | None = None, color: bool = False) -> str:
 
     width = max(20, width if width is not None else terminal_width())
     logo = render_banner(width, color=color, colors=(THEME["rose"], THEME["violet"]))
-    return logo + "\n" + _center(__version__, width)
+    return logo + "\n" + _center(f"v{__version__}", width)
 
 
 def show_home(*, output, color: bool) -> None:
