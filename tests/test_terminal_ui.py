@@ -114,8 +114,8 @@ class TestTerminalUI(unittest.TestCase):
 
     def test_home_uses_shell_lettering_and_only_version_below_it(self):
         text = render_home(width=88, color=True)
-        self.assertIn("o888o", clean_text(text))
-        for pixel in ("▄", "▀", "█"):
+        self.assertIn("███████", clean_text(text))
+        for pixel in ("▄", "▀"):
             self.assertNotIn(pixel, text)
         self.assertEqual(text.splitlines()[-1].strip(), "0.2.0")
         self.assertNotIn("睡莲紫雾", text)

@@ -10,12 +10,14 @@ from trina.terminal import render_home, show_home
 
 
 class BannerTests(unittest.TestCase):
-    def test_plain_art_is_printable_ascii_and_fits_available_columns(self):
+    def test_plain_art_is_filled_text_and_fits_available_columns(self):
         for width in (20, 40, 64, 88, 120):
             with self.subTest(width=width):
                 text = render_home(width=width)
-                self.assertTrue(all(character == "\n" or " " <= character <= "~"
+                self.assertTrue(all(character == "\n" or character.isprintable()
                                     for character in text))
+                if width >= 40:
+                    self.assertEqual(set("".join(text.splitlines()[:-1])), {" ", "█"})
                 self.assertLessEqual(max(map(len, text.splitlines())), width)
                 self.assertEqual(text.splitlines()[-1].strip(), "0.2.0")
         self.assertGreater(len(render_home(width=88).splitlines()),
