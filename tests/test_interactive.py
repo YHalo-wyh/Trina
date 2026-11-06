@@ -452,6 +452,16 @@ class TestConsole(unittest.TestCase):
         self.assertTrue(any("任务运行中" in line for line in output))
         console.session.thread.join(timeout=2)
 
+    def test_running_supplement_preserves_quotes_and_sends_without_confirmation(self):
+        from types import SimpleNamespace
+        console, output = self._console([])
+        console.session.thread = SimpleNamespace(is_alive=lambda: True)
+        text = '补充：先看 /login 的 "redirect 参数\n再检查返回内容'
+        self.assertTrue(console.handle(text))
+        self.assertIn("补充 1 条待处理", console._prompt_status())
+        self.assertEqual(console.session.steers.get_nowait(), text)
+        self.assertTrue(any("已发送" in line for line in output))
+
 
 if __name__ == "__main__":
     unittest.main()

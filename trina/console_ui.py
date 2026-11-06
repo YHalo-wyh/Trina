@@ -421,8 +421,11 @@ class EnhancedConsoleInput:
         from prompt_toolkit.layout.processors import BeforeInput
         from prompt_toolkit.filters import Condition
         from prompt_toolkit.styles import Style
+        from prompt_toolkit.output import ColorDepth
+        from .terminal import THEME
 
         self.status = status
+        self.running = running
         self.completer = SlashCommandCompleter(running=running, dynamic_values=dynamic_values)
         self.dismissed = False
         self.buffer = Buffer(history=InMemoryHistory(), completer=self.completer,
@@ -455,7 +458,7 @@ class EnhancedConsoleInput:
         def submit(event):
             state = self.buffer.complete_state
             text = self.buffer.text.strip()
-            if state and state.current_completion:
+            if text.startswith("/") and state and state.current_completion:
                 self.buffer.apply_completion(state.current_completion)
             elif text.startswith("/") and not any(c.isspace() for c in text) and not find_command(text):
                 items = self._items()
@@ -475,23 +478,30 @@ class EnhancedConsoleInput:
                 self.buffer.delete()
 
         style = Style.from_dict({} if plain else {
-            "prompt": "bold ansicyan", "index": "ansibrightblack",
-            "selected": "bg:#164e63 #ffffff bold", "hint": "ansibrightblack",
-            "status": "ansicyan", "title": "bold ansicyan",
+            "prompt": "bold " + THEME["rose"], "index": THEME["muted"],
+            "selected": "bg:" + THEME["selected"] + " " + THEME["text"] + " bold", "hint": THEME["muted"],
+            "status": THEME["lilac"], "title": "bold " + THEME["rose"],
         })
-        control = BufferControl(buffer=self.buffer, input_processors=[BeforeInput([("class:prompt", "Trina  › ")])])
+        control = BufferControl(buffer=self.buffer, input_processors=[BeforeInput(
+            lambda: [("class:prompt", "补充  › " if self.running() else "Trina  › ")])])
         self.app = Application(
             layout=Layout(HSplit([
                 Window(control, wrap_lines=True),
                 ConditionalContainer(Window(FormattedTextControl(self._menu), dont_extend_height=True),
                                      Condition(lambda: bool(self._items()) and not self.dismissed)),
-                Window(FormattedTextControl(lambda: [("class:status", self.status()), ("class:hint", "  ·  " + command_hint(self.buffer.text))]), height=1),
+                Window(FormattedTextControl(lambda: [("class:status", self.status()), ("class:hint", "  ·  " + self._hint())]), height=1),
             ]), focused_element=control),
             key_bindings=bindings, style=style, full_screen=False, refresh_interval=0.3,
+            color_depth=None if plain else ColorDepth.DEPTH_24_BIT,
         )
 
     def _reopen(self) -> None:
         self.dismissed = False
+
+    def _hint(self) -> str:
+        if self.running() and not self.buffer.text.startswith("/"):
+            return "Enter 发送补充 · /stop 停止"
+        return command_hint(self.buffer.text)
 
     def _items(self):
         if not self.buffer.text.startswith("/"):
@@ -589,8 +599,9 @@ def _panel_app(body, title: str, bindings, focused, *, completion_menu: bool = F
     from prompt_toolkit.layout import Float, FloatContainer, Layout, Window
     from prompt_toolkit.layout.menus import CompletionsMenu
     from prompt_toolkit.styles import Style
+    from prompt_toolkit.output import ColorDepth
     from prompt_toolkit.widgets import Frame, Box
-    from .terminal import clean_text, use_color
+    from .terminal import clean_text, use_color, THEME
 
     panel = Frame(Box(body, padding=1), title=clean_text(title), style="class:panel")
     floats = [Float(
@@ -600,9 +611,11 @@ def _panel_app(body, title: str, bindings, focused, *, completion_menu: bool = F
         floats.append(Float(xcursor=True, ycursor=True, content=CompletionsMenu(max_height=5)))
     layout = Layout(FloatContainer(Window(), floats), focused_element=focused)
     return Application(layout=layout, key_bindings=bindings, full_screen=True, erase_when_done=True,
-                       style=Style.from_dict({"panel.border": "ansicyan", "panel.label": "bold ansicyan",
-                                              "dim": "ansibrightblack", "chosen": "bg:#164e63 #ffffff bold",
-                                              "field": "bg:#17212b #e2e8f0", "button.focused": "bg:#164e63 #ffffff bold"} if use_color() else {}))
+                       color_depth=ColorDepth.DEPTH_24_BIT if use_color() else None,
+                       style=Style.from_dict({"panel.border": THEME["violet"], "panel.label": "bold " + THEME["rose"],
+                                              "dim": THEME["muted"], "chosen": "bg:" + THEME["selected"] + " " + THEME["text"] + " bold",
+                                              "field": "bg:" + THEME["ink"] + " " + THEME["text"],
+                                              "button.focused": "bg:" + THEME["selected"] + " " + THEME["text"] + " bold"} if use_color() else {}))
 
 
 def edit_field(title: str, default: str = "", *, secret: bool = False) -> str:

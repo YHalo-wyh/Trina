@@ -113,7 +113,7 @@ class Session:
         if not note:
             return
         self.steers.put(note)
-        self.emit(f"[介入] 已投递提示：{note}")
+        self.emit(f"[补充] 已发送：{note}")
 
     def request_stop(self) -> None:
         self.stop_event.set()

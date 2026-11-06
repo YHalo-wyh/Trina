@@ -14,16 +14,18 @@ PHASES = {"recon": "侦察", "enum": "枚举", "vuln": "验证", "exploit": "利
 STATUSES = {"running": "运行中", "chat": "对话", "success": "完成", "partial": "部分完成", "failed": "失败", "blocked": "已阻止", "stopped": "已停止"}
 VERDICTS = {"CONFIRMED": "已确认", "NOT_CONFIRMED": "本轮未确认", "INCONCLUSIVE": "证据不足"}
 _ANSI = re.compile(r"\x1b(?:\][^\x07\x1b]*(?:\x07|\x1b\\)|\[[0-?]*[ -/]*[@-~]|[@-_])")
+THEME = {"rose": "#edb2d2", "lilac": "#c7a5e8", "violet": "#9b7bc7", "muted": "#a595b3",
+         "ink": "#1c1625", "selected": "#50355f", "text": "#ede5f2"}
 
 # 七行字形在普通终端里也能辨认；窄窗口改用五行字形。
 _LOGO_WIDE = (
-    ("███████", "███  ██", "███████", "██   ██", " █████ "),
-    ("   █   ", "██   ██", "   █   ", "███  ██", "██   ██"),
-    ("   █   ", "███  ██", "   █   ", "████ ██", "██   ██"),
-    ("   █   ", "██████ ", "   █   ", "██ ████", "███████"),
-    ("   █   ", "██ ███ ", "   █   ", "██  ███", "██   ██"),
-    ("   █   ", "██  ███", "   █   ", "██   ██", "██   ██"),
-    ("   █   ", "██   ██", "███████", "██   ██", "██   ██"),
+    ("███████", "██████ ", "███████", "██   ██", " █████ "),
+    ("  ███  ", "██   ██", "  ███  ", "███  ██", "██   ██"),
+    ("  ███  ", "██   ██", "  ███  ", "████ ██", "██   ██"),
+    ("  ███  ", "██████ ", "  ███  ", "██ ████", "███████"),
+    ("  ███  ", "██ ██  ", "  ███  ", "██  ███", "██   ██"),
+    ("  ███  ", "██  ██ ", "  ███  ", "██   ██", "██   ██"),
+    ("  ███  ", "██   ██", "███████", "██   ██", "██   ██"),
 )
 _LOGO_NARROW = (
     ("█████", "████ ", "█████", "█   █", " ███ "),
@@ -32,7 +34,12 @@ _LOGO_NARROW = (
     ("  █  ", "█  █ ", "  █  ", "█  ██", "█   █"),
     ("  █  ", "█   █", "█████", "█   █", "█   █"),
 )
-_LOGO_COLORS = ("#22d3ee", "#38bdf8", "#60a5fa", "#818cf8", "#a78bfa")
+_LOGO_COLORS = ("#edb2d2", "#dfb2e5", "#ceb0eb", "#bfa0e6", "#d7a5db")
+
+
+def _blend(left: str, right: str, fraction: float) -> str:
+    values = [round(int(left[i:i + 2], 16) * (1 - fraction) + int(right[i:i + 2], 16) * fraction) for i in (1, 3, 5)]
+    return "#" + "".join(f"{value:02x}" for value in values)
 
 
 def clean_text(value: Any) -> str:
@@ -65,8 +72,16 @@ def _wrap(text: str, width: int) -> str:
     return "\n".join(lines)
 
 
+def _center(text: str, width: int) -> str:
+    lines = []
+    for line in _wrap(text, width).split("\n"):
+        cells = sum(0 if unicodedata.combining(ch) else (2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1) for ch in line)
+        lines.append(" " * max(0, (width - cells) // 2) + line)
+    return "\n".join(lines)
+
+
 def render_panel(title: str, *, rows: list[tuple[str, Any]] | None = None, sections: list[tuple[str, str]] | None = None,
-                 footer: str = "", width: int | None = None, color: bool = False, accent: str = "cyan") -> str:
+                 footer: str = "", width: int | None = None, color: bool = False, accent: str = THEME["lilac"]) -> str:
     """返回完整卡片；所有动态值用 Text，禁止作为 rich markup 执行。"""
     width = max(20, width if width is not None else terminal_width())
     title, footer = clean_text(title), clean_text(footer)
@@ -107,7 +122,7 @@ def render_panel(title: str, *, rows: list[tuple[str, Any]] | None = None, secti
     if footer:
         parts.extend([Text(""), Text(footer, style="dim", overflow="fold")])
     output = io.StringIO()
-    console = Console(file=output, width=width, height=25, force_terminal=color, color_system="standard" if color else None,
+    console = Console(file=output, width=width, height=25, force_terminal=color, color_system="truecolor" if color else None,
                       no_color=not color, legacy_windows=False, highlight=False)
     console.print(Panel(Group(*parts), title=Text(title, style=f"bold {accent}"), title_align="left",
                         border_style=accent, box=box.ROUNDED, padding=(1, 2) if width >= 48 else (0, 1)))
@@ -124,8 +139,8 @@ def render_message(message: str, *, label: str = "提示", width: int | None = N
         return _wrap(text, width)
     stream = io.StringIO()
     content = Text(text, overflow="fold")
-    content.stylize("bold cyan" if label.strip("[] ") not in ("错误", "拒绝") else "bold red", 0, len(clean_text(label)))
-    Console(file=stream, width=width, height=25, force_terminal=color, color_system="standard" if color else None,
+    content.stylize("bold " + THEME["rose"] if label.strip("[] ") not in ("错误", "拒绝") else "bold red", 0, len(clean_text(label)))
+    Console(file=stream, width=width, height=25, force_terminal=color, color_system="truecolor" if color else None,
             no_color=not color, legacy_windows=False, highlight=False).print(content)
     return stream.getvalue().rstrip("\n")
 
@@ -137,27 +152,28 @@ def _home_logo(width: int, *, color: bool, sweep: int = -1) -> str:
         from rich.text import Text
     except ImportError:
         if width < 36:
-            return "T R I N A"
+            return "T R I N A".center(width)
         glyph = _LOGO_WIDE if width >= 50 else _LOGO_NARROW
         gap = "  " if width >= 50 else " "
-        return "\n".join(gap.join(row) for row in glyph)
+        return "\n".join(gap.join(row).center(width) for row in glyph)
 
     output = io.StringIO()
     console = Console(file=output, width=width, force_terminal=color, color_system="truecolor" if color else None,
                       no_color=not color, legacy_windows=False, highlight=False)
     if width < 36:
-        console.print(Text("T R I N A", style="bold cyan" if color else ""))
+        console.print(Text("T R I N A".center(width), style="bold " + THEME["rose"] if color else ""), soft_wrap=True)
         return output.getvalue().rstrip("\n")
     glyph = _LOGO_WIDE if width >= 50 else _LOGO_NARROW
     gap = "  " if width >= 50 else " "
-    for row in glyph:
-        line = Text()
+    for row_index, row in enumerate(glyph):
+        line = Text(" " * max(0, (width - len(gap.join(row))) // 2))
         for index, letter in enumerate(row):
             if index:
                 line.append(gap)
-            style = f"bold {_LOGO_COLORS[index]}" if color else ""
+            shade = _blend(_LOGO_COLORS[index], THEME["violet"], row_index / max(1, len(glyph) - 1) * .65)
+            style = f"bold {shade}" if color else ""
             if index == sweep:
-                style = "bold #ffffff" if color else ""
+                style = "bold " + _blend(shade, "#fff0fa", .75) if color else ""
             line.append(letter, style=style)
         console.print(line, soft_wrap=True)
     return output.getvalue().rstrip("\n")
@@ -165,32 +181,40 @@ def _home_logo(width: int, *, color: bool, sweep: int = -1) -> str:
 
 def render_home(config: Any, approval_mode: str, *, width: int | None = None, color: bool = False,
                 sweep: int = -1) -> str:
-    """无边框品牌首页；静态输出与交互动画共用相同的最终画面。"""
+    """粉紫色睡莲主题首页，保留无边框大字与必要配置。"""
     from . import __version__
 
-    actual_width = width if width is not None else terminal_width()
-    title = f"TRINA  {__version__}"
-    model = f"模型 {clean_text(config.llm.model)} · 后端 {clean_text(config.llm.backend)}"
-    controls = f"审批 {clean_text(approval_mode)} · 策略 {clean_text(config.policy.mode)} · 等级 {clean_text(config.scope.exploit_level)}"
-    guide = "输入 / 打开命令索引  ·  直接输入问题开始对话"
-    shortcuts = "/play 开始任务  ·  /board 查看结果  ·  /help 查看选项"
+    actual_width = max(20, width if width is not None else terminal_width())
+    content_width = min(76, actual_width - 4) if actual_width >= 36 else actual_width
+    inset = max(0, (actual_width - content_width) // 2)
+    title = f"TRINA  {__version__}  ·  睡莲紫雾"
+    model = f"模型  {clean_text(config.llm.model)}"
+    controls = (f"连接 {clean_text(config.llm.profile or config.llm.backend)} · 审批 {clean_text(approval_mode)}"
+                f" · 策略 {clean_text(config.policy.mode)} · 等级 {clean_text(config.scope.exploit_level)}")
+    guide = "Enter 发送 · / 命令索引 · /play 任务 · /model 模型 · /board 结果"
     logo = _home_logo(actual_width, color=color, sweep=sweep)
     try:
         from rich.console import Console
         from rich.text import Text
     except ImportError:
-        return _wrap("\n".join((logo, "", title, model, controls, guide, shortcuts)), actual_width)
+        return _wrap("\n".join((logo, "", title, "", model, controls, "", guide)), actual_width)
 
     output = io.StringIO()
     console = Console(file=output, width=actual_width, force_terminal=color,
                       color_system="truecolor" if color else None, no_color=not color,
                       legacy_windows=False, highlight=False)
-    console.print(Text.from_ansi(logo), soft_wrap=True, end="\n\n")
-    console.print(Text(_wrap(title, actual_width), style="bold"), soft_wrap=True)
-    console.print(Text(_wrap(model, actual_width), style="dim"), soft_wrap=True)
-    console.print(Text(_wrap(controls, actual_width), style="dim"), soft_wrap=True, end="\n\n")
-    console.print(Text(_wrap(guide, actual_width), style="bold cyan" if color else ""), soft_wrap=True)
-    console.print(Text(_wrap(shortcuts, actual_width), style="dim"), soft_wrap=True)
+    console.print(Text(_center("·   ✦   ·", actual_width), style=THEME["lilac"] if color else ""), soft_wrap=True)
+    console.print(Text.from_ansi(logo), soft_wrap=True)
+    console.print(Text(_center(title, actual_width), style="bold " + THEME["rose"] if color else ""), soft_wrap=True, end="\n\n")
+    divider = Text(" " * inset)
+    for index in range(content_width):
+        glow = 1 - abs(index - (content_width - 1) / 2) / max(1, content_width / 2)
+        divider.append("✦" if index == content_width // 2 else "─",
+                       style=_blend(THEME["ink"], THEME["violet"], glow) if color else "")
+    console.print(divider, soft_wrap=True)
+    for value, shade in ((model, THEME["text"]), (controls, THEME["muted"]), ("", ""), (guide, THEME["lilac"])):
+        for line in _wrap(value, content_width).split("\n"):
+            console.print(Text(" " * inset + line, style=shade if color else ""), soft_wrap=True)
     return output.getvalue().rstrip("\n")
 
 

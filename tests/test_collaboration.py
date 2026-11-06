@@ -94,6 +94,48 @@ class TestCollaboration(unittest.TestCase):
         self.assertNotIn("consult_specialist", registry.prompt_block(exclude=("consult_specialist",)))
         self.assertEqual(registry.get("consult_specialist").spec.action_level, "detect")
 
+    def test_chat_consumes_inflight_supplement_before_reply_or_tool(self):
+        import queue
+        for index, candidate in enumerate(("旧答复", probe(), {"final": {"summary": "旧结论"}})):
+            with self.subTest(candidate=candidate):
+                steers = queue.Queue()
+                backend = ScriptBackend([candidate, "已根据补充更新"])
+                complete = backend.complete
+                def arriving(*args, **kwargs):
+                    response = complete(*args, **kwargs)
+                    if len(backend.inputs) == 1:
+                        steers.put("补充：先查看登录流程")
+                    return response
+                backend.complete = arriving
+                chat = ChatAgent(self.cfg, registry=self.registry, backend=backend, steer_queue=steers,
+                                 run_id=f"late-chat-{index}")
+                self.assertEqual(chat.ask("检查首页"), "已根据补充更新")
+                self.assertIn("先查看登录流程", backend.inputs[1][1])
+                self.assertTrue(steers.empty())
+                self.assertEqual(self.tool.calls, 0)
+
+    def test_task_redecides_before_executing_candidate_after_supplement(self):
+        import queue
+        steers = queue.Queue()
+        backend = ScriptBackend([probe(), {"final": {"summary": "根据补充收尾"}}])
+        complete = backend.complete
+        def arriving(*args, **kwargs):
+            response = complete(*args, **kwargs)
+            if len(backend.inputs) == 1:
+                steers.put("补充：先不要执行这个探测")
+            return response
+        backend.complete = arriving
+        record = self.root / "late-task.json"
+        state = PentestAgent(self.cfg, registry=self.registry, backend=backend, steer_queue=steers).run(
+            TARGET, max_steps=2, run_id="late-task", record_path=record)
+        self.assertEqual(self.tool.calls, 0)
+        self.assertEqual(state.counters["llm_calls"], 2)
+        self.assertIn("先不要执行", backend.inputs[1][1])
+        self.assertIn("llm.response_superseded", Path(state.artifacts["audit_path"]).read_text(encoding="utf-8"))
+        recorded = json.loads(record.read_text(encoding="utf-8"))["steps"]
+        self.assertEqual(len(recorded), 1)
+        self.assertIn("final", json.loads(recorded[0]["response"]))
+
     def test_advice_never_executes_or_mutates_facts(self):
         backend = ScriptBackend([probe()])
         ctx = self.context(backend)

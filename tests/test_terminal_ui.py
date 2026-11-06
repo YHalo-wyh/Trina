@@ -100,6 +100,25 @@ class TestTerminalUI(unittest.TestCase):
             pipe.send_text("/h\r")
             self.assertEqual(editor.read(), "/help")
 
+    def test_one_enter_sends_multiline_supplement_while_running(self):
+        from prompt_toolkit.application.current import create_app_session
+        from prompt_toolkit.input import create_pipe_input
+        from prompt_toolkit.output import DummyOutput
+        from trina.console_ui import EnhancedConsoleInput
+        text = '补充第一行\n第二行保留 "未闭合引号'
+        with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
+            editor = EnhancedConsoleInput(status=lambda: "运行中", running=lambda: True,
+                                          dynamic_values=lambda *_: (), plain=True)
+            self.assertIn("Enter 发送补充", editor._hint())
+            pipe.send_text("\x1b[200~" + text + "\x1b[201~\r")
+            self.assertEqual(editor.read(), text)
+
+    def test_home_uses_rose_and_violet_without_blink_sequences(self):
+        text = render_home(TrinaConfig(), "exploit", width=88, color=True)
+        self.assertIn("38;2;237;178;210", text)
+        self.assertIn("睡莲紫雾", text)
+        self.assertNotIn("\x1b[5m", text)
+
     def test_command_catalog_drives_help_and_toolbar_hint(self):
         self.assertIn("play", command_names())
         self.assertIn("clear", command_names())

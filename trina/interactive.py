@@ -157,7 +157,9 @@ class Console:
                     "停止中" if self.session.stop_event.is_set() else "运行中"
                 )
             )
-        return f"{status} · {self.config.llm.profile or self.config.llm.backend}/{short} · 审批 {self.session.approval_mode}"
+        pending = self.session.steers.qsize()
+        queued = f" · 补充 {pending} 条待处理" if pending else ""
+        return f"{status}{queued} · {self.config.llm.profile or self.config.llm.backend}/{short} · 审批 {self.session.approval_mode}"
 
     def _prompt(self) -> str:
         short = clean_text((self.config.llm.model or "?").split("/")[-1]).replace("\n", " ")[:28]
@@ -246,6 +248,9 @@ class Console:
         try:
             argv = shlex.split(line)
         except ValueError:
+            if not forced and self.session.running:
+                self.session.steer(line)
+                return True
             if forced:
                 self._emit("命令中的引号未闭合；补齐引号后重试，或输入 /help 查看示例。", prefix="错误")
                 return True

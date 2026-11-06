@@ -257,6 +257,21 @@ class PentestAgent:
 
         ctx.extra["model_response_observer"] = record_response
 
+        def accept_steers() -> bool:
+            accepted = False
+            if self.steer_queue is not None:
+                while True:
+                    try:
+                        note = self.steer_queue.get_nowait()
+                    except Exception:  # noqa: BLE001 - 队列空
+                        break
+                    if note:
+                        hints.append(f"[人工介入] {note}")
+                        state.note("human", f"人工补充：{note}")
+                        audit.append("human.steer", decision="allow", message=str(note)[:400])
+                        accepted = True
+            return accepted
+
         started = time.monotonic()
         steps = 0
         final: dict[str, Any] | None = None
@@ -272,15 +287,7 @@ class PentestAgent:
                 if self.pause_event is not None:
                     while self.pause_event.is_set() and not (self.stop_event is not None and self.stop_event.is_set()):
                         time.sleep(0.2)
-                if self.steer_queue is not None:
-                    while True:
-                        try:
-                            note = self.steer_queue.get_nowait()
-                        except Exception:  # noqa: BLE001 - 队列空
-                            break
-                        if note:
-                            hints.append(f"[人工介入] {note}")
-                            state.note("human", f"人工提示：{note}")
+                accept_steers()
                 if ctx.remaining() is not None and ctx.remaining() <= 0:
                     state.note("budget", f"时长预算用尽（{max_seconds}s）")
                     break
@@ -358,6 +365,13 @@ class PentestAgent:
                     time.sleep(min(2.0 * state.counters["errors"], 8.0))
                     continue
                 state.counters["llm_calls"] = state.counters.get("llm_calls", 0) + 1
+                if self.stop_event is not None and self.stop_event.is_set():
+                    state.note("human", "收到人工停止指令")
+                    state.status = "stopped"
+                    break
+                if accept_steers():
+                    audit.append("llm.response_superseded", decision="defer", reason="收到补充，重新决策", step=index)
+                    continue
                 record_response(response.text)
 
                 action = parse_action(response.text)

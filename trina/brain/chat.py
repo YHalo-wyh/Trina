@@ -138,12 +138,14 @@ class ChatAgent:
             if self.pause_event is not None:
                 while self.pause_event.is_set() and not (self.stop_event is not None and self.stop_event.is_set()):
                     time.sleep(0.2)
-            steer = self._drain_steer()
-            if steer:
-                self.history.append({"role": "user", "content": f"[人工介入提示] {steer}"})
-                self.logger(f"[介入] {steer}")
+            self._accept_steer()
 
             response = self._ask_model()
+            if self.stop_event is not None and self.stop_event.is_set():
+                return "（已按你的要求停止）"
+            if self._accept_steer():
+                self.audit.append("chat.response_superseded", decision="defer", reason="收到补充，重新决策")
+                continue
             if not response.ok:
                 return f"（模型调用失败：{response.error}）"
             action, note = _parse_action_lenient(response.text)
@@ -214,6 +216,16 @@ class ChatAgent:
             if note:
                 notes.append(str(note))
         return "；".join(notes)
+
+    def _accept_steer(self) -> bool:
+        """在请求前与回复后接收补充，避免最终回复遗漏在途输入。"""
+        steer = self._drain_steer()
+        if not steer:
+            return False
+        self.history.append({"role": "user", "content": f"[人工介入提示] {steer}"})
+        self.audit.append("chat.steer", decision="allow", message=steer[:400])
+        self.logger(f"[补充] 已接收：{steer}")
+        return True
 
     def _run_action(self, action: dict[str, Any], step: int) -> str:
         tool_name = str(action.get("action", ""))

@@ -81,6 +81,10 @@ scripts/dev.sh play --api deepseek --goal "拿到 flag 并验证 SQL 注入" --m
 
 资料检索使用 **Google / Bing**；项目搜索工具尚未接入，这两个来源已纳入浏览器接入约定。
 
+首页使用托莉娜风格的粉紫主题。运行中可直接输入补充，按一次 Enter 发送，支持多行粘贴；输入框回显发送结果，模型返回后会先检查新补充再继续决策。
+
+![Trina 粉紫主题首页渲染预览](docs/images/trina-home.png)
+
 ## 五项能力
 
 | 能力 | 落地位置 | 关键设计 |
