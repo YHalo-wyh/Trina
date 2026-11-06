@@ -6,7 +6,6 @@ import os
 import re
 import shutil
 import sys
-import time
 import unicodedata
 from typing import Any
 
@@ -16,31 +15,6 @@ VERDICTS = {"CONFIRMED": "已确认", "NOT_CONFIRMED": "本轮未确认", "INCON
 _ANSI = re.compile(r"\x1b(?:\][^\x07\x1b]*(?:\x07|\x1b\\)|\[[0-?]*[ -/]*[@-~]|[@-_])")
 THEME = {"rose": "#edb2d2", "lilac": "#c7a5e8", "violet": "#9b7bc7", "muted": "#a595b3",
          "ink": "#1c1625", "selected": "#50355f", "text": "#ede5f2"}
-
-# 七行字形在普通终端里也能辨认；窄窗口改用五行字形。
-_LOGO_WIDE = (
-    ("███████", "██████ ", "███████", "██   ██", " █████ "),
-    ("  ███  ", "██   ██", "  ███  ", "███  ██", "██   ██"),
-    ("  ███  ", "██   ██", "  ███  ", "████ ██", "██   ██"),
-    ("  ███  ", "██████ ", "  ███  ", "██ ████", "███████"),
-    ("  ███  ", "██ ██  ", "  ███  ", "██  ███", "██   ██"),
-    ("  ███  ", "██  ██ ", "  ███  ", "██   ██", "██   ██"),
-    ("  ███  ", "██   ██", "███████", "██   ██", "██   ██"),
-)
-_LOGO_NARROW = (
-    ("█████", "████ ", "█████", "█   █", " ███ "),
-    ("  █  ", "█   █", "  █  ", "██  █", "█   █"),
-    ("  █  ", "████ ", "  █  ", "█ █ █", "█████"),
-    ("  █  ", "█  █ ", "  █  ", "█  ██", "█   █"),
-    ("  █  ", "█   █", "█████", "█   █", "█   █"),
-)
-_LOGO_COLORS = ("#edb2d2", "#dfb2e5", "#ceb0eb", "#bfa0e6", "#d7a5db")
-
-
-def _blend(left: str, right: str, fraction: float) -> str:
-    values = [round(int(left[i:i + 2], 16) * (1 - fraction) + int(right[i:i + 2], 16) * fraction) for i in (1, 3, 5)]
-    return "#" + "".join(f"{value:02x}" for value in values)
-
 
 def clean_text(value: Any) -> str:
     """目标、模型文本和工具输出按字面量显示，移除终端控制序列。"""
@@ -145,96 +119,37 @@ def render_message(message: str, *, label: str = "提示", width: int | None = N
     return stream.getvalue().rstrip("\n")
 
 
-def _home_logo(width: int, *, color: bool, sweep: int = -1) -> str:
-    """按终端宽度绘制 TRINA 字形；sweep 用于短暂的入场高光。"""
-    try:
-        from rich.console import Console
-        from rich.text import Text
-    except ImportError:
-        if width < 36:
-            return "T R I N A".center(width)
-        glyph = _LOGO_WIDE if width >= 50 else _LOGO_NARROW
-        gap = "  " if width >= 50 else " "
-        return "\n".join(gap.join(row).center(width) for row in glyph)
-
-    output = io.StringIO()
-    console = Console(file=output, width=width, force_terminal=color, color_system="truecolor" if color else None,
-                      no_color=not color, legacy_windows=False, highlight=False)
-    if width < 36:
-        console.print(Text("T R I N A".center(width), style="bold " + THEME["rose"] if color else ""), soft_wrap=True)
-        return output.getvalue().rstrip("\n")
-    glyph = _LOGO_WIDE if width >= 50 else _LOGO_NARROW
-    gap = "  " if width >= 50 else " "
-    for row_index, row in enumerate(glyph):
-        line = Text(" " * max(0, (width - len(gap.join(row))) // 2))
-        for index, letter in enumerate(row):
-            if index:
-                line.append(gap)
-            shade = _blend(_LOGO_COLORS[index], THEME["violet"], row_index / max(1, len(glyph) - 1) * .65)
-            style = f"bold {shade}" if color else ""
-            if index == sweep:
-                style = "bold " + _blend(shade, "#fff0fa", .75) if color else ""
-            line.append(letter, style=style)
-        console.print(line, soft_wrap=True)
-    return output.getvalue().rstrip("\n")
-
-
-def render_home(config: Any, approval_mode: str, *, width: int | None = None, color: bool = False,
-                sweep: int = -1) -> str:
-    """粉紫色睡莲主题首页，保留无边框大字与必要配置。"""
+def render_home(*, width: int | None = None, color: bool = False) -> str:
+    """首页仅显示指定字标与版本，普通终端使用同图的字符适配。"""
     from . import __version__
 
-    actual_width = max(20, width if width is not None else terminal_width())
-    content_width = min(76, actual_width - 4) if actual_width >= 36 else actual_width
-    inset = max(0, (actual_width - content_width) // 2)
-    title = f"TRINA  {__version__}  ·  睡莲紫雾"
-    model = f"模型  {clean_text(config.llm.model)}"
-    controls = (f"连接 {clean_text(config.llm.profile or config.llm.backend)} · 审批 {clean_text(approval_mode)}"
-                f" · 策略 {clean_text(config.policy.mode)} · 等级 {clean_text(config.scope.exploit_level)}")
-    guide = "Enter 发送 · / 命令索引 · /play 任务 · /model 模型 · /board 结果"
-    logo = _home_logo(actual_width, color=color, sweep=sweep)
-    try:
-        from rich.console import Console
-        from rich.text import Text
-    except ImportError:
-        return _wrap("\n".join((logo, "", title, "", model, controls, "", guide)), actual_width)
-
-    output = io.StringIO()
-    console = Console(file=output, width=actual_width, force_terminal=color,
-                      color_system="truecolor" if color else None, no_color=not color,
-                      legacy_windows=False, highlight=False)
-    console.print(Text(_center("·   ✦   ·", actual_width), style=THEME["lilac"] if color else ""), soft_wrap=True)
-    console.print(Text.from_ansi(logo), soft_wrap=True)
-    console.print(Text(_center(title, actual_width), style="bold " + THEME["rose"] if color else ""), soft_wrap=True, end="\n\n")
-    divider = Text(" " * inset)
-    for index in range(content_width):
-        glow = 1 - abs(index - (content_width - 1) / 2) / max(1, content_width / 2)
-        divider.append("✦" if index == content_width // 2 else "─",
-                       style=_blend(THEME["ink"], THEME["violet"], glow) if color else "")
-    console.print(divider, soft_wrap=True)
-    for value, shade in ((model, THEME["text"]), (controls, THEME["muted"]), ("", ""), (guide, THEME["lilac"])):
-        for line in _wrap(value, content_width).split("\n"):
-            console.print(Text(" " * inset + line, style=shade if color else ""), soft_wrap=True)
-    return output.getvalue().rstrip("\n")
-
-
-def show_home(config: Any, approval_mode: str, *, output, color: bool, animate: bool) -> None:
-    """交互终端播放一次高光掠过；动画结束后留下可读的首页。"""
-    if animate and color:
+    width = max(20, width if width is not None else terminal_width())
+    logo = _center("TRINA", width)
+    if color and os.environ.get("TRINA_LOGO_MODE") != "text":
         try:
-            from rich.console import Console
-            from rich.live import Live
-            from rich.text import Text
-
-            live_console = Console(file=sys.stdout, width=terminal_width(), force_terminal=True,
-                                   color_system="truecolor", legacy_windows=False)
-            with Live(Text(""), console=live_console, transient=True, refresh_per_second=30) as live:
-                for index in range(5):
-                    live.update(Text.from_ansi(_home_logo(terminal_width(), color=True, sweep=index)), refresh=True)
-                    time.sleep(0.085)
+            import rich  # noqa: F401 - 缺少展示依赖时保留纯文本降级
+            from .banner import render_blocks
+            logo = render_blocks(width)
         except (ImportError, OSError):
             pass
-    output(render_home(config, approval_mode, color=color))
+    return logo + "\n" + _center(__version__, width)
+
+
+def show_home(*, output, color: bool) -> None:
+    """图片终端使用原图，其他终端保留可读启动页。"""
+    if color:
+        try:
+            import rich  # noqa: F401
+            from . import __version__
+            from .banner import native_protocol, render_native
+            protocol = native_protocol()
+            if protocol:
+                width = terminal_width()
+                output(render_native(width, protocol) + _center(__version__, width))
+                return
+        except (ImportError, OSError, ValueError):
+            pass
+    output(render_home(color=color))
 
 
 def render_step(step: Any, *, width: int | None = None, color: bool = False) -> str:

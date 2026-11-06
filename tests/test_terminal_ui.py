@@ -33,14 +33,13 @@ class TestTerminalUI(unittest.TestCase):
         for width in (20, 40, 64, 88, 120):
             from rich.text import Text
             for color in (False, True):
-                for text in (render_home(TrinaConfig.load(), "exploit", width=width, color=color), render_board(state, width=width, color=color)):
+                for text in (render_home(width=width, color=color), render_board(state, width=width, color=color)):
                     with self.subTest(width=width, color=color):
                         plain = Text.from_ansi(text).plain
                         self.assertLessEqual(max(cell_len(line) for line in plain.splitlines()), width)
                         if not color:
                             self.assertNotIn("\x1b", text)
-        self.assertIn("/board", render_home(TrinaConfig.load(), "all", width=40))
-        self.assertIn("命令索引", render_home(TrinaConfig.load(), "all", width=40))
+        self.assertEqual(render_home(width=40).splitlines()[-1].strip(), "0.2.0")
 
     def test_slash_index_filters_commands_and_lists_options(self):
         from prompt_toolkit.document import Document
@@ -113,10 +112,13 @@ class TestTerminalUI(unittest.TestCase):
             pipe.send_text("\x1b[200~" + text + "\x1b[201~\r")
             self.assertEqual(editor.read(), text)
 
-    def test_home_uses_rose_and_violet_without_blink_sequences(self):
-        text = render_home(TrinaConfig(), "exploit", width=88, color=True)
-        self.assertIn("38;2;237;178;210", text)
-        self.assertIn("睡莲紫雾", text)
+    def test_home_uses_provided_art_and_only_version_below_it(self):
+        text = render_home(width=88, color=True)
+        self.assertIn("▄", text)
+        self.assertEqual(text.splitlines()[-1].strip(), "0.2.0")
+        self.assertNotIn("睡莲紫雾", text)
+        self.assertNotIn("模型", text)
+        self.assertNotIn("/play", text)
         self.assertNotIn("\x1b[5m", text)
 
     def test_command_catalog_drives_help_and_toolbar_hint(self):
@@ -205,10 +207,10 @@ class TestTerminalUI(unittest.TestCase):
                 raise ImportError("simulated missing optional dependency")
             return original(name, *args, **kwargs)
         with patch("builtins.__import__", side_effect=without_rich):
-            text = render_home(TrinaConfig.load(), "all", width=40, color=True)
+            text = render_home(width=40, color=True)
         self.assertIn("TRINA", text)
         self.assertIn("0.2.0", text)
-        self.assertIn("/play", text)
+        self.assertNotIn("/play", text)
         self.assertNotIn("\x1b", text)
 
     def test_board_uses_real_step_counter_and_recent_tool_records(self):

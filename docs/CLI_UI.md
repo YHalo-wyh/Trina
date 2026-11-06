@@ -1,8 +1,8 @@
 # CLI 界面与交互说明
 
-Trina 0.2.0 的首页采用托莉娜意象的「睡莲紫雾」主题：粉紫渐变 TRINA 大字、柔光入场、星形分隔与低饱和状态文字。首页、输入框、命令选择和模型配置共用粉紫色板；错误、拒绝和审批继续保留各自的状态颜色。彩色终端入场约半秒后保持静态，窄终端、`--plain` 和重定向使用静态字形。
+首页使用用户提供的 TRINA 花藤字标图片，原文件随安装包保存。字标下方只有 `0.2.0`，不附加主题名称、重复标题、模型信息或操作说明。输入框、命令选择和模型配置继续使用粉紫色板，错误与审批保留各自状态颜色。
 
-![88 列首页配色渲染预览](images/trina-home.png)
+![图片终端首页预览](images/trina-home.png)
 
 ## 启动与首页
 
@@ -11,9 +11,11 @@ python -m trina
 python -m trina console --plain
 ```
 
-正常终端自动使用颜色；`--plain`、`NO_COLOR`、`TERM=dumb` 或输出重定向时关闭颜色。`rich` 不可用时使用普通文本。`--plain` 同时关闭入场动画。
+Windows Terminal 1.22 及以上使用 Sixel 显示图片，iTerm2 / WezTerm 和 Kitty 使用各自的图片协议。Windows Terminal 的支持版本见[官方说明](https://devblogs.microsoft.com/commandline/windows-terminal-preview-1-22-release/)。其他彩色终端以真彩色半格字符适配同一张图；图片按窗口宽高等比收放，预留输入区域。
 
-首页大字下方简要显示模型、后端、审批模式、策略和动作等级。完整命令说明保留在 `/help`，授权范围可用 `/guard summary` 查看。
+`--plain`、`NO_COLOR`、`TERM=dumb`、无展示依赖或输出重定向时使用纯文本名称与版本。旧版 Windows Terminal 或终端识别不匹配时，可设置 `TRINA_LOGO_MODE=ansi` 强制字符显示，`text` 强制纯文本。首页不读取终端响应，不影响预先输入的内容。
+
+模型、连接与审批状态在输入底栏显示，完整命令说明保留在 `/help`，授权范围用 `/guard summary` 查看。首页图片静态显示，不再叠加逐字高光。
 
 真实交互终端现在使用带索引的单行输入框：输入 `/` 会立即打开按当前状态筛选的命令菜单，继续输入可搜索；
 候选索引固定在输入框下方，输入 `/h` 即显示 `/help`、`/history` 等匹配项。`↑`/`↓` 或 `Shift+Tab` 选择，`Tab` 填入，`Enter` 确认，`Esc` 收起。输入具体命令后，菜单继续展示该命令的选项、

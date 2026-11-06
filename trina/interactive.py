@@ -28,7 +28,7 @@ from .console_ui import (
 )
 from .session import APPROVAL_MODES, Session
 from .terminal import (
-    PHASES, clean_text, render_approval, render_home, render_message,
+    PHASES, clean_text, render_approval, render_message,
     render_panel, render_step, show_home, terminal_width, use_color,
 )
 
@@ -114,8 +114,7 @@ class Console:
 
     # ------------------------------------------------------------------ 主循环
     def run(self) -> int:
-        show_home(self.config, self.session.approval_mode, output=self._display, color=self.color,
-                  animate=self._input is None and self.output is not None)
+        show_home(output=self._display, color=self.color)
         while not self.exit_requested:
             try:
                 raw = self._read_input()
@@ -219,9 +218,6 @@ class Console:
                 paths = sorted(self.config.audit_dir.glob("*.jsonl"), key=lambda item: item.stat().st_mtime, reverse=True)
                 return [ChoiceSpec(str(path), "审计日志") for path in paths[:12]]
         return []
-
-    def _banner(self) -> None:
-        self._display(render_home(self.config, self.session.approval_mode, color=self.color))
 
     # ------------------------------------------------------------------ 命令
     def handle(self, raw: str) -> bool:
