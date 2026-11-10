@@ -119,7 +119,7 @@ class _Server:
 
 
 def _guard() -> ScopeGuard:
-    scope = ScopeConfig(control_plane_hosts=["127.0.0.1"])
+    scope = ScopeConfig(trust_mode="restricted", control_plane_hosts=["127.0.0.1"])
     scope.validate()
     return ScopeGuard(scope)
 

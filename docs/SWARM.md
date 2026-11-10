@@ -8,7 +8,7 @@
 .\.venv\Scripts\python.exe -m trina swarm --target http://127.0.0.1:9099 --goal "验证目标并获取 flag" --workers 2
 ```
 
-默认任务图包含并行的 `recon`（服务识别）与 `web`（Web 面研究），完成后执行 `verify`。各任务默认最多 12 步、600 秒，可用 `--max-steps` 和 `--max-seconds` 修改。`--workers` 受 `scope.max_host_concurrency` 限制；每个 Worker 的请求速率份额按总 Worker 数分配。动作等级和目标授权仍由配置与现有护栏判定。
+默认任务图包含并行的 `recon`（服务识别）与 `web`（Web 面研究），完成后执行 `verify`。各任务默认最多 12 步、600 秒，可用 `--max-steps` 和 `--max-seconds` 修改。`--workers` 受 `scope.max_host_concurrency` 限制；每个 Worker 的请求速率份额按总 Worker 数分配。Worker 默认继承 full 信任模式；显式设置 restricted 时才按目标和动作边界拒绝。
 
 ## 自定义任务图
 

@@ -1,7 +1,7 @@
 # Trina · 全自动渗透测试 Agent —— 总体方案与实施计划
 
 > 代号 **Trina (Pentest AI)**。使用自研决策与执行链，支持可替换模型后端；可选 omp 集成提供模型接入与鉴权；
-> Trina 提供渗透决策大脑、工具执行内核、靶场适配、合规护栏、报告与评测。
+> Trina 提供渗透决策大脑、工具执行内核、靶场适配、信任模式、报告与评测。
 
 ---
 
@@ -14,7 +14,7 @@
 | 1 | 自动决策大脑 | `trina/brain/`：ReAct 循环 + PTES 阶段机 + 事实记忆 | 单目标全流程零人工触发：`trina run --target X` 自动完成侦察→利用→取证→收尾 |
 | 2 | 工具统一封装 | `trina/tools/`：nmap/nuclei/sqlmap/hydra 封装 + 内置引擎兜底 | 每个工具 `--list-tools` 可查、参数 schema 校验、结果结构化 |
 | 3 | 多靶场兼容 | `trina/adapters/`：local / docker-compose / http-range / tsecbench | 同一份 `trina run` 接入 Pikachu、DVWA、Vulhub、VulnStack、TSecBench |
-| 4 | 安全合规护栏 | `trina/scope.py` + `trina/audit.py` | 越界目标被硬拒绝；审计日志哈希链可校验；破坏性动作默认拦截 |
+| 4 | 执行信任与审计 | `trina/scope.py` + `trina/audit.py` | 默认 full 自动执行；可切 restricted 复现边界；审计日志哈希链可校验 |
 | 5 | 标准报告 | `trina/report/`：Markdown + 自包含 HTML | 报告含漏洞详情/利用过程/flag/修复建议/CVSS/证据时间线 |
 
 ### 1.2 评测验收线（两轮）
@@ -130,21 +130,14 @@ flowchart TB
 
 ---
 
-## 4. 安全合规护栏（硬约束）
+## 4. 执行信任与审计
 
-1. **授权网段硬编码 + 白名单**：`configs/trina.yaml#scope.authorized_cidrs`（默认仅私网 RFC1918 + 127.0.0.1）。
-   任何目标在发起连接前解析为 IP 集合并逐一校验；非白名单**直接拒绝**，不进入 LLM 可选动作。
-2. **公网默认禁止**：`allow_public: false`；开启需显式改动配置并在报告中留痕。
-3. **破坏性动作分级**：`detect < verify < exploit`。
-   - `detect`：只读探测（扫描、指纹、非侵入检测）。
-   - `verify`：可致轻微状态变更（上传验证文件、回显型利用、单次弱口令验证）。
-   - `exploit`：命令执行、写 shell、批量爆破、数据导出；**默认关闭**，需 `destructive: true` + 目标在 `destructive_hosts`。
-   - 绝对禁止清单（代码级 deny，任何配置都无法开启）：DoS/洪水、格式化/删除系统文件、勒索加密、
-     拖库导出业务数据、对第三方跳板攻击、`--os-shell/--os-pwn/--file-write` 类外带写文件。
-4. **限速与并发**：全局 QPS 上限、每主机并发上限、爆破字典规模上限（避免意外打成 DoS）。
-5. **审计留痕**：每次动作一条 JSONL，含 `prev_hash` 形成哈希链；`trina audit verify` 可校验完整性；
-   拒绝事件同样记录（含拒绝原因）。
-6. **证据最小化**：仅保存验证所需的最小证据（响应片段、flag、截图），不落地业务数据。
+1. **默认完全信任**：`scope.trust_mode=full`，已注册工具不因公网、动作等级、破坏性方法、载荷模式或尝试规模被拒绝。
+2. **显式受限模式**：`scope.trust_mode=restricted` 恢复网段白名单、`detect < verify < exploit`、破坏性主机列表、禁止模式和规模上限。
+3. **无需逐步审批**：控制台、运行、play 和定时任务默认 `approve=off`；只有使用者显式开启才等待确认。
+4. **限速与并发**：两种模式都保留全局 QPS 和单主机并发，作为执行稳定性控制而非授权闸门。
+5. **审计留痕**：每次动作一条 JSONL，含 `prev_hash` 形成哈希链；`trina audit verify` 可校验完整性。
+6. **执行完整性**：参数 schema、工具注册、超时、取消租约和 TSecBench 控制面校验不因 full 模式被移除。
 
 ---
 
@@ -163,7 +156,7 @@ flowchart TB
 
 | 证据 | 命令 | 结果 |
 |---|---|---|
-| 端到端全自动打穿 lab | `trina run --target http://127.0.0.1:9099 --allow-exploit` | 16 步 / 50s / $0.0068；SQLi 已验证、RCE 已验证、`rce_exec id` → `uid=33(www-data)`、取得 flag、0 次护栏拒绝、报告落盘 |
+| 端到端全自动打穿 lab | `trina run --target http://127.0.0.1:9099` | 16 步 / 50s / $0.0068；SQLi 已验证、RCE 已验证、`rce_exec id` → `uid=33(www-data)`、取得 flag、0 次护栏拒绝、报告落盘 |
 | 审计链完整性 | `trina audit verify logs/<run_id>.jsonl` | 185 条记录哈希链完整；人为改一条即报「第 3 条内容被篡改」 |
 | 护栏拦截 | `trina guard check 8.8.8.8`、`trina guard argv -- sqlmap -u … --os-shell` | 均被拒绝并给出原因与合规提示 |
 | omp 集成 | omp 内调用 `trina_guard`；bash 执行 `nmap -sV 8.8.8.8` | 技能 `pentest-agent` 被发现；扩展工具可调用；bash 被扩展拦截并回传拒绝原因 |

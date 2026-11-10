@@ -1,16 +1,17 @@
-"""授权范围护栏 —— Trina 的**唯一放行判据**。
+"""Trina 工具执行守卫。
 
 任何出网动作（工具调用、外部二进制、HTTP 请求）在真正执行前都必须经过本模块。
-护栏判据只来自 `ScopeConfig`（配置文件），**不来自大模型**：模型只能申请，不能授权。
+默认 ``scope.trust_mode=full``，已注册工具直接执行；显式切到 ``restricted`` 时恢复旧边界。
 
-三层防线
---------
+受限模式的三层防线
+------------------
 1. 目标校验 `check_target`：解析目标 → 全部 IP 必须落在授权网段且不在拒绝网段；
-   公网默认拒绝（`allow_public=false`）；回环受 `allow_loopback` 控制。
+   受限模式默认拒绝公网（`allow_public=false`）；回环受 `allow_loopback` 控制。
 2. 动作等级 `check_action_level`：detect(只读) < verify(可验证) < exploit(命令执行/批量爆破)，
    超过 `scope.exploit_level` 的动作直接拒绝。
-3. 硬禁止清单 `check_argv`：DoS、系统破坏、数据导出、外带写文件等模式，
-   **无论配置如何都无法开启**（`FORBIDDEN_ARGV_PATTERNS` / `FORBIDDEN_SHELL_PATTERNS`）。
+3. 禁止清单 `check_argv`：DoS、系统破坏、数据导出、外带写文件等模式。
+
+``full`` 模式不做上述授权拒绝，但仍保留格式/参数校验、审计、超时、取消与限速。
 """
 
 from __future__ import annotations
@@ -65,7 +66,7 @@ def execution_window(lease: ExecutionLease):
 
 
 # ---------------------------------------------------------------------------
-# 硬禁止清单：任何配置都无法放行
+# 受限模式禁止清单
 # ---------------------------------------------------------------------------
 
 #: 外部工具参数级禁止（正则作用于「工具名 + 参数」拼串后的文本）
@@ -106,7 +107,7 @@ FORBIDDEN_PAYLOAD_PATTERNS: list[tuple[str, str]] = [
     (r"\bINTO\s+(OUT|DUMP)FILE\b", "数据库写文件禁止"),
     (r"\bLOAD_FILE\s*\(", "读取服务器文件禁止"),
     # 注意：/etc/passwd 是 LFI 验证的标准无害取证（不含口令哈希），允许；
-    # 真正涉及凭据的文件（shadow/sudoers/私钥）仍硬禁止。
+    # 受限模式下，真正涉及凭据的文件（shadow/sudoers/私钥）禁止读取。
     (r"/etc/shadow\b", "读取系统口令哈希禁止"),
     (r"/etc/sudoers\b", "读取提权配置禁止"),
     (r"(/root/\.ssh/|/\.ssh/id_[a-z]+)", "读取 SSH 私钥禁止"),
@@ -361,6 +362,34 @@ class ScopeGuard:
         except ValueError as exc:
             return self._record(self._deny("format", str(exc), target=str(raw), hint="请提供 host:port 或 http(s):// 形式的合法目标"), action)
 
+        if self.scope.full_trust:
+            if info.is_cidr:
+                try:
+                    network = ipaddress.ip_network(info.host, strict=False)
+                except ValueError as exc:
+                    return self._record(self._deny("format", f"非法网段 {info.host!r}: {exc}", target=raw), action)
+                return self._record(
+                    Decision(True, category="scope", target=raw, reason="full 信任模式直接放行", detail={"cidr": str(network), "trust_mode": "full"}),
+                    action,
+                )
+            ips: tuple[str, ...] = ()
+            if self.scope.resolve_dns:
+                try:
+                    ips = resolve_ips(info.host, self.resolver)
+                except ValueError:
+                    # full 模式不把 DNS 预解析当作授权条件；真实连接错误由工具返回。
+                    ips = ()
+            return self._record(
+                Decision(
+                    True,
+                    category="scope",
+                    target=raw,
+                    reason="full 信任模式直接放行",
+                    detail={"ips": list(ips), "host": info.host, "port": info.port or port, "trust_mode": "full"},
+                ),
+                action,
+            )
+
         if info.is_cidr:
             try:
                 network = ipaddress.ip_network(info.host, strict=False)
@@ -502,6 +531,11 @@ class ScopeGuard:
         """校验动作等级是否超过配置上限。"""
         if required not in ACTION_LEVELS:
             return self._record(self._deny("format", f"未知动作等级 {required!r}", target=target), "level")
+        if self.scope.full_trust:
+            return self._record(
+                Decision(True, category="action-level", target=target, reason=f"full 信任模式放行 {required} 动作"),
+                "level",
+            )
         if ACTION_LEVELS.index(required) > self.scope.level_index:
             return self._record(
                 self._deny(
@@ -517,6 +551,11 @@ class ScopeGuard:
 
     def check_destructive(self, *, target: str = "", reason: str = "") -> Decision:
         """破坏性动作总闸：需 destructive=true 且目标在 destructive_hosts。"""
+        if self.scope.full_trust:
+            return self._record(
+                Decision(True, category="destructive", target=target, reason="full 信任模式放行破坏性动作"),
+                "destructive",
+            )
         if not self.scope.destructive:
             return self._record(
                 self._deny("destructive", "破坏性动作总开关为关闭状态", target=target, hint="改用非破坏性验证手法"),
@@ -537,21 +576,22 @@ class ScopeGuard:
 
     # ------------------------------------------------------------ 参数/命令
     def check_argv(self, argv: Iterable[str], *, tool: str = "", target: str = "", required_level: str = "detect") -> Decision:
-        """校验外部二进制参数：硬禁止清单 + 动作等级 + 目标范围。"""
+        """校验外部二进制参数；禁止清单只在 restricted 模式生效。"""
         argv = [str(a) for a in argv]
         text = " ".join(argv)
-        for pattern, why in _FORBIDDEN_ARGV:
-            if pattern.search(text):
-                return self._record(
-                    self._deny(
-                        "forbidden",
-                        f"参数命中硬禁止规则 {pattern.pattern!r}：{why}",
-                        target=target,
-                        hint="该操作在实训环境中永不允许，请改用非破坏性验证",
-                        tool=tool,
-                    ),
-                    "argv",
-                )
+        if not self.scope.full_trust:
+            for pattern, why in _FORBIDDEN_ARGV:
+                if pattern.search(text):
+                    return self._record(
+                        self._deny(
+                            "forbidden",
+                            f"参数命中受限模式禁止规则 {pattern.pattern!r}：{why}",
+                            target=target,
+                            hint="切换手法，或在明确需要时使用 full 信任模式",
+                            tool=tool,
+                        ),
+                        "argv",
+                    )
         level_decision = self.check_action_level(required_level, target=target, reason=f"工具 {tool or argv[:1]}")
         if level_decision.denied:
             return level_decision
@@ -566,10 +606,12 @@ class ScopeGuard:
 
     def check_payload(self, payload: str, *, target: str = "") -> Decision:
         """校验注入/上传/命令载荷中的危险模式。"""
+        if self.scope.full_trust:
+            return self._record(Decision(True, category="forbidden", target=target, reason="full 信任模式放行载荷"), "payload")
         for pattern, why in _FORBIDDEN_PAYLOAD:
             if pattern.search(payload or ""):
                 return self._record(
-                    self._deny("forbidden", f"载荷命中硬禁止规则 {pattern.pattern!r}：{why}", target=target, hint="仅做无害验证，禁止破坏数据"),
+                    self._deny("forbidden", f"载荷命中受限模式禁止规则 {pattern.pattern!r}：{why}", target=target, hint="切换手法，或在明确需要时使用 full 信任模式"),
                     "payload",
                 )
         return self._record(Decision(True, category="forbidden", target=target, reason="载荷合规"), "payload")
@@ -589,10 +631,9 @@ class ScopeGuard:
         if target_decision.denied:
             return target_decision
         if method in DESTRUCTIVE_METHODS:
-            if not self.scope.exploit_level == "exploit":
-                return self._record(
-                    self._deny("action-level", f"{method} 属破坏性方法，需要 exploit 等级", target=url), "http"
-                )
+            destructive_level = self.check_action_level("exploit", target=url, reason=f"HTTP {method}")
+            if destructive_level.denied:
+                return destructive_level
             destructive = self.check_destructive(target=url, reason=f"{method} 请求")
             if destructive.denied:
                 return destructive
@@ -621,6 +662,16 @@ class ScopeGuard:
             ]
         except ValueError as exc:
             return self._record(self._deny("format", f"非法重定向 URL: {exc}", target=destination), "http.redirect")
+        if self.scope.full_trust:
+            if after.scheme.lower() not in ("http", "https") or not after.hostname:
+                return self._record(self._deny("format", "重定向目标必须是 http(s) URL", target=destination), "http.redirect")
+            target_decision = self.check_target(destination, action="http.redirect.target")
+            if target_decision.denied:
+                return target_decision
+            return self._record(
+                Decision(True, category="redirect", target=destination, reason="full 信任模式允许跨源重定向"),
+                "http.redirect",
+            )
         if origins[0] != origins[1] or after.username is not None or after.password is not None:
             return self._record(
                 self._deny(
@@ -641,6 +692,8 @@ class ScopeGuard:
 
     def check_brute_scale(self, attempts: int, *, target: str = "") -> Decision:
         """爆破规模上限校验（防止把靶机打成 DoS）。"""
+        if self.scope.full_trust:
+            return self._record(Decision(True, category="rate", target=target, reason="full 信任模式不限制尝试规模"), "brute")
         if attempts > self.scope.max_brute_attempts:
             return self._record(
                 self._deny(
@@ -656,6 +709,7 @@ class ScopeGuard:
     # ---------------------------------------------------------------- 视图
     def summary(self) -> dict[str, Any]:
         return {
+            "trust_mode": self.scope.trust_mode,
             "exploit_level": self.scope.exploit_level,
             "destructive": self.scope.destructive,
             "allow_public": self.scope.allow_public,

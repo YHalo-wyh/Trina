@@ -1,14 +1,15 @@
 # Trina · 全自动渗透测试 Agent
 
-## 项目检查入口（0.2.0）
+## 项目检查入口（0.3.0）
 
 | 文档 | 检查内容 |
 |---|---|
 | [需求](需求.md) | 使用者、场景、20 项功能需求、8 项质量要求、当前状态与验收口径 |
 | [规约](规约.md) | CLI 与 Agent 接口、任务清单、状态转换、Worker 租约、检查点、错误分支与测试场景 |
-| [设计决策](设计决策.md) | 原有单 Agent 决策链，以及 0.2.0 的 Agent 更新记录、修改原因、取舍与验证边界 |
+| [设计决策](设计决策.md) | 原有单 Agent 决策链，以及 0.2.0—0.3.0 的更新记录、修改原因与兼容边界 |
+| [更新日志](CHANGELOG.md) | 各版本面向使用者的变更摘要、兼容说明与验证状态 |
 
-《设计决策》第 1—27 节保留早期基线的逐步分析，第 28—30 节记录 0.2.0 的 CLI 与 Swarm 更新。旧课程规格与历史证据继续按原版本保存，核对当前实现应优先阅读上表三份文档。
+《设计决策》第 1—27 节保留早期基线，第 28—43 节记录 0.2.0 演进，第 44 节记录 0.3.0 的 full trust 决策。旧课程规格与历史证据继续按原版本保存。
 
 [开题报告与第一次汇报](开题报告与第一次汇报.md) · [需求规格](docs/course/specification.md) · [课程材料目录](docs/course/README.md)
 
@@ -34,7 +35,7 @@
 
 **V2 智能体群首版**：[Swarm 使用说明](docs/SWARM.md) · `trina swarm --target http://127.0.0.1:9099 --goal "验证目标" --workers 2`
 
-自动化渗透测试 Agent：**大模型 ReAct 决策 + 全套工具封装 + 多靶场适配 + 硬性安全护栏 + 标准报告 + 评测框架**。
+自动化渗透测试 Agent：**大模型 ReAct 决策 + 全套工具封装 + 多靶场适配 + 默认完全信任 + 标准报告 + 评测框架**。
 
 ```bash
 scripts/install.sh               # 装成全局命令，使用 /model 选择已保存连接
@@ -74,7 +75,7 @@ scripts/dev.sh play --target 127.0.0.1
 
 资料检索使用 **Google / Bing**；项目搜索工具尚未接入，这两个来源已纳入浏览器接入约定。
 
-首页使用斜切填充的 TRINA 大字，带切角、深色侧边和稀疏星点，字面呈粉紫渐变与柔和高光，下方只显示版本号 `v0.2.0`。字形直接由文本绘制，窄窗口自动使用紧凑字形；`--plain` 保留相同字符布局并关闭颜色。运行中仍可输入补充，按一次 Enter 发送，多行粘贴与发送回显保持。
+首页使用斜切填充的 TRINA 大字，带切角、深色侧边和稀疏星点，字面呈粉紫渐变与柔和高光，下方只显示版本号 `v0.3.0`。字形直接由文本绘制，窄窗口自动使用紧凑字形；`--plain` 保留相同字符布局并关闭颜色。运行中仍可输入补充，按一次 Enter 发送，多行粘贴与发送回显保持。
 
 ```text
        ·                  ✦                  ·
@@ -85,7 +86,7 @@ scripts/dev.sh play --target 127.0.0.1
     █▓     █▓ ▀█▄       █▓     █▓  ▀██▓  ███████▓
    █▓     █▓  ▀█▄      █▓     █▓   ▀█▓  █▓    █▓
   ▄█▓▄    █▓   ▀█▓   ▀███▓▀   █▓    █▓  █▓    █▓
-                      v0.2.0
+                      v0.3.0
 ```
 
 交互终端的输入与会话用量固定在屏幕底部，持续显示 Token、输入 / 输出和缓存命中率；回复卡片只呈现正式输出。思考状态使用动态星形标记，工具过程与最终回答分开排版。`/new` 清零会话用量，切换模型继续累计；`/usage` 查看详情。布局和统计口径见 [CLI 界面说明](docs/CLI_UI.md#固定底栏与过程排版)。
@@ -97,7 +98,7 @@ scripts/dev.sh play --target 127.0.0.1
 | 1. 自动决策大脑 | `trina/brain/` | ReAct 循环 + PTES 阶段机（事实驱动推进）+ **假设台账**（按价值×置信度×信息增量排序验证）+ 失败分类与循环守卫（无新信息就打转→换参数→换工具→请人介入）+ 预算收敛；动作协议是**文本 JSON**，跨模型可移植、可回放 |
 | 2. 工具统一封装 | `trina/tools/` | 17 个目标分析工具 + 1 个可选专职 Agent 咨询工具，统一 `ToolSpec/ToolResult` 契约；**外部二进制优先 + 内置 Python 引擎兜底**（本机无 nmap/nuclei/sqlmap/hydra 也能跑） |
 | 3. 靶场适配 | `trina/adapters/` | `local` / `docker-compose` / `http-range` / `tsecbench` 四类适配器；仓库不再携带静态靶场注册表，按需从 `~/.trina/ranges` 或显式 YAML 载入 |
-| 4. 安全合规护栏 | `trina/scope.py` + `trina/audit.py` | 授权网段白名单硬校验、动作分级、破坏性闸门、DoS/删库硬禁止、限速与爆破规模上限、SHA-256 哈希链审计 |
+| 4. 执行信任与审计 | `trina/scope.py` + `trina/audit.py` | 默认 `full` 信任并自动执行；可切换 `restricted` 恢复网段、动作和载荷边界；两种模式都保留超时、取消、限速和 SHA-256 哈希链审计 |
 | 5. 标准报告 | `trina/report/` | Markdown + 自包含 HTML（内联 CSS/SVG，无外部依赖），含执行摘要、攻击路径、漏洞详情（CVSS/CWE/证据/复现/修复）、**证据链与假设台账**（mermaid 关系图，结论可反向追溯）、凭据与 flag、工具时间线、合规声明 |
 
 ### 决策可解释（洞察层）
@@ -150,17 +151,16 @@ strict 模式下咨询工具也需要显式注册检查项。尚无实测数据�
 
 | 能力 | 命令 | 说明 |
 |---|---|---|
-| **对话式控制台** | `trina`（或 `trina console`） | **直接说人话**：`你好` / `帮我看看 127.0.0.1:9099 有什么漏洞` → Trina 回答；需要动手时它自己调工具（照样过授权控制器、护栏与审计）。人工审批默认关闭，按需用 `--approve` 显式开启。`/help` 看命令；`/model` 换模型、`/backend` 换后端、`/history` 看历史、`/usage` 看用量、`/save` 持久化 |
+| **对话式控制台** | `trina`（或 `trina console`） | **直接说人话**：需要动手时直接调用工具。默认 `full` 信任且人工审批关闭；只有显式 `--approve` 才进入确认。`/help` 看命令，`/model` 管理模型 |
 | 一条命令开打 | `trina play [--target T] [--range NAME] [--goal G] [--approve MODE]` | 自动准备靶场（默认内置 lab）→ 跑完整任务（含阶段机与结论/覆盖统计）→ 出报告 |
 | 运行中介入 | `hint <文本>`（或直接说人话）· `pause/resume` · `stop` · `status` · `/revoke <target_id>` 撤权 | 运行中说人话＝介入提示；显式开启审批后可用 `y/n`，**超时即拒绝** |
 | 评价 Agent | `trina review [--state runs/<id>/state.json]` | 只读复核：缺证据的声明、结论一致性、覆盖缺口、边界事件、审计链 |
 
-> 对话模式与任务模式共用同一套安全机制：`ToolRegistry`（护栏+审计收口）、`AuthorizationController`（注册表/预算/撤权）、
-> 人工审批闸门为可选高级控制，默认 `off`。模型在对话里同样**不能**扩大范围，也不能把工具输出当指令。
+> 对话模式与任务模式共用 `ToolRegistry`、执行超时和审计链。默认 `scope.trust_mode=full`、`approve=off`，不会逐目标或逐动作申请；显式切换 `restricted` 或 `--approve` 才启用对应限制。
 
 ## 授权策略：计划器提出，控制器批准
 
-- 默认 `policy.mode=free`，真实范围始终由 `ScopeGuard` 裁决。需要检查项约束时，在 `policy.registry_dirs` 显式配置自有 YAML；仓库不预装目标或检查项。
+- 默认 `policy.mode=free` 且 `scope.trust_mode=full`，已注册工具直接执行。需要旧范围边界时使用 `--set scope.trust_mode=restricted`；需要检查项约束时再配置 `policy.registry_dirs`。
 - 控制器（`trina/policy.py`）在执行层逐动作批准：注册 → 预算 → 撤权；模型**没有写权限**，
   也不能用"这应该安全"当许可。模式：`free`（默认）/ `guided` / `strict`（只接受显式注册的 `target_id` + `test_id`；空注册表直接拒绝）。
 - 预算与停止合同：`policy.max_checks` / `logic_seconds` / `stop_on_no_new_evidence`，到点即停并留下**已测/未测/原因**。
@@ -203,7 +203,7 @@ python3 -m trina eval adversarial --port 9100   # 只起对抗代理（WAF/封�
 ```bash
 export BENCHMARK_BASE_URL='...' BENCHMARK_TOKEN='...'
 python3 -m trina bench --dry-run                # 只列题目
-python3 -m trina bench --allow-exploit          # 逐题起容器 → 渗透 → 提交 flag → 回收
+python3 -m trina bench                          # 逐题起容器 → 渗透 → 提交 flag → 回收
 ```
 
 托管模式镜像与平台操作见 [`docs/TSECBENCH_AGENT.md`](docs/TSECBENCH_AGENT.md)；镜像入口为
@@ -216,10 +216,10 @@ OpenCode Go 的接入与两轮单题冒烟结果见 [2026-11-04 评测报告](�
 ```bash
 python3 -m trina doctor                                   # 环境自检（后端连通性、外部工具、护栏边界）
 python3 -m trina tools --verbose                          # 工具清单与参数表
-python3 -m trina guard check 8.8.8.8 127.0.0.1            # 目标是否授权（8.8.8.8 会被拒）
-python3 -m trina guard argv -- sqlmap -u http://x --os-shell   # 命令是否会被拒
-python3 -m trina tool port_scan --target 127.0.0.1        # 单工具执行（带护栏与审计）
-python3 -m trina run --target 127.0.0.1:9099 --allow-exploit   # 放开到 exploit 等级
+python3 -m trina guard check 8.8.8.8 127.0.0.1            # full 模式下均直接放行
+python3 -m trina tool port_scan --target 127.0.0.1        # 单工具执行并记录审计
+python3 -m trina run --target 127.0.0.1:9099              # 默认无需 --allow-exploit
+python3 -m trina run --target 127.0.0.1 --set scope.trust_mode=restricted  # 显式恢复旧边界
 python3 -m trina watch                                    # 实时监视最近一次运行（工作台视图）
 python3 -m trina watch <run_id> --once                    # 只打印一次（脚本留档）
 python3 -m trina ranges list                              # 靶场适配器状态
@@ -231,8 +231,7 @@ python3 -m unittest discover -s tests                   # 完整回归，数量�
 
 ## 可选 omp 集成（在本目录里开启会话）
 
-- `.omp/extensions/trina.ts`：把 Trina 暴露成 omp 工具 —— `trina_run` / `trina_tool` / `trina_guard` / `trina_tools` / `trina_report`，并注册 `/pentest` 命令；
-  同时对 omp 内建 `bash` 做**第二道防线**拦截（DoS/删库/`--os-shell` 等参数、对公网地址的攻击性工具调用）。
+- `.omp/extensions/trina.ts`：把 Trina 暴露成 omp 工具 —— `trina_run` / `trina_tool` / `trina_guard` / `trina_tools` / `trina_report`，并注册 `/pentest` 命令；扩展不再额外拦截 omp 内建 `bash`。
 - `.omp/skills/pentest-agent/SKILL.md`：渗透作业技能（何时用、怎么用、护栏规则、报告规范）。
 - `.omp/skills/solve-challenge` 与 `.omp/skills/ctf-*`：项目级 CTF 分类、解题参考、相似题检索与 writeup 技能；固定上游提交及 MIT 许可见 `.omp/skills/CTF_SKILLS_SOURCE.md`。
 - `.omp/config.yml`：项目级配置覆盖（默认留空，示例见注释）。
@@ -257,11 +256,10 @@ tests/          单元测试（护栏/审计/注册表/大脑/状态/报告/评�
 - 外部工具（nmap / nuclei / sqlmap / hydra / ffuf / nmap 等）**非必需**：存在即优先使用，缺失自动降级到内置引擎并在结果里标注 `engine=builtin`。
 - Docker 靶场可选；WSL 需启用 Docker Desktop 集成。自定义适配配置放在 `~/.trina/ranges` 或通过 `--range <YAML路径>` 显式传入。
 
-## 安全边界（务必阅读 `docs/GUARDRAILS.md`）
+## 执行信任模式（详见 `docs/GUARDRAILS.md`）
 
-- 只允许 `configs/trina.yaml#scope.authorized_cidrs` / `authorized_hosts` 内的目标；公网默认拒绝；回环可控。
-- 动作分级 `detect < verify < exploit`，默认上限 `verify`；破坏性动作默认关闭，且需显式主机白名单。
-- **永不允许**：DoS/洪泛、删库删表、`--os-shell/--file-write/--dump-all`、写 webshell、格式化/删除系统文件、执行远端下载脚本。
-- 每次动作（含被拒绝的）都写入审计哈希链，`trina audit verify` 可检出篡改。
+- 默认 `scope.trust_mode=full`：公网、`exploit`、破坏性方法、载荷模式和尝试规模不触发授权拒绝，也不弹人工审批。
+- `scope.trust_mode=restricted`：恢复原来的网段白名单、动作等级、破坏性列表、禁止模式和规模限制。
+- 两种模式都保留参数类型校验、工具注册、超时、取消、速率控制和审计哈希链。
 
-> 仅可用于**已获授权**的实训/竞赛靶场。越界测试是违法行为，本项目的第一道防线就在 `trina/scope.py`。
+> 信任模式决定软件是否阻塞执行；任务授权范围由使用者负责。

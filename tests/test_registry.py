@@ -85,6 +85,7 @@ class TestRegistry(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.cfg = TrinaConfig.load()
+        self.cfg.scope.trust_mode = "restricted"
         self.cfg.run.tool_timeout = 2
         self.audit = AuditLog.open(self.tmp.name, run_id="reg", resume=False)
         self.guard = ScopeGuard(self.cfg.scope, audit=self.audit)
@@ -152,6 +153,11 @@ class TestRegistry(unittest.TestCase):
         self.registry.execute("echo_tool", {"target": "8.8.8.8"}, self.ctx)
         events = [record.get("event") for record in self.audit.read_all()]
         self.assertIn("tool.denied", events)
+
+    def test_full_trust_executes_without_scope_or_risk_denial(self):
+        self.cfg.scope.trust_mode = "full"
+        result = self.registry.execute("destructive_tool", {"target": "8.8.8.8"}, self.ctx)
+        self.assertTrue(result.ok, result.error)
 
     # ------------------------------------------------------------------ 执行
     def test_success_path_absorbs_facts(self):

@@ -2,7 +2,7 @@
 
 设计要点
 --------
-* 配置是**唯一**的可变输入面：护栏边界（授权网段/动作等级）只来自这里。
+* 默认采用 ``full`` 信任模式；需要旧边界时显式切换到 ``restricted``。
 * 任何字段都可用 `TRINA_<SECTION>_<KEY>` 环境变量覆盖（如 `TRINA_SCOPE_EXPLOIT_LEVEL=detect`）。
 * 上下文管理器 `TrinaConfig.load()` 返回不可变语义的对象，调用方不应就地改字段
   （需要临时覆盖请用 `dataclasses.replace` 或 `with_overrides`）。
@@ -25,6 +25,7 @@ DEFAULT_CONFIG_PATH = SOURCE_CONFIG_PATH if SOURCE_CONFIG_PATH.exists() else PAC
 
 #: 动作等级，从低到高。工具声明所需等级，护栏比较后放行/拒绝。
 ACTION_LEVELS = ("detect", "verify", "exploit")
+TRUST_MODES = ("full", "restricted")
 
 
 class ConfigError(ValueError):
@@ -33,8 +34,9 @@ class ConfigError(ValueError):
 
 @dataclass
 class ScopeConfig:
-    """授权边界。护栏的判据全部来自这里，不来自 LLM。"""
+    """执行信任配置。默认完全信任，受限模式保留原有边界。"""
 
+    trust_mode: str = "full"
     authorized_cidrs: list[str] = field(
         default_factory=lambda: [
             "127.0.0.0/8",
@@ -59,6 +61,8 @@ class ScopeConfig:
     resolve_dns: bool = True
 
     def validate(self) -> None:
+        if self.trust_mode not in TRUST_MODES:
+            raise ConfigError(f"scope.trust_mode 必须是 {TRUST_MODES} 之一，得到 {self.trust_mode!r}")
         if self.exploit_level not in ACTION_LEVELS:
             raise ConfigError(f"scope.exploit_level 必须是 {ACTION_LEVELS} 之一，得到 {self.exploit_level!r}")
         import ipaddress
@@ -77,6 +81,10 @@ class ScopeConfig:
     @property
     def level_index(self) -> int:
         return ACTION_LEVELS.index(self.exploit_level)
+
+    @property
+    def full_trust(self) -> bool:
+        return self.trust_mode == "full"
 
 
 @dataclass
@@ -394,9 +402,16 @@ class TrinaConfig:
         return _resolve(raw, base=self.runtime_root)
 
     def scope_prompt_block(self) -> str:
-        """给 LLM 看的授权边界描述（与护栏真实判据同源，避免提示词漂移）。"""
+        """给运行协议看的信任模式摘要。"""
         s = self.scope
+        if s.full_trust:
+            return (
+                "信任模式: full（默认完全信任）\n"
+                "已注册工具可直接执行；目标、动作等级、破坏性方法、载荷模式与尝试规模不触发授权拒绝。\n"
+                f"仍保留参数校验、执行超时、取消、审计与速率控制: {s.max_qps} req/s，单主机并发 {s.max_host_concurrency}。"
+            )
         lines = [
+            "信任模式: restricted（显式受限）",
             f"授权网段: {', '.join(s.authorized_cidrs) or '(无)'}",
             f"额外授权主机: {', '.join(s.authorized_hosts) or '(无)'}",
             f"显式拒绝网段: {', '.join(s.deny_cidrs) or '(无)'}",

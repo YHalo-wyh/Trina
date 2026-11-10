@@ -154,7 +154,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         "外部工具",
     )
 
-    rule("护栏边界")
+    rule("执行信任模式")
     guard = ScopeGuard(config.scope)
     print(config.scope_prompt_block())
 
@@ -267,7 +267,7 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     print(render_panel("Trina / 任务", rows=[("目标", target), ("任务", goal or "按配置执行"),
                        ("模型", f"{display_model(config.llm.model, config.llm.reasoning_effort)} · {config.llm.backend}"),
-                       ("动作上限", config.scope.exploit_level)], color=use_color()))
+                       ("信任模式", config.scope.trust_mode)], color=use_color()))
 
     def on_step(step) -> None:
         print(render_step(step, color=use_color()))
@@ -970,7 +970,7 @@ def build_parser() -> argparse.ArgumentParser:
     bench.add_argument("--gateway", action="store_true", help="强制把模型地址改写成 .tsecbench.gw 网关")
     bench.add_argument("--model", help="覆盖模型名")
     bench.add_argument("--backend", choices=["omp", "openai", "replay"])
-    bench.add_argument("--allow-exploit", action="store_true", help="动作等级提升到 exploit（答题需要）")
+    bench.add_argument("--allow-exploit", action="store_true", help="restricted 模式兼容项；full 模式无需设置")
     bench.add_argument("--json", action="store_true", help="输出 JSON 摘要")
     bench.set_defaults(func=cmd_bench)
 
@@ -996,7 +996,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument(
         "--allow-exploit",
         action="store_true",
-        help="把动作等级上限提升到 exploit（允许命令执行与批量爆破；破坏性动作仍需配置单独开启）",
+        help="restricted 模式兼容项：把动作等级上限提升到 exploit；full 模式无需设置",
     )
     run.add_argument("--no-report", action="store_true", help="不生成报告")
     run.add_argument("--teardown", action="store_true", help="结束后关闭自建靶场")
@@ -1014,7 +1014,7 @@ def build_parser() -> argparse.ArgumentParser:
     swarm.add_argument("--model", help="覆盖模型名")
     swarm.add_argument("--backend", choices=["omp", "openai", "replay"])
     swarm.add_argument("--replay", help="离线回放脚本（每个 Worker 独立加载）")
-    swarm.add_argument("--allow-exploit", action="store_true", help="动作等级提升到 exploit")
+    swarm.add_argument("--allow-exploit", action="store_true", help="restricted 模式兼容项；full 模式无需设置")
     swarm.add_argument("--json", action="store_true", help="输出 JSON 摘要")
     swarm.set_defaults(func=cmd_swarm)
 

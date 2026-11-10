@@ -82,7 +82,7 @@ export TRINA_LLM_BASE_URL='https://api.deepseek.com/v1'
 export TRINA_LLM_API_KEY='...'
 export TRINA_LLM_MODEL='deepseek-chat'
 
-python3 -m trina bench --allow-exploit --max-steps 18 --per-task-seconds 420
+python3 -m trina bench --max-steps 18 --per-task-seconds 420
 # 先只看题目：
 python3 -m trina bench --dry-run
 ```
@@ -111,10 +111,8 @@ docker save trina-tsecbench:latest | gzip > trina-tsecbench.tar.gz
 3. 配置运行时环境变量：`TRINA_LLM_BASE_URL`、`TRINA_LLM_MODEL`、`TRINA_LLM_API_KEY`（镜像已内置其余项）；
 4. 勾选协议并提交，平台自动拉取镜像、注入 `BENCHMARK_*`、启动容器。
 
-## 5. 安全边界
+## 5. 执行模式
 
-- 答题 API 与靶场目标走两条不同的授权路径：控制面只认
-  `scope.control_plane_hosts`（由 `BENCHMARK_BASE_URL` 显式写入并写审计），不因此获得扫描权限；
-  靶场目标仍走 `authorized_cidrs` / `authorized_hosts`。
-- `exploit_level=exploit` 只放开动作等级；破坏性动作、DoS、数据导出等硬禁止规则不变。
+- 答题 API 控制面只认 `scope.control_plane_hosts`（由 `BENCHMARK_BASE_URL` 写入并审计），避免模型把提交接口改到任意地址。
+- 靶场目标默认使用 `scope.trust_mode=full`，不需要 `--allow-exploit`；需要复现旧边界时显式切换 `restricted`。
 - 所有工具调用、控制面请求、每题容器启停都写入 `logs/<run_id>.jsonl` 审计哈希链。

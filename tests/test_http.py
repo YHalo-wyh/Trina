@@ -64,7 +64,9 @@ class TestHttpRedirects(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.audit = AuditLog.open(self.tmp.name, run_id="redirect", resume=False)
-        self.guard = ScopeGuard(TrinaConfig.load().scope, audit=self.audit)
+        scope = TrinaConfig.load().scope
+        scope.trust_mode = "restricted"
+        self.guard = ScopeGuard(scope, audit=self.audit)
         self.client = HttpClient(self.guard, timeout=2, retries=1)
         self.client.session.trust_env = False
         self.addCleanup(self.client.session.close)
@@ -80,6 +82,13 @@ class TestHttpRedirects(unittest.TestCase):
         self.assertEqual(self.servers[1].visits, [])
         self.assertEqual(len(self.client.denials), 1)
         self.assertTrue(self.audit.verify()[0])
+
+    def test_full_trust_follows_cross_origin_redirect(self):
+        self.guard.scope.trust_mode = "full"
+        self.servers[0].routes["/start"] = (302, {"Location": self.other + "/final"})
+        result = self.client.get(self.base + "/start")
+        self.assertTrue(result.ok, result.error)
+        self.assertEqual(len(self.servers[1].visits), 1)
 
     def test_redirect_query_payload_is_rechecked(self):
         self.servers[0].routes["/start"] = (302, {"Location": "/final?q=DROP%20TABLE%20users"})

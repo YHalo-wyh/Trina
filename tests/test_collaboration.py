@@ -158,6 +158,7 @@ class TestCollaboration(unittest.TestCase):
         self.assertEqual(backend.inputs, [])
 
     def test_scope_denial_precedes_specialist_model_call(self):
+        self.cfg.scope.trust_mode = "restricted"
         backend = ScriptBackend([])
         result = self.execute(self.context(backend), target="https://8.8.8.8")
         self.assertTrue(result.denied)
@@ -263,6 +264,7 @@ class TestCollaboration(unittest.TestCase):
         self.assertTrue(state.boundary_events)
 
     def test_adopting_out_of_scope_advice_still_hits_guard(self):
+        self.cfg.scope.trust_mode = "restricted"
         backend = ScriptBackend([consult(), probe("8.8.8.8"), probe("8.8.8.8"), {"final": {"summary": "停止"}}])
         state = PentestAgent(self.cfg, registry=self.registry, backend=backend).run(TARGET, max_steps=3, run_id="boundary")
         self.assertEqual(self.tool.calls, 0)

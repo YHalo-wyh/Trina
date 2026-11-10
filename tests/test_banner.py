@@ -21,7 +21,7 @@ class BannerTests(unittest.TestCase):
                     self.assertLessEqual(characters, set(" █▓▀▄·✦"))
                     self.assertTrue({"█", "▓"} <= characters)
                 self.assertLessEqual(max(map(len, text.splitlines())), width)
-                self.assertEqual(text.splitlines()[-1].strip(), "v0.2.0")
+                self.assertEqual(text.splitlines()[-1].strip(), "v0.3.0")
         self.assertGreater(len(render_home(width=88).splitlines()),
                            len(render_home(width=40).splitlines()))
 
@@ -57,7 +57,7 @@ class BannerTests(unittest.TestCase):
 
     def test_narrow_terminal_keeps_name_and_version_readable(self):
         self.assertEqual([line.strip() for line in render_home(width=20).splitlines()],
-                         ["TRINA", "v0.2.0"])
+                         ["TRINA", "v0.3.0"])
 
 
 if __name__ == "__main__":

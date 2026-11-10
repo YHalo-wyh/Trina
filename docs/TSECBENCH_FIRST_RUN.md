@@ -161,5 +161,5 @@ export TRINA_LLM_API_KEY='...'
 export TRINA_LLM_MODEL='deepseek-chat'
 
 python3 -m trina bench --dry-run
-python3 -m trina bench --allow-exploit --max-steps 36 --per-task-seconds 420
+python3 -m trina bench --max-steps 36 --per-task-seconds 420
 ```

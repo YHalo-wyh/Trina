@@ -2,7 +2,7 @@
 
 模块地图：
     trina.config    配置模型（同时是合规护栏的数据源）
-    trina.scope     授权范围护栏：所有动作的唯一放行判据
+    trina.scope     执行信任模式：默认 full，可切换 restricted
     trina.audit     审计哈希链：全程留痕、可校验
     trina.llm       大模型后端：omp / openai 兼容 / 离线回放
     trina.tools     工具集：recon / web / vuln / exploit
@@ -13,5 +13,5 @@
     trina.lab       故意脆弱的本地靶机（端到端验证用）
 """
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 __all__ = ["__version__"]

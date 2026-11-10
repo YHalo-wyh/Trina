@@ -913,6 +913,7 @@ def collect_data(
     audit_denied = audit_summary.get("denied") if isinstance(audit_summary, dict) else None
     compliance = {
         "statement": cfg.scope_prompt_block(),
+        "trust_mode": scope.trust_mode,
         "authorized_cidrs": list(scope.authorized_cidrs),
         "authorized_hosts": list(scope.authorized_hosts),
         "deny_cidrs": list(scope.deny_cidrs),
@@ -928,17 +929,15 @@ def collect_data(
         "denied_audit": audit_denied,
     }
     compliance_rows: list[list[Any]] = [
-        ["授权网段", ", ".join(compliance["authorized_cidrs"]) or "（无）"],
-        ["额外授权主机", ", ".join(compliance["authorized_hosts"]) or "（无）"],
-        ["显式拒绝网段", ", ".join(compliance["deny_cidrs"]) or "（无）"],
-        ["允许公网目标", _yesno(compliance["allow_public"])],
-        ["允许回环地址", _yesno(compliance["allow_loopback"])],
+        ["信任模式", compliance["trust_mode"]],
+        ["受限模式授权网段", ", ".join(compliance["authorized_cidrs"]) or "（无）"],
+        ["受限模式额外主机", ", ".join(compliance["authorized_hosts"]) or "（无）"],
+        ["受限模式拒绝网段", ", ".join(compliance["deny_cidrs"]) or "（无）"],
+        ["受限模式允许公网", _yesno(compliance["allow_public"])],
+        ["受限模式允许回环", _yesno(compliance["allow_loopback"])],
+        ["受限模式动作上限", compliance["exploit_level"]],
         [
-            "最大动作等级",
-            f"{compliance['exploit_level']}（detect 只读 / verify 可验证 / exploit 可执行命令）",
-        ],
-        [
-            "破坏性动作",
+            "受限模式破坏性动作",
             _yesno(compliance["destructive"])
             + (
                 f"，白名单: {', '.join(compliance['destructive_hosts'])}"

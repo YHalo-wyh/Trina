@@ -34,7 +34,7 @@ class OpenCodeGoHeadersTest(unittest.TestCase):
         self.assertEqual(len(requests), 2)
         self.assertEqual(requests[0].full_url, "http://opencode.ai.tsecbench.gw/inference/go/openai/v1/chat/completions")
         self.assertEqual(requests[0].get_header("Authorization"), "Bearer test-key")
-        self.assertEqual(requests[0].get_header("User-agent"), "Trina/0.2.0")
+        self.assertEqual(requests[0].get_header("User-agent"), "Trina/0.3.0")
         session = requests[0].get_header("X-opencode-session")
         self.assertTrue(session)
         self.assertEqual(session, requests[1].get_header("X-opencode-session"))
@@ -52,7 +52,7 @@ class OpenCodeGoHeadersTest(unittest.TestCase):
             self.assertTrue(backend.complete("system", "user").ok)
 
         self.assertIsNone(requests[0].get_header("X-opencode-session"))
-        self.assertEqual(requests[0].get_header("User-agent"), "Trina/0.2.0")
+        self.assertEqual(requests[0].get_header("User-agent"), "Trina/0.3.0")
 
     def test_native_messages_and_responses_protocols(self) -> None:
         cases = [

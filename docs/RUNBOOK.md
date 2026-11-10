@@ -15,8 +15,8 @@ trina doctor                            # 自检
 python3 -m trina doctor
 ```
 
-会检查：配置加载、外部工具（nmap/nuclei/sqlmap/hydra/ffuf/docker 是否存在）、护栏边界、工具清单、LLM 后端连通性、目录可写性。
-后端不可用时退出码为 3；护栏边界会原样打印，跑之前先确认它是你要的范围。
+会检查：配置加载、外部工具（nmap/nuclei/sqlmap/hydra/ffuf/docker 是否存在）、信任模式、工具清单、LLM 后端连通性、目录可写性。
+后端不可用时退出码为 3；默认信任模式应显示为 `full`。
 
 ## 1. 本地自证靶机（lab）
 
@@ -45,7 +45,7 @@ python3 -m trina lab --ssh --ssh-port 2222      # 弱口令 SSH 服务（trina/t
 python3 -m trina run --target http://127.0.0.1:9099 --goal "拿到 flag" --max-steps 15
 
 # 放开到命令执行等级
-python3 -m trina run --target http://127.0.0.1:9099 --allow-exploit --goal "验证 RCE 并读取 flag"
+python3 -m trina run --target http://127.0.0.1:9099 --goal "验证 RCE 并读取 flag"
 
 # 用靶场适配器（自动解析目标 + ground truth）
 python3 -m trina ranges status lab
@@ -180,17 +180,17 @@ python3 -m trina tool rce_exec --params '{"url":"http://127.0.0.1:9099/rce","par
 
 1. 在任意可达位置（宿主机 phpstudy、另一台虚拟机、容器）把靶场跑起来；
 2. 在 `~/.trina/ranges/<name>.yaml` 新建自己的适配配置，填 `base_url`（以及 DVWA 的登录凭据，适配器会先登录拿 cookie），或直接用 YAML 路径；
-3. 确认授权：`python3 -m trina guard check <靶机IP>` —— 若靶机不在 127.0.0.0/8 或 RFC1918 内，需要把它加进 `scope.authorized_cidrs`；
+3. 确认模式：`python3 -m trina guard check <靶机IP>` —— 默认 full 直接放行；只有 restricted 才需要维护 `scope.authorized_cidrs`；
 4. `python3 -m trina ranges status pikachu` 看连通性与 ground truth 条数；
 5. `python3 -m trina run --range pikachu --goal "逐模块验证漏洞"`。
 
 ### 4.2 主机靶机（VulnStack / 自建 Linux+Windows）
 
 在自有 VulnStack YAML 里填 `targets`（host/port/service），例如内网 22/3306/3389/445。
-弱口令验证示例（注意动作等级为 `exploit`，需要 `--allow-exploit`）：
+弱口令验证示例（默认 full 模式无需额外放开 exploit）：
 
 ```bash
-python3 -m trina run --allow-exploit --range vulnstack --goal "对 192.168.1.10 做服务识别与弱口令验证"
+python3 -m trina run --range vulnstack --goal "对 192.168.1.10 做服务识别与弱口令验证"
 ```
 
 ### 4.3 Docker 类靶场（Vulhub）
@@ -265,15 +265,15 @@ python3 -m trina review --state runs/<run_id>/state.json --json      # 机器可
 
 ```bash
 python3 -m trina run --target 127.0.0.1 --goal "必须覆盖 9099 与 2222 端口，并验证 /rce 的命令注入"
-python3 -m trina run --target http://127.0.0.1:9099 --allow-exploit --goal "验证文件上传漏洞并读取 /flag"
+python3 -m trina run --target http://127.0.0.1:9099 --goal "验证文件上传漏洞并读取 /flag"
 ```
 
 ## 9. 故障排查
 
 | 症状 | 排查 |
 |---|---|
-| `状态: blocked` | 目标不在授权范围。`trina guard check <target>` 看原因；确属授权范围再改 `configs/trina.yaml` |
-| 大量 `拒` | 动作等级超限（`verify`）→ 用 `--allow-exploit`；或载荷命中硬禁止清单（看 `data.guard.reason`） |
+| `状态: blocked` | 先看目标格式、控制器预算或显式撤权；若启用了 restricted，再用 `trina guard check <target>` 查边界原因 |
+| 大量 `拒` | 检查是否显式启用了 `scope.trust_mode=restricted` 或人工审批；默认 full 不按风险等级拒绝 |
 | 工具返回 `engine=builtin` | 外部工具缺失，属预期降级；装上 nmap/nuclei/sqlmap/hydra 会自动优先使用 |
 | 端口扫描结果为 0 | 目标不可达或端口被防火墙过滤；先用 `trina tool service_probe` 验证连通性 |
 | LLM 连续失败 | `trina doctor` 看后端；`omp -p --no-tools "OK"` 手工验证；必要时 `--model` 换模型 |

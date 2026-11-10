@@ -24,7 +24,7 @@ python3 -m trina play --target http://127.0.0.1:9099 --goal "拿到 flag 并验�
 # ④ 交互模式（人工审批/介入）
 python3 -m trina console --approve exploit
 ```
-> 只有第 ③/④ 步会产生真实的模型调用与网络请求，且都限制在授权范围（`configs/trina.yaml#scope`）。
+> 只有第 ③/④ 步会产生真实的模型调用与网络请求。0.3.0 默认 `scope.trust_mode=full`，不会逐目标或逐动作请求授权。
 
 ## 3. 停止与回收
 | 场景 | 操作 |
@@ -46,21 +46,22 @@ python3 -m trina review --state runs/$(ls -t runs | head -1)/state.json
 ```
 > 「恢复」的评价标准不是"跑出同样分数"，而是：**能重新跑起来、能解释结论差异、能说清未覆盖项**。
 
-## 5. 部署与执行边界（P3 硬要求）
+## 5. 部署与执行模式
 - **不挂宿主凭据**：执行环境不需要、也不应提供宿主 SSH key 或云凭证；
 - **不暴露 Docker socket**：容器名不构成安全证明，本项目的执行层不依赖容器特权；
-- **无开放外网**：默认只允许回环 + RFC1918；公网目标需要显式改配置（`allow_public` + 网段授权，双重闸门）；
-- **模型没有写权限**：显式配置的注册 YAML 与预算由操作者维护，模型只能用 `test_id` 提议。
+- **默认完全信任**：公网、exploit、破坏性方法和载荷不会触发 ScopeGuard 授权拒绝；
+- **可选受限模式**：设置 `scope.trust_mode=restricted` 恢复 0.2.0 的网段与风险边界；
+- **执行仍可追踪**：工具参数、超时、取消、限速和哈希链审计继续生效。
 
 ## 6. 已知问题（诚实清单）
 | 问题 | 影响 | 现状/规避 |
 |---|---|---|
 | 主机类场景结果有波动 | 端口覆盖/服务识别场景在不同采样下 pass 率会跳（2/3 ↔ 1/3） | 已定位为 LLM 扫描策略选择；目标里点名端口会成为硬条件（见 `docs/EVAL.md §4.2`） |
-| `exploit` 级动作默认被拒 | `rce_exec`/字典爆破在默认 `verify` 上限下不可用 | 需要时用 `--allow-exploit` 或改配置；护栏拒绝会给出合规替代路径 |
+| 受限模式下 `exploit` 被拒 | 仅 `trust_mode=restricted` 且上限较低时出现 | 调整 `exploit_level`，或恢复默认 full 模式 |
 | 外部工具缺失 | 能力降级为内置引擎（覆盖较窄） | 结果里标注 `engine=builtin`；装上 nmap/nuclei/sqlmap/hydra 自动优先 |
 | WSL 无 docker | Vulhub/VulnStack 不能一键起 | 用宿主机或 Docker Desktop 集成；配置里写远程 URL |
 | TSecBench 远程模式 | 无官方 key 不可用 | 用本地 bundle 回放（`configs/tsecbench_bundle/`）；拿到 key 只需填环境变量 |
-| 大字典爆破 | 默认 `max_brute_attempts`/限速限制规模 | 按需改配置；单凭据验证不受限 |
+| 大字典爆破 | full 模式不按次数拒绝，但仍受速率控制 | 按靶场承载能力调整 `max_qps` 与并发 |
 
 ## 7. 版本与可重复性
 - 代码版本：`git log -1 --oneline`（证据文件需标注该 commit）

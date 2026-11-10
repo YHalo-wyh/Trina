@@ -14,6 +14,7 @@ import uuid
 from typing import Any
 from urllib.parse import urlsplit
 
+from .. import __version__
 from ..config import LLMConfig
 from .base import LLMBackend, LLMResponse, LLMUsage
 
@@ -42,7 +43,7 @@ class OpenAICompatBackend(LLMBackend):
         return os.environ.get(self.config.api_key_env, "")
 
     def _headers(self) -> dict[str, str]:
-        headers = {"Content-Type": "application/json", "User-Agent": "Trina/0.2.0"}
+        headers = {"Content-Type": "application/json", "User-Agent": f"Trina/{__version__}"}
         key = self.api_key()
         if key:
             headers["Authorization"] = f"Bearer {key}"
@@ -57,7 +58,7 @@ class OpenAICompatBackend(LLMBackend):
     def _request_json(self, url: str, payload: dict | None = None, *, connectivity: bool = False) -> tuple[dict, str]:
         request = urllib.request.Request(
             url, data=json.dumps(payload).encode("utf-8") if payload is not None else None,
-            headers={"User-Agent": "Trina/0.2.0"} if connectivity else self._headers(), method="POST" if payload is not None else "GET",
+            headers={"User-Agent": f"Trina/{__version__}"} if connectivity else self._headers(), method="POST" if payload is not None else "GET",
         )
         try:
             timeout = min(max(1, self.config.timeout), 10) if connectivity else self.config.timeout

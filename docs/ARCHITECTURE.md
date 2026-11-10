@@ -4,21 +4,21 @@
 
 ## V2 首版：Swarm 运行层
 
-`trina swarm` 在现有单 Agent 执行链外增加 `trina.swarm.SwarmRuntime`。Commander 验证任务 DAG、按优先级领取就绪任务、用租约绑定 Worker，并在任务结束时原子写入 `swarm.json`。`WorkerPool` 复用后端资源；每个任务重新创建 `PentestAgent` 与按能力筛选的 `ToolRegistry`，所以 ReAct 上下文、工作目录、状态、审计和报告彼此独立。下游任务只接收前序任务的结构化事实摘要。网络目标和工具动作仍由原有 `ScopeGuard` 与注册表执行链判定。详见 [Swarm 使用说明](SWARM.md)。
+`trina swarm` 在现有单 Agent 执行链外增加 `trina.swarm.SwarmRuntime`。Commander 验证任务 DAG、按优先级领取就绪任务、用租约绑定 Worker，并在任务结束时原子写入 `swarm.json`。`WorkerPool` 复用后端资源；每个任务重新创建 `PentestAgent` 与按能力筛选的 `ToolRegistry`，所以 ReAct 上下文、工作目录、状态、审计和报告彼此独立。下游任务只接收前序任务的结构化事实摘要。网络目标和工具动作仍由 `ScopeGuard` 与注册表执行链处理；默认 full 信任，restricted 才做边界拒绝。详见 [Swarm 使用说明](SWARM.md)。
 
 ## 1. 总览
 
 ```mermaid
 flowchart TB
     CLI["trina.cli<br/>run/tool/guard/eval/report/lab/audit"]
-    OMPEXT[".omp/extensions/trina.ts<br/>omp 工具 + bash 第二道防线"]
+    OMPEXT[".omp/extensions/trina.ts<br/>omp 工具桥接"]
     AGENT["trina.brain.agent.PentestAgent<br/>ReAct 循环"]
     PLANNER["trina.brain.planner.Planner<br/>PTES 阶段机（事实驱动）"]
     PROMPTS["trina.brain.prompts<br/>空 system + 运行协议 + 容错解析"]
     POLICY["AuthorizationController<br/>注册、预算、撤权"]
     APPROVAL["可选人工审批<br/>批准 / 拒绝"]
     REG["trina.tools.registry.ToolRegistry<br/>参数校验→护栏→审计→超时→归一"]
-    GUARD["trina.scope.ScopeGuard<br/>唯一放行判据"]
+    GUARD["trina.scope.ScopeGuard<br/>full / restricted 信任模式"]
     AUDIT["trina.audit.AuditLog<br/>SHA-256 哈希链"]
     STATE["trina.state.RunState<br/>hosts/findings/creds/flags/evidence/timeline"]
     TOOLS["trina.tools：17 项目标分析 + 1 项可选咨询"]
@@ -77,8 +77,8 @@ flowchart TB
 
 | 模块 | 关键类型 / 函数 | 约定 |
 |---|---|---|
-| `trina.config` | `TrinaConfig.load(path, overrides)`、`ScopeConfig`、`scope_prompt_block()`、`runtime_root` | 配置是护栏的**唯一**数据源；`TRINA_<SECTION>_<KEY>` 环境变量可覆盖标量；未知字段直接报错（宁可启动失败）；源码产物写项目根、Wheel 产物写 `~/.trina`，不写 `site-packages` |
-| `trina.scope` | `ScopeGuard.check_target/check_argv/check_payload/check_http/check_action_level/check_destructive/check_brute_scale/throttle`；`Decision`；`ScopeViolation` | 所有判定返回 `Decision`（含 `reason`/`hint`/`category`），拒绝时把 `hint` 回灌给模型换路径 |
+| `trina.config` | `TrinaConfig.load(path, overrides)`、`ScopeConfig`、`scope_prompt_block()`、`runtime_root` | `scope.trust_mode` 默认 `full`，`restricted` 恢复旧边界；环境变量可覆盖标量；未知字段直接报错；源码产物写项目根、Wheel 产物写 `~/.trina` |
+| `trina.scope` | `ScopeGuard.check_target/check_argv/check_payload/check_http/check_action_level/check_destructive/check_brute_scale/throttle`；`Decision`；`ScopeViolation` | full 模式对合法格式直接放行；restricted 按网段、等级、破坏性、禁止模式和规模裁决；两者都记录审计并保留限速与执行租约 |
 | `trina.audit` | `AuditLog.open/append/verify/summary` | 每条记录 `hash = sha256(canonical(record - hash))`，`prev_hash` 链接；写入即 fsync；敏感字段自动脱敏 |
 | `trina.state` | `RunState.absorb(facts)`、`add_finding`、`knowledge_digest`、`summary_for_prompt`、`to_dict/from_dict` | 工具声明 facts，状态集中合并；`knowledge_digest` 排除时间、重复条目与笔记，用事实变化计算进展；`from_dict` 供工作台/复核读历史运行 |
 | `trina.tools.registry` | `ToolSpec`/`ParamSpec`/`ToolResult`/`ToolContext`/`Tool`/`ToolRegistry.execute` | 执行链是**唯一**入口；工具实现 `run(ctx, **params)`，返回 `ToolResult` |

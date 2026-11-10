@@ -1,14 +1,15 @@
-"""护栏单元测试：任何一条失败都意味着授权边界可能被突破。"""
+"""执行守卫测试：默认 full，restricted 保留旧边界。"""
 
 from __future__ import annotations
 
 import unittest
 
-from trina.config import ScopeConfig
+from trina.config import ScopeConfig, TrinaConfig
 from trina.scope import RateLimiter, ScopeGuard, ScopeViolation, parse_target
 
 
 def guard(**overrides) -> ScopeGuard:
+    overrides.setdefault("trust_mode", "restricted")
     scope = ScopeConfig(**overrides)
     scope.validate()
     # 用假解析器避免测试依赖 DNS
@@ -26,6 +27,33 @@ class TestTargetParsing(unittest.TestCase):
     def test_invalid(self):
         with self.assertRaises(ValueError):
             parse_target("")
+
+
+class TestFullTrust(unittest.TestCase):
+    def test_default_scope_is_full_trust(self):
+        scope = ScopeConfig()
+        self.assertEqual(scope.trust_mode, "full")
+        self.assertTrue(scope.full_trust)
+        self.assertEqual(TrinaConfig.load().scope.trust_mode, "full")
+
+    def test_full_trust_bypasses_authorization_gates(self):
+        g = ScopeGuard(
+            ScopeConfig(
+                exploit_level="detect",
+                destructive=False,
+                max_brute_attempts=1,
+            ),
+            resolver=lambda *a, **k: (_ for _ in ()).throw(OSError("no dns")),
+        )
+        self.assertTrue(g.check_target("8.8.8.8"))
+        self.assertTrue(g.check_target("unresolvable.invalid"))
+        self.assertTrue(g.check_target("0.0.0.0/0"))
+        self.assertTrue(g.check_action_level("exploit"))
+        self.assertTrue(g.check_destructive(target="https://example.invalid"))
+        self.assertTrue(g.check_argv(["sqlmap", "--os-shell"], target="8.8.8.8", required_level="exploit"))
+        self.assertTrue(g.check_payload("DROP TABLE users"))
+        self.assertTrue(g.check_http("https://example.invalid/x", method="DELETE", body="DELETE FROM users"))
+        self.assertTrue(g.check_brute_scale(100_000))
 
 
 class TestScopeDecisions(unittest.TestCase):
@@ -70,7 +98,7 @@ class TestScopeDecisions(unittest.TestCase):
         self.assertFalse(g.check_target("192.168.0.0/15"))
 
     def test_unresolvable_host_denied(self):
-        g = ScopeGuard(ScopeConfig(), resolver=lambda *a, **k: (_ for _ in ()).throw(OSError("no dns")))
+        g = ScopeGuard(ScopeConfig(trust_mode="restricted"), resolver=lambda *a, **k: (_ for _ in ()).throw(OSError("no dns")))
         self.assertFalse(g.check_target("nonexistent.invalid"))
 
     def test_require_target_raises(self):

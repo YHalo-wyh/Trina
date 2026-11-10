@@ -5,7 +5,7 @@
 1. **外部二进制优先，内置引擎兜底**：实训 WSL 环境常常没有安装这些工具，
    因此每个能力都必须有纯 Python 实现，外部工具只是「加速器」。
 2. **shell=False**：永远用 argv 列表调用，杜绝命令注入与通配符意外展开。
-3. **必经护栏**：`run_external()` 内先过 `guard.check_argv()`（含硬禁止清单），再执行、再审计。
+3. **统一执行**：`run_external()` 内先过 `guard.check_argv()`（full 直接放行，restricted 应用边界），再执行、再审计。
 """
 
 from __future__ import annotations

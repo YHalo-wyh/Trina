@@ -90,8 +90,11 @@ def _summary(lines: list[str], data: dict[str, Any]) -> None:
 def _compliance(lines: list[str], data: dict[str, Any]) -> None:
     compliance = data["compliance"]
     lines += _section(data, "compliance")
-    lines.append("本次测试仅针对下列授权范围内的目标执行；所有主动动作均由护栏（ScopeGuard）判定，")
-    lines.append("放行/拒绝结果写入审计哈希链，未授权目标不产生任何流量。")
+    if compliance.get("trust_mode") == "full":
+        lines.append("本次运行采用 full 信任模式：已注册工具无需逐动作或逐目标授权，执行结果仍写入审计哈希链。")
+    else:
+        lines.append("本次运行采用 restricted 模式：主动动作由 ScopeGuard 按目标与风险边界裁决，")
+        lines.append("放行/拒绝结果写入审计哈希链，未授权目标不产生任何流量。")
     lines.append("")
     lines.append("护栏判据（与运行时同源，取自 `cfg.scope`）：")
     lines.append("")
@@ -100,10 +103,10 @@ def _compliance(lines: list[str], data: dict[str, Any]) -> None:
     lines.append("```")
     lines.append("")
     lines += _kv(data["compliance_rows"], align=["l", "l"])
-    if compliance["allow_public"]:
+    if compliance.get("trust_mode") != "full" and compliance["allow_public"]:
         lines.append("")
         lines.append("> 警告：`allow_public` 已开启，测试范围可越出私有网段，请确认授权文件覆盖公网目标。")
-    if compliance["destructive"]:
+    if compliance.get("trust_mode") != "full" and compliance["destructive"]:
         lines.append("")
         lines.append("> 警告：`destructive` 已开启，破坏性动作仅对 `destructive_hosts` 白名单内主机生效。")
 

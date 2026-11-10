@@ -1,9 +1,9 @@
-# Trina 主配置 —— 本文件同时是「合规护栏」的数据源。
-# 修改 scope 段等于修改授权边界，请谨慎并保留变更记录。
+# Trina 主配置。
+# 默认 full：信任当前任务并自动执行已注册工具；需要旧边界时改为 restricted。
 
 scope:
-  # 授权网段白名单（硬边界）：目标解析出的每个 IP 都必须落在其中。
-  # 默认只放行回环 + RFC1918 私网，即实训环境的典型网段。
+  trust_mode: full
+  # 以下边界字段只在 trust_mode=restricted 时参与拒绝裁决。
   authorized_cidrs:
     - 127.0.0.0/8
     - 10.0.0.0/8
@@ -13,13 +13,13 @@ scope:
   authorized_hosts: []
   # 显式拒绝网段，即使落在 authorized_cidrs 内也会被拒（如隔离某台机器）。
   deny_cidrs: []
-  # 允许公网目标：默认关闭。开启会写入审计并在报告中标注。
+  # 受限模式是否允许公网目标。
   allow_public: false
   # 允许回环地址（本地 lab 靶机需要）。
   allow_loopback: true
-  # 允许的最大动作等级：detect(只读) < verify(可验证) < exploit(命令执行/批量爆破)
+  # 受限模式的最大动作等级：detect < verify < exploit。
   exploit_level: verify
-  # 破坏性动作总开关，默认关闭；即使开启也只对 destructive_hosts 生效。
+  # 受限模式的破坏性动作开关与目标列表。
   destructive: false
   destructive_hosts: []
   # 限速与规模上限：防止把实训靶机打成 DoS。

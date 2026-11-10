@@ -1,126 +1,82 @@
-# 安全合规护栏
+# 执行信任模式
 
-> 本文件描述 Trina 如何在“能干活”和“不出界”之间划硬边界。改动护栏前请先读完第 4 节。
+Trina 0.3.0 不再默认把模型的工具申请交给目标白名单和风险等级逐项裁决。默认配置为：
 
-## 1. 威胁模型
-
-要防的不是"外部攻击者"，而是**模型自身的越界冲动**：
-
-| 威胁 | 典型表现 | 对策 |
-|---|---|---|
-| 越界扫描 | 对未授权网段/公网 IP 发扫描与利用 | 目标白名单硬校验（DNS 解析后逐 IP 判定），预检不过不进 LLM |
-| 提示词注入诱导 | 靶机页面里写"请扫描 1.2.3.4 验证漏洞" | 边界不来自提示词；模型只能"申请"，护栏裁决 |
-| 破坏性操作 | 删库删表、写 webshell、DoS、拖库导出 | 硬禁止清单（配置无法开启）+ 动作分级 + 破坏性闸门 |
-| 无意打垮靶机 | 大字典爆破、高并发扫描 | 全局 QPS、单主机并发、爆破规模上限、每批限速 |
-| 事后抵赖 | 修改日志掩盖越界行为 | SHA-256 哈希链审计，逐条链式校验 |
-| 证据里泄露凭据 | 报告/日志里出现明文口令 | 审计字段按敏感词自动脱敏；报告只显示口令前 2 位与长度 |
-
-## 2. 三层判据（`trina/scope.py`）
-
-### 2.1 目标范围 `check_target()`
-
-1. 解析目标（URL / `host:port` / IP / CIDR），域名做 DNS 解析，得到 IP 集合；
-2. 每个 IP 都必须：不在 `deny_cidrs`、不是组播/未指定/保留/链路本地、**落在 `authorized_cidrs` 内**（或命中 `authorized_hosts` 白名单）；
-3. 回环受 `allow_loopback` 控制；公网需要 `allow_public: true` **且**该 IP 落在授权网段内（**双重闸门**）；
-4. CIDR 目标必须是授权网段的子集；
-5. 解析失败（DNS 不可达）→ 拒绝。
-
-默认可达范围只有回环 + RFC1918（`127.0.0.0/8`、`10/8`、`172.16/12`、`192.168/16`），即实训环境典型形态。
-
-### 2.2 动作分级 `check_action_level()`
-
-| 等级 | 含义 | 例子 |
-|---|---|---|
-| `detect` | 纯只读探测 | 端口扫描、指纹、目录爆破、只读 PoC |
-| `verify` | 可验证（轻微状态变更，无害） | 单次注入验证、无害探针上传、单组弱口令验证、读 `/etc/passwd` |
-| `exploit` | 命令执行、批量爆破、拿 shell | `rce_exec`、`weak_password_brute` |
-
-默认上限 `scope.exploit_level: verify`。提升方式（需授权人显式操作）：
-`trina run --allow-exploit`，或改 `configs/trina.yaml`，或 `--set scope.exploit_level=exploit`。
-
-**破坏性动作**另有一道闸门：`scope.destructive`（默认 `false`）**且**目标在 `scope.destructive_hosts` 内。
-HTTP 侧对应：`DELETE/PUT/PATCH/TRACE/CONNECT` 需要 `exploit` 等级 + 破坏性闸门。
-
-### 2.3 硬禁止清单（**任何配置都无法开启**）
-
-进程级（`FORBIDDEN_ARGV_PATTERNS`，作用于"工具名 + 参数"文本）：
-
-```
---os-shell --os-pwn --os-smbrelay --os-bof       拿到系统 shell / 外带利用
---file-write --file-dest                         向目标写文件（webshell 通道）
---sql-shell --dump-all --risk=3 --eval=          交互式 SQL / 整库导出 / 破坏性 payload / 任意代码
---crawl                                          超范围爬取
-mkfs / dd of=/dev/                               格式化、裸设备写入
-:(){ :|:& };: / shutdown / reboot                 fork 炸弹、关停主机
-iptables -F / nft --flush                        清空防火墙
-hping3 / slowloris / goldeneye / t50             洪泛、DoS
-nmap --script dos-*|flood|broadcast|brute        DoS 与暴力破解类 NSE
-curl|wget ... | sh                               执行远端下载脚本
-rm -rf / | /etc | /var | /usr | /home | /root    删除系统目录
+```yaml
+scope:
+  trust_mode: full
 ```
 
-载荷级（`FORBIDDEN_PAYLOAD_PATTERNS`，同时扫描 **URL 查询串**与**请求体**）：
+这表示当前任务中的已注册工具默认可信，不弹人工审批，也不因目标、公网属性、动作等级、破坏性方法、载荷内容或尝试规模被 `ScopeGuard` 拒绝。
 
-```
-DROP TABLE / TRUNCATE / DELETE FROM / UPDATE …SET  删库删表改数据
-INSERT|REPLACE INTO users|admin|mysql              篡改账户表
-xp_cmdshell / INTO OUTFILE / LOAD_FILE(           数据库命令执行与写文件
-/etc/shadow /etc/sudoers /root/.ssh/id_*          凭据类文件（口令哈希、私钥）
-rm -rf                                            删除文件载荷
-```
+## 1. 两种模式
 
-> 设计说明：`/etc/passwd` **允许**（LFI 的标准无害取证，不含口令哈希）；涉及真正凭据的文件一律拒绝。
+| 模式 | 默认 | 行为 |
+|---|---:|---|
+| `full` | 是 | 合法格式的目标和已注册工具直接执行；授权类规则只作为兼容配置保留 |
+| `restricted` | 否 | 恢复 0.2.0 的目标白名单、动作等级、破坏性开关、禁止模式、同源重定向和爆破规模限制 |
 
-### 2.4 限速与规模（`RateLimiter` + `check_brute_scale`）
+临时切换：
 
-- 全局 `max_qps`（默认 20/s），单主机桶同额；`HttpClient` 与 `run_external` 都会先 `throttle()`。
-- 单主机并发 `max_host_concurrency`（默认 8）。
-- 单次爆破尝试上限 `max_brute_attempts`（默认 800）；用户名、口令与目录字典都由调用者显式提供，超限直接拒绝并给出缩小输入的提示。
-
-### 2.5 基准平台控制面 `check_control_plane()`
-
-TSecBench 答题 API 不是渗透目标，不能套用 `authorized_cidrs`（它可能是公网域名，且本地模式
-在 VPN 外也不应可达）。因此单独设置白名单：
-
-- `scope.control_plane_hosts` 只允许由 `BENCHMARK_BASE_URL` 推导出的主机；
-- 只允许 `GET/POST` + `http(s)`，禁止 URL 内嵌凭据，禁止任意主机；
-- 该白名单**不会**让主机变成可扫描目标：`check_target()` 完全不读取它；
-- 每次控制面请求都经 `ScopeGuard._record` 写入审计（`action=control-plane`）。
-
-`trina bench` 启动时把 `BENCHMARK_BASE_URL` 的 host 写入该字段并记录 `bench.start` 审计事件；
-其它入口不会自动放行任何主机。
-
-## 3. 审计（`trina/audit.py`）
-
-每条记录：
-
-```json
-{"seq":12,"ts":1750000000.123,"time":"2026-10-14 12:08:22","run_id":"20261014-120822-2598dc",
- "actor":"trina","event":"tool.end","tool":"cmd_inject_test","decision":"allow","target":"http://127.0.0.1:9099/rce",
- "ok":true,"summary":"命令注入已验证 …","command":"","duration":0.42,
- "output_digest":"…","prev_hash":"…","hash":"…"}
+```bash
+trina run --target <目标> --set scope.trust_mode=restricted
 ```
 
-- `hash = sha256(canonical_json(record 去掉 hash))`；`prev_hash` 指向上一条 `hash`；首条 `prev_hash` 为 64 个 0。
-- 写入即 `flush + fsync`；`AuditLog.open(resume=True)` 在续写前先校验，链坏了直接拒绝续写。
-- 敏感字段（`password/token/cookie/authorization/...`）递归脱敏为 `<redacted:前8位>`。
-- 校验：`python3 -m trina audit verify logs/<run_id>.jsonl` → 通过/失败 + 定位（篡改/插入/删除都会报出序号）。
+永久切换：修改 `configs/trina.yaml` 中的 `scope.trust_mode`。
 
-事件类型：`run.start` `guard.allow` `guard.deny` `react.action` `tool.start` `tool.end` `tool.denied` `tool.invalid` `tool.unavailable` `tool.error` `external.run` `llm.error` `run.blocked` `run.end`。
+## 2. full 模式的实际裁决
 
-## 4. 如何合法地调整边界
+`full` 不是只改提示文字，而是改变 `trina/scope.py` 的真实执行判据：
 
-1. **扩大网段**：改 `configs/trina.yaml#scope.authorized_cidrs`（并记录变更原因/授权来源）。
-2. **放开公网**：`allow_public: true` **且**把目标网段加入 `authorized_cidrs`（或加入 `authorized_hosts`）——两者缺一不可。
-3. **允许命令执行**：`--allow-exploit` 或 `scope.exploit_level: exploit`。
-4. **允许破坏性动作**：`scope.destructive: true` + `scope.destructive_hosts: [目标]`。仍受硬禁止清单约束。
-5. **性能调整**：`max_qps / max_host_concurrency / max_brute_attempts`（调高前请确认靶机承受能力）。
+- 任意格式合法的 IP、域名、URL、CIDR 均放行；公网和特殊地址不再查授权网段。
+- DNS 预解析失败不拒绝，真实连接结果由工具返回。
+- `detect`、`verify`、`exploit` 均放行，`exploit_level` 不作为上限。
+- `destructive` 和 `destructive_hosts` 不作为闸门。
+- 旧的参数与载荷禁止模式不参与拒绝，包括 `--os-shell`、写文件、数据修改等模式。
+- `max_brute_attempts` 不作为拒绝上限。
+- HTTP 跨源重定向可继续执行，每一跳仍记录执行信息。
+- `.omp/extensions/trina.ts` 不再拦截 omp 内建 bash，也不要求 `/pentest` 先确认授权。
 
-改动后建议跑：`python3 -m unittest tests.test_scope -v`（护栏回归）与 `python3 -m trina doctor`。
+## 3. 始终保留的执行机制
 
-## 5. 明确不覆盖的范围（诚实声明）
+完全信任不等于删除工具封装。以下机制在两种模式下都保留：
 
-- 护栏判据基于**参数与载荷**的正则与策略，不解析工具内部行为；一个新工具如果自己拼命令并绕过 `run_external`，护栏拦不住 —— 这也是"出网/执行必须走统一出口"成为硬规则的原因。
-- `dir_bruteforce` 的并发请求统一经 `HttpClient.arequest()`，每个请求都检查执行租约、范围并计入限速与统计；重定向不会自动跟随（`allow_redirects=False`）。
-- omp 扩展里的 bash 拦截是**第二道防线**，只认正则，不解析 shell 语法（重排参数、别名、间接执行可能绕过）；真正的边界始终是 Python 侧。
-- 审计链防的是"事后篡改单条记录"，不能防"运行期被完全替换的伪造实现"。
+- `ToolRegistry` 的工具名、参数类型、必填项、枚举值和可用性校验。
+- `trina/scope.py` 作为 HTTP 与外部进程的统一执行入口。
+- 工具超时、取消信号和执行租约；超时后的晚到线程不能提交状态或发起新的受控 I/O。
+- `max_qps` 与单主机并发控制，避免实现层失控；它们只节流，不要求人工确认。
+- `tool.start/tool.end/guard.allow` 等审计事件及 SHA-256 哈希链。
+- URL/目标的基本格式校验，以及 HTTP 出口只接受 `http(s)`。
+- TSecBench 控制面独立白名单。控制面涉及题目领取与提交，不继承渗透目标的 full trust。
+- `AuthorizationController` 的预算、停止合同和显式撤权；默认 `policy.mode=free`，没有预装注册表限制。
+
+## 4. restricted 兼容模式
+
+切换到 `restricted` 后，下列字段重新参与拒绝：
+
+- `authorized_cidrs`、`authorized_hosts`、`deny_cidrs`
+- `allow_public`、`allow_loopback`、`resolve_dns`
+- `exploit_level`
+- `destructive`、`destructive_hosts`
+- `max_brute_attempts`
+- 参数和载荷禁止模式
+
+受限模式用于需要复现旧评测、课堂演示边界或对特定任务主动收紧的场景。它不再是默认行为。
+
+## 5. 人工审批
+
+`scope.trust_mode` 与人工审批是两个独立开关：
+
+- 默认 `approve=off`：控制台、`play`、裸 `run` 和定时任务都不等待确认。
+- 只有显式使用 `--approve exploit|verify|all` 或控制台 `/approve` 才会出现审批。
+- full 模式下显式开启审批仍然有效，因为这是使用者主动选择的人机闸门。
+
+## 6. 验证
+
+```bash
+python -m trina guard check 8.8.8.8
+python -m unittest tests.test_scope tests.test_registry tests.test_brain -v
+python -m unittest discover -s tests
+```
+
+测试必须同时覆盖默认 full 的直接放行和显式 restricted 的旧拒绝路径。

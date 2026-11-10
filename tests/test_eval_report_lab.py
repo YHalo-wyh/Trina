@@ -198,6 +198,7 @@ class TestScopeAwareToolBehaviour(unittest.TestCase):
         from trina.tools.registry import ToolContext
 
         cfg = TrinaConfig.load()
+        cfg.scope.trust_mode = "restricted"
         cfg.scope.exploit_level = "verify"
         with tempfile.TemporaryDirectory() as tmp:
             audit = AuditLog.open(tmp, run_id="dyn", resume=False)
@@ -259,6 +260,7 @@ class TestScopeAwareToolBehaviour(unittest.TestCase):
         port = server.server_address[1]
         try:
             cfg = TrinaConfig.load()
+            cfg.scope.trust_mode = "restricted"
             cfg.scope.exploit_level = "verify"
             with tempfile.TemporaryDirectory() as tmp:
                 audit = AuditLog.open(tmp, run_id="inner", resume=False)
@@ -406,6 +408,8 @@ class TestReport(unittest.TestCase):
 
         config = TrinaConfig.load()
         report = build_report(self._state(), config, meta={"goal": "拿 flag"}, audit_summary={"denied": 0, "chain_ok": True})
+        self.assertEqual(report.data["compliance"]["trust_mode"], "full")
+        self.assertIn("full 信任模式", report.markdown)
         for title in ("执行摘要", "授权与合规", "攻击路径", "资产", "漏洞详情", "凭据", "附录"):
             self.assertIn(title, report.markdown)
             self.assertIn(title, report.html)

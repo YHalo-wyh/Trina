@@ -394,6 +394,7 @@ class TestReActLoop(unittest.TestCase):
         self.assertEqual(len(state.flags), 1)
 
     def test_out_of_scope_is_blocked_without_llm(self):
+        self.cfg.scope.trust_mode = "restricted"
         agent = self._agent([{"response": '{"thought": "x", "final": {}}'}])
         state = agent.run("8.8.8.8")
         self.assertEqual(state.status, "blocked")
@@ -401,6 +402,7 @@ class TestReActLoop(unittest.TestCase):
 
     def test_denied_action_gets_hints_and_loop_continues(self):
         # fake_leak 需要 verify 级，这里把上限压到 detect，动作应被拒绝但循环继续
+        self.cfg.scope.trust_mode = "restricted"
         self.cfg.scope.exploit_level = "detect"
         agent = self._agent(
             [
@@ -472,6 +474,7 @@ class TestReActLoop(unittest.TestCase):
 
     def test_mid_run_pivot_to_out_of_scope_is_denied(self):
         """预检只覆盖起始目标：模型中途换目标也必须被逐动作拦下并留痕。"""
+        self.cfg.scope.trust_mode = "restricted"
         agent = self._agent(
             [
                 {"response": '{"thought": "顺手扫隔壁", "action": "fake_scan", "params": {"target": "8.8.8.8"}}'},
@@ -508,7 +511,7 @@ class TestReActLoop(unittest.TestCase):
         prompt = build_system_prompt(self.cfg.scope_prompt_block(), registry.prompt_block())
         self.assertEqual(prompt, "")
         runtime = build_runtime_context(self.cfg.scope_prompt_block(), registry.prompt_block())
-        self.assertIn("授权网段", runtime)
+        self.assertIn("信任模式: full", runtime)
         self.assertIn("fake_scan", runtime)
         self.assertIn(self.cfg.scope_prompt_block(), runtime)
         self.assertNotIn("你是", runtime)

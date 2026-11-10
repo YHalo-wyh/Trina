@@ -99,7 +99,9 @@ class SwarmTests(unittest.TestCase):
     def test_scope_preflight_preserved_in_real_agent(self) -> None:
         script = Path(self.temp.name) / "replay.json"
         script.write_text(json.dumps({"default": '{"final": {"summary": "done"}}'}), encoding="utf-8")
-        config = self.config.with_overrides(llm__backend="replay", llm__replay_script=str(script))
+        config = self.config.with_overrides(
+            llm__backend="replay", llm__replay_script=str(script), scope__trust_mode="restricted",
+        )
         runtime = SwarmRuntime(config, [TaskSpec("blocked", "8.8.8.8", "检查目标", max_steps=1)], max_workers=1)
         summary = runtime.run()
         self.assertEqual(summary["tasks"]["blocked"]["status"], "blocked")

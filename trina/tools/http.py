@@ -13,9 +13,10 @@ from urllib.parse import urljoin, urlsplit, urlunsplit
 
 import requests
 
+from .. import __version__
 from ..scope import Decision, ScopeGuard
 
-DEFAULT_UA = "Trina/0.2.0"
+DEFAULT_UA = f"Trina/{__version__}"
 DEFAULT_HEADERS = {
     "User-Agent": DEFAULT_UA,
     "Accept": "*/*",

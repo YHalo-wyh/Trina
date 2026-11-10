@@ -439,8 +439,8 @@ class ToolRegistry:
                 )
             return self._record_denial(ctx, name, level_decision, started, params)
         if spec.destructive:
-            if not ctx.config.scope.destructive:
-                decision = ctx.guard.check_destructive(target=target, reason=f"工具 {name} 属破坏性动作")
+            decision = ctx.guard.check_destructive(target=target, reason=f"工具 {name} 属破坏性动作")
+            if decision.denied:
                 return self._record_denial(ctx, name, decision, started, params)
         if target:
             target_decision = ctx.guard.check_target(target, action=f"tool:{name}")
