@@ -418,8 +418,11 @@ class TestConsole(unittest.TestCase):
             env_file = _Path(tmp) / "env"
             env_file.write_text("# keep me\nexport DEEPSEEK_API_KEY=sk-test\n", encoding="utf-8")
             os.environ["TRINA_ENV_FILE"] = str(env_file)
+            # 隔离本机供应商配置：否则默认配置会按 ~/.trina/providers.json 的 active 连接改写后端。
+            os.environ["TRINA_PROVIDERS_FILE"] = str(_Path(tmp) / "providers.json")
             try:
-                console, output = self._console(["/model deepseek-chat", "/save", "quit"])
+                # 默认配置指向官方 API，这里显式切 omp，覆盖“保存 omp 模型”这条分支。
+                console, output = self._console(["/backend omp", "/model deepseek-chat", "/save", "quit"])
                 console.run()
                 blob = "\n".join(output)
                 self.assertIn("已保存到", blob)
@@ -433,6 +436,7 @@ class TestConsole(unittest.TestCase):
                 self.assertNotIn("# keep me\n# keep me", content)
             finally:
                 os.environ.pop("TRINA_ENV_FILE", None)
+                os.environ.pop("TRINA_PROVIDERS_FILE", None)
 
     def test_usage_without_chat_still_reports_ledger(self):
         console, output = self._console(["/usage", "quit"])

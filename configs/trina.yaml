@@ -31,22 +31,23 @@ scope:
   resolve_dns: true
 
 llm:
-  # omp: 复用 omp 已配置的模型与鉴权（推荐）；openai: OpenAI 兼容端点；replay: 离线回放（测试）
-  backend: omp
-  model: deepseek/deepseek-v4-flash
+  # omp: 复用 omp 已配置的模型与鉴权；openai: OpenAI 兼容端点；replay: 离线回放（测试）
+  # 当前接 DeepSeek 官方 API（OpenAI 兼容），密钥来自 ~/.trina/env 的 DEEPSEEK_API_KEY。
+  backend: openai
+  model: deepseek-flash
   timeout: 180
   temperature: 0.2
   max_tokens: 4096
-  # /model 可调整；default 沿用供应商默认行为
-  reasoning_effort: default
+  # /model 可调整；default 沿用供应商默认行为，max 为最高思考档位
+  reasoning_effort: max
   # 单次任务的决策步数上限与总时长上限
   max_steps: 40
   max_seconds: 1800
   # 连续 N 步动作完全重复则注入纠正提示
   stall_limit: 3
   # OpenAI 兼容后端参数（backend=openai 时生效）
-  base_url: ""
-  api_key_env: "TRINA_LLM_API_KEY"
+  base_url: "https://api.deepseek.com/v1"
+  api_key_env: "DEEPSEEK_API_KEY"
 
 run:
   workspace: "runs"

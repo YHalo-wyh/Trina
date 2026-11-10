@@ -413,5 +413,11 @@ def _coerce(value: str, type_hint: Any) -> Any:
 
 
 def _resolve(raw: str) -> Path:
+    """相对路径按仓库根解析。
+
+    CLI 可以从任意目录启动（WSL 里常见的是 ``/mnt/c/Windows/system32``），
+    若按 cwd 解析，``logs``/``reports`` 会落到系统目录并触发 PermissionError。
+    需要按当前目录落盘时，在配置里写绝对路径。
+    """
     path = Path(raw)
-    return path if path.is_absolute() else Path.cwd() / path
+    return path if path.is_absolute() else PROJECT_ROOT / path

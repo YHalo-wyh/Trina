@@ -148,7 +148,9 @@ class TestTerminalUI(unittest.TestCase):
         self.assertIn("play", command_names())
         self.assertIn("clear", command_names())
         self.assertIn("--max-steps", command_hint("/play"))
-        self.assertIn("输入 /", command_hint("hello"))
+        # 普通输入不占底栏；输入斜杠后才给出筛选提示。
+        self.assertEqual(command_hint("hello"), "")
+        self.assertIn("筛选", command_hint("/"))
 
     def test_supplier_names_with_spaces_are_quoted_in_command_completion(self):
         import shlex

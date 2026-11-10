@@ -25,6 +25,7 @@ from typing import Any
 from .. import __version__
 from ..audit import AuditLog
 from ..config import TrinaConfig
+from ..model_names import display_model
 from ..state import SEVERITIES, SEVERITY_CN, SEVERITY_ORDER, Finding, RunState
 from .html import render as render_html
 from .markdown import render as render_markdown
@@ -1009,7 +1010,7 @@ def collect_data(
         ["结束时间", _time_text(state.ended_at) if state.ended_at else "-（运行中）"],
         ["耗时", _duration_text(duration)],
         ["最终状态", RUN_STATUS_CN.get(status, status)],
-        ["Agent 后端 / 模型", f"{cfg.llm.backend} / {usage['model'] or cfg.llm.model}"],
+        ["Agent 后端 / 模型", f"{cfg.llm.backend} / {display_model(usage['model'] or cfg.llm.model, cfg.llm.reasoning_effort)}"],
         ["LLM 调用次数", usage["calls"]],
         [
             "Token 用量",

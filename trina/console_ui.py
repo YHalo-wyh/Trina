@@ -264,10 +264,10 @@ def command_detail_sections(spec: CommandSpec) -> list[tuple[str, str]]:
 
 
 def command_hint(text: str) -> str:
-    """根据输入中的命令生成底栏提示。"""
+    """根据输入中的命令生成底栏提示；没在输入斜杠命令时不占一行。"""
     line = (text or "").strip()
     if not line.startswith("/"):
-        return "输入 / 打开命令索引 · Tab 补全 · ↑↓ 选择"
+        return ""
     body = line[1:].strip()
     if not body:
         return "继续输入筛选命令 · ↑↓ 选择 · Tab 补全 · Enter 执行"
@@ -451,6 +451,8 @@ class EnhancedConsoleInput:
         self._fragments = None
         self._fragment_width = 0
         self._line_count = 1
+        #: 最近一次渲染出的真实行数；光标越界会直接把 prompt_toolkit 的滚动逻辑打崩。
+        self._rendered_lines = 1
         self._scrollback = 0
         self.running = running
         self.completer = SlashCommandCompleter(running=running, dynamic_values=dynamic_values)
@@ -512,7 +514,8 @@ class EnhancedConsoleInput:
 
         @bindings.add("pageup")
         def page_up(event):
-            self._scrollback = min(self._line_count - 1, self._scrollback + max(1, event.app.output.get_size().rows // 2))
+            self._scrollback = min(max(0, self._rendered_lines - 1),
+                                   self._scrollback + max(1, event.app.output.get_size().rows // 2))
 
         @bindings.add("pagedown")
         def page_down(event):
@@ -532,7 +535,7 @@ class EnhancedConsoleInput:
         control = BufferControl(buffer=self.buffer, input_processors=[BeforeInput(
             lambda: [("class:prompt", "补充  › " if self.running() else "Trina  › ")])])
         transcript = FormattedTextControl(self._transcript, show_cursor=False,
-            get_cursor_position=lambda: Point(x=0, y=max(0, self._line_count - 1 - self._scrollback)))
+            get_cursor_position=lambda: Point(x=0, y=max(0, self._cursor_line())))
         self.output_window = Window(transcript, wrap_lines=True, always_hide_cursor=True)
         self.activity_window = Window(FormattedTextControl(self._activity), height=1)
         self.input_window = Window(control, wrap_lines=True, height=Dimension(min=1, max=3), dont_extend_height=True)
@@ -546,7 +549,8 @@ class EnhancedConsoleInput:
                 ConditionalContainer(Window(FormattedTextControl(self._menu), dont_extend_height=True,
                                              height=lambda: Dimension(max=max(2, min(8, self.app.output.get_size().rows - 10)))),
                                      Condition(lambda: bool(self._items()) and not self.dismissed)),
-                Window(FormattedTextControl(lambda: [("class:hint", self._hint())]), height=1),
+                Window(FormattedTextControl(lambda: [("class:hint", self._hint())]),
+                       height=lambda: 1 if self._hint() else 0),
                 Window(FormattedTextControl(self._status), height=1),
                 self.usage_window,
             ]), focused_element=control),
@@ -611,11 +615,31 @@ class EnhancedConsoleInput:
             # 同宽度时只解析新增 ANSI 块；宽度变化时由 _transcript 统一重排。
             if self._fragments is not None and self._fragment_width and not pruned:
                 from prompt_toolkit.formatted_text import ANSI, to_formatted_text
-                rendered = chunk.at_width(self._fragment_width) if hasattr(chunk, "at_width") else str(chunk)
+                rendered = self._chunk_text(chunk, self._fragment_width)
                 self._fragments.extend(to_formatted_text(ANSI(rendered)))
+                self._rendered_lines = max(self._rendered_lines, self._line_count)
             else:
                 self._fragments = None
         self.app.invalidate()
+
+    @staticmethod
+    def _chunk_text(chunk, width: int) -> str:
+        """每块至少以换行收尾，避免相邻两条输出粘在同一行。"""
+        text = chunk.at_width(width) if hasattr(chunk, "at_width") else str(chunk)
+        return text if not text or text.endswith("\n") else text + "\n"
+
+    def _cursor_line(self) -> int:
+        """光标行号：直接数当前 fragments 的真实行数。
+
+        行数缓存（`_line_count`）是按送入文本估算的，窗口宽度变化后可能多于实际渲染行；
+        prompt_toolkit 的滚动逻辑拿这个值直接索引 fragment 行，越界就抛 IndexError。
+        """
+        from prompt_toolkit.formatted_text.utils import split_lines
+
+        with self._content_lock:
+            fragments = self._fragments or []
+            count = sum(1 for _ in split_lines(fragments))
+        return max(0, count - 1 - self._scrollback)
 
     def _transcript(self):
         from prompt_toolkit.formatted_text import ANSI, to_formatted_text
@@ -623,12 +647,13 @@ class EnhancedConsoleInput:
             width = max(20, self.app.output.get_size().columns)
             if self._fragments is None or self._fragment_width != width:
                 rendered = "".join(
-                    chunk.at_width(width) if hasattr(chunk, "at_width") else str(chunk)
-                    for chunk in self._chunks
+                    self._chunk_text(chunk, width) for chunk in self._chunks
                 ).rstrip("\n")
-                self._fragments = to_formatted_text(ANSI(rendered))
+                # 空 transcript 必须留一行占位，否则 split_lines 返回空列表，光标行号越界。
+                self._fragments = to_formatted_text(ANSI(rendered)) if rendered else [("", "")]
                 self._fragment_width = width
-                self._line_count = max(1, rendered.count("\n") + 1)
+                self._rendered_lines = max(1, rendered.count("\n") + 1)
+                self._line_count = self._rendered_lines
             return self._fragments
 
     async def _consume(self) -> None:

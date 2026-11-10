@@ -24,6 +24,7 @@ from typing import Any
 
 from . import __version__
 from .config import TrinaConfig, PROJECT_ROOT, ConfigError
+from .model_names import display_model
 from .scope import ScopeGuard
 from .terminal import render_approval, render_message, render_panel, render_step, use_color
 
@@ -168,7 +169,15 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     rule("模型后端")
     backend = make_backend(config.llm)
     ok, detail = backend.health()
-    kv_table([("后端", config.llm.backend), ("模型", config.llm.model), ("连通性", f"{_status_mark(ok)} {detail}")], "LLM")
+    kv_table(
+        [
+            ("后端", config.llm.backend),
+            ("模型", display_model(config.llm.model, config.llm.reasoning_effort)),
+            ("模型 ID", config.llm.model),
+            ("连通性", f"{_status_mark(ok)} {detail}"),
+        ],
+        "LLM",
+    )
 
     rule("写作权限")
     for path in (config.audit_dir, config.report_dir, config.workspace_dir):
@@ -257,7 +266,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     backend = make_backend(config.llm)
 
     print(render_panel("Trina / 任务", rows=[("目标", target), ("任务", goal or "按配置执行"),
-                       ("模型", f"{config.llm.model} · {config.llm.backend}"),
+                       ("模型", f"{display_model(config.llm.model, config.llm.reasoning_effort)} · {config.llm.backend}"),
                        ("动作上限", config.scope.exploit_level)], color=use_color()))
 
     def on_step(step) -> None:
@@ -551,7 +560,7 @@ def cmd_play(args: argparse.Namespace) -> int:
         )
         return 2
 
-    print(render_panel("Trina / 准备任务", rows=[("模型", config.llm.model), ("审批", approval_mode)], color=use_color()))
+    print(render_panel("Trina / 准备任务", rows=[("模型", display_model(config.llm.model, config.llm.reasoning_effort)), ("审批", approval_mode)], color=use_color()))
     plan = build_plan(
         config,
         target=getattr(args, "target", None),
@@ -668,7 +677,7 @@ def cmd_bench(args: argparse.Namespace) -> int:
             "Trina / TSecBench",
             rows=[
                 ("答题 API", base_url),
-                ("模型后端", f"{config.llm.backend} / {config.llm.model}"),
+                ("模型后端", f"{config.llm.backend} / {display_model(config.llm.model, config.llm.reasoning_effort)}"),
                 ("模型地址", config.llm.base_url or "(后端默认)"),
                 ("单题预算", f"{options.per_task_seconds}s × {options.max_steps} 步"),
                 ("总时限", f"{options.total_seconds}s"),

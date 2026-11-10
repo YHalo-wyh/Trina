@@ -23,6 +23,7 @@ from typing import Any, Callable
 
 from .config import TrinaConfig
 from .console_state import ConsoleState, TrackedBackend
+from .model_names import display_model as _display_model
 from .console_ui import (
     ChoiceSpec, EnhancedConsoleInput, command_detail_sections, command_help_sections,
     command_names, enhanced_input_available, find_command,
@@ -195,7 +196,7 @@ class Console:
     def _prompt_status(self) -> str:
         """增强输入框底栏的紧凑动态状态。"""
         llm = (self._task_config or self.config).llm
-        short = clean_text((llm.model or "?").split("/")[-1]).replace("\n", " ")[:24]
+        short = clean_text(_display_model(llm.model, llm.reasoning_effort) or "?").replace("\n", " ")[:24]
         status = "就绪"
         if self.session.running:
             status = "待审批 y/n" if self.session.pending else (
@@ -208,7 +209,7 @@ class Console:
         return f"{status}{queued} · {llm.profile or llm.backend}/{short} · 审批 {self.session.approval_mode}"
 
     def _prompt(self) -> str:
-        short = clean_text((self.config.llm.model or "?").split("/")[-1]).replace("\n", " ")[:28]
+        short = clean_text(_display_model(self.config.llm.model, self.config.llm.reasoning_effort) or "?").replace("\n", " ")[:28]
         status = self._prompt_status().split(" · ", 1)[0]
         # 状态在下一次读取输入时刷新；后台进展单独输出，不清空输入缓冲。
         return f"trina · {status} · {short} > " if terminal_width() >= 60 else f"trina · {status} > "
@@ -523,7 +524,7 @@ class Console:
             if self._input is not None or enhanced_input_available():
                 self._model_manager().run()
             else:
-                self._emit(f"当前 {llm.profile or llm.backend} / {llm.model} · /model add 添加供应商 · /model edit 编辑供应商 · /model list 查看预设")
+                self._emit(f"当前 {llm.profile or llm.backend} / {_display_model(llm.model, llm.reasoning_effort)} · /model add 添加供应商 · /model edit 编辑供应商 · /model list 查看预设")
             return
         if args[0] in ("add", "edit", "remove", "test", "keys", "use"):
             manager = self._model_manager()
@@ -556,7 +557,7 @@ class Console:
                 self._cmd_backend(args)
             return
         if args[0] in ("list", "ls", "?"):
-            self._emit(f"当前后端 {llm.backend} · 模型 {llm.model}" + (f" · base_url {llm.base_url}" if llm.backend == "openai" else ""))
+            self._emit(f"当前后端 {llm.backend} · 模型 {_display_model(llm.model, llm.reasoning_effort)}" + (f" · base_url {llm.base_url}" if llm.backend == "openai" else ""))
             from .models import list_models
 
             entries = list_models(limit=25)
@@ -586,7 +587,7 @@ class Console:
             profile.reasoning_effort = llm.reasoning_effort
             store.save()
         self._reload_backend()
-        self._emit(f"已切换模型{'并保存' if llm.profile else '（本会话）'}：{llm.model}（后端 {llm.backend}）"
+        self._emit(f"已切换模型{'并保存' if llm.profile else '（本会话）'}：{_display_model(llm.model, llm.reasoning_effort)}（后端 {llm.backend}）"
                    + ("" if llm.profile else " · /save 持久化"))
 
     def _model_manager(self):
@@ -655,7 +656,7 @@ class Console:
         self._reload_backend()
         has_key = bool(os.environ.get(llm.api_key_env))
         self._emit(
-            f"已切到 {name} 官方 API：模型 {llm.model} · base_url {llm.base_url}"
+            f"已切到 {name} 官方 API：模型 {_display_model(llm.model, llm.reasoning_effort)} · base_url {llm.base_url}"
             + ("" if has_key else f"（注意：环境变量 {llm.api_key_env} 未设置，调用会失败；见 scripts/env.example）")
         )
 
@@ -841,7 +842,11 @@ class Console:
         if self.session.running:
             self._emit("有任务在跑：先 stop，或直接把这句话作为介入提示（无需命令前缀）")
             return
-        chat = self._ensure_chat()
+        try:
+            chat = self._ensure_chat()
+        except Exception as exc:  # noqa: BLE001 - 工作目录不可写等启动失败必须回显，不能把控制台打崩
+            self._emit(f"对话无法启动：{type(exc).__name__}: {exc}", prefix="错误")
+            return
         if not isinstance(chat.backend, TrackedBackend):
             chat.backend = TrackedBackend(chat.backend, self.view)
             chat.ctx.extra["llm_backend"] = chat.backend
@@ -888,7 +893,7 @@ class Console:
         elif self._last_state is not None:
             self._display(render_board(self._last_state, color=self.color))
         else:
-            self._display(render_panel("就绪", rows=[("状态", "空闲"), ("模型", self.config.llm.model), ("审批", self.session.approval_mode)],
+            self._display(render_panel("就绪", rows=[("状态", "空闲"), ("模型", _display_model(self.config.llm.model, self.config.llm.reasoning_effort)), ("审批", self.session.approval_mode)],
                                        footer="输入问题开始对话 · /play 开始任务 · /help 查看命令", color=self.color))
 
     def _cmd_approve(self, args: list[str]) -> None:

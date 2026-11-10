@@ -178,14 +178,20 @@ class LLMBackend(ABC):
         return response
 
     def health(self) -> tuple[bool, str]:
-        """自检：返回 (是否可用, 说明)。"""
+        """自检：返回 (是否可用, 说明)。
+
+        思考型模型（DeepSeek effort 档位、Claude adaptive 等）会先消耗思考 token，
+        16 个 token 的预算常常连正文都产不出来，故留足 64。
+        """
         try:
-            response = self.complete("", "Reply with exactly: TRINA_OK", max_tokens=16)
+            response = self.complete("", "Reply with exactly: TRINA_OK", max_tokens=64)
         except Exception as exc:  # noqa: BLE001 - 自检需吞掉一切异常
             return False, f"{self.name} 后端异常: {exc}"
         if not response.ok:
             return False, response.error
-        return True, f"{self.name} 后端可用（{response.duration:.1f}s，模型 {self.config.model}）"
+        from ..model_names import display_model
+
+        return True, f"{self.name} 后端可用（{response.duration:.1f}s，模型 {display_model(self.config.model, self.config.reasoning_effort)}）"
 
 
 def make_backend(config: LLMConfig) -> LLMBackend:

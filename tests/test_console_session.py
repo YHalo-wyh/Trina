@@ -43,6 +43,12 @@ class ConsoleSessionTests(unittest.TestCase):
         view.model_finished(LLMUsage(input_tokens=10, cost=.1))
         self.assertIn("费用 ≥$0.1000", view.footer(120))
 
+    def test_footer_before_any_call_reports_not_called_instead_of_missing(self):
+        footer = ConsoleState().footer(88)
+        self.assertIn("会话 Token 0", footer)
+        self.assertIn("尚未调用模型", footer)
+        self.assertNotIn("未提供", footer)
+
     def test_individual_missing_fields_are_not_rendered_as_zero(self):
         input_only = ConsoleState()
         input_only.model_finished(LLMUsage(input_tokens=25, input_reported=True))

@@ -85,7 +85,11 @@ class ConsoleState:
 
     def footer(self, width: int, compact: bool = False) -> str:
         data = self.usage_data()
-        known = data["tokens_reported"] or not data["calls"]
+        if not data["calls"]:
+            # 一次模型都没调用：没有"未提供"可言，直接说明状态，避免 0 与未提供并存的歧义。
+            from .terminal import _wrap
+            return _wrap("会话 Token 0 · 尚未调用模型", max(20, width))
+        known = data["tokens_reported"]
         prefix = "≥" if (data["missing_tokens"] or data["missing_input"] or data["missing_output"]) and known else ""
         total = prefix + _number(data["total_tokens"]) if known else "未提供"
         rate = data["cache_hit_rate"]

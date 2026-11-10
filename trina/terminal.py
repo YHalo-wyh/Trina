@@ -198,7 +198,7 @@ def render_home(*, width: int | None = None, color: bool = False) -> str:
     requested_width = width
     width = max(20, width if width is not None else terminal_width())
     logo = render_banner(width, color=color, colors=(THEME["rose"], THEME["violet"]))
-    value = logo + "\n" + _center(f"v{__version__}", width)
+    value = logo + "\n" + _center(f"v{__version__}", width) + "\n"
     return _responsive(value, lambda new_width: str(render_home(
         width=new_width, color=color)), requested_width)
 
