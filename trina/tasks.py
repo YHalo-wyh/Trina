@@ -45,7 +45,7 @@ class ScheduledTask:
     target: str
     goal: str = ""
     max_steps: int = 12
-    approve: str = "exploit"
+    approve: str = "off"
     config_path: str = ""
     status: str = "queued"
     owner: str = ""
@@ -128,7 +128,7 @@ class TaskStore:
                 data["goals"].pop(self.project, None)
 
     def add(self, target: str, when: str, *, goal: str | None = None, max_steps: int = 12,
-            approve: str = "exploit", config=None, now: datetime | None = None) -> ScheduledTask:
+            approve: str = "off", config=None, now: datetime | None = None) -> ScheduledTask:
         from .scope import ScopeGuard
         from .config import TrinaConfig, DEFAULT_CONFIG_PATH
         from .session import APPROVAL_MODES

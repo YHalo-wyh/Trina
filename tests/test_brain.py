@@ -10,7 +10,7 @@ from pathlib import Path
 from trina.audit import AuditLog
 from trina.brain.agent import PentestAgent
 from trina.brain.planner import Planner
-from trina.brain.prompts import build_system_prompt, parse_action
+from trina.brain.prompts import build_runtime_context, build_system_prompt, parse_action
 from trina.config import TrinaConfig, LLMConfig
 from trina.llm.replay_backend import ReplayBackend
 from trina.scope import ScopeGuard
@@ -24,13 +24,12 @@ from trina.tools.registry import ParamSpec, Tool, ToolResult, ToolSpec
 
 
 class TestParseAction(unittest.TestCase):
-    def test_prompt_action_examples_are_valid_json_with_or_without_ledger(self):
-        from trina.brain.chat import render_chat_prompt
-        from trina.brain.prompts import render_system_prompt
-        for render in (render_system_prompt, render_chat_prompt):
+    def test_runtime_action_examples_are_valid_json_with_or_without_ledger(self):
+        from trina.brain.prompts import render_action_contract
+        for chat in (False, True):
             for ledger in (False, True):
-                with self.subTest(render=render.__name__, ledger=ledger):
-                    text = render(ledger)
+                with self.subTest(chat=chat, ledger=ledger):
+                    text = render_action_contract(ledger, chat=chat)
                     start = text.index('{"action"')
                     action, _ = json.JSONDecoder().raw_decode(text[start:])
                     self.assertIn("action", action)
@@ -39,6 +38,13 @@ class TestParseAction(unittest.TestCase):
                     self.assertNotIn("你是 Trina", text)
                     self.assertNotIn("thought", action)
                     self.assertLess(len(text), 400)
+
+    def test_system_messages_are_empty(self):
+        from trina.brain.chat import render_chat_prompt
+        from trina.brain.prompts import render_system_prompt
+
+        self.assertEqual(render_system_prompt(), "")
+        self.assertEqual(render_chat_prompt(), "")
 
     def test_plain_json(self):
         action = parse_action('{"thought": "扫端口", "action": "port_scan", "params": {"target": "127.0.0.1"}}')
@@ -358,6 +364,24 @@ class TestReActLoop(unittest.TestCase):
         ok, detail = log.verify()
         self.assertTrue(ok, detail)
 
+    def test_agent_sends_empty_system_and_runtime_contract_as_user_data(self):
+        agent = self._agent([
+            {"response": '{"final": {"status": "partial", "summary": "done"}}'},
+        ])
+        original = agent.backend.complete
+        calls: list[tuple[str, str]] = []
+
+        def capture(system: str, user: str, **kwargs):
+            calls.append((system, user))
+            return original(system, user, **kwargs)
+
+        agent.backend.complete = capture  # type: ignore[method-assign]
+        agent.run("127.0.0.1", max_steps=1)
+        self.assertTrue(calls)
+        self.assertTrue(all(system == "" for system, _ in calls))
+        self.assertIn('{"action"', calls[0][1])
+        self.assertIn("# 可用工具", calls[0][1])
+
     def test_minimal_actions_execute_without_thought_or_role_fields(self):
         agent = self._agent([
             {"response": json.dumps({"action": "fake_scan", "params": {"target": "127.0.0.1"}})},
@@ -479,12 +503,15 @@ class TestReActLoop(unittest.TestCase):
         backend = ReplayBackend(LLMConfig(backend="replay", replay_script=str(record)))
         self.assertEqual(len(backend.script), 2)
 
-    def test_system_prompt_contains_scope_and_tools(self):
+    def test_system_prompt_is_empty_and_runtime_context_contains_scope_and_tools(self):
         registry = type("R", (), {"prompt_block": lambda self=None: "### fake_scan"})()
         prompt = build_system_prompt(self.cfg.scope_prompt_block(), registry.prompt_block())
-        self.assertIn("授权网段", prompt)
-        self.assertIn("fake_scan", prompt)
-        self.assertIn(self.cfg.scope_prompt_block(), prompt)
+        self.assertEqual(prompt, "")
+        runtime = build_runtime_context(self.cfg.scope_prompt_block(), registry.prompt_block())
+        self.assertIn("授权网段", runtime)
+        self.assertIn("fake_scan", runtime)
+        self.assertIn(self.cfg.scope_prompt_block(), runtime)
+        self.assertNotIn("你是", runtime)
 
 
 if __name__ == "__main__":

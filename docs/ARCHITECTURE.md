@@ -14,7 +14,7 @@ flowchart TB
     OMPEXT[".omp/extensions/trina.ts<br/>omp 工具 + bash 第二道防线"]
     AGENT["trina.brain.agent.PentestAgent<br/>ReAct 循环"]
     PLANNER["trina.brain.planner.Planner<br/>PTES 阶段机（事实驱动）"]
-    PROMPTS["trina.brain.prompts<br/>系统提示 + JSON 动作协议 + 容错解析"]
+    PROMPTS["trina.brain.prompts<br/>空 system + 运行协议 + 容错解析"]
     POLICY["AuthorizationController<br/>注册、预算、撤权"]
     APPROVAL["可选人工审批<br/>批准 / 拒绝"]
     REG["trina.tools.registry.ToolRegistry<br/>参数校验→护栏→审计→超时→归一"]
@@ -92,7 +92,7 @@ flowchart TB
 | `trina.brain.scheduler` | `HypothesisScheduler.decide(ledger, tests, executed_tests=, goal_classes=)`、`observe(decision, test_id=, tool=)` | **确定性假设调度**：只调度能绑定注册检查项的假设；任务要求的漏洞类优先（无假设时直接派该类检查项）；未遵从进审计链与 `state.scheduler` |
 | `trina.evidence_graph` | `build(state, registry=, hypotheses=)`、`EvidenceGraph.to_mermaid/to_dict` | 结论可反向追溯：目标→主机→端口→路径→发现→证据，另有检查项/假设→发现；构建失败不影响报告 |
 | `trina.board` | `render_board(state, hypotheses=)`、`summarise`、`latest_state_file`、`load_run_state` | 工作台视图的**唯一**渲染实现（控制台 `/board` 与 `trina watch` 共用）；`load_run_state` 把 state.json 还原成 `RunState` |
-| `trina.brain.prompts` | `action_example`、`render_system_prompt(include_hypothesis)`、`build_system_prompt`、`build_step_prompt`、`parse_action` | 共用最小动作协议；系统只说明一次调用与结束格式，单步只传状态、预算、任务及结果；`thought` 非必填；关闭台账时省略假设字段 |
+| `trina.brain.prompts` | `action_example`、`render_system_prompt`、`build_system_prompt`、`build_runtime_context`、`build_step_prompt`、`parse_action` | `system` 始终为空；最小动作协议、范围、工具与任务事实放在每轮运行数据；`thought` 非必填；关闭台账时省略假设字段 |
 | `trina.brain.chat` | `ChatAgent(config, registry=, backend=, approval=, steer_queue=, controller=).ask(text) -> str` | **对话式大脑**：共用护栏/控制器/审计/审批；每条消息最多 12 个动作；本轮请求 + 事实摘要 + 有界历史，保存动作/观察关系并回灌失败建议；不宣称具有任务模式的阶段机 |
 | `trina.collaboration` | `SpecialistRole/Request/Result`、`Specialist.consult` | 专职 Agent 只持有后端并接收快照，返回不可信建议；recon/web 可建议白名单工具，review 只返回摘要；无工具执行、状态写入或递归委派入口 |
 | `trina.tools.specialists` | `ConsultSpecialist`、`TOOLS` | 注册咨询工具，默认关闭；共享审批/控制器/护栏/审计；子调用数、输出长度与快照长度有界；空 facts/evidence；子响应按实际顺序进入任务录制 |
@@ -105,7 +105,7 @@ flowchart TB
 | `trina.session` | `Session.request_approval/answer/steer/toggle_pause/request_stop`、`level_needs_approval` | 人机协同原语；审批**超时即拒绝**（fail-closed） |
 | `trina.play` | `build_plan(config, target=, range_name=)`、`run_plan(config, plan, approval=, steer_queue=, …)` | 一条命令开打的准备与执行；谁拉起靶机谁负责回收 |
 | `trina.terminal` | `render_home/render_panel/render_message/render_step/render_approval` | CLI 统一展示；按显示宽度折行并清除外部控制字符，正式输出支持 Markdown；无色和无 rich 时降级；不参与模型上下文或动作执行 |
-| `trina.console_state` | `ConsoleState`、`TrackedBackend` | 展示层被动观测模型等待与实际返回用量；跨模型累计，建新会话清零；不修改提示词、动作、授权或后端账本 |
+| `trina.console_state` | `ConsoleState`、`TrackedBackend` | 展示层被动观测模型等待与实际返回用量；跨模型累计，建新会话清零；只展示实际返回的字段，未知项不占位；不修改提示词、动作、授权或后端账本 |
 | `trina.console_ui` | `EnhancedConsoleInput.run/write` | 持续全屏内容区与固定底部输入、索引和用量；后台只追加内容；模型表单临时接管终端后恢复 |
 | `trina.interactive` | `Console(config, input_fn=, output=).run()/handle(line)` | 行式交互控制台；空闲命令复用 CLI，运行中支持介入、状态和只读工作台；2026-10-28 展示更新见 [CLI 说明](CLI_UI.md) |
 | `trina.review` | `review_state(state, audit_path=, registry=) -> ReviewNote`、`ReviewNote.to_markdown()` | 评价 Agent（只读）：核对声明/证据、结论一致性、覆盖缺口、边界事件、审计链 |

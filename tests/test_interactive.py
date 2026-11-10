@@ -211,6 +211,21 @@ class TestChatAgent(unittest.TestCase):
         self.assertIn("Trina", reply)
         self.assertEqual(chat.state.counters.get("tool_calls", 0), 0)
 
+    def test_chat_sends_empty_system_and_contract_as_user_data(self):
+        chat = self._chat([{"response": "收到。"}])
+        original = chat.backend.complete
+        calls: list[tuple[str, str]] = []
+
+        def capture(system: str, user: str, **kwargs):
+            calls.append((system, user))
+            return original(system, user, **kwargs)
+
+        chat.backend.complete = capture  # type: ignore[method-assign]
+        self.assertEqual(chat.ask("你好"), "收到。")
+        self.assertEqual(calls[0][0], "")
+        self.assertIn('{"action"', calls[0][1])
+        self.assertIn("# 可用工具", calls[0][1])
+
     def test_tool_action_then_reply(self):
         chat = self._chat(
             [
@@ -356,6 +371,11 @@ class TestConsole(unittest.TestCase):
         self.assertIn("审批模式已切换为 verify", blob)
         self.assertEqual(console.session.approval_mode, "verify")
 
+    def test_default_console_trusts_run_without_persistent_approval_badge(self):
+        console, _ = self._console([])
+        self.assertEqual(console.session.approval_mode, "off")
+        self.assertNotIn("审批", console._prompt_status())
+
     def test_free_text_goes_to_chat(self):
         """非命令的自然语言应进入对话，而不是报"未知命令"。"""
         import json as _json
@@ -395,7 +415,7 @@ class TestConsole(unittest.TestCase):
         blob = "\n".join(output)
         self.assertIn("已切换模型", blob)
         self.assertIn("已切到 omp 后端", blob)
-        self.assertIn("模型调用", blob)
+        self.assertIn("暂无可显示的用量数据", blob)
         self.assertEqual(console.config.llm.backend, "omp")
         self.assertIn("/", console.config.llm.model, "omp 后端下模型应带 provider 前缀")
 
@@ -441,7 +461,7 @@ class TestConsole(unittest.TestCase):
     def test_usage_without_chat_still_reports_ledger(self):
         console, output = self._console(["/usage", "quit"])
         console.run()
-        self.assertTrue(any("模型调用" in line for line in output))
+        self.assertTrue(any("暂无可显示的用量数据" in line for line in output))
 
     def test_goal_persists_and_running_update_uses_typed_steer(self):
         from trina.session import GoalUpdate

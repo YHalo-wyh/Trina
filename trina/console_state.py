@@ -86,27 +86,35 @@ class ConsoleState:
     def footer(self, width: int, compact: bool = False) -> str:
         data = self.usage_data()
         if not data["calls"]:
-            # 一次模型都没调用：没有"未提供"可言，直接说明状态，避免 0 与未提供并存的歧义。
-            from .terminal import _wrap
-            return _wrap("会话 Token 0 · 尚未调用模型", max(20, width))
+            return ""
         known = data["tokens_reported"]
         prefix = "≥" if (data["missing_tokens"] or data["missing_input"] or data["missing_output"]) and known else ""
-        total = prefix + _number(data["total_tokens"]) if known else "未提供"
+        groups: list[str] = []
+        if known:
+            groups.append(f"会话 Token {prefix}{_number(data['total_tokens'])}")
         rate = data["cache_hit_rate"]
-        cache = f"{rate:.1%}" if rate is not None else "—" if not data["calls"] else "未提供"
-        if rate is not None and data["missing_cache"]:
-            cache += "（部分）"
-        groups = [f"会话 Token {total}", f"缓存命中 {cache}"]
+        if rate is not None:
+            cache = f"{rate:.1%}" + ("（部分）" if data["missing_cache"] else "")
+            groups.append(f"缓存命中 {cache}")
         if not compact:
-            incoming = (("≥" if data["missing_input"] else "") + _number(data["input_tokens"])) if data["input_reported"] else "未提供"
-            outgoing = (("≥" if data["missing_output"] else "") + _number(data["output_tokens"])) if data["output_reported"] else "未提供"
-            groups.insert(1, f"入 {incoming} / 出 {outgoing}")
-            if data["cache_reported"]:
-                read = (("≥" if data["missing_cache_read"] else "") + _number(data["cache_read_tokens"])) if data["cache_read_reported"] else "未提供"
-                write = (("≥" if data["missing_cache_write"] else "") + _number(data["cache_write_tokens"])) if data["cache_write_reported"] else "未提供"
-                groups.append(f"缓存读 {read} / 写 {write}")
+            io_parts: list[str] = []
+            if data["input_reported"]:
+                io_parts.append(f"入 {('≥' if data['missing_input'] else '')}{_number(data['input_tokens'])}")
+            if data["output_reported"]:
+                io_parts.append(f"出 {('≥' if data['missing_output'] else '')}{_number(data['output_tokens'])}")
+            if io_parts:
+                groups.insert(1 if groups else 0, " / ".join(io_parts))
+            cache_parts: list[str] = []
+            if data["cache_read_reported"]:
+                cache_parts.append(f"读 {('≥' if data['missing_cache_read'] else '')}{_number(data['cache_read_tokens'])}")
+            if data["cache_write_reported"]:
+                cache_parts.append(f"写 {('≥' if data['missing_cache_write'] else '')}{_number(data['cache_write_tokens'])}")
+            if cache_parts:
+                groups.append("缓存" + " / ".join(cache_parts))
             if data["cost_reported"]:
                 groups.append(f"费用 {'≥' if data['missing_cost'] else ''}${data['cost_usd']:.4f}")
+        if not groups:
+            return ""
         lines, line = [], ""
         for group in groups:
             combined = line + " · " + group if line else group

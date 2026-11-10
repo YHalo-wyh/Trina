@@ -6,8 +6,7 @@
 ------------
 1. **一条命令开打**：`play`（自动起 lab 靶机 → 跑 → 出报告）
 2. **运行中实时介入**：`hint <文本>` 注入提示、`pause`/`resume`、`stop`、`status`
-3. **审批闸门**：`--approve exploit`（默认）时，每个命令执行/爆破级动作都要人工 y/n 批准；
-   超时未答复按拒绝处理（fail-closed）
+3. **可选审批闸门**：默认关闭；显式指定 `--approve` 后，超时未答复按拒绝处理。
 
 命令都只是薄封装：能委托给 CLI 的（tools/guard/ranges/report/audit）直接复用同一实现，避免两套行为。
 """
@@ -50,7 +49,7 @@ class Console:
         output: Callable[[str], None] | None = None,
         backend: Any = None,
         registry: Any = None,
-        approval_mode: str = "exploit",
+        approval_mode: str = "off",
         autostart_lab: bool = True,
         plain: bool = False,
     ):
@@ -206,7 +205,7 @@ class Console:
             )
         pending = self.session.steers.qsize()
         queued = f" · 补充 {pending} 条待处理" if pending else ""
-        return f"{status}{queued} · {llm.profile or llm.backend}/{short} · 审批 {self.session.approval_mode}"
+        return f"{status}{queued} · {llm.profile or llm.backend}/{short}"
 
     def _prompt(self) -> str:
         short = clean_text(_display_model(self.config.llm.model, self.config.llm.reasoning_effort) or "?").replace("\n", " ")[:28]
@@ -691,14 +690,22 @@ class Console:
     def _cmd_usage(self) -> None:
         data = self.view.usage_data()
         rate = data["cache_hit_rate"]
-        self._display(render_panel("会话用量", rows=[
-            ("模型调用", data["calls"]),
-            ("会话 Token", data["total_tokens"] if data["tokens_reported"] or not data["calls"] else "未提供"),
-            ("输入 / 输出", f"{data['input_tokens'] if data['input_reported'] else '未提供'} / {data['output_tokens'] if data['output_reported'] else '未提供'}"),
-            ("缓存命中率", f"{rate:.1%}" + ("（部分请求）" if data["missing_cache"] else "") if rate is not None else "未提供"),
-            ("缓存读 / 写", f"{data['cache_read_tokens'] if data['cache_read_reported'] else '未提供'} / {data['cache_write_tokens'] if data['cache_write_reported'] else '未提供'}"),
-            ("费用", f"{'≥' if data['missing_cost'] else ''}${data['cost_usd']:.6f}" if data["cost_reported"] else "未提供"),
-        ], color=self.color))
+        rows: list[tuple[str, Any]] = [("模型调用", data["calls"])] if data["calls"] else []
+        if data["tokens_reported"]:
+            rows.append(("会话 Token", f"{'≥' if data['missing_tokens'] else ''}{data['total_tokens']}"))
+        if data["input_reported"]:
+            rows.append(("输入 Token", f"{'≥' if data['missing_input'] else ''}{data['input_tokens']}"))
+        if data["output_reported"]:
+            rows.append(("输出 Token", f"{'≥' if data['missing_output'] else ''}{data['output_tokens']}"))
+        if rate is not None:
+            rows.append(("缓存命中率", f"{rate:.1%}" + ("（部分请求）" if data["missing_cache"] else "")))
+        if data["cache_read_reported"]:
+            rows.append(("缓存读取", f"{'≥' if data['missing_cache_read'] else ''}{data['cache_read_tokens']}"))
+        if data["cache_write_reported"]:
+            rows.append(("缓存写入", f"{'≥' if data['missing_cache_write'] else ''}{data['cache_write_tokens']}"))
+        if data["cost_reported"]:
+            rows.append(("费用", f"{'≥' if data['missing_cost'] else ''}${data['cost_usd']:.6f}"))
+        self._display(render_panel("会话用量", rows=rows, sections=[] if rows else [("", "暂无可显示的用量数据")], color=self.color))
 
     def _cmd_save(self) -> None:
         """把当前供应商或 omp 模型写入唯一的 v2 供应商配置。"""
@@ -893,7 +900,7 @@ class Console:
         elif self._last_state is not None:
             self._display(render_board(self._last_state, color=self.color))
         else:
-            self._display(render_panel("就绪", rows=[("状态", "空闲"), ("模型", _display_model(self.config.llm.model, self.config.llm.reasoning_effort)), ("审批", self.session.approval_mode)],
+            self._display(render_panel("就绪", rows=[("状态", "空闲"), ("模型", _display_model(self.config.llm.model, self.config.llm.reasoning_effort))],
                                        footer="输入问题开始对话 · /play 开始任务 · /help 查看命令", color=self.color))
 
     def _cmd_approve(self, args: list[str]) -> None:
@@ -1025,8 +1032,7 @@ class Console:
 
             self._emit(
                 f"开始任务：{plan.target}"
-                + (f" · 目标要求：{goal}" if goal else "")
-                + f" · 审批模式：{self.session.approval_mode}",
+                + (f" · 目标要求：{goal}" if goal else ""),
                 prefix="[任务]",
             )
             try:
@@ -1058,7 +1064,7 @@ class Console:
 
         self.session.thread = threading.Thread(target=_worker, name="trina-task", daemon=True)
         self.session.thread.start()
-        self._emit("任务已在后台运行：y/n 审批 · hint <文本> 介入 · status 查看 · stop 停止")
+        self._emit("任务已在后台运行：直接输入可补充 · status 查看 · stop 停止")
 
         return True
 
@@ -1119,8 +1125,8 @@ def main(argv: list[str] | None = None) -> int:
     import argparse
 
     parser = argparse.ArgumentParser(prog="trina console", description="Trina 交互控制台（人工可介入）")
-    parser.add_argument("--approve", choices=APPROVAL_MODES, default="exploit",
-                        help="审批模式：off 全自动 / exploit 只审高危 / verify / all（默认 exploit）")
+    parser.add_argument("--approve", choices=APPROVAL_MODES, default="off",
+                        help="可选审批模式：off 全自动 / exploit / verify / all（默认 off）")
     parser.add_argument("--config", help="配置文件路径")
     parser.add_argument("--set", action="append", metavar="section.field=value", help="临时覆盖配置，可重复")
     parser.add_argument("--plain", action="store_true", help="关闭终端颜色，适合日志和兼容终端")

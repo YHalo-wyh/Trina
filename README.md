@@ -150,13 +150,13 @@ strict 模式下咨询工具也需要显式注册检查项。尚无实测数据�
 
 | 能力 | 命令 | 说明 |
 |---|---|---|
-| **对话式控制台** | `trina`（或 `trina console`） | **直接说人话**：`你好` / `帮我看看 127.0.0.1:9099 有什么漏洞` → Trina 回答；需要动手时它自己调工具（照样过授权控制器、护栏、审批与审计）。`/help` 看命令；`/model` 换模型、`/backend` 换后端、`/history` 看历史、`/usage` 看用量、`/save` 持久化 |
+| **对话式控制台** | `trina`（或 `trina console`） | **直接说人话**：`你好` / `帮我看看 127.0.0.1:9099 有什么漏洞` → Trina 回答；需要动手时它自己调工具（照样过授权控制器、护栏与审计）。人工审批默认关闭，按需用 `--approve` 显式开启。`/help` 看命令；`/model` 换模型、`/backend` 换后端、`/history` 看历史、`/usage` 看用量、`/save` 持久化 |
 | 一条命令开打 | `trina play [--target T] [--range NAME] [--goal G] [--approve MODE]` | 自动准备靶场（默认内置 lab）→ 跑完整任务（含阶段机与结论/覆盖统计）→ 出报告 |
-| 运行中介入 | `hint <文本>`（或直接说人话）· `pause/resume` · `stop` · `status` · `/revoke <target_id>` 撤权 | 运行中说人话＝介入提示；审批 `y/n`，**超时即拒绝** |
+| 运行中介入 | `hint <文本>`（或直接说人话）· `pause/resume` · `stop` · `status` · `/revoke <target_id>` 撤权 | 运行中说人话＝介入提示；显式开启审批后可用 `y/n`，**超时即拒绝** |
 | 评价 Agent | `trina review [--state runs/<id>/state.json]` | 只读复核：缺证据的声明、结论一致性、覆盖缺口、边界事件、审计链 |
 
 > 对话模式与任务模式共用同一套安全机制：`ToolRegistry`（护栏+审计收口）、`AuthorizationController`（注册表/预算/撤权）、
-> 人工审批闸门。模型在对话里同样**不能**扩大范围，也不能把工具输出当指令。
+> 人工审批闸门为可选高级控制，默认 `off`。模型在对话里同样**不能**扩大范围，也不能把工具输出当指令。
 
 ## 授权策略：计划器提出，控制器批准
 
@@ -234,13 +234,14 @@ python3 -m unittest discover -s tests                   # 完整回归，数量�
 - `.omp/extensions/trina.ts`：把 Trina 暴露成 omp 工具 —— `trina_run` / `trina_tool` / `trina_guard` / `trina_tools` / `trina_report`，并注册 `/pentest` 命令；
   同时对 omp 内建 `bash` 做**第二道防线**拦截（DoS/删库/`--os-shell` 等参数、对公网地址的攻击性工具调用）。
 - `.omp/skills/pentest-agent/SKILL.md`：渗透作业技能（何时用、怎么用、护栏规则、报告规范）。
+- `.omp/skills/solve-challenge` 与 `.omp/skills/ctf-*`：项目级 CTF 分类、解题参考、相似题检索与 writeup 技能；固定上游提交及 MIT 许可见 `.omp/skills/CTF_SKILLS_SOURCE.md`。
 - `.omp/config.yml`：项目级配置覆盖（默认留空，示例见注释）。
 
 ## 目录
 
 ```
 trina/            核心包（brain / tools / adapters / report / eval / lab；洞察层：hypotheses / failure / evidence_graph / board）
-configs/        主配置 + 靶场注册表 + 字典
+configs/        主配置
 docs/           方案与文档（PLAN / ARCHITECTURE / GUARDRAILS / EVAL / RUNBOOK）
 .omp/           可选 omp 集成（扩展 + 技能 + 配置覆盖）
 logs/           审计哈希链（每 run 一个 JSONL）

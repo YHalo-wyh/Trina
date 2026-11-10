@@ -539,7 +539,10 @@ class EnhancedConsoleInput:
         self.output_window = Window(transcript, wrap_lines=True, always_hide_cursor=True)
         self.activity_window = Window(FormattedTextControl(self._activity), height=1)
         self.input_window = Window(control, wrap_lines=True, height=Dimension(min=1, max=3), dont_extend_height=True)
-        self.usage_window = Window(FormattedTextControl(self._usage), wrap_lines=True, dont_extend_height=True)
+        self.usage_window = Window(
+            FormattedTextControl(self._usage), wrap_lines=True, dont_extend_height=True,
+            height=lambda: self._usage_height(),
+        )
         self.app = Application(
             layout=Layout(HSplit([
                 self.output_window,
@@ -568,6 +571,12 @@ class EnhancedConsoleInput:
         return [("class:usage.value" if index % 2 else "class:usage", part)
                 for index, part in enumerate(re.split(r"([≥]?\d[\d.,]*(?:[kM%])?)", self.usage(size.columns, size.rows < 16)))
                 if part]
+
+    def _usage_height(self) -> int:
+        """没有实际用量字段时不为底栏保留空白行。"""
+        size = self.app.output.get_size()
+        text = self.usage(size.columns, size.rows < 16)
+        return min(3, text.count("\n") + 1) if text else 0
 
     def _activity(self):
         from .terminal import clean_text

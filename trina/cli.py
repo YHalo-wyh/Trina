@@ -561,7 +561,7 @@ def cmd_play(args: argparse.Namespace) -> int:
         )
         return 2
 
-    print(render_panel("Trina / 准备任务", rows=[("模型", display_model(config.llm.model, config.llm.reasoning_effort)), ("审批", approval_mode)], color=use_color()))
+    print(render_panel("Trina / 准备任务", rows=[("模型", display_model(config.llm.model, config.llm.reasoning_effort))], color=use_color()))
     plan = build_plan(
         config,
         target=getattr(args, "target", None),
@@ -976,7 +976,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     console = sub.add_parser("console", help="交互式控制台（人工可实时介入）")
     add_common(console)
-    console.add_argument("--approve", choices=["off", "exploit", "verify", "all"], default="exploit")
+    console.add_argument("--approve", choices=["off", "exploit", "verify", "all"], default="off")
     console.add_argument("--plain", action="store_true", help="关闭终端颜色")
     console.add_argument("--no-lab-autostart", action="store_true")
     console.set_defaults(func=cmd_console)
@@ -1094,7 +1094,7 @@ def build_parser() -> argparse.ArgumentParser:
     create.add_argument("--target", required=True)
     create.add_argument("--goal")
     create.add_argument("--max-steps", type=int, default=12)
-    create.add_argument("--approve", choices=("off", "exploit", "verify", "all"), default="exploit")
+    create.add_argument("--approve", choices=("off", "exploit", "verify", "all"), default="off")
     create.set_defaults(func=cmd_schedule)
     cancel = schedule_sub.add_parser("cancel")
     cancel.add_argument("task_id")
@@ -1111,7 +1111,7 @@ def main(argv: list[str] | None = None) -> int:
     if not argv:
         # 裸命令 → 交互式控制台（人工可介入）
         return cmd_console(
-            argparse.Namespace(approve="exploit", config=None, set=None, no_lab_autostart=False)
+            argparse.Namespace(approve="off", config=None, set=None, no_lab_autostart=False)
         )
     parser = build_parser()
     args = parser.parse_args(argv)

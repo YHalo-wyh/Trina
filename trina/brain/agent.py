@@ -32,7 +32,7 @@ from ..tools.registry import ToolContext
 from .failure import LoopGuard, advice_for, alternatives_for, classify_failure
 from .goal import GoalRequirements
 from .planner import Planner
-from .prompts import build_step_prompt, build_system_prompt, parse_action
+from .prompts import build_runtime_context, build_step_prompt, build_system_prompt, parse_action
 from .scheduler import DEFAULT_MIN_PRIORITY, HypothesisScheduler
 
 MAX_LLM_RETRIES = 4
@@ -231,9 +231,13 @@ class PentestAgent:
             self.registry.prompt_block(exclude=() if self.config.run.specialists else ("consult_specialist",)),
             extra_rules,
             include_hypothesis=use_ledger,
-        ) + (
-            "\n# 已注册检查项\n" + policy_block
         )
+        runtime_context = build_runtime_context(
+            self.config.scope_prompt_block(),
+            self.registry.prompt_block(exclude=() if self.config.run.specialists else ("consult_specialist",)),
+            extra_rules,
+            include_hypothesis=use_ledger,
+        ) + ("\n\n# 已注册检查项\n" + policy_block if policy_block else "")
         observation = ""
         last_action_key = ""
         stall = 0
@@ -337,6 +341,7 @@ class PentestAgent:
                     state_digest=state.summary_for_prompt(),
                     last_observation=observation,
                     hints=hints,
+                    runtime_context=runtime_context,
                     budget={
                         "阶段步数": f"{planner.phase_step}/{planner.max_steps_per_phase}",
                         "总步数": f"{index}/{max_steps}",

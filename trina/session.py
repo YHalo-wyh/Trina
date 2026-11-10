@@ -45,7 +45,7 @@ def level_needs_approval(mode: str, level: str) -> bool:
 class Session:
     """一次人机协同运行的共享状态。"""
 
-    approval_mode: str = "exploit"
+    approval_mode: str = "off"
     approval_timeout: float = DEFAULT_APPROVAL_TIMEOUT
     emit: Callable[[str], None] = field(default_factory=lambda: (lambda _msg: None))
     steers: "queue.Queue[str]" = field(default_factory=queue.Queue)

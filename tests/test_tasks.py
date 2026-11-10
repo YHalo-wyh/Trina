@@ -87,6 +87,15 @@ class TestTaskStore(unittest.TestCase):
             self.assertEqual(args.schedule_action, "list")
         self.assertIsNone(build_parser().parse_args(["run", "--target", "127.0.0.1"]).goal)
         self.assertIsNone(build_parser().parse_args(["play", "--target", "127.0.0.1"]).goal)
+        self.assertEqual(build_parser().parse_args(["console"]).approve, "off")
+        self.assertEqual(build_parser().parse_args(["schedule", "add", "--at", "+1m", "--target", "127.0.0.1"]).approve, "off")
+
+    def test_scheduled_task_defaults_to_no_human_approval(self):
+        task = ScheduledTask("fixture", str(self.project), datetime.now().astimezone().isoformat(), "127.0.0.1")
+        self.assertEqual(task.approve, "off")
+        now = datetime.now().astimezone()
+        stored = self.store.add("127.0.0.1", "+1m", config=self.config, now=now)
+        self.assertEqual(stored.approve, "off")
 
     def test_headless_approval_denies_levels_that_need_a_person(self):
         task = ScheduledTask("fixture", str(self.project), datetime.now().astimezone().isoformat(),

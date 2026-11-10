@@ -26,12 +26,13 @@ class ConsoleSessionTests(unittest.TestCase):
         view.reset()
         self.assertEqual(view.usage_data()["calls"], 0)
         self.assertEqual(view.usage_data()["total_tokens"], 0)
-        self.assertIn("Token 0", view.footer(88))
+        self.assertEqual(view.footer(88), "")
 
     def test_missing_usage_is_not_zero_percent_and_partial_rates_use_only_known_input(self):
         view = ConsoleState()
         view.model_finished(LLMUsage(input_tokens=1000, output_tokens=100))
-        self.assertIn("缓存命中 未提供", view.footer(88))
+        self.assertNotIn("缓存命中", view.footer(88))
+        self.assertNotIn("未提供", view.footer(88))
         view.model_finished(LLMUsage(input_tokens=100, cache_read_tokens=80))
         self.assertAlmostEqual(view.usage_data()["cache_hit_rate"], .8)
         self.assertIn("80.0%（部分）", view.footer(88))
@@ -39,26 +40,27 @@ class ConsoleSessionTests(unittest.TestCase):
         self.assertIn("≥", view.footer(88))
         empty = ConsoleState()
         empty.model_finished(LLMUsage())
-        self.assertIn("Token 未提供", empty.footer(88))
+        self.assertEqual(empty.footer(88), "")
         view.model_finished(LLMUsage(input_tokens=10, cost=.1))
         self.assertIn("费用 ≥$0.1000", view.footer(120))
 
-    def test_footer_before_any_call_reports_not_called_instead_of_missing(self):
-        footer = ConsoleState().footer(88)
-        self.assertIn("会话 Token 0", footer)
-        self.assertIn("尚未调用模型", footer)
-        self.assertNotIn("未提供", footer)
+    def test_footer_before_any_call_is_hidden(self):
+        self.assertEqual(ConsoleState().footer(88), "")
 
     def test_individual_missing_fields_are_not_rendered_as_zero(self):
         input_only = ConsoleState()
         input_only.model_finished(LLMUsage(input_tokens=25, input_reported=True))
-        self.assertIn("入 25 / 出 未提供", input_only.footer(88))
+        self.assertIn("入 25", input_only.footer(88))
+        self.assertNotIn("出", input_only.footer(88))
+        self.assertNotIn("未提供", input_only.footer(88))
         cache_write_only = ConsoleState()
         cache_write_only.model_finished(LLMUsage(input_tokens=25, cache_write_tokens=5,
                                                  input_reported=True, cache_write_reported=True))
         footer = cache_write_only.footer(100)
-        self.assertIn("缓存命中 未提供", footer)
-        self.assertIn("缓存读 未提供 / 写 5", footer)
+        self.assertNotIn("缓存命中", footer)
+        self.assertIn("缓存写 5", footer)
+        self.assertNotIn("缓存读", footer)
+        self.assertNotIn("未提供", footer)
 
     def test_request_phase_covers_real_wait_and_recovers_after_an_exception(self):
         view = ConsoleState()
