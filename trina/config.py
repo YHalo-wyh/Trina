@@ -19,8 +19,9 @@ from typing import Any
 import yaml
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_CONFIG_PATH = (PROJECT_ROOT / "configs" / "trina.yaml" if (PROJECT_ROOT / "configs" / "trina.yaml").exists()
-                       else Path(__file__).with_name("defaults.yaml"))
+SOURCE_CONFIG_PATH = PROJECT_ROOT / "configs" / "trina.yaml"
+PACKAGED_CONFIG_PATH = Path(__file__).with_name("defaults.yaml")
+DEFAULT_CONFIG_PATH = SOURCE_CONFIG_PATH if SOURCE_CONFIG_PATH.exists() else PACKAGED_CONFIG_PATH
 
 #: 动作等级，从低到高。工具声明所需等级，护栏比较后放行/拒绝。
 ACTION_LEVELS = ("detect", "verify", "exploit")
@@ -366,15 +367,31 @@ class TrinaConfig:
 
     @property
     def audit_dir(self) -> Path:
-        return _resolve(self.audit.dir)
+        return self.resolve_runtime_path(self.audit.dir)
 
     @property
     def report_dir(self) -> Path:
-        return _resolve(self.report.output_dir)
+        return self.resolve_runtime_path(self.report.output_dir)
 
     @property
     def workspace_dir(self) -> Path:
-        return _resolve(self.run.workspace)
+        return self.resolve_runtime_path(self.run.workspace)
+
+    @property
+    def runtime_root(self) -> Path:
+        """运行产物根目录：源码项目、显式项目配置与安装包彼此隔离。"""
+        if self.path:
+            config_path = self.path.expanduser().resolve()
+            if config_path == PACKAGED_CONFIG_PATH.resolve():
+                return _user_data_root()
+            if config_path.parent.name.lower() == "configs":
+                return config_path.parent.parent
+            return config_path.parent
+        return _default_runtime_root()
+
+    def resolve_runtime_path(self, raw: str | Path) -> Path:
+        """把运行产物路径相对当前配置所属项目解析。"""
+        return _resolve(raw, base=self.runtime_root)
 
     def scope_prompt_block(self) -> str:
         """给 LLM 看的授权边界描述（与护栏真实判据同源，避免提示词漂移）。"""
@@ -412,12 +429,22 @@ def _coerce(value: str, type_hint: Any) -> Any:
     return value
 
 
-def _resolve(raw: str) -> Path:
-    """相对路径按仓库根解析。
+def _user_data_root() -> Path:
+    """安装版默认数据目录；可用 ``TRINA_HOME`` 显式覆盖。"""
+    return Path(os.environ.get("TRINA_HOME") or Path.home() / ".trina").expanduser()
+
+
+def _default_runtime_root() -> Path:
+    """源码树写仓库根；Wheel 安装写用户数据目录。"""
+    return PROJECT_ROOT if SOURCE_CONFIG_PATH.exists() else _user_data_root()
+
+
+def _resolve(raw: str | Path, *, base: Path | None = None) -> Path:
+    """解析运行路径，不把安装版产物写入 ``site-packages``。
 
     CLI 可以从任意目录启动（WSL 里常见的是 ``/mnt/c/Windows/system32``），
-    若按 cwd 解析，``logs``/``reports`` 会落到系统目录并触发 PermissionError。
-    需要按当前目录落盘时，在配置里写绝对路径。
+    源码树相对仓库根，Wheel 相对 ``~/.trina``。显式配置由
+    :class:`TrinaConfig` 传入其项目根；绝对路径始终保持不变。
     """
-    path = Path(raw)
-    return path if path.is_absolute() else PROJECT_ROOT / path
+    path = Path(raw).expanduser()
+    return path if path.is_absolute() else (base or _default_runtime_root()) / path

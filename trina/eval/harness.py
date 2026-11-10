@@ -189,8 +189,7 @@ class EvalHarness:
 
     def output_dir(self) -> Path:
         raw = getattr(self.config.eval, "output_dir", "reports/eval")
-        path = Path(raw)
-        return path if path.is_absolute() else PROJECT_ROOT / path
+        return self.config.resolve_runtime_path(raw)
 
     # -------------------------------------------------------------- 加载
     def load_scenarios(self, suite: str | None = None) -> list[ScenarioSpec]:

@@ -32,7 +32,7 @@ scope:
 
 llm:
   # omp: 复用 omp 已配置的模型与鉴权；openai: OpenAI 兼容端点；replay: 离线回放（测试）
-  # 当前接 DeepSeek 官方 API（OpenAI 兼容），密钥来自 ~/.trina/env 的 DEEPSEEK_API_KEY。
+  # 当前接 DeepSeek 官方 API（OpenAI 兼容）；密钥由 /model 供应商配置或 DEEPSEEK_API_KEY 提供。
   backend: openai
   model: deepseek-flash
   timeout: 180

@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from . import __version__
-from .config import TrinaConfig, PROJECT_ROOT, ConfigError
+from .config import TrinaConfig, PROJECT_ROOT, ConfigError, _default_runtime_root
 from .model_names import display_model
 from .scope import ScopeGuard
 from .terminal import render_approval, render_message, render_panel, render_step, use_color
@@ -144,7 +144,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
         ("版本", __version__),
         ("配置文件", str(config.path)),
         ("Python", sys.version.split()[0]),
-        ("工作目录", str(PROJECT_ROOT)),
+        ("运行根目录", str(config.runtime_root)),
     ]
     kv_table(rows, "基础")
 
@@ -366,7 +366,8 @@ def cmd_audit(args: argparse.Namespace) -> int:
 
     path = Path(args.file)
     if not path.exists():
-        candidates = sorted((PROJECT_ROOT / "logs").glob(f"*{args.file}*"), key=lambda p: p.stat().st_mtime, reverse=True)
+        candidates = sorted((_default_runtime_root() / "logs").glob(f"*{args.file}*"),
+                            key=lambda p: p.stat().st_mtime, reverse=True)
         if not candidates:
             out(f"未找到审计文件: {args.file}", "red")
             return 2
@@ -732,7 +733,7 @@ def cmd_review(args: argparse.Namespace) -> int:
             return 2
     else:
         candidates = sorted(
-            (PROJECT_ROOT / config.run.workspace).glob("*/state.json"),
+            config.workspace_dir.glob("*/state.json"),
             key=lambda path: path.stat().st_mtime,
             reverse=True,
         )
@@ -757,7 +758,7 @@ def cmd_review(args: argparse.Namespace) -> int:
     if args.save:
         out_dir = Path(args.save)
         if not out_dir.is_absolute():
-            out_dir = PROJECT_ROOT / out_dir
+            out_dir = config.runtime_root / out_dir
         out_dir.mkdir(parents=True, exist_ok=True)
         target = out_dir / f"{note.run_id or state_path.stem}-review.md"
         target.write_text(markdown, encoding="utf-8")

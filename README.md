@@ -65,8 +65,8 @@ scripts/dev.sh play --target 127.0.0.1
 
 | 后端 | 何时用 | 密钥 | 实测 |
 |---|---|---|---|
-| `omp`（默认） | 本机已有 omp 且配好模型 | 无需（复用 omp 鉴权） | 50s/次全流程 |
-| `openai` + DeepSeek | 想独立于 omp、或要更低延迟/换机器 | `$DEEPSEEK_API_KEY`（`~/.trina/env`，0600，不入库） | **11s** 打穿 lab 并 CONFIRMED |
+| `omp`（可选） | 本机已有 omp 且配好模型 | 无需（复用 omp 鉴权） | 50s/次全流程 |
+| `openai` + DeepSeek（项目默认） | 想独立于 omp、或要更低延迟/换机器 | `/model` 保存供应商，或设置 `$DEEPSEEK_API_KEY` 环境变量 | **11s** 打穿 lab 并 CONFIRMED |
 
 > `/model` 以供应商为单位添加、编辑、删除和切换配置。名称、请求地址、API Key、模型与备注在同一表单中管理，支持 Key 显隐、地址连通测试及模型验证；主页面保留模型和思考强度选择。配置保存在仓库外 `~/.trina/providers.json`，详见 [供应商配置与 30 个预设](docs/MODELS.md)。临时产物的整理见 [仓库清理记录](docs/REPOSITORY_LAYOUT.md)。
 

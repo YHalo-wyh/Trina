@@ -3,14 +3,11 @@
 ## 0. 装成全局命令（在任意目录敲 `trina`）
 
 ```bash
-bash scripts/install.sh                 # 装到 ~/.local/bin/trina（在 PATH 上，无需 sudo）
-bash scripts/install.sh --api omp       # 默认后端改成 omp（默认 deepseek）
-bash scripts/install.sh --uninstall     # 卸载
+python -m pip install .                 # 安装当前项目及 trina 命令
 trina doctor                            # 自检
 ```
 
-包装脚本只做三件事：指向本仓库的 `scripts/dev.sh`、注入默认后端、把 `PYTHONPATH` 指向仓库；
-密钥仍只从 `~/.trina/env`（0600）或环境变量读取，**不写进仓库**。
+模型连接统一在 `/model` 中以供应商为单位保存到 `~/.trina/providers.json`；也可以使用供应商对应的环境变量。源码运行的相对产物目录位于仓库根，全局 Wheel 安装位于 `~/.trina`，可用 `TRINA_HOME` 覆盖。
 
 ## 0.1 环境自检
 
@@ -80,8 +77,8 @@ python3 -m trina play --keep-lab                         # 结束后保留自动
 ## 2.2 交互控制台（对话式，人工可实时介入）
 
 ```bash
-trina                          # 直接进控制台（默认审批模式 exploit）
-trina --api omp                # 临时切回 omp 后端
+trina                          # 直接进控制台（恢复已保存供应商；无选择时用项目默认）
+# 进入控制台后执行 /backend omp，可临时切到 omp
 ```
 
 **两种入口，同一套安全机制**：
@@ -99,7 +96,7 @@ trina --api omp                # 临时切回 omp 后端
 |---|---|---|
 | 空闲 | `/model [list\|<spec>]` | 看当前模型 / 列出可选模型 / 切换模型（如 `/model deepseek/deepseek-chat`） |
 | 空闲 | `/backend <omp\|deepseek>` | 切换模型后端（omp 复用 omp 鉴权；deepseek 直连官方 API） |
-| 空闲 | `/save` | 把当前后端与模型写进 `~/.trina/env`（仓库外，0600），下次启动仍生效 |
+| 空闲 | `/save` | 保存当前 v2 供应商选择，或保存 omp 模型与思考档位；不写旧环境文件 |
 | 空闲 | `/usage` | 本次会话的模型调用次数 / token / 成本 |
 | 空闲 | `/history [n]` | 查看最近对话（含工具结果摘要） |
 | 空闲 | `/new`（别名 `/clear`） | 开启新对话会话（清空上下文；审计另起文件） |
@@ -116,8 +113,8 @@ trina --api omp                # 临时切回 omp 后端
 | 运行中 | `hint <文本>` 或直接说人话 | 注入提示，下一步生效 |
 | 运行中 | `pause` / `resume` / `stop` / `status` | 暂停 / 继续 / 停止 / 看状态 |
 
-> 提示符会带上当前模型：空闲 `trina[deepseek-v4-flash]>`，运行中 `trina[<模型>](run)>`。
-> `/model` 与 `/backend` 只对当前会话生效；想长期保留用 `/save`（只改 `~/.trina/env`，不碰仓库）。
+> 当前模型、审批模式和任务状态显示在固定底栏；输入 `/` 时才展开命令索引。
+> `/model` 中添加、切换供应商会保存整条连接；临时 `/backend` 或模型切换可用 `/save` 保存为 omp 选择。所有本机连接都在仓库外，不修改项目配置。
 
 对话模式的审计：每次会话写一个 `logs/chat-<ts>.jsonl`（同样是哈希链），每轮的问答与工具动作都在里面。
 

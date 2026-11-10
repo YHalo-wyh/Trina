@@ -1,3 +1,9 @@
+# 代码与文档统一以 LF 入库，避免 Windows 编辑把一次功能修改放大成全文件差异。
+* text=auto eol=lf
+
+# 评测证据是运行原件，全部保留原始字节与行尾。
+evidence/** -text
+
 # shell 脚本强制 LF：Windows 上 core.autocrlf=true 会把检出转成 CRLF，
 # 导致 `set -euo pipefail` 变成 `pipefail\r`，bash 报 invalid option name。
 *.sh text eol=lf

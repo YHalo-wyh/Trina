@@ -4,8 +4,9 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
-from trina.config import PROJECT_ROOT, TrinaConfig, _resolve
+from trina.config import PACKAGED_CONFIG_PATH, PROJECT_ROOT, TrinaConfig, _resolve
 
 CONFIG = PROJECT_ROOT / "configs" / "trina.yaml"
 
@@ -38,6 +39,20 @@ class ConfigPathTest(unittest.TestCase):
         target = Path(self._tmp.name) / "custom-logs"
         cfg = TrinaConfig.load(path=CONFIG, overrides={"audit.dir": str(target)})
         self.assertEqual(cfg.audit_dir, target)
+
+    def test_packaged_config_writes_to_user_data_not_site_packages(self) -> None:
+        data_root = Path(self._tmp.name) / "trina-home"
+        cfg = TrinaConfig(path=PACKAGED_CONFIG_PATH)
+        with patch.dict(os.environ, {"TRINA_HOME": str(data_root)}):
+            self.assertEqual(cfg.runtime_root, data_root)
+            self.assertEqual(cfg.audit_dir, data_root / "logs")
+            self.assertNotIn("site-packages", str(cfg.audit_dir).lower())
+
+    def test_explicit_config_owns_relative_runtime_paths(self) -> None:
+        project = Path(self._tmp.name) / "project"
+        cfg = TrinaConfig(path=project / "configs" / "custom.yaml")
+        self.assertEqual(cfg.runtime_root, project)
+        self.assertEqual(cfg.workspace_dir, project / "runs")
 
 
 if __name__ == "__main__":
