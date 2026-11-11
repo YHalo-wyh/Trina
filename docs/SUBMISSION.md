@@ -13,7 +13,7 @@
 | 规约 | 完成 | [`规约.md`](../规约.md) · [`规约.json`](../规约.json) | `D-SPEC`；规则 ID、状态、实现路径和测试方法必须存在 |
 | ADR（含前 3 项前置决策） | 完成 | [`design/README.md`](../design/README.md) · `design/adr/0001—0003` | `D-ADR`；必需 ADR 存在且总数达到规约下限 |
 | 项目级 Harness | 完成 | [`harness-manifest.md`](course/harness-manifest.md) · [`AGENTS.md`](../AGENTS.md) · [`ai-rules.md`](../design/ai-rules.md) | `D-HARNESS`；开发、AI、代码、文档、日志与可观测性入口存在 |
-| Global Plan / Tasks | 完成 | [`docs/PLAN.md`](PLAN.md) · [`plan.md`](course/plan.md) · [`tasks.md`](course/tasks.md) | `D-PLAN`；目标、计划、任务卡和完成条件可定位 |
+| Global Plan / Tasks | 完成 | [`docs/PLAN.md`](PLAN.md) · [`plan.md`](course/plan.md) · [`tasks.md`](course/tasks.md) · [双组实验计划](../AI原生软件工程实践——双组工程评价与可观测性对抗计划.md) | `D-PLAN`；目标、计划、任务卡、双组实验和完成条件可定位 |
 | 可执行代码与评测证据 | 完成 | `trina/` · `tests/` · [`evidence/`](../evidence/README.md) · [`评测/`](../评测/README.md) | `D-EVIDENCE`；源码、测试、评测报告与证据数量达到规约下限 |
 
 六个“完成”表示交付类别和追踪入口齐全，不会把 `TR-15/16` 的部分实现或 `TR-17/18` 的待实现能力伪装成产品已完成。机器检查入口：

@@ -67,7 +67,13 @@
       "id": "D-PLAN",
       "name": "Global Plan 与 Tasks",
       "status": "complete",
-      "required_paths": ["brief/README.md", "docs/PLAN.md", "docs/course/plan.md", "docs/course/tasks.md"]
+      "required_paths": [
+        "brief/README.md",
+        "docs/PLAN.md",
+        "docs/course/plan.md",
+        "docs/course/tasks.md",
+        "AI原生软件工程实践——双组工程评价与可观测性对抗计划.md"
+      ]
     },
     {
       "id": "D-EVIDENCE",
