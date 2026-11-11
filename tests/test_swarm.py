@@ -37,6 +37,21 @@ class SwarmTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "等价"):
             validate_tasks([TaskSpec("a", "127.0.0.1", "A"), TaskSpec("b", "127.0.0.1", "a")])
 
+    def test_add_task_validates_and_persists(self) -> None:
+        runtime = SwarmRuntime(
+            self.config,
+            [TaskSpec("base", "127.0.0.1", "识别服务")],
+            max_workers=1,
+            executor=lambda *args: None,
+        )
+        self.assertFalse(runtime.add_task(TaskSpec("duplicate", "127.0.0.1", " 识别服务 ")))
+        with self.assertRaisesRegex(ValueError, "无效依赖"):
+            runtime.add_task(TaskSpec("bad", "127.0.0.1", "错误依赖", depends_on=("missing",)))
+        self.assertTrue(runtime.add_task(TaskSpec("verify", "127.0.0.1", "验证服务", depends_on=("base",))))
+        checkpoint = json.loads(runtime.checkpoint.read_text(encoding="utf-8"))
+        self.assertEqual([item["id"] for item in checkpoint["tasks"]], ["base", "verify"])
+        self.assertEqual(checkpoint["records"]["verify"]["status"], "pending")
+
     def test_parallel_leases_reuse_and_handoff(self) -> None:
         active = 0
         maximum = 0
@@ -67,12 +82,40 @@ class SwarmTests(unittest.TestCase):
         self.assertEqual(summary["worker_reuses"], 1)
         verify = next(item for item in observed if item[0] == "verify")
         self.assertEqual(len(verify[2]), 2)
+        briefs = [json.loads(item) for item in verify[2]]
+        self.assertEqual({item["source_task"] for item in briefs}, {"recon", "web"})
+        self.assertTrue(all(item["similarity"] >= 0.6 for item in briefs))
+        self.assertTrue(all("flags" not in item["intelligence"] for item in briefs))
+        self.assertEqual(
+            summary["tasks"]["verify"]["result"]["facts"]["hosts"][0]["technologies"],
+            ["verify"],
+            "当前题目的事实图不能吸收前序 Worker 状态",
+        )
         recon = next(item for item in observed if item[0] == "recon")
         self.assertNotIn("sqli_test", recon[1])
         self.assertTrue(runtime.checkpoint.exists())
         self.assertTrue(all(Path(path).exists() for path in summary["report_paths"]))
         self.assertTrue(all(not worker.busy for worker in runtime.pool.workers))
         self.assertTrue(runtime.audit.verify()[0])
+
+    def test_commander_does_not_forward_unrelated_completed_task(self) -> None:
+        observed: dict[str, list[str]] = {}
+
+        def execute(worker, task, run_id, hints, registry):
+            observed[task.id] = list(hints)
+            state = RunState(run_id=run_id, target=task.target, goal=task.goal, status="success")
+            state.host(task.target).technologies.append(task.id)
+            state.ended_at = time.time()
+            return state
+
+        tasks = [
+            TaskSpec("first", "http://alpha.test", "梳理登录接口", priority=20),
+            TaskSpec("second", "http://beta.test", "分析二进制加密算法", priority=10),
+        ]
+        runtime = SwarmRuntime(self.config, tasks, max_workers=1, executor=execute)
+        runtime.run()
+        self.assertEqual(observed["first"], [])
+        self.assertEqual(observed["second"], [])
 
     def test_resume_retries_only_inflight(self) -> None:
         calls: list[str] = []

@@ -64,7 +64,7 @@ class Specialist:
         specs: list[ToolSpec],
         max_tokens: int,
     ) -> SpecialistResult:
-        from .brain.prompts import parse_action
+        from .brain.prompts import parse_action, render_system_prompt
 
         role = ROLES.get(request.role)
         if role is None:
@@ -72,7 +72,9 @@ class Specialist:
         allowed = {spec.name: spec for spec in specs
                    if spec.category in role.categories and spec.name != "consult_specialist"}
         system = (
-            f"{role.instruction}\n"
+            render_system_prompt()
+            + "\n\n# Delegated Assignment\n"
+            + f"{role.instruction}\n"
             "根据给定数据返回一个建议 JSON：{\"action\": \"工具名\", \"params\": {}}；"
             "或 {\"final\": {\"summary\": \"结论\"}}。建议不会自动执行。\n"
             "# 配置范围\n" + scope_block

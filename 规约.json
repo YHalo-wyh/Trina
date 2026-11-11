@@ -1,0 +1,496 @@
+{
+  "schema_version": 1,
+  "contract_id": "trina-product-contract",
+  "product_version": "0.3.0",
+  "updated_at": "2026-11-11",
+  "normative_document": "规约.md",
+  "requirements_document": "需求.md",
+  "verification_commands": {
+    "V-CONTRACT": {
+      "argv": ["{python}", "-X", "utf8", "-m", "scripts.verify_contract"],
+      "purpose": "静态核对六类交付物、TR 需求、规则、实现路径和测试声明"
+    },
+    "V-COURSE": {
+      "argv": ["{python}", "-X", "utf8", "-m", "scripts.verify_course_pack"],
+      "purpose": "核对历史课程包的 REQ、场景、任务和证据追踪关系"
+    },
+    "V-TESTS": {
+      "argv": ["{python}", "-X", "utf8", "-m", "unittest", "discover", "-s", "tests"],
+      "purpose": "执行当前产品完整回归"
+    },
+    "V-DIFF": {
+      "argv": ["git", "diff", "--check"],
+      "purpose": "检查待提交差异的空白错误"
+    }
+  },
+  "deliverables": [
+    {
+      "id": "D-REQ",
+      "name": "需求",
+      "status": "complete",
+      "required_paths": ["需求.md"]
+    },
+    {
+      "id": "D-SPEC",
+      "name": "机器可验证规约",
+      "status": "complete",
+      "required_paths": ["规约.md", "规约.json", "scripts/verify_contract.py", "tests/test_contract.py"]
+    },
+    {
+      "id": "D-ADR",
+      "name": "ADR 与前置调研",
+      "status": "complete",
+      "required_paths": [
+        "design/README.md",
+        "design/adr/0001-brain-own-react-loop.md",
+        "design/adr/0002-text-json-action-protocol.md",
+        "design/adr/0003-single-execution-chokepoint.md",
+        "design/adr/0020-security-engineer-prompt-and-commander-intelligence.md"
+      ],
+      "required_globs": [{"pattern": "design/adr/*.md", "minimum": 20}]
+    },
+    {
+      "id": "D-HARNESS",
+      "name": "项目级 Harness",
+      "status": "complete",
+      "required_paths": [
+        "AGENTS.md",
+        "design/ai-rules.md",
+        "docs/course/harness-manifest.md",
+        "docs/ARCHITECTURE.md",
+        "docs/GUARDRAILS.md",
+        "docs/RUNBOOK.md",
+        "trina/audit.py"
+      ]
+    },
+    {
+      "id": "D-PLAN",
+      "name": "Global Plan 与 Tasks",
+      "status": "complete",
+      "required_paths": ["brief/README.md", "docs/PLAN.md", "docs/course/plan.md", "docs/course/tasks.md"]
+    },
+    {
+      "id": "D-EVIDENCE",
+      "name": "可执行代码与评测证据",
+      "status": "complete",
+      "required_paths": [
+        "trina",
+        "tests",
+        "evidence/README.md",
+        "评测/README.md",
+        "评测/2026-11-04_TSecBench_OpenCode_Go/评测报告.md",
+        "scripts/verify_course_pack.py",
+        "scripts/verify_decision_evidence.py"
+      ],
+      "required_globs": [
+        {"pattern": "tests/test_*.py", "minimum": 25},
+        {"pattern": "evidence/**/*.json", "minimum": 8}
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "id": "TR-01",
+      "title": "任务入口与配置装配",
+      "priority": "P0",
+      "status": "implemented",
+      "implementation": ["trina/cli.py", "trina/config.py", "trina/play.py"],
+      "verification": ["V-CONTRACT", "V-TESTS"],
+      "rules": [
+        {
+          "id": "TR-01-R01",
+          "level": "MUST",
+          "statement": "run、play、console 与 swarm 必须使用同一配置装配语义，运行目录不得受无关当前目录污染。",
+          "tests": ["tests.test_config_paths.ConfigPathTest.test_runtime_dirs_ignore_foreign_cwd"]
+        }
+      ]
+    },
+    {
+      "id": "TR-02",
+      "title": "斜杠命令索引与参数提示",
+      "priority": "P1",
+      "status": "implemented",
+      "implementation": ["trina/console_ui.py", "trina/interactive.py"],
+      "verification": ["V-CONTRACT", "V-TESTS"],
+      "rules": [
+        {
+          "id": "TR-02-R01",
+          "level": "MUST",
+          "statement": "输入斜杠前缀必须从统一命令元数据给出命令、选项与运行态过滤结果。",
+          "tests": ["tests.test_terminal_ui.TestTerminalUI.test_slash_index_filters_commands_and_lists_options"]
+        }
+      ]
+    },
+    {
+      "id": "TR-03",
+      "title": "品牌首页与可读终端输出",
+      "priority": "P1",
+      "status": "implemented",
+      "implementation": ["trina/banner.py", "trina/terminal.py", "trina/console_ui.py", "trina/session.py"],
+      "verification": ["V-CONTRACT", "V-TESTS"],
+      "rules": [
+        {
+          "id": "TR-03-R01",
+          "level": "MUST",
+          "statement": "首页必须用终端字符绘制 TRINA，并在窄宽终端保持可读且只在下方显示版本。",
+          "tests": ["tests.test_banner.BannerTests.test_plain_art_is_filled_text_and_fits_available_columns"]
+        },
+        {
+          "id": "TR-03-R02",
+          "level": "MUST",
+          "statement": "模型未调用或供应商未报告字段时，底栏不得显示零值或未知占位。",
+          "tests": ["tests.test_console_session.ConsoleSessionTests.test_footer_before_any_call_is_hidden"]
+        }
+      ]
+    },
+    {
+      "id": "TR-04",
+      "title": "单 Agent 逐步研究",
+      "priority": "P0",
+      "status": "implemented",
+      "implementation": ["trina/brain/agent.py", "trina/brain/chat.py", "trina/brain/prompts.py", "trina/collaboration.py"],
+      "verification": ["V-CONTRACT", "V-TESTS"],
+      "rules": [
+        {
+          "id": "TR-04-R01",
+          "level": "MUST",
+          "statement": "任务 Agent、对话 Assistant 与专职 Agent 必须共用含七个模块的最高权限安全工程师系统提示词。",
+          "tests": ["tests.test_brain.TestParseAction.test_system_messages_define_the_security_engineer_modules"]
+        },
+        {
+          "id": "TR-04-R02",
+          "level": "MUST",
+          "statement": "动态工具、范围、事实与预算必须作为本轮运行数据传入，不得固化为陈旧 system 内容。",
+          "tests": ["tests.test_brain.TestReActLoop.test_agent_sends_security_system_and_runtime_contract_as_user_data"]
+        }
+      ]
+    },
+    {
+      "id": "TR-05",
+      "title": "统一工具契约",
+      "priority": "P0",
+      "status": "implemented",
+      "implementation": ["trina/tools/registry.py", "trina/tools/__init__.py"],
+      "verification": ["V-CONTRACT", "V-TESTS"],
+      "rules": [
+        {
+          "id": "TR-05-R01",
+          "level": "MUST",
+          "statement": "未知工具、未知参数和缺失参数必须在 ToolRegistry 执行目标动作前结构化拒绝。",
+          "tests": ["tests.test_registry.TestRegistry.test_unknown_param_rejected"]
+        }
+      ]
+    },
+    {
+      "id": "TR-06",
+      "title": "范围、动作等级与审批",
+      "priority": "P0",
+      "status": "implemented",
+      "implementation": ["trina/scope.py", "trina/policy.py", "trina/interactive.py", "configs/trina.yaml"],
+      "verification": ["V-CONTRACT", "V-TESTS"],
+      "rules": [
+        {
+          "id": "TR-06-R01",
+          "level": "MUST",
+          "statement": "full 模式必须对格式合法的已注册目标动作免除范围和风险审批拒绝。",
+          "tests": ["tests.test_scope.TestFullTrust.test_full_trust_bypasses_authorization_gates"]
+        },
+        {
+          "id": "TR-06-R02",
+          "level": "MUST",
+          "statement": "restricted 模式必须保留网段、公网、动作等级、破坏性方法与规模判据。",
+          "tests": ["tests.test_scope.TestScopeDecisions.test_private_allowed_public_denied"]
+        }
+      ]
+    },
+    {
+      "id": "TR-07",
+      "title": "事实、假设与结论分离",
+      "priority": "P0",
+      "status": "implemented",
+      "implementation": ["trina/state.py", "trina/hypotheses.py", "trina/brain/goal.py"],
+      "verification": ["V-CONTRACT", "V-TESTS"],
+      "rules": [
+        {
+          "id": "TR-07-R01",
+          "level": "MUST",
+          "statement": "漏洞类目标必须由对象匹配且有证据的工具发现满足，模型声明不能直接升级事实。",
+          "tests": ["tests.test_brain.TestGoalRequirements.test_class_requirement_needs_evidenced_finding"]
+        }
+      ]
+    },
+    {
+      "id": "TR-08",
+      "title": "审计、快照与报告",
+      "priority": "P0",
+      "status": "implemented",
+      "implementation": ["trina/audit.py", "trina/report", "trina/state.py"],
+      "verification": ["V-CONTRACT", "V-TESTS"],
+      "rules": [
+        {
+          "id": "TR-08-R01",
+          "level": "MUST",
+          "statement": "审计链必须能检测普通内容篡改。",
+          "tests": ["tests.test_audit.TestAuditChain.test_tamper_detected"]
+        },
+        {
+          "id": "TR-08-R02",
+          "level": "MUST",
+          "statement": "状态替换失败时必须保留上一份可解析快照。",
+          "tests": ["tests.test_collaboration.TestCollaboration.test_atomic_save_keeps_previous_snapshot_when_replace_fails"]
+        }
+      ]
+    },
+    {
+      "id": "TR-09",
+      "title": "靶场与评测入口",
+      "priority": "P1",
+      "status": "implemented",
+      "implementation": ["trina/eval", "trina/lab", "trina/adapters", "trina/bench"],
+      "verification": ["V-CONTRACT", "V-TESTS"],
+      "rules": [
+        {
+          "id": "TR-09-R01",
+          "level": "MUST",
+          "statement": "评测夹具必须由启动者回收，固定回放与真实模型成绩必须分开记录。",
+          "tests": ["tests.test_eval_report_lab.TestLabFixtures.test_autostart_and_stop"]
+        }
+      ]
+    },
+    {
+      "id": "TR-10",
+      "title": "任务 DAG 定义与校验",
+      "priority": "P1",
+      "status": "implemented",
+      "implementation": ["trina/swarm.py", "docs/SWARM.md"],
+      "verification": ["V-CONTRACT", "V-TESTS"],
+      "rules": [
+        {
+          "id": "TR-10-R01",
+          "level": "MUST",
+          "statement": "任务图必须在启动前拒绝重复 ID、等价任务、未知依赖、依赖环和非法预算。",
+          "tests": ["tests.test_swarm.SwarmTests.test_dag_validation_and_dedup"]
+        }
+      ]
+    },
+    {
+      "id": "TR-11",
+      "title": "能力装配",
+      "priority": "P1",
+      "status": "implemented",
+      "implementation": ["trina/swarm.py", "trina/tools/registry.py"],
+      "verification": ["V-CONTRACT", "V-TESTS"],
+      "rules": [
+        {
+          "id": "TR-11-R01",
+          "level": "MUST",
+          "statement": "每个任务只能看到其能力映射允许的注册工具类别，子集构造不得被此前全量注册污染。",
+          "tests": ["tests.test_registry.TestRegistry.test_module_subset_is_not_polluted_by_previous_full_build"]
+        }
+      ]
+    },
+    {
+      "id": "TR-12",
+      "title": "并行领取、租约与 Worker 复用",
+      "priority": "P1",
+      "status": "implemented",
+      "implementation": ["trina/swarm.py"],
+      "verification": ["V-CONTRACT", "V-TESTS"],
+      "rules": [
+        {
+          "id": "TR-12-R01",
+          "level": "MUST",
+          "statement": "独立任务可并行运行，Worker 可复用，但错误租约不得释放正在执行的 Worker。",
+          "tests": [
+            "tests.test_swarm.SwarmTests.test_parallel_leases_reuse_and_handoff",
+            "tests.test_swarm.SwarmTests.test_worker_lease_rejects_stale_release"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "TR-13",
+      "title": "独立上下文与 Commander 定向情报",
+      "priority": "P1",
+      "status": "implemented",
+      "implementation": ["trina/context.py", "trina/swarm.py", "trina/brain/agent.py"],
+      "verification": ["V-CONTRACT", "V-TESTS"],
+      "rules": [
+        {
+          "id": "TR-13-R01",
+          "level": "MUST",
+          "statement": "不同题目的 RunState、事实图、证据、凭据、假设与历史必须默认隔离。",
+          "tests": ["tests.test_brain.TestReActLoop.test_commander_brief_is_visible_without_merging_foreign_facts"]
+        },
+        {
+          "id": "TR-13-R02",
+          "level": "MUST",
+          "statement": "Commander 只能向相似任务定向转发来源明确的候选情报，不得转发 Flag，接收方必须重新验证。",
+          "tests": [
+            "tests.test_swarm.SwarmTests.test_parallel_leases_reuse_and_handoff",
+            "tests.test_swarm.SwarmTests.test_commander_does_not_forward_unrelated_completed_task"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "TR-14",
+      "title": "检查点与任务级恢复",
+      "priority": "P1",
+      "status": "implemented",
+      "implementation": ["trina/swarm.py"],
+      "verification": ["V-CONTRACT", "V-TESTS"],
+      "rules": [
+        {
+          "id": "TR-14-R01",
+          "level": "MUST",
+          "statement": "恢复必须保留终态任务，只把中断的 running 任务重新置为 pending 并增加下一次尝试号。",
+          "tests": ["tests.test_swarm.SwarmTests.test_resume_retries_only_inflight"]
+        }
+      ]
+    },
+    {
+      "id": "TR-15",
+      "title": "并行预算与资源计量",
+      "priority": "P1",
+      "status": "partial",
+      "implementation": ["trina/swarm.py", "trina/llm/base.py"],
+      "verification": ["V-CONTRACT", "V-TESTS"],
+      "limitations": ["尚无 Swarm 级硬性总 Token、总费用和跨 Worker 严格瞬时 QPS 控制器。"],
+      "rules": [
+        {
+          "id": "TR-15-R01",
+          "level": "MUST",
+          "statement": "当前每任务步数、时长和后端用量必须独立计量，复用后端时不得把前一任务累计量记入下一任务。",
+          "tests": ["tests.test_swarm.SwarmTests.test_replay_agent_runs_registered_http_tool_and_writes_report"]
+        }
+      ]
+    },
+    {
+      "id": "TR-16",
+      "title": "动态任务建议与重排",
+      "priority": "P2",
+      "status": "partial",
+      "implementation": ["trina/swarm.py"],
+      "verification": ["V-CONTRACT", "V-TESTS"],
+      "limitations": ["add_task 仅是 Commander 程序接口；CLI 尚不能在运行中提交任务，Worker 结果也不会自动生成分支。"],
+      "rules": [
+        {
+          "id": "TR-16-R01",
+          "level": "MUST",
+          "statement": "Commander 接收新 TaskSpec 时必须先做等价去重和完整 DAG 校验，再写入检查点。",
+          "tests": ["tests.test_swarm.SwarmTests.test_add_task_validates_and_persists"]
+        }
+      ]
+    },
+    {
+      "id": "TR-17",
+      "title": "Swarm 运行中人工介入",
+      "priority": "P2",
+      "status": "planned",
+      "implementation": ["trina/swarm.py"],
+      "verification": ["V-CONTRACT"],
+      "limitations": ["仅有内部暂停和停止事件；CLI 尚无指定 Worker 的查看、补充、预算调整与接管入口。"],
+      "rules": [
+        {
+          "id": "TR-17-R01",
+          "level": "PLANNED",
+          "statement": "未来交付必须提供可审计的 Swarm 暂停、恢复、定向补充、预算调整与接管协议。",
+          "tests": []
+        }
+      ]
+    },
+    {
+      "id": "TR-18",
+      "title": "可复用研究经验与协作评测",
+      "priority": "P2",
+      "status": "planned",
+      "implementation": ["trina/swarm.py", "trina/eval"],
+      "verification": ["V-CONTRACT"],
+      "limitations": ["尚无持久经验检索和固定同预算的 A/B/C/D 协作收益评测。"],
+      "rules": [
+        {
+          "id": "TR-18-R01",
+          "level": "PLANNED",
+          "statement": "未来经验复用必须保留来源并在当前题目重新验证，协作收益必须按同模型、同题集和可比总预算评测。",
+          "tests": []
+        }
+      ]
+    },
+    {
+      "id": "TR-19",
+      "title": "供应商整条配置与模型管理",
+      "priority": "P1",
+      "status": "implemented",
+      "implementation": ["trina/providers.py", "trina/provider_form.py", "trina/model_ui.py", "trina/llm/reasoning.py"],
+      "verification": ["V-CONTRACT", "V-TESTS"],
+      "rules": [
+        {
+          "id": "TR-19-R01",
+          "level": "MUST",
+          "statement": "供应商名称、请求地址、API Key、模型、思考档位和备注必须作为一个原子配置单位增删编辑。",
+          "tests": ["tests.test_providers.ProviderTests.test_edit_current_provider_renames_and_replaces_key_atomically"]
+        },
+        {
+          "id": "TR-19-R02",
+          "level": "MUST",
+          "statement": "草稿连通与模型验证不得保存、激活或泄露草稿 Key。",
+          "tests": ["tests.test_providers.ProviderTests.test_model_validation_failure_redacts_the_draft_key"]
+        }
+      ]
+    },
+    {
+      "id": "TR-20",
+      "title": "项目目标与一次性定时任务",
+      "priority": "P1",
+      "status": "implemented",
+      "implementation": ["trina/tasks.py", "trina/interactive.py", "trina/cli.py"],
+      "verification": ["V-CONTRACT", "V-TESTS"],
+      "rules": [
+        {
+          "id": "TR-20-R01",
+          "level": "MUST",
+          "statement": "项目目标必须按绝对项目目录隔离，运行中更新必须使旧候选响应失效。",
+          "tests": ["tests.test_interactive.TestConsole.test_goal_persists_and_running_update_uses_typed_steer"]
+        },
+        {
+          "id": "TR-20-R02",
+          "level": "MUST",
+          "statement": "定时任务必须独占领取，崩溃任务不得自动重放，任务文件不得保存供应商 API Key。",
+          "tests": ["tests.test_tasks.TestTaskStore.test_claim_is_exclusive_and_crashed_task_is_not_replayed"]
+        }
+      ]
+    },
+    {
+      "id": "TR-21",
+      "title": "项目级 CTF 技能",
+      "priority": "P1",
+      "status": "implemented",
+      "implementation": [
+        ".omp/skills/solve-challenge/SKILL.md",
+        ".omp/skills/ctf-web/SKILL.md",
+        ".omp/skills/ctf-pwn/SKILL.md",
+        ".omp/skills/ctf-crypto/SKILL.md",
+        ".omp/skills/ctf-reverse/SKILL.md",
+        ".omp/skills/ctf-forensics/SKILL.md",
+        ".omp/skills/ctf-misc/SKILL.md",
+        ".omp/skills/ctf-osint/SKILL.md",
+        ".omp/skills/ctf-malware/SKILL.md",
+        ".omp/skills/ctf-ai-ml/SKILL.md",
+        ".omp/skills/ctf-similar-search/SKILL.md",
+        ".omp/skills/ctf-writeup/SKILL.md",
+        ".omp/skills/CTF_SKILLS_SOURCE.md",
+        ".omp/skills/ctf-skills.LICENSE"
+      ],
+      "verification": ["V-CONTRACT", "V-TESTS"],
+      "rules": [
+        {
+          "id": "TR-21-R01",
+          "level": "MUST",
+          "statement": "项目必须包含分类路由、十类 CTF 参考、相似题检索、writeup、来源提交和许可证。",
+          "tests": ["tests.test_contract.MachineContractTests.test_ctf_skill_inventory_is_complete"]
+        }
+      ]
+    }
+  ]
+}

@@ -210,6 +210,8 @@ class TestCollaboration(unittest.TestCase):
         ctx.state.timeline.append({"text": "private-history"})
         self.assertTrue(self.execute(ctx).ok)
         payload = json.loads(backend.inputs[0][1])
+        self.assertIn("# Delegation", backend.inputs[0][0])
+        self.assertIn("# Delegated Assignment", backend.inputs[0][0])
         self.assertLessEqual(len(payload["context"]), self.cfg.run.specialist_context_chars)
         self.assertIn(ctx.state.goal, payload["context"])
         self.assertNotIn("secret-test-password", backend.inputs[0][1])

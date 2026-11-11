@@ -4,12 +4,27 @@
 
 | 文档 | 检查内容 |
 |---|---|
-| [需求](需求.md) | 使用者、场景、20 项功能需求、8 项质量要求、当前状态与验收口径 |
-| [规约](规约.md) | CLI 与 Agent 接口、任务清单、状态转换、Worker 租约、检查点、错误分支与测试场景 |
+| [需求](需求.md) | 使用者、场景、21 项功能需求、8 项质量要求、当前状态与验收口径 |
+| [规约](规约.md) · [机器规约](规约.json) | CLI 与 Agent 接口、状态转换、规则 ID、实现路径、测试方法与白名单验证命令 |
 | [设计决策](设计决策.md) | 原有单 Agent 决策链，以及 0.2.0—0.3.0 的更新记录、修改原因与兼容边界 |
 | [更新日志](CHANGELOG.md) | 各版本面向使用者的变更摘要、兼容说明与验证状态 |
 
-《设计决策》第 1—27 节保留早期基线，第 28—43 节记录 0.2.0 演进，第 44 节记录 0.3.0 的 full trust 决策。旧课程规格与历史证据继续按原版本保存。
+《设计决策》第 1—27 节保留早期基线，第 28—43 节记录 0.2.0 演进，第 44—45 节记录 0.3.0 的 full trust、系统提示词与 Commander 情报决策。旧课程规格与历史证据继续按原版本保存。
+
+六项提交内容均有仓库入口，并由机器规约检查是否缺失：
+
+| 完成项 | 仓库证据 |
+|---|---|
+| 需求 | [当前需求](需求.md) |
+| 规约 | [行为规约](规约.md) · [机器规约](规约.json) |
+| ADR（含前 3 项前置决策） | [ADR 索引](design/README.md) · `design/adr/0001—0003` |
+| 项目级 Harness | [双层 Harness](docs/course/harness-manifest.md) · [项目约定](AGENTS.md) · [AI 规则](design/ai-rules.md) |
+| Global Plan / Tasks | [全局计划](docs/PLAN.md) · [实施计划](docs/course/plan.md) · [任务卡](docs/course/tasks.md) |
+| 可执行代码与评测证据 | `trina/` · `tests/` · [证据索引](evidence/README.md) · [评测记录](评测/README.md) |
+
+```powershell
+.\.venv\Scripts\python.exe -m scripts.verify_contract --execute --json
+```
 
 [开题报告与第一次汇报](开题报告与第一次汇报.md) · [需求规格](docs/course/specification.md) · [课程材料目录](docs/course/README.md)
 
@@ -21,7 +36,7 @@
 |---|---|
 | 完整开题 / 第一次汇报报告 | **[根目录主报告](开题报告与第一次汇报.md)** |
 | 决策层每一步的设计理由与实现边界 | **[设计决策](设计决策.md)** |
-| 20 条具体需求与规格 | [需求规格](docs/course/specification.md) |
+| 20 条历史课程需求与规格 | [需求规格](docs/course/specification.md) |
 | 26 个场景及逐条验证关系 | [验收场景](docs/course/scenarios.md) · [验收矩阵](docs/course/acceptance-matrix.md) |
 | 计划、8 张任务卡、双层 Harness 等完整交付物 | [课程文档目录](docs/course/README.md) |
 | 10 月 26 日决策文档核对及 267 项回归结果 | [决策层文档验证](evidence/20261026-decision-docs/README.md) |
@@ -71,7 +86,7 @@ scripts/dev.sh play --target 127.0.0.1
 
 > `/model` 以供应商为单位添加、编辑、删除和切换配置。名称、请求地址、API Key、模型与备注在同一表单中管理，支持 Key 显隐、地址连通测试及模型验证；主页面保留模型和思考强度选择。配置保存在仓库外 `~/.trina/providers.json`，详见 [供应商配置与 30 个预设](docs/MODELS.md)。临时产物的整理见 [仓库清理记录](docs/REPOSITORY_LAYOUT.md)。
 
-运行时只提供简短调用协议、工具参数和任务上下文，不再附带角色扮演、分阶段攻略或每轮重复的 JSON 教程。当前网页工具使用 `requests` / `aiohttp` 与 `BeautifulSoup`，尚未封装真实浏览器；浏览器自动化拟采用 **Playwright Python + Chromium**，状态说明见 [架构文档](docs/ARCHITECTURE.md#9-浏览器能力状态)。
+任务 Agent、对话 Assistant 和专职 Worker 共用稳定的安全工程师系统提示词，角色具有当前任务环境中的最高执行权限，并按 `Engineering / Tool Policy / Exploration / Delegation / Workflow / Delivery / Completeness` 七个模块工作。动作协议、工具参数、范围、事实和预算继续作为每轮运行数据注入，避免把动态内容固化进 system。当前网页工具使用 `requests` / `aiohttp` 与 `BeautifulSoup`，尚未封装真实浏览器；浏览器自动化拟采用 **Playwright Python + Chromium**，状态说明见 [架构文档](docs/ARCHITECTURE.md#9-浏览器能力状态)。
 
 资料检索使用 **Google / Bing**；项目搜索工具尚未接入，这两个来源已纳入浏览器接入约定。
 
@@ -134,7 +149,10 @@ strict 模式下咨询工具也需要显式注册检查项。尚无实测数据�
 
 完整取舍、实现边界与后续缺口见 [Agent 设计审查](docs/AGENT_DESIGN_REVIEW.md)，
 关键决策见 [ADR-0017](design/adr/0017-specialist-consultation-without-blackboard.md)
-和 [ADR-0018](design/adr/0018-fact-context-and-atomic-snapshots.md)。
+、[ADR-0018](design/adr/0018-fact-context-and-atomic-snapshots.md)
+和 [ADR-0020](design/adr/0020-security-engineer-prompt-and-commander-intelligence.md)。
+
+`trina swarm` 的每个题目也保持独立上下文和事实图。Commander 会检查已完成任务与当前任务的目标、显式依赖和验证方向，只在相似度达到阈值时转发资产、已验证发现、已验证凭据和工件位置；Flag、聊天历史和其他题目的 `RunState` 不会被合并。接收情报的 Worker 必须在自己的目标上重新验证后才能入账。
 
 ## 已封装的工具（17 项目标分析 + 1 项可选协作）
 

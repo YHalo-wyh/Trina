@@ -12,10 +12,12 @@ from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Callable
+from urllib.parse import urlsplit
 
 from .audit import AuditLog
 from .brain import PentestAgent
 from .config import TrinaConfig
+from .context import BRIEF_VERSION
 from .llm import make_backend
 from .state import RunState
 from .tools import ToolRegistry, build_registry
@@ -69,7 +71,7 @@ class TaskRecord:
 
 @dataclass
 class Worker:
-    """可复用的模型运行资源；任务上下文由每次新建的 Agent 隔离。"""
+    """可复用的模型运行资源；每个任务仍创建独立 Agent 与事实状态。"""
 
     id: str
     backend: Any
@@ -163,6 +165,47 @@ def default_tasks(target: str, goal: str, *, max_steps: int = 12, max_seconds: i
     ]
 
 
+def _target_identity(value: str) -> tuple[str, int | None]:
+    text = (value or "").strip()
+    parsed = urlsplit(text if "://" in text else "//" + text)
+    try:
+        return (str(parsed.hostname or text).casefold(), parsed.port)
+    except ValueError:
+        return (str(parsed.hostname or text).casefold(), None)
+
+
+def _goal_terms(value: str) -> set[str]:
+    text = (value or "").casefold()
+    terms = set(re.findall(r"[a-z0-9_.+-]{2,}", text))
+    stop = {"目标", "验证", "检查", "分析", "发现", "结果", "任务", "前序"}
+    for segment in re.findall(r"[\u4e00-\u9fff]{2,}", text):
+        terms.update(segment[index:index + 2] for index in range(len(segment) - 1))
+    return {item for item in terms if item not in stop}
+
+
+def _task_similarity(source: TaskSpec, destination: TaskSpec) -> tuple[float, list[str]]:
+    """Commander 使用目标、依赖和目标语义判断是否值得转发情报。"""
+    score = 0.0
+    reasons: list[str] = []
+    source_host, source_port = _target_identity(source.target)
+    destination_host, destination_port = _target_identity(destination.target)
+    if source_host and source_host == destination_host:
+        score = 0.95 if source_port == destination_port else 0.9
+        reasons.append("目标主机相同" if source_port != destination_port else "规范化目标相同")
+    if source.id in destination.depends_on:
+        score = max(score, 0.75)
+        reasons.append("当前任务显式依赖来源任务")
+    left, right = _goal_terms(source.goal), _goal_terms(destination.goal)
+    overlap = left & right
+    if source.goal.strip().casefold() == destination.goal.strip().casefold():
+        score = max(score, 0.7)
+        reasons.append("任务目标相同")
+    elif len(overlap) >= 2 and len(overlap) / max(1, min(len(left), len(right))) >= 0.5:
+        score = max(score, 0.65)
+        reasons.append("验证方向高度相似：" + "、".join(sorted(overlap)[:5]))
+    return round(score, 2), reasons
+
+
 def load_manifest(path: str | Path) -> list[TaskSpec]:
     """从 YAML/JSON 读取显式任务图。"""
     import yaml
@@ -247,12 +290,34 @@ class SwarmRuntime:
         return ToolRegistry(tool for spec in self.registry.specs() if spec.category in categories if (tool := self.registry.get(spec.name)) is not None)
 
     def _hints(self, task: TaskSpec) -> list[str]:
-        hints = []
-        for dep in task.depends_on:
-            result = self.records[dep].result
-            if result:
-                hints.append(f"前序任务 {dep} 的结构化结果：{json.dumps(result.get('facts', {}), ensure_ascii=False)[:1800]}")
-        return hints
+        """给自定义 executor 的兼容入口，只传 Commander 选中的情报简报。"""
+        return [json.dumps(item, ensure_ascii=False, default=str) for item in self._briefs(task)]
+
+    def _briefs(self, task: TaskSpec) -> list[dict[str, Any]]:
+        """主动发现已完成题目与当前题目的相似性，并生成定向情报。"""
+        by_id = {item.id: item for item in self.tasks}
+        briefs: list[dict[str, Any]] = []
+        for source_id, record in self.records.items():
+            if source_id == task.id or record.status != "completed":
+                continue
+            intelligence = record.result.get("intelligence")
+            source = by_id.get(source_id)
+            if source is None or not isinstance(intelligence, dict) or not intelligence:
+                continue
+            score, reasons = _task_similarity(source, task)
+            if score < 0.6:
+                continue
+            briefs.append({
+                "version": BRIEF_VERSION,
+                "source_task": source_id,
+                "source_run_id": record.result.get("run_id", ""),
+                "source_target": source.target,
+                "destination_task": task.id,
+                "similarity": score,
+                "reasons": reasons,
+                "intelligence": intelligence,
+            })
+        return sorted(briefs, key=lambda item: (-float(item["similarity"]), str(item["source_task"])))
 
     def _execute_agent(self, worker: Worker, task: TaskSpec, run_id: str, hints: list[str], registry: ToolRegistry) -> RunState:
         # 各 Worker 的限额按并发数分配，避免并行后总请求速率扩大。
@@ -262,7 +327,15 @@ class SwarmRuntime:
         )
         agent = PentestAgent(worker_config, backend=worker.backend, registry=registry, stop_event=self.stop_event, pause_event=self.pause_event)
         usage_before = worker.backend.ledger.to_dict()
-        state = agent.run(task.target, goal=task.goal, max_steps=task.max_steps, max_seconds=task.max_seconds, seed_hints=hints, run_id=run_id)
+        state = agent.run(
+            task.target,
+            goal=task.goal,
+            max_steps=task.max_steps,
+            max_seconds=task.max_seconds,
+            commander_briefs=self._briefs(task),
+            commander_brief_provider=lambda: self._briefs(task),
+            run_id=run_id,
+        )
         if state.ledger:
             state.ledger = worker.backend.ledger.delta(usage_before).to_dict()
         from .report import build_report
@@ -288,6 +361,28 @@ class SwarmRuntime:
             "ledger": state.ledger,
             "artifacts": state.artifacts,
             "duration": state.duration,
+            "intelligence": {
+                "assets": [
+                    {
+                        "host": host,
+                        "alive": hs.alive,
+                        "ports": {str(port): info for port, info in sorted(hs.ports.items())},
+                        "technologies": list(hs.technologies),
+                        "web_paths": list(hs.web_paths),
+                    }
+                    for host, hs in state.hosts.items()
+                ],
+                "verified_findings": [
+                    finding.to_dict()
+                    for finding in state.findings
+                    if finding.status in ("verified", "exploited") and finding.evidence
+                ],
+                "verified_credentials": [
+                    credential.to_dict() for credential in state.credentials if credential.verified
+                ],
+                "artifacts": dict(state.artifacts),
+                "verdict": state.verdict,
+            },
         }
 
     def _save(self) -> None:

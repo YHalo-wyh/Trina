@@ -39,12 +39,15 @@ class TestParseAction(unittest.TestCase):
                     self.assertNotIn("thought", action)
                     self.assertLess(len(text), 400)
 
-    def test_system_messages_are_empty(self):
+    def test_system_messages_define_the_security_engineer_modules(self):
         from trina.brain.chat import render_chat_prompt
         from trina.brain.prompts import render_system_prompt
 
-        self.assertEqual(render_system_prompt(), "")
-        self.assertEqual(render_chat_prompt(), "")
+        task_prompt = render_system_prompt()
+        self.assertEqual(render_chat_prompt(), task_prompt)
+        self.assertIn("授予最高执行权限的安全工程师", task_prompt)
+        for section in ("Engineering", "Tool Policy", "Exploration", "Delegation", "Workflow", "Delivery", "Completeness"):
+            self.assertIn(f"# {section}", task_prompt)
 
     def test_plain_json(self):
         action = parse_action('{"thought": "扫端口", "action": "port_scan", "params": {"target": "127.0.0.1"}}')
@@ -364,7 +367,7 @@ class TestReActLoop(unittest.TestCase):
         ok, detail = log.verify()
         self.assertTrue(ok, detail)
 
-    def test_agent_sends_empty_system_and_runtime_contract_as_user_data(self):
+    def test_agent_sends_security_system_and_runtime_contract_as_user_data(self):
         agent = self._agent([
             {"response": '{"final": {"status": "partial", "summary": "done"}}'},
         ])
@@ -378,9 +381,74 @@ class TestReActLoop(unittest.TestCase):
         agent.backend.complete = capture  # type: ignore[method-assign]
         agent.run("127.0.0.1", max_steps=1)
         self.assertTrue(calls)
-        self.assertTrue(all(system == "" for system, _ in calls))
+        self.assertTrue(all("# Tool Policy" in system for system, _ in calls))
+        self.assertTrue(all("授予最高执行权限的安全工程师" in system for system, _ in calls))
         self.assertIn('{"action"', calls[0][1])
         self.assertIn("# 可用工具", calls[0][1])
+
+    def test_commander_brief_is_visible_without_merging_foreign_facts(self):
+        agent = self._agent([{"response": '{"final": {"status": "partial", "summary": "done"}}'}])
+        calls: list[str] = []
+        original = agent.backend.complete
+
+        def capture(system: str, user: str, **kwargs):
+            calls.append(user)
+            return original(system, user, **kwargs)
+
+        agent.backend.complete = capture  # type: ignore[method-assign]
+        brief = {
+            "version": 1,
+            "source_task": "other",
+            "source_run_id": "other-run",
+            "source_target": "http://other.test",
+            "destination_task": "current",
+            "similarity": 0.75,
+            "reasons": ["验证方向高度相似"],
+            "intelligence": {
+                "assets": [{"host": "other.test", "ports": {"80": {"service": "http"}}}],
+                "verified_findings": [],
+            },
+        }
+        state = agent.run("127.0.0.1", max_steps=1, commander_briefs=[brief])
+        self.assertIn("Commander 转发情报", calls[0])
+        self.assertIn("other.test", calls[0])
+        self.assertNotIn("other.test", state.hosts)
+        records = [json.loads(line) for line in Path(state.artifacts["audit_path"]).read_text(encoding="utf-8").splitlines()]
+        self.assertTrue(any(item.get("event") == "context.commander.forward" for item in records))
+
+    def test_commander_can_forward_new_intelligence_during_a_run(self):
+        agent = self._agent([
+            {"response": '{"action": "fake_scan", "params": {"target": "127.0.0.1"}}'},
+            {"response": '{"final": {"summary": "done"}}'},
+        ])
+        prompts: list[str] = []
+        original = agent.backend.complete
+
+        def capture(system: str, user: str, **kwargs):
+            prompts.append(user)
+            return original(system, user, **kwargs)
+
+        calls = 0
+        brief = {
+            "version": 1,
+            "source_task": "just-finished",
+            "source_run_id": "source-run",
+            "source_target": "127.0.0.1",
+            "destination_task": "current",
+            "similarity": 0.95,
+            "reasons": ["规范化目标相同"],
+            "intelligence": {"assets": [{"host": "127.0.0.1", "web_paths": ["/new"]}]},
+        }
+
+        def provider():
+            nonlocal calls
+            calls += 1
+            return [] if calls == 1 else [brief]
+
+        agent.backend.complete = capture  # type: ignore[method-assign]
+        agent.run("127.0.0.1", max_steps=2, commander_brief_provider=provider)
+        self.assertNotIn("just-finished", prompts[0])
+        self.assertIn("just-finished", prompts[1])
 
     def test_minimal_actions_execute_without_thought_or_role_fields(self):
         agent = self._agent([
@@ -506,10 +574,11 @@ class TestReActLoop(unittest.TestCase):
         backend = ReplayBackend(LLMConfig(backend="replay", replay_script=str(record)))
         self.assertEqual(len(backend.script), 2)
 
-    def test_system_prompt_is_empty_and_runtime_context_contains_scope_and_tools(self):
+    def test_system_prompt_and_runtime_context_are_both_present(self):
         registry = type("R", (), {"prompt_block": lambda self=None: "### fake_scan"})()
         prompt = build_system_prompt(self.cfg.scope_prompt_block(), registry.prompt_block())
-        self.assertEqual(prompt, "")
+        self.assertIn("# Engineering", prompt)
+        self.assertIn("# Completeness", prompt)
         runtime = build_runtime_context(self.cfg.scope_prompt_block(), registry.prompt_block())
         self.assertIn("信任模式: full", runtime)
         self.assertIn("fake_scan", runtime)

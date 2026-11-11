@@ -4,7 +4,7 @@
 
 ## 目录
 
-- **[设计决策](../设计决策.md)**：27 节，逐步解释目标约束、阶段、排序与调度、模型协议、授权审批、证据更新、失败与收尾，并附案例和方案比较。
+- **[设计决策](../设计决策.md)**：按时间持续编号，逐步解释目标约束、阶段、排序与调度、模型协议、授权审批、证据更新、失败与收尾，并附案例和方案比较。
 - `adr/` — 关键决策记录（为什么这么做，以及被否决的方案）
 - `ai-rules.md` — AI 使用规则与人机责任（O1）
 - 架构与护栏细节：[`docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md)、[`docs/GUARDRAILS.md`](../docs/GUARDRAILS.md)
@@ -27,6 +27,7 @@
 | [ADR-0017](adr/0017-specialist-consultation-without-blackboard.md) | 按需咨询专职 Agent，执行权集中，不引入协作黑板 | 独立上下文只返回建议，复用原有授权与审计 |
 | [ADR-0018](adr/0018-fact-context-and-atomic-snapshots.md) | 事实摘要、实时覆盖与原子快照 | 减少重复调度、对话丢进展和状态读取竞态 |
 | [ADR-0019](adr/0019-course-contract-and-dual-harness.md) | 同仓库规格、追踪检查与双层 Harness | 让教师从需求直接追到代码、验证事实和未决问题 |
+| [ADR-0020](adr/0020-security-engineer-prompt-and-commander-intelligence.md) | 七模块安全工程师 system；不同题目事实图隔离，Commander 定向转发 | 保持稳定行为定义，同时防止跨题事实污染 |
 
 本轮完整审查、外部资料与待解决问题见 [Agent 设计审查](../docs/AGENT_DESIGN_REVIEW.md)。
 

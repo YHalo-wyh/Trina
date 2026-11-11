@@ -4,7 +4,8 @@
 
     omp -p --no-session --no-tools --mode=json --model <model>
 
-提示词经 stdin 传入，模型输出以 JSONL 事件流返回，我们从中提取
+系统提示词通过 ``--system-prompt`` 进入 OMP 的系统块，本轮运行上下文经 stdin 传入。
+模型输出以 JSONL 事件流返回，我们从中提取
 `message_end.message.content[].text` 与 usage/cost。`--no-tools` 很关键：
 工具由 Trina 的护栏收口执行，绝不能交给 omp 内建工具绕过审计。
 """
@@ -45,7 +46,7 @@ class OmpBackend(LLMBackend):
         if not self.available():
             return self._tally(LLMResponse(ok=False, error=f"未找到 omp 可执行文件: {self.binary}"))
 
-        payload = user if not system else f"{system}\n\n---\n\n{user}"
+        payload = user
         argv = [
             self.binary,
             "-p",
@@ -56,6 +57,10 @@ class OmpBackend(LLMBackend):
             self.config.model,
             "--no-title",
         ]
+        if system:
+            # OMP 的自定义 system 路径会保留其生成的项目上下文，同时让 Trina 的
+            # 安全工程师规则进入真正的系统提示块，而不是伪装成用户内容。
+            argv.extend(["--system-prompt", system])
         if self.config.reasoning_effort != "default":
             argv.extend(["--thinking", self.config.reasoning_effort])
         started = time.monotonic()

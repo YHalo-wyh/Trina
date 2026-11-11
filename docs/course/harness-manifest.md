@@ -33,6 +33,7 @@ Host 在此指维护者控制的 Python 程序、配置、工具装配和运行�
 
 | ID | 命令 | 观察与退出标准 | 运行副作用 |
 |---|---|---|---|
+| V-CONTRACT | `python -m scripts.verify_contract` | 退出 0：六类交付物、21 条当前需求、规则 ID、实现路径和测试声明一致 | 只读；静态解析 JSON、Markdown、路径和测试 AST |
 | V-DOC | `python -m scripts.verify_course_pack` | 退出 0：文档、ID、测试引用和本地链接通过；非零输出具体错误 | 只读，发现测试但不运行目标用例 |
 | V-FAST | `python -m unittest discover -s tests -p test_scope.py` | 0：范围与动作规则用例通过；失败保留 traceback | 本地测试，拒绝分支不请求公网输入 |
 | V-POLICY | `python -m unittest discover -s tests -p test_policy.py` | 0：注册、预算、撤权与结论相关测试通过 | 部分用例运行回环扫描，耗时与扫描器条件有关 |

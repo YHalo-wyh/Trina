@@ -111,6 +111,8 @@ class ReasoningTests(unittest.TestCase):
         self.assertEqual(argv[argv.index("--thinking") + 1], "high")
         self.assertIn("--no-tools", argv)
         self.assertIn("--no-session", argv)
+        self.assertEqual(argv[argv.index("--system-prompt") + 1], "system")
+        self.assertEqual(run.call_args.kwargs["input"], "user")
 
 
 if __name__ == "__main__":

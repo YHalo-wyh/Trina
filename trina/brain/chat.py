@@ -26,9 +26,10 @@ from ..tools.registry import ToolContext
 from .failure import LoopGuard, advice_for, classify_failure
 
 def render_chat_prompt(include_hypothesis: bool = True) -> str:
-    """对话系统消息保持为空；保留参数只为兼容既有调用。"""
-    del include_hypothesis
-    return ""
+    """对话 Assistant 与任务 Agent 共用安全工程师系统提示词。"""
+    from .prompts import render_system_prompt
+
+    return render_system_prompt(include_hypothesis)
 
 
 class ChatAgent:

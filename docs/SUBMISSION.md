@@ -5,6 +5,25 @@
 > 对应课程《AI原生软件工程实践》P3「授权安全测试Agent」的交付要求：六类内容类别（brief / design / eval / evidence / release / review）、
 > 证据与复核分离、「机器生成结果不要复制进报告」。本文件是**映射索引**：说清每类内容在仓库里的位置、提交边界，以及为什么。
 
+## 0. 2026-11-11 六项完成情况
+
+| 检查项 | 状态 | 当前入口 | 机器判定 |
+|---|---|---|---|
+| 需求 | 完成 | [`需求.md`](../需求.md) | `D-REQ`；21 个 `TR-xx` 必须与机器规约一一对应 |
+| 规约 | 完成 | [`规约.md`](../规约.md) · [`规约.json`](../规约.json) | `D-SPEC`；规则 ID、状态、实现路径和测试方法必须存在 |
+| ADR（含前 3 项前置决策） | 完成 | [`design/README.md`](../design/README.md) · `design/adr/0001—0003` | `D-ADR`；必需 ADR 存在且总数达到规约下限 |
+| 项目级 Harness | 完成 | [`harness-manifest.md`](course/harness-manifest.md) · [`AGENTS.md`](../AGENTS.md) · [`ai-rules.md`](../design/ai-rules.md) | `D-HARNESS`；开发、AI、代码、文档、日志与可观测性入口存在 |
+| Global Plan / Tasks | 完成 | [`docs/PLAN.md`](PLAN.md) · [`plan.md`](course/plan.md) · [`tasks.md`](course/tasks.md) | `D-PLAN`；目标、计划、任务卡和完成条件可定位 |
+| 可执行代码与评测证据 | 完成 | `trina/` · `tests/` · [`evidence/`](../evidence/README.md) · [`评测/`](../评测/README.md) | `D-EVIDENCE`；源码、测试、评测报告与证据数量达到规约下限 |
+
+六个“完成”表示交付类别和追踪入口齐全，不会把 `TR-15/16` 的部分实现或 `TR-17/18` 的待实现能力伪装成产品已完成。机器检查入口：
+
+```powershell
+.\.venv\Scripts\python.exe -m scripts.verify_contract --execute --json
+```
+
+验证器只执行代码内固定的 `V-COURSE / V-TESTS / V-DIFF` 白名单，不执行 JSON 中任意拼接的 shell 字符串。
+
 ## 1. 六类交付物与映射（索引）
 
 | 类别 | 该放什么（课程口径） | 本仓库位置 | 备注 |

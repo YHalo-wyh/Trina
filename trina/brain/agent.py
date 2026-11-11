@@ -116,6 +116,8 @@ class PentestAgent:
         max_seconds: int | None = None,
         extra_rules: str = "",
         seed_hints: list[str] | None = None,
+        commander_briefs: list[dict[str, Any]] | None = None,
+        commander_brief_provider: Callable[[], list[dict[str, Any]]] | None = None,
         record_path: str | Path | None = None,
         run_id: str | None = None,
     ) -> RunState:
@@ -173,6 +175,35 @@ class PentestAgent:
         self._ctx = ctx
         ctx.extra["llm_backend"] = self.backend
         state.note("run", f"开始对 {target} 的自动化渗透测试", goal=goal)
+
+        # 各题状态保持独立。Commander 只把判断为相关的有效情报作为候选线索转发，
+        # 当前 Worker 仍需用自己的工具重新验证，情报不会直接写入 RunState。
+        from ..context import brief_digest, normalize_briefs, render_commander_briefs
+
+        commander_briefs = normalize_briefs(commander_briefs)
+        seen_briefs: set[str] = set()
+
+        def commander_context_block() -> str:
+            dynamic: list[dict[str, Any]] = []
+            if commander_brief_provider is not None:
+                try:
+                    dynamic = commander_brief_provider()
+                except Exception as exc:  # noqa: BLE001 - 情报发现故障不应中断本题
+                    audit.append("context.commander.error", error=f"{type(exc).__name__}: {exc}"[:300])
+            current = normalize_briefs([*commander_briefs, *dynamic])
+            for brief in current:
+                digest = brief_digest(brief)
+                if digest in seen_briefs:
+                    continue
+                seen_briefs.add(digest)
+                audit.append(
+                    "context.commander.forward",
+                    source_task=brief.get("source_task", ""),
+                    score=brief.get("similarity", 0),
+                    reasons=brief.get("reasons", []),
+                    digest=digest,
+                )
+            return render_commander_briefs(current)
 
         planner = Planner(max_steps_per_phase=max(4, max_steps // len(("recon", "enum", "vuln", "exploit", "post", "report"))))
         requirements = GoalRequirements.parse(goal)
@@ -349,6 +380,13 @@ class PentestAgent:
                     },
                     # 任务硬性要求放在显眼位置：否则模型容易被"顺路发现"带偏，把预算花在目标之外
                     extra_context=(
+                        (
+                            commander_context_block() + "\n\n"
+                            if (commander_briefs or commander_brief_provider)
+                            else ""
+                        )
+                    )
+                    + (
                         (
                             "## 未完成的任务要求\n"
                             + "\n".join(f"- {item}" for item in missing_goal)
