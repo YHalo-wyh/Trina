@@ -96,6 +96,8 @@ class ChatAgent:
         self.last_reply_streamed = False
         self.current_request = ""
         self.ctx.extra["llm_backend"] = self.backend
+        from ..conversation import ConversationContext
+        self.context = ConversationContext(self.ctx)
         self.turns = 0
         #: 假设台账与循环守卫：对话里同样"提假设 → 按优先级验证 → 无新信息就换路"
         from ..hypotheses import HypothesisLedger
@@ -130,6 +132,7 @@ class ChatAgent:
             return ""
         self.turns += 1
         self.current_request = text
+        self.context.remember_user(text)
         self.last_reply_streamed = False
         self._initialize_messages()
         self.audit.append("chat.user", decision="allow", message=text[:400])
@@ -216,14 +219,22 @@ class ChatAgent:
         tool_block = self.registry.prompt_block()
         from .prompts import build_runtime_context
 
+        if self.config.llm.prompt_layers:
+            from .prompts import build_prompt_layers
+            layers = build_prompt_layers(self.config.scope_prompt_block(), tool_block,
+                                         include_hypothesis=self.use_ledger, chat=True,
+                                         role_profile=self.config.llm.role_profile)
+            system, contract = layers.system(), layers.first_user()
+        else:
+            system = render_chat_prompt(self.use_ledger)
+            contract = build_runtime_context(self.config.scope_prompt_block(), tool_block,
+                                             include_hypothesis=self.use_ledger, chat=True)
         self._messages = [
-            {"role": "system", "content": render_chat_prompt(self.use_ledger)},
+            {"role": "system", "content": system},
             {
                 "role": "user",
-                "content": build_runtime_context(
-                    self.config.scope_prompt_block(), tool_block,
-                    include_hypothesis=self.use_ledger, chat=True,
-                ),
+                "content": contract,
+                "cache_scope": "stable",
             },
         ]
         self._messages_ready = True
@@ -234,23 +245,34 @@ class ChatAgent:
             if self.state.target and self.controller.registry.match_target(self.state.target)
             else ""
         )
-        runtime_parts = ["## 当前运行事实\n" + self.state.summary_for_prompt(max_chars=3000)]
-        if registered:
-            runtime_parts.append("## 已注册检查项\n" + registered)
-        if self.use_ledger:
-            runtime_parts.append("## 假设台账\n" + self.ledger.prompt_block())
+        from ..conversation import ContextBudgetError, state_projection
+        runtime_parts = [self.context.state_update(state_projection(
+            self.state, hypotheses=self.ledger.to_dict() if self.use_ledger else None, registered=registered))]
         from ..runtime_status import render_agent_status
         last_observation = self.history[-1]["content"] if self.history and self.history[-1]["content"].startswith("[工具结果]") else ""
         runtime_parts.append(render_agent_status(self.ctx, step=step, max_steps=self.MAX_TOOL_STEPS,
                                                turn=self.turns, observation=last_observation))
         # 动态状态作为新的 user 消息追加；绝不重写 system 或把历史压成角色标签字符串。
         self._messages.append({"role": "user", "content": "\n\n".join(runtime_parts)})
+        try:
+            self.context.prepare(self._messages)
+        except ContextBudgetError as exc:
+            from ..llm import LLMResponse
+            self.state.context_stats = {**self.context.stats, "budget_error": str(exc)}
+            self.audit.append("context.budget_error", error=str(exc))
+            return LLMResponse(ok=False, error=str(exc))
+        diagnostic = self.context.before_request(self._messages)
         self.state.counters["llm_calls"] = self.state.counters.get("llm_calls", 0) + 1
         self._pending_stream = _VisibleStream(self.on_stream)
         method = getattr(self.backend, "complete_messages", None)
         if method is None:  # 仅供旧测试替身
-            return self.backend.complete(self._messages[0]["content"], self._messages[-1]["content"])
-        return method(self._messages, on_event=self._pending_stream.on_event)
+            response = self.backend.complete(self._messages[0]["content"], self._messages[-1]["content"])
+        else:
+            response = method(self._messages, on_event=self._pending_stream.on_event)
+        self.context.after_response(diagnostic, response)
+        if self.context.epoch:
+            self.history[:] = self.history[-200:]
+        return response
 
     def _finish_stream(self, reply: str) -> None:
         if self._pending_stream is not None and self.on_stream is not None:
@@ -292,6 +314,7 @@ class ChatAgent:
         if not steer:
             return False
         message = {"role": "user", "content": f"[人工介入提示] {steer}"}
+        self.context.remember_user(steer)
         self.history.append(message)
         self._messages.append(message)
         self.audit.append("chat.steer", decision="allow", message=steer[:400])

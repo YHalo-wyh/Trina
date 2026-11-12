@@ -163,6 +163,8 @@ COMMANDS: tuple[CommandSpec, ...] = (
         positional_choices=APPROVAL_CHOICES,
     ),
     CommandSpec("usage", "会话与模型", "查看模型调用、Token 和成本", "usage"),
+    CommandSpec("context", "会话与模型", "查看上下文预算、前缀变化和缓存诊断", "context"),
+    CommandSpec("compact", "会话与模型", "创建继承检查点并保存完整历史", "compact"),
     CommandSpec(
         "history", "会话与模型", "查看最近的对话与工具摘要", "history [条数]",
         examples=("/history 12",),

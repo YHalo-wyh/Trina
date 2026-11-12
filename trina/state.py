@@ -171,6 +171,7 @@ class RunState:
     scheduler: dict[str, Any] = field(default_factory=dict)
     #: 模型每次决策前读取的动态状态栏；后台作业记录按当前任务隔离。
     runtime_status: dict[str, Any] = field(default_factory=dict)
+    context_stats: dict[str, Any] = field(default_factory=dict)
     max_evidence: int = 200
 
     # ------------------------------------------------------------------ 基础
@@ -411,6 +412,7 @@ class RunState:
             "loop": self.loop,
             "scheduler": self.scheduler,
             "runtime_status": self.runtime_status,
+            "context_stats": self.context_stats,
         }
 
     @classmethod
@@ -487,6 +489,7 @@ class RunState:
             loop=dict(data.get("loop") or {}),
             scheduler=dict(data.get("scheduler") or {}),
             runtime_status=dict(data.get("runtime_status") or {}),
+            context_stats=dict(data.get("context_stats") or {}),
         )
         state.started_at = float(data.get("started_at") or state.started_at)
         ended = data.get("ended_at")

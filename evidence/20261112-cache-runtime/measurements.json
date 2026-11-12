@@ -1,0 +1,552 @@
+{
+  "execution": "actual_local_replay",
+  "baseline_chat_class": "96207236936ca392b76c6233491269de73670ad1",
+  "shared_dependencies": "current prompt/protocol constants; identical controlled state and inputs",
+  "reported_cache_hit_rate": null,
+  "before": {
+    "requests": [
+      {
+        "request": 1,
+        "visible_input_bytes": 6859,
+        "runtime_tail_bytes": 2363,
+        "runtime_heading": "## 当前运行事实",
+        "existing_prefix_preserved": null
+      },
+      {
+        "request": 2,
+        "visible_input_bytes": 9486,
+        "runtime_tail_bytes": 2363,
+        "runtime_heading": "## 当前运行事实",
+        "existing_prefix_preserved": true
+      },
+      {
+        "request": 3,
+        "visible_input_bytes": 12113,
+        "runtime_tail_bytes": 2363,
+        "runtime_heading": "## 当前运行事实",
+        "existing_prefix_preserved": true
+      },
+      {
+        "request": 4,
+        "visible_input_bytes": 14740,
+        "runtime_tail_bytes": 2363,
+        "runtime_heading": "## 当前运行事实",
+        "existing_prefix_preserved": true
+      },
+      {
+        "request": 5,
+        "visible_input_bytes": 17367,
+        "runtime_tail_bytes": 2363,
+        "runtime_heading": "## 当前运行事实",
+        "existing_prefix_preserved": true
+      },
+      {
+        "request": 6,
+        "visible_input_bytes": 19994,
+        "runtime_tail_bytes": 2363,
+        "runtime_heading": "## 当前运行事实",
+        "existing_prefix_preserved": true
+      },
+      {
+        "request": 7,
+        "visible_input_bytes": 22621,
+        "runtime_tail_bytes": 2363,
+        "runtime_heading": "## 当前运行事实",
+        "existing_prefix_preserved": true
+      },
+      {
+        "request": 8,
+        "visible_input_bytes": 25248,
+        "runtime_tail_bytes": 2363,
+        "runtime_heading": "## 当前运行事实",
+        "existing_prefix_preserved": true
+      },
+      {
+        "request": 9,
+        "visible_input_bytes": 27875,
+        "runtime_tail_bytes": 2363,
+        "runtime_heading": "## 当前运行事实",
+        "existing_prefix_preserved": true
+      },
+      {
+        "request": 10,
+        "visible_input_bytes": 30503,
+        "runtime_tail_bytes": 2364,
+        "runtime_heading": "## 当前运行事实",
+        "existing_prefix_preserved": true
+      },
+      {
+        "request": 11,
+        "visible_input_bytes": 33132,
+        "runtime_tail_bytes": 2364,
+        "runtime_heading": "## 当前运行事实",
+        "existing_prefix_preserved": true
+      },
+      {
+        "request": 12,
+        "visible_input_bytes": 35761,
+        "runtime_tail_bytes": 2364,
+        "runtime_heading": "## 当前运行事实",
+        "existing_prefix_preserved": true
+      },
+      {
+        "request": 13,
+        "visible_input_bytes": 38390,
+        "runtime_tail_bytes": 2364,
+        "runtime_heading": "## 当前运行事实",
+        "existing_prefix_preserved": true
+      },
+      {
+        "request": 14,
+        "visible_input_bytes": 41019,
+        "runtime_tail_bytes": 2364,
+        "runtime_heading": "## 当前运行事实",
+        "existing_prefix_preserved": true
+      },
+      {
+        "request": 15,
+        "visible_input_bytes": 43648,
+        "runtime_tail_bytes": 2364,
+        "runtime_heading": "## 当前运行事实",
+        "existing_prefix_preserved": true
+      },
+      {
+        "request": 16,
+        "visible_input_bytes": 46277,
+        "runtime_tail_bytes": 2364,
+        "runtime_heading": "## 当前运行事实",
+        "existing_prefix_preserved": true
+      },
+      {
+        "request": 17,
+        "visible_input_bytes": 48906,
+        "runtime_tail_bytes": 2364,
+        "runtime_heading": "## 当前运行事实",
+        "existing_prefix_preserved": true
+      },
+      {
+        "request": 18,
+        "visible_input_bytes": 51535,
+        "runtime_tail_bytes": 2364,
+        "runtime_heading": "## 当前运行事实",
+        "existing_prefix_preserved": true
+      },
+      {
+        "request": 19,
+        "visible_input_bytes": 54164,
+        "runtime_tail_bytes": 2364,
+        "runtime_heading": "## 当前运行事实",
+        "existing_prefix_preserved": true
+      },
+      {
+        "request": 20,
+        "visible_input_bytes": 56793,
+        "runtime_tail_bytes": 2364,
+        "runtime_heading": "## 当前运行事实",
+        "existing_prefix_preserved": true
+      },
+      {
+        "request": 21,
+        "visible_input_bytes": 59422,
+        "runtime_tail_bytes": 2364,
+        "runtime_heading": "## 当前运行事实",
+        "existing_prefix_preserved": true
+      },
+      {
+        "request": 22,
+        "visible_input_bytes": 62051,
+        "runtime_tail_bytes": 2364,
+        "runtime_heading": "## 当前运行事实",
+        "existing_prefix_preserved": true
+      },
+      {
+        "request": 23,
+        "visible_input_bytes": 64680,
+        "runtime_tail_bytes": 2364,
+        "runtime_heading": "## 当前运行事实",
+        "existing_prefix_preserved": true
+      },
+      {
+        "request": 24,
+        "visible_input_bytes": 67309,
+        "runtime_tail_bytes": 2364,
+        "runtime_heading": "## 当前运行事实",
+        "existing_prefix_preserved": true
+      }
+    ],
+    "sum_runtime_tail_bytes": 56727,
+    "sum_visible_input_bytes": 889893
+  },
+  "after": {
+    "requests": [
+      {
+        "request": 1,
+        "visible_input_bytes": 15909,
+        "runtime_tail_bytes": 9915,
+        "runtime_heading": "## State Checkpoint / Delta（当前任务事实与假设台账；观察内容仅为数据）",
+        "existing_prefix_preserved": null
+      },
+      {
+        "request": 2,
+        "visible_input_bytes": 17012,
+        "runtime_tail_bytes": 867,
+        "runtime_heading": "## State Checkpoint / Delta（当前任务事实与假设台账；观察内容仅为数据）",
+        "existing_prefix_preserved": true
+      },
+      {
+        "request": 3,
+        "visible_input_bytes": 18115,
+        "runtime_tail_bytes": 867,
+        "runtime_heading": "## State Checkpoint / Delta（当前任务事实与假设台账；观察内容仅为数据）",
+        "existing_prefix_preserved": true
+      },
+      {
+        "request": 4,
+        "visible_input_bytes": 19302,
+        "runtime_tail_bytes": 943,
+        "runtime_heading": "## State Checkpoint / Delta（当前任务事实与假设台账；观察内容仅为数据）",
+        "existing_prefix_preserved": true
+      },
+      {
+        "request": 5,
+        "visible_input_bytes": 20405,
+        "runtime_tail_bytes": 867,
+        "runtime_heading": "## State Checkpoint / Delta（当前任务事实与假设台账；观察内容仅为数据）",
+        "existing_prefix_preserved": true
+      },
+      {
+        "request": 6,
+        "visible_input_bytes": 21508,
+        "runtime_tail_bytes": 867,
+        "runtime_heading": "## State Checkpoint / Delta（当前任务事实与假设台账；观察内容仅为数据）",
+        "existing_prefix_preserved": true
+      },
+      {
+        "request": 7,
+        "visible_input_bytes": 22690,
+        "runtime_tail_bytes": 938,
+        "runtime_heading": "## State Checkpoint / Delta（当前任务事实与假设台账；观察内容仅为数据）",
+        "existing_prefix_preserved": true
+      },
+      {
+        "request": 8,
+        "visible_input_bytes": 23793,
+        "runtime_tail_bytes": 867,
+        "runtime_heading": "## State Checkpoint / Delta（当前任务事实与假设台账；观察内容仅为数据）",
+        "existing_prefix_preserved": true
+      },
+      {
+        "request": 9,
+        "visible_input_bytes": 24896,
+        "runtime_tail_bytes": 867,
+        "runtime_heading": "## State Checkpoint / Delta（当前任务事实与假设台账；观察内容仅为数据）",
+        "existing_prefix_preserved": true
+      },
+      {
+        "request": 10,
+        "visible_input_bytes": 26085,
+        "runtime_tail_bytes": 945,
+        "runtime_heading": "## State Checkpoint / Delta（当前任务事实与假设台账；观察内容仅为数据）",
+        "existing_prefix_preserved": true
+      },
+      {
+        "request": 11,
+        "visible_input_bytes": 27192,
+        "runtime_tail_bytes": 870,
+        "runtime_heading": "## State Checkpoint / Delta（当前任务事实与假设台账；观察内容仅为数据）",
+        "existing_prefix_preserved": true
+      },
+      {
+        "request": 12,
+        "visible_input_bytes": 28299,
+        "runtime_tail_bytes": 870,
+        "runtime_heading": "## State Checkpoint / Delta（当前任务事实与假设台账；观察内容仅为数据）",
+        "existing_prefix_preserved": true
+      },
+      {
+        "request": 13,
+        "visible_input_bytes": 29485,
+        "runtime_tail_bytes": 941,
+        "runtime_heading": "## State Checkpoint / Delta（当前任务事实与假设台账；观察内容仅为数据）",
+        "existing_prefix_preserved": true
+      },
+      {
+        "request": 14,
+        "visible_input_bytes": 30592,
+        "runtime_tail_bytes": 870,
+        "runtime_heading": "## State Checkpoint / Delta（当前任务事实与假设台账；观察内容仅为数据）",
+        "existing_prefix_preserved": true
+      },
+      {
+        "request": 15,
+        "visible_input_bytes": 31699,
+        "runtime_tail_bytes": 870,
+        "runtime_heading": "## State Checkpoint / Delta（当前任务事实与假设台账；观察内容仅为数据）",
+        "existing_prefix_preserved": true
+      },
+      {
+        "request": 16,
+        "visible_input_bytes": 32890,
+        "runtime_tail_bytes": 946,
+        "runtime_heading": "## State Checkpoint / Delta（当前任务事实与假设台账；观察内容仅为数据）",
+        "existing_prefix_preserved": true
+      },
+      {
+        "request": 17,
+        "visible_input_bytes": 44575,
+        "runtime_tail_bytes": 9922,
+        "runtime_heading": "## State Checkpoint / Delta（当前任务事实与假设台账；观察内容仅为数据）",
+        "existing_prefix_preserved": true
+      },
+      {
+        "request": 18,
+        "visible_input_bytes": 45682,
+        "runtime_tail_bytes": 870,
+        "runtime_heading": "## State Checkpoint / Delta（当前任务事实与假设台账；观察内容仅为数据）",
+        "existing_prefix_preserved": true
+      },
+      {
+        "request": 19,
+        "visible_input_bytes": 46868,
+        "runtime_tail_bytes": 941,
+        "runtime_heading": "## State Checkpoint / Delta（当前任务事实与假设台账；观察内容仅为数据）",
+        "existing_prefix_preserved": true
+      },
+      {
+        "request": 20,
+        "visible_input_bytes": 47975,
+        "runtime_tail_bytes": 870,
+        "runtime_heading": "## State Checkpoint / Delta（当前任务事实与假设台账；观察内容仅为数据）",
+        "existing_prefix_preserved": true
+      },
+      {
+        "request": 21,
+        "visible_input_bytes": 49082,
+        "runtime_tail_bytes": 870,
+        "runtime_heading": "## State Checkpoint / Delta（当前任务事实与假设台账；观察内容仅为数据）",
+        "existing_prefix_preserved": true
+      },
+      {
+        "request": 22,
+        "visible_input_bytes": 50273,
+        "runtime_tail_bytes": 946,
+        "runtime_heading": "## State Checkpoint / Delta（当前任务事实与假设台账；观察内容仅为数据）",
+        "existing_prefix_preserved": true
+      },
+      {
+        "request": 23,
+        "visible_input_bytes": 51380,
+        "runtime_tail_bytes": 870,
+        "runtime_heading": "## State Checkpoint / Delta（当前任务事实与假设台账；观察内容仅为数据）",
+        "existing_prefix_preserved": true
+      },
+      {
+        "request": 24,
+        "visible_input_bytes": 52487,
+        "runtime_tail_bytes": 870,
+        "runtime_heading": "## State Checkpoint / Delta（当前任务事实与假设台账；观察内容仅为数据）",
+        "existing_prefix_preserved": true
+      }
+    ],
+    "sum_runtime_tail_bytes": 39469,
+    "sum_visible_input_bytes": 778194
+  },
+  "compaction": {
+    "context_window": 32768,
+    "output_reserve": 4096,
+    "compactions": 3,
+    "estimated_input_tokens": 18826,
+    "input_budget": 27647,
+    "archives": [
+      {
+        "epoch": 1,
+        "sha256": "1ed55f819cbfa1bce4cf948181e9a57b48739ec831714a3e0d940319b83add7d",
+        "original_messages": 22,
+        "retained_messages": 11,
+        "original_visible_bytes": 51172,
+        "retained_visible_bytes": 21685,
+        "retained_user_constraints": 7
+      },
+      {
+        "epoch": 2,
+        "sha256": "5ad20aeb18e314cc003b880e0575fd27e78d4490301ae0f2c260abae088c0c9f",
+        "original_messages": 20,
+        "retained_messages": 11,
+        "original_visible_bytes": 44445,
+        "retained_visible_bytes": 21790,
+        "retained_user_constraints": 10
+      },
+      {
+        "epoch": 3,
+        "sha256": "4b6e30a716951f432d6dddb6dd43dabb9628ebde0b58f08f6ee66bd4f4a80bdd",
+        "original_messages": 20,
+        "retained_messages": 11,
+        "original_visible_bytes": 44560,
+        "retained_visible_bytes": 21905,
+        "retained_user_constraints": 13
+      }
+    ],
+    "audit_chain_valid": true,
+    "preserved_instructions": [
+      "仅处理本地测试材料 0",
+      "仅处理本地测试材料 1",
+      "仅处理本地测试材料 2",
+      "仅处理本地测试材料 3",
+      "仅处理本地测试材料 4",
+      "仅处理本地测试材料 5",
+      "仅处理本地测试材料 6",
+      "仅处理本地测试材料 7",
+      "仅处理本地测试材料 8",
+      "仅处理本地测试材料 9",
+      "仅处理本地测试材料 10",
+      "仅处理本地测试材料 11",
+      "仅处理本地测试材料 12",
+      "仅处理本地测试材料 13",
+      "仅处理本地测试材料 14"
+    ]
+  },
+  "tight_budget_compaction": {
+    "context_window": 10000,
+    "output_reserve": 1024,
+    "compactions": 13,
+    "estimated_input_tokens": 7284,
+    "input_budget": 7951,
+    "archives": [
+      {
+        "epoch": 1,
+        "sha256": "51016c4f533621891215b471c57efef04676013924d67c8c0bbcd73f245b0c7f",
+        "original_messages": 10,
+        "retained_messages": 7,
+        "original_visible_bytes": 20822,
+        "retained_visible_bytes": 13899,
+        "retained_user_constraints": 3
+      },
+      {
+        "epoch": 2,
+        "sha256": "818d5d44e7df9dc0fdb477e16a01c82f83bf802018a89f64659ba798ddc81ac2",
+        "original_messages": 10,
+        "retained_messages": 7,
+        "original_visible_bytes": 21483,
+        "retained_visible_bytes": 13933,
+        "retained_user_constraints": 4
+      },
+      {
+        "epoch": 3,
+        "sha256": "3387463912d7e361842dc1e7d8b846f919a83e541fcd40f07a80fe814f7d4da3",
+        "original_messages": 10,
+        "retained_messages": 7,
+        "original_visible_bytes": 21517,
+        "retained_visible_bytes": 13967,
+        "retained_user_constraints": 5
+      },
+      {
+        "epoch": 4,
+        "sha256": "69082dbcb6d6e24ff442e9044f627c8ab94a9bbe52c3e99b6c355797eaab6914",
+        "original_messages": 10,
+        "retained_messages": 7,
+        "original_visible_bytes": 21551,
+        "retained_visible_bytes": 14001,
+        "retained_user_constraints": 6
+      },
+      {
+        "epoch": 5,
+        "sha256": "ae37023e6e51023a427748061d2d2ba24f3e58fe89f93cae3593dcc318300ae5",
+        "original_messages": 10,
+        "retained_messages": 7,
+        "original_visible_bytes": 21585,
+        "retained_visible_bytes": 14035,
+        "retained_user_constraints": 7
+      },
+      {
+        "epoch": 6,
+        "sha256": "3e39137531617352cb190bba859c96f87e8b6c6e41a7bd4406ea5b60982ed6de",
+        "original_messages": 10,
+        "retained_messages": 7,
+        "original_visible_bytes": 21619,
+        "retained_visible_bytes": 14069,
+        "retained_user_constraints": 8
+      },
+      {
+        "epoch": 7,
+        "sha256": "7f974a3c3de3908861cb2450fdf58a28a424a75618541fde3ac4b8f2615902cb",
+        "original_messages": 10,
+        "retained_messages": 7,
+        "original_visible_bytes": 21653,
+        "retained_visible_bytes": 14103,
+        "retained_user_constraints": 9
+      },
+      {
+        "epoch": 8,
+        "sha256": "d3464aab166fd223c7b325b600e12d0269aafe6b0b30b97be0ab53149852e715",
+        "original_messages": 10,
+        "retained_messages": 7,
+        "original_visible_bytes": 21689,
+        "retained_visible_bytes": 14140,
+        "retained_user_constraints": 10
+      },
+      {
+        "epoch": 9,
+        "sha256": "ece5eef8fcd9319cf7c7d2b0bfee2c7703210e55f4eeb90f4d18e577cd26d93d",
+        "original_messages": 10,
+        "retained_messages": 7,
+        "original_visible_bytes": 21728,
+        "retained_visible_bytes": 14179,
+        "retained_user_constraints": 11
+      },
+      {
+        "epoch": 10,
+        "sha256": "b2dd1c84e4e1fba5e304d732b66f05070b4cf4611f92a68426be6de720761f28",
+        "original_messages": 10,
+        "retained_messages": 7,
+        "original_visible_bytes": 21767,
+        "retained_visible_bytes": 14216,
+        "retained_user_constraints": 12
+      },
+      {
+        "epoch": 11,
+        "sha256": "779599d1d6abc2bf7ebbaf10d553184102d179507b1378a82021215431bfdbed",
+        "original_messages": 10,
+        "retained_messages": 7,
+        "original_visible_bytes": 21804,
+        "retained_visible_bytes": 14251,
+        "retained_user_constraints": 13
+      },
+      {
+        "epoch": 12,
+        "sha256": "dec8f7dab3afe111924ff5cb1f5bff40fcd6f0990db180c29a50d5ceffab4bbc",
+        "original_messages": 10,
+        "retained_messages": 7,
+        "original_visible_bytes": 21839,
+        "retained_visible_bytes": 14286,
+        "retained_user_constraints": 14
+      },
+      {
+        "epoch": 13,
+        "sha256": "65f42cb3603a4fd95a4111b74b9188ecdd5bcab04c9edf8b0041b8bd4ae727a1",
+        "original_messages": 10,
+        "retained_messages": 7,
+        "original_visible_bytes": 21874,
+        "retained_visible_bytes": 14321,
+        "retained_user_constraints": 15
+      }
+    ],
+    "audit_chain_valid": true,
+    "preserved_instructions": [
+      "仅处理本地测试材料 0",
+      "仅处理本地测试材料 1",
+      "仅处理本地测试材料 2",
+      "仅处理本地测试材料 3",
+      "仅处理本地测试材料 4",
+      "仅处理本地测试材料 5",
+      "仅处理本地测试材料 6",
+      "仅处理本地测试材料 7",
+      "仅处理本地测试材料 8",
+      "仅处理本地测试材料 9",
+      "仅处理本地测试材料 10",
+      "仅处理本地测试材料 11",
+      "仅处理本地测试材料 12",
+      "仅处理本地测试材料 13",
+      "仅处理本地测试材料 14"
+    ]
+  }
+}

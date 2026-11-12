@@ -176,6 +176,7 @@ class LLMResponse:
     usage: LLMUsage = field(default_factory=LLMUsage)
     duration: float = 0.0
     raw: dict[str, Any] = field(default_factory=dict)
+    cache_diagnostic: dict[str, Any] = field(default_factory=dict)
     #: 原生工具调用（按模型给出的顺序）；为空表示这是纯文本响应
     tool_calls: list[ToolCall] = field(default_factory=list)
     #: 思考型模型的思维链（DeepSeek reasoning_content / Anthropic thinking）
@@ -203,6 +204,8 @@ class LLMMessage(_RequiredMessage, total=False):
     tool_calls: list[dict[str, Any]]
     tool_call_id: str
     reasoning_content: str
+    #: Trina 内部稳定边界标记，后端必须移除，不能透传为消息字段。
+    cache_scope: Literal["stable"]
 
 
 @dataclass(frozen=True)

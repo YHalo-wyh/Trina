@@ -133,7 +133,9 @@ class ModelManager:
         name, suffix = provider, 2
         while name in self.store.profiles:
             name, suffix = f"{provider}-{suffix}", suffix + 1
-        return ProviderProfile(name, provider, llm.base_url, llm.model, llm.api_key_env, llm.api, reasoning_effort=llm.reasoning_effort)
+        return ProviderProfile(name, provider, llm.base_url, llm.model, llm.api_key_env, llm.api,
+                               reasoning_effort=llm.reasoning_effort, cache_mode=llm.cache_mode,
+                               cache_ttl=llm.cache_ttl, cache_features=list(llm.cache_features))
 
     @staticmethod
     def protocol_choices() -> list[ChoiceSpec]:
@@ -202,7 +204,9 @@ class ModelManager:
         from .config import LLMConfig
         from .llm.openai_backend import OpenAICompatBackend
         from .llm.reasoning import reasoning_support
-        cfg = LLMConfig(backend="openai", base_url=item.base_url, model=item.model, api=item.api, api_key_env=item.api_key_env, timeout=10, reasoning_effort=item.reasoning_effort)
+        cfg = LLMConfig(backend="openai", base_url=item.base_url, model=item.model, api=item.api,
+                        api_key_env=item.api_key_env, timeout=10, reasoning_effort=item.reasoning_effort,
+                        cache_mode=item.cache_mode, cache_ttl=item.cache_ttl, cache_features=list(item.cache_features))
         if cfg.reasoning_effort not in reasoning_support(cfg).levels:
             cfg.reasoning_effort = "default"
         return OpenAICompatBackend(cfg, key_override=item.api_key or os.environ.get(item.api_key_env, ""))

@@ -121,4 +121,4 @@ Chat Completions 发送标准 `messages` 数组；Anthropic Messages 将首条 s
 
 三个 API 方言分别解析 SSE，规范化为 start、text_delta、thinking_delta、done、error。增强终端原位更新正文卡片；思考增量只作为模型状态处理，JSON/DSML 动作在完成解析前隐藏。中断、错误或缺少终止事件时返回失败并撤回未完成卡片；非 TTY 保留一次完整结果。健康检查和表单模型验证继续使用短非流式请求。
 
-当前对话采用追加历史，尚无自动 Token 压缩；达到供应商上下文限制时会报告请求失败，操作者可使用 `/new` 新开会话。测试入口：`python -X utf8 -m unittest tests.test_llm_streaming tests.test_llm_openai -v`。
+当前按检查点维护增量状态；上下文接近本地预算时，先原子保存完整历史，再保留稳定指令、用户约束、事实、证据索引和最近执行链。`/context` 查看前缀及缓存诊断，`/compact` 在空闲聊天中手动创建继承检查点。供应商缓存参数、连接级能力声明和已知限制见 [缓存感知运行时](CACHE_RUNTIME.md)。测试入口：`python -X utf8 -m unittest tests.test_cache_runtime tests.test_llm_streaming tests.test_llm_openai -v`。

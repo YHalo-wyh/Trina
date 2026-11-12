@@ -110,8 +110,18 @@ class LLMConfig:
     tool_protocol_fallback: bool = True
     #: 提示词分层：true 使用 Core/Role/Contract/Dynamic 四层；false 保持旧拼装（对照实验用）
     prompt_layers: bool = False
-    #: 角色配置文本（默认空：Trina 不带人格，只保留机器协议）
+    #: 可选附加角色描述；默认使用共用安全工程师 Core。
     role_profile: str = ""
+    #: 缓存扩展只发给已知官方接口或显式声明能力的连接。
+    cache_mode: str = "auto"  # auto | explicit | off
+    cache_ttl: str = ""
+    cache_features: list[str] = field(default_factory=list)
+    cache_namespace: str = "trina"
+    #: 保守的本地上下文预算，不代表供应商声明的模型容量。
+    context_window: int = 32768
+    compaction_threshold: float = 0.8
+    context_keep_messages: int = 8
+    state_checkpoint_interval: int = 16
 
     def validate(self) -> None:
         if self.backend not in ("openai", "replay"):
@@ -125,6 +135,18 @@ class LLMConfig:
             raise ConfigError("llm.reasoning_effort 档位无效")
         if self.max_steps <= 0:
             raise ConfigError("llm.max_steps 必须为正整数")
+        if self.cache_mode not in {"auto", "explicit", "off"}:
+            raise ConfigError("llm.cache_mode 必须是 auto|explicit|off")
+        if not isinstance(self.cache_features, list) or any(item not in {
+            "openai_key", "openai_retention", "openai_options", "anthropic_cache"
+        } for item in self.cache_features):
+            raise ConfigError("llm.cache_features 含未知缓存能力")
+        if self.cache_ttl not in {"", "5m", "1h", "30m", "12h", "in_memory", "24h"}:
+            raise ConfigError("llm.cache_ttl 无效")
+        if self.context_window <= self.max_tokens + 1024 or not 0.3 <= self.compaction_threshold <= 0.95:
+            raise ConfigError("上下文预算须大于输出预算加 1024，压缩阈值须在 [0.3,0.95] 内")
+        if self.context_keep_messages < 1 or self.state_checkpoint_interval < 1:
+            raise ConfigError("上下文保留消息数和状态检查点间隔必须为正整数")
 
 
 @dataclass

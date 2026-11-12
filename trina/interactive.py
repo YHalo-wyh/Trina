@@ -341,6 +341,8 @@ class Console:
             "new": self._cmd_new,
             "clear": self._cmd_new,
             "usage": self._cmd_usage,
+            "context": self._cmd_context,
+            "compact": self._cmd_compact,
             "save": self._cmd_save,
             "goal": lambda: self._cmd_goal(args),
             "schedule": lambda: self._cmd_schedule(args),
@@ -404,6 +406,12 @@ class Console:
             return True
         if command == "board":
             self._cmd_board()
+            return True
+        if command == "context":
+            self._cmd_context()
+            return True
+        if command == "compact":
+            self._cmd_compact()
             return True
         if command == "quit":
             self._emit("任务运行中：先 stop 再退出。")
@@ -661,6 +669,43 @@ class Console:
             rows.append(("费用", f"{'≥' if data['missing_cost'] else ''}${data['cost_usd']:.6f}"))
         self._display(render_panel("会话用量", rows=rows, sections=[] if rows else [("", "暂无可显示的用量数据")], color=self.color))
 
+    def _cmd_context(self) -> None:
+        state = self._current_state()
+        data = getattr(state, "context_stats", {})
+        if not data:
+            self._emit("当前会话尚无上下文诊断")
+            return
+        last = data.get("last_request", {})
+        rows = [("输入估算 / 预算", f"{data.get('estimated_input_tokens', 0)} / {data.get('input_budget', 0)}"),
+                ("继承检查点", data.get("compactions", 0)), ("前缀变化", last.get("reason", "")),
+                ("公共前缀字节", last.get("visible_prefix_bytes", 0)),
+                ("新增输入字节" if last.get("reason") == "append" else "变化后缀字节", last.get("suffix_visible_bytes", 0))]
+        if last.get("uncached_input_tokens") is not None:
+            rows.append(("供应商未命中输入 Token", last["uncached_input_tokens"]))
+        policy = last.get("cache_policy") or {}
+        if policy:
+            rows.extend([("缓存策略", f"{policy.get('mode')} / {policy.get('source')}"),
+                         ("前缀标识", policy.get("stable_prefix_id", ""))])
+        if data.get("last_archive"):
+            rows.append(("完整历史归档", data["last_archive"]))
+        self._display(render_panel("上下文与缓存", rows=rows, sections=[("计量说明", "本地字节与 Token 估算不能代替服务端缓存判定。")], color=self.color))
+
+    def _cmd_compact(self) -> None:
+        if self.session.running:
+            self._emit("任务运行中由运行时在请求边界自动创建检查点")
+            return
+        if self.chat is None:
+            self._emit("当前没有可压缩的对话")
+            return
+        from .conversation import ContextBudgetError
+        before = self.chat.context.epoch
+        try:
+            self.chat.context.prepare(self.chat._messages, force=True)
+        except ContextBudgetError as exc:
+            self._emit(str(exc))
+            return
+        self._emit("已创建继承检查点，完整历史已落盘" if self.chat.context.epoch > before else "当前上下文无需压缩")
+
     def _cmd_save(self) -> None:
         """把当前供应商与模型写入唯一的 v2 供应商配置。"""
         if self.config.llm.profile:
@@ -684,6 +729,8 @@ class Console:
                 name, suffix = f"{base_name}-{suffix}", suffix + 1
             profile = ProviderProfile(name, base_name, llm.base_url, llm.model, llm.api_key_env, llm.api)
             profile.reasoning_effort = llm.reasoning_effort
+            profile.cache_mode, profile.cache_ttl = llm.cache_mode, llm.cache_ttl
+            profile.cache_features = list(llm.cache_features)
             profile.validate()
             store.profiles[name], store.active = profile, name
             store.save()

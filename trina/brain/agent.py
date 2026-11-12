@@ -312,8 +312,11 @@ class PentestAgent:
         # 这样既保持标准 Chat Template，也让供应商缓存看到字节级稳定前缀。
         messages: list[LLMMessage] = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": runtime_context},
+            {"role": "user", "content": runtime_context, "cache_scope": "stable"},
         ]
+        from ..conversation import ConversationContext, ContextBudgetError, state_projection
+        context = ConversationContext(ctx)
+        context.remember_user(goal)
         #: 原生协议要求每个 tool_call 都有对应的 tool 消息，缺一条下一轮就会被供应商拒绝
         pending_tool_messages: list[dict[str, Any]] = []
         native_call_id = ""
@@ -373,11 +376,13 @@ class PentestAgent:
                         audit.append("human.goal", decision="allow", goal=state.goal[:2000])
                         hints.append(f"[目标更新] {state.goal or '已清除'}")
                         messages.append({"role": "user", "content": f"[目标更新] {state.goal or '已清除'}"})
+                        context.remember_user(f"任务目标更新：{state.goal or '已清除'}")
                         accepted = True
                         continue
                     if note:
                         hints.append(f"[人工介入] {note}")
                         messages.append({"role": "user", "content": f"[人工介入] {note}"})
+                        context.remember_user(str(note))
                         state.note("human", f"人工补充：{note}")
                         audit.append("human.steer", decision="allow", message=str(note)[:400])
                         accepted = True
@@ -435,8 +440,11 @@ class PentestAgent:
                         )
 
                 step_prompt = build_step_prompt(
-                    state_digest=state.summary_for_prompt(),
-                    last_observation=observation,
+                    state_digest=context.state_update(state_projection(
+                        state, hypotheses=ledger.to_dict() if use_ledger else None, registered=policy_block,
+                        commander=commander_context_block() if (commander_briefs or commander_brief_provider) else "",
+                        unsatisfied_requirements=missing_goal)),
+                    last_observation="见上一条 tool 结果" if native_mode and pending_tool_messages else observation,
                     hints=hints,
                     runtime_context="",
                     budget={
@@ -445,28 +453,7 @@ class PentestAgent:
                         "剩余秒": int(ctx.remaining() or 0),
                     },
                     # 任务硬性要求放在显眼位置：否则模型容易被"顺路发现"带偏，把预算花在目标之外
-                    extra_context=(
-                        (
-                            commander_context_block() + "\n\n"
-                            if (commander_briefs or commander_brief_provider)
-                            else ""
-                        )
-                    )
-                    + (
-                        (
-                            "## 未完成的任务要求\n"
-                            + "\n".join(f"- {item}" for item in missing_goal)
-                            + "\n\n"
-                        )
-                        if missing_goal
-                        else ""
-                    )
-                    + (
-                        "## 假设台账（按优先级排序）\n" + ledger.prompt_block()
-                        if use_ledger
-                        else ""
-                    )
-                    + ("\n" + schedule.prompt_block() if schedule is not None else ""),
+                    extra_context=schedule.prompt_block() if schedule is not None else "",
                 )
                 hints = []
 
@@ -479,7 +466,17 @@ class PentestAgent:
                 from ..runtime_status import render_agent_status
                 messages[-1]["content"] += render_agent_status(ctx, step=index, max_steps=max_steps, observation=observation)
                 native_call_id = ""
+                try:
+                    context.prepare(messages, tool_payload)
+                except ContextBudgetError as exc:
+                    state.note("context", str(exc))
+                    state.counters["context_budget_errors"] = state.counters.get("context_budget_errors", 0) + 1
+                    state.context_stats = {**context.stats, "budget_error": str(exc)}
+                    audit.append("context.budget_error", error=str(exc))
+                    break
+                diagnostic = context.before_request(messages, tool_payload)
                 response = self._ask(messages, tool_payload)
+                context.after_response(diagnostic, response)
                 if not response.ok:
                     failure_kind = classify_llm_response(response)
                     state.counters[f"llm_{failure_kind}"] = state.counters.get(f"llm_{failure_kind}", 0) + 1
@@ -863,6 +860,8 @@ class PentestAgent:
 
         # 结论状态与覆盖说明（P3：没有得到证据 ≠ 获得否定证据，检查没跑不能当作通过）
         coverage = controller.coverage()
+        if state.counters.get("context_budget_errors"):
+            coverage["stop_reason"] = "context_budget_exhausted"
         state.coverage = coverage
         executed = list(coverage.get("executed") or [])
         error_count = state.counters.get("errors", 0)
@@ -871,7 +870,7 @@ class PentestAgent:
             verdict = "INCONCLUSIVE"
         elif verified:
             verdict = "CONFIRMED"
-        elif error_count or failures or coverage.get("revoked") or state.counters.get("denied", 0):
+        elif error_count or failures or coverage.get("revoked") or state.counters.get("denied", 0) or state.counters.get("context_budget_errors"):
             # 工具失败/超时/撤权/被拒 → 无法形成判断（不能写成"没问题"）
             verdict = "INCONCLUSIVE"
         else:

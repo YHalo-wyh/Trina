@@ -54,8 +54,18 @@ llm:
   tool_protocol_fallback: true
   # 提示词分层：true=Core/Role 进 system、任务契约进首条 user、状态逐轮追加
   prompt_layers: false
-  # 角色配置（默认空：只保留机器协议，不带人格）
+  # 可选附加角色描述；默认沿用共用安全工程师 Core
   role_profile: ""
+  # auto 只向已知官方接口发送适用的缓存字段；兼容中转需显式声明能力。
+  cache_mode: auto
+  cache_ttl: ""
+  cache_features: []
+  cache_namespace: trina
+  # 本地估算预算；应小于等于实际模型容量，输出和工具 Schema 另留空间。
+  context_window: 32768
+  compaction_threshold: 0.8
+  context_keep_messages: 8
+  state_checkpoint_interval: 16
 
 run:
   workspace: "runs"

@@ -43,6 +43,7 @@ class OpenAICompatBackend(LLMBackend):
         )
         # 一个后端实例对应一段 Agent 会话；Go 用稳定会话号做路由与缓存。
         self._session_id = uuid.uuid4().hex if self._opencode_go else ""
+        self._cache_rejected: set[tuple[str, str, str]] = set()
 
     def api_key(self) -> str:
         if self._key_override is not None:
@@ -180,9 +181,39 @@ class OpenAICompatBackend(LLMBackend):
             )
         except ValueError as exc:
             return self._finish_error(str(exc), on_event=on_event)
+        from .cache import CachePolicy, cache_parameter_rejected
+        identity = (self.base_url, self.config.model, self.config.api)
+        policy = CachePolicy.for_request(self.config, messages, tools, disabled=identity in self._cache_rejected,
+                                         base_url=self.base_url)
+        # 健康检查不申请缓存写入，正式业务请求才协商扩展。
         if stream:
-            return self._complete_stream(f"{self.base_url}/{endpoint}", payload, on_event)
-        return self._complete_json(f"{self.base_url}/{endpoint}", payload)
+            try:
+                cached_payload = policy.apply(payload, messages, self.config.api)
+            except ValueError as exc:
+                return self._finish_error(str(exc), on_event=on_event)
+            errors, visible = [], []
+            def forward(event):
+                if event.type == "error":
+                    errors.append(event)
+                else:
+                    if event.type in {"text_delta", "thinking_delta"}:
+                        visible.append(True)
+                    if on_event is not None:
+                        on_event(event)
+            response = self._complete_stream(f"{self.base_url}/{endpoint}", cached_payload, forward)
+            if (not response.ok and not visible and cached_payload != payload
+                    and cache_parameter_rejected(response.error)):
+                self._cache_rejected.add(identity)
+                response = self._complete_stream(f"{self.base_url}/{endpoint}", payload, on_event)
+                policy.source = "server_rejected_fallback"
+                policy.provider_features = set()
+            elif on_event is not None:
+                for event in errors:
+                    on_event(event)
+        else:
+            response = self._complete_json(f"{self.base_url}/{endpoint}", payload)
+        response.cache_diagnostic = policy.diagnostic()
+        return response
 
     def _build_payload(
         self,
@@ -631,6 +662,10 @@ def _parse_usage(raw: Any, api: str, model: str) -> LLMUsage:
     cached = count(details.get("cached_tokens", raw.get("prompt_cache_hit_tokens", raw.get("cache_read_input_tokens"))))
     written = count(details.get("cache_write_tokens", raw.get("cache_creation_input_tokens")))
     inputs = count(raw.get("prompt_tokens", raw.get("input_tokens")))
+    input_known = any(raw.get(key) is not None for key in ("input_tokens", "prompt_tokens"))
+    if not input_known and all(raw.get(key) is not None for key in ("prompt_cache_hit_tokens", "prompt_cache_miss_tokens")):
+        inputs = cached + count(raw["prompt_cache_miss_tokens"])
+        input_known = True
     if api == "anthropic":
         inputs += cached + written
     cache_known = any(details.get(key) is not None for key in ("cached_tokens", "cache_write_tokens")) or any(
@@ -645,7 +680,7 @@ def _parse_usage(raw: Any, api: str, model: str) -> LLMUsage:
     return LLMUsage(
         input_tokens=inputs, output_tokens=count(raw.get("completion_tokens", raw.get("output_tokens"))),
         cache_read_tokens=cached, cache_write_tokens=written,
-        input_reported=any(raw.get(key) is not None for key in ("input_tokens", "prompt_tokens")),
+        input_reported=input_known,
         output_reported=any(raw.get(key) is not None for key in ("output_tokens", "completion_tokens")),
         cache_read_reported=(details.get("cached_tokens") is not None or any(
             raw.get(key) is not None for key in ("prompt_cache_hit_tokens", "cache_read_input_tokens"))),

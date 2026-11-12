@@ -167,7 +167,7 @@
       "title": "单 Agent 逐步研究",
       "priority": "P0",
       "status": "implemented",
-      "implementation": ["trina/brain/agent.py", "trina/brain/chat.py", "trina/brain/prompts.py", "trina/runtime_status.py", "trina/llm/openai_backend.py"],
+      "implementation": ["trina/brain/agent.py", "trina/brain/chat.py", "trina/brain/prompts.py", "trina/runtime_status.py", "trina/conversation.py", "trina/llm/openai_backend.py"],
       "verification": ["V-CONTRACT", "V-TESTS"],
       "rules": [
         {
@@ -185,7 +185,7 @@
         {
           "id": "TR-04-R03",
           "level": "MUST",
-          "statement": "多轮请求必须使用标准结构化消息，system 与历史前缀保持稳定，动态状态只追加；Chat、Messages 与 Responses 使用各自原生字段，未收到终止事件的流不得判为成功。",
+          "statement": "多轮请求必须使用标准结构化消息，system 与初始合同保持稳定，同一 epoch 内动态状态只追加；继承检查点先归档再替换动态历史。Chat、Messages 与 Responses 使用各自原生字段，未收到终止事件的流不得判为成功。",
           "tests": ["tests.test_llm_streaming.StreamingTests.test_chat_preserves_roles_streams_before_terminal_and_tallies_once", "tests.test_llm_streaming.StreamingTests.test_native_api_dialects_keep_conversation_structured", "tests.test_llm_streaming.StreamingTests.test_missing_terminal_or_responses_incomplete_never_succeeds"]
         },
         {
@@ -193,6 +193,18 @@
           "level": "MUST",
           "statement": "Agent 状态栏必须作为请求末尾的动态数据追加，从当前任务变量提供进度、工具计数、环境摘要和后台作业快照；不得重写 system 或前缀，也不得继承其他任务的作业。",
           "tests": ["tests.test_runtime_status.RuntimeStatusTests.test_statebar_is_tail_message_data_and_does_not_rewrite_prefix", "tests.test_runtime_status.RuntimeStatusTests.test_snapshot_is_bounded_redacted_and_round_trips", "tests.test_runtime_status.RuntimeStatusTests.test_timeout_cancel_and_session_isolation", "tests.test_runtime_status.RuntimeStatusTests.test_chat_reads_running_job_at_request_tail_then_observes_completion"]
+        },
+        {
+          "id": "TR-04-R05",
+          "level": "MUST",
+          "statement": "事实和台账必须按差量与周期检查点提供；自动压缩须保留用户约束、事实和最近完整工具链，原历史原子归档后才能替换，失败保持原件，Worker 的差量和压缩状态隔离。",
+          "tests": ["tests.test_cache_runtime.CacheRuntimeTests.test_state_delta_contains_only_changed_values_and_periodic_full_checkpoint", "tests.test_cache_runtime.CacheRuntimeTests.test_compaction_archives_original_and_preserves_constraints_facts_and_tool_pairs", "tests.test_cache_runtime.CacheRuntimeTests.test_archive_failure_keeps_original_messages_and_epoch", "tests.test_cache_runtime.CacheRuntimeTests.test_impossible_budget_keeps_latest_request_and_does_not_silently_drop_instructions", "tests.test_cache_runtime.CacheRuntimeTests.test_chat_automatically_compacts_and_keeps_worker_contexts_isolated", "tests.test_cache_runtime.CacheRuntimeTests.test_task_agent_uses_same_compaction_and_persists_diagnostics"]
+        },
+        {
+          "id": "TR-04-R06",
+          "level": "MUST",
+          "statement": "缓存诊断必须区分可见消息追加、前缀修改、请求条件变化及压缩，未命中输入只用供应商实际总输入与缓存读取求差，不得编造缓存损失归因。",
+          "tests": ["tests.test_cache_runtime.CacheRuntimeTests.test_diagnostics_distinguish_growth_rewrite_and_settings_without_inventing_miss_cause", "tests.test_cache_runtime.CacheRuntimeTests.test_deepseek_hit_and_miss_can_supply_total_without_double_counting"]
         }
       ]
     },
@@ -464,7 +476,7 @@
       "title": "供应商整条配置与模型管理",
       "priority": "P1",
       "status": "implemented",
-      "implementation": ["trina/providers.py", "trina/provider_form.py", "trina/model_ui.py", "trina/llm/reasoning.py"],
+      "implementation": ["trina/providers.py", "trina/provider_form.py", "trina/model_ui.py", "trina/llm/reasoning.py", "trina/llm/cache.py"],
       "verification": ["V-CONTRACT", "V-TESTS"],
       "rules": [
         {
@@ -478,6 +490,12 @@
           "level": "MUST",
           "statement": "草稿连通与模型验证不得保存、激活或泄露草稿 Key。",
           "tests": ["tests.test_providers.ProviderTests.test_model_validation_failure_redacts_the_draft_key"]
+        },
+        {
+          "id": "TR-19-R03",
+          "level": "MUST",
+          "statement": "缓存扩展必须按供应商、协议与明确能力选择原生字段；未知中转不猜测能力，参数拒绝仅在生成前有界降级一次，鉴权失败不得按缓存能力重试，连接切换不得携带其他连接的缓存配置。",
+          "tests": ["tests.test_cache_runtime.CacheRuntimeTests.test_provider_payloads_use_native_fields_and_do_not_mutate_internal_messages", "tests.test_cache_runtime.CacheRuntimeTests.test_passive_proxy_deepseek_and_older_openai_have_separate_policies", "tests.test_cache_runtime.CacheRuntimeTests.test_real_http_proxy_rejection_negotiates_once_without_repeating_generation", "tests.test_cache_runtime.CacheRuntimeTests.test_auth_error_is_not_treated_as_cache_capability_rejection", "tests.test_cache_runtime.CacheRuntimeTests.test_profile_cache_capabilities_follow_connection_and_survive_reload", "tests.test_cache_runtime.CacheRuntimeTests.test_worker_cache_identity_depends_on_core_and_tool_set_not_task_or_dynamic_state"]
         }
       ]
     },
