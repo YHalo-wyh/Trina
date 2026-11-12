@@ -21,7 +21,7 @@ flowchart TB
     GUARD["trina.scope.ScopeGuard<br/>full / restricted 信任模式"]
     AUDIT["trina.audit.AuditLog<br/>SHA-256 哈希链"]
     STATE["trina.state.RunState<br/>hosts/findings/creds/flags/evidence/timeline"]
-    TOOLS["trina.tools：17 项目标分析 + 1 项可选咨询"]
+    TOOLS["trina.tools：17 项目标分析 + 3 项后台终端工具"]
     HTTP["trina.tools.http.HttpClient<br/>带护栏的 HTTP 出口"]
     EXT["trina.tools.external.run_external<br/>外部二进制（shell=False + 护栏）"]
     LLM["trina.llm<br/>标准 API 流式传输 / replay"]
@@ -106,6 +106,9 @@ flowchart TB
 | `trina.terminal` | `render_home/render_panel/render_message/render_step/render_approval` | CLI 统一展示；按显示宽度折行并清除外部控制字符，正式输出支持 Markdown；无色和无 rich 时降级；不参与模型上下文或动作执行 |
 | `trina.console_state` | `ConsoleState`、`TrackedBackend` | 展示层被动观测模型等待与实际返回用量；跨模型累计，建新会话清零；只展示实际返回的字段，未知项不占位；不修改提示词、动作、授权或后端账本 |
 | `trina.console_ui` | `EnhancedConsoleInput.run/write` | 持续全屏内容区与固定底部输入、索引和用量；后台只追加内容；模型表单临时接管终端后恢复 |
+| `trina.transcript` | `TranscriptControl.sync/create_content/selected_text/copy_selection` | 按块缓存 ANSI 行；滚动按行索引；流式更新只重排变化块；拖选复制与原生鼠标模式切换 |
+| `trina.runtime_status` | `status_snapshot/render_agent_status` | 模型请求末尾的动态运行快照，独立于屏幕底栏；保持消息前缀，任务、工具和作业数据只取当前上下文 |
+| `trina.tools.terminal` / `BackgroundJobs` | `terminal_start/status/stop`、`run_external(background=True)` | 当前任务专属的有界后台作业；真实退出码、超时和进程树回收；监视线程不写漏洞事实 |
 | `trina.interactive` | `Console(config, input_fn=, output=).run()/handle(line)` | 行式交互控制台；空闲命令复用 CLI，运行中支持介入、状态和只读工作台；2026-10-28 展示更新见 [CLI 说明](CLI_UI.md) |
 | `trina.review` | `review_state(state, audit_path=, registry=) -> ReviewNote`、`ReviewNote.to_markdown()` | 评价 Agent（只读）：核对声明/证据、结论一致性、覆盖缺口、边界事件、审计链 |
 | `trina.eval` | `EvalHarness(config, runner=).run(suite)`、`compute_metrics`、`AdversarialProxy` | `runner` 可注入，便于离线/回放评测 |

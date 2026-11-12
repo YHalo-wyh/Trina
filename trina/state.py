@@ -169,6 +169,8 @@ class RunState:
     loop: dict[str, Any] = field(default_factory=dict)
     #: 确定性调度统计（决策次数、遵从率、最近调度）
     scheduler: dict[str, Any] = field(default_factory=dict)
+    #: 模型每次决策前读取的动态状态栏；后台作业记录按当前任务隔离。
+    runtime_status: dict[str, Any] = field(default_factory=dict)
     max_evidence: int = 200
 
     # ------------------------------------------------------------------ 基础
@@ -408,6 +410,7 @@ class RunState:
             "graph": self.graph,
             "loop": self.loop,
             "scheduler": self.scheduler,
+            "runtime_status": self.runtime_status,
         }
 
     @classmethod
@@ -483,6 +486,7 @@ class RunState:
             graph=dict(data.get("graph") or {}),
             loop=dict(data.get("loop") or {}),
             scheduler=dict(data.get("scheduler") or {}),
+            runtime_status=dict(data.get("runtime_status") or {}),
         )
         state.started_at = float(data.get("started_at") or state.started_at)
         ended = data.get("ended_at")

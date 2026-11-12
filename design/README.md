@@ -11,6 +11,8 @@
 
 ## ADR 一览
 
+会话视口与模型运行状态：[ADR-0023](adr/0023-transcript-cache-and-agent-status.md) 记录缓存、文本选择、后台作业和末尾状态注入的依据及限制。
+
 2026-11-12 当前运行时更新：[ADR-0021 Capability Fabric](adr/0021-capability-fabric.md) 取代固定专职咨询；[ADR-0022 标准消息与流式输出](adr/0022-standard-messages-and-streaming.md) 移除 OMP 模型后端并固定结构化消息契约。下表中的早期决策按其历史基线保留。
 
 ### 架构决策

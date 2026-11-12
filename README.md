@@ -147,7 +147,7 @@ scripts/dev.sh play --target 127.0.0.1
 
 `trina swarm` 的每个题目也保持独立上下文和事实图。Commander 会检查已完成任务与当前任务的目标、显式依赖和验证方向，只在相似度达到阈值时转发资产、已验证发现、已验证凭据和工件位置；Flag、聊天历史和其他题目的 `RunState` 不会被合并。接收情报的 Worker 必须在自己的目标上重新验证后才能入账。
 
-## 已封装的工具（17 项目标分析）
+## 已封装的工具（17 项目标分析 + 3 项后台终端）
 
 | 类别 | 工具 | 动作等级 |
 |---|---|---|
@@ -156,6 +156,7 @@ scripts/dev.sh play --target 127.0.0.1
 | vuln | `poc_scan`（21 个只读 PoC） `nuclei_scan`（缺 nuclei 自动降级内置引擎） | detect |
 | exploit | `sqli_test` `cmd_inject_test` `lfi_test` `file_upload_test` `rce_exec` | verify / exploit |
 | creds | `weak_password_brute`（ssh/ftp/mysql/redis/http_basic/http_form） `http_form_login` `flag_hunt` | exploit / verify |
+| utility | `terminal_start` / `terminal_status` / `terminal_stop`（后台程序启动、等待、查询和取消） | exploit / detect |
 
 ## 人的位置：审批、介入、复核
 

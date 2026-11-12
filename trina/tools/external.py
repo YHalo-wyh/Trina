@@ -15,6 +15,7 @@ import json
 import os
 import queue
 import shutil
+import signal
 import subprocess
 import threading
 import time
@@ -42,11 +43,13 @@ class ExternalRun:
     ok: bool
     stdout: str = ""
     stderr: str = ""
-    code: int = -1
+    code: int | None = -1
     command: str = ""
     duration: float = 0.0
     error: str = ""
     binary: str = ""
+    job_id: str = ""
+    running: bool = False
 
     @property
     def output(self) -> str:
@@ -61,7 +64,205 @@ class ExternalRun:
             "stdout": self.stdout[:limit],
             "stderr": self.stderr[:600],
             "error": self.error,
+            "job_id": self.job_id,
+            "running": self.running,
         }
+
+
+class BackgroundJobs:
+    """每个 ToolContext 独立持有的有界作业表；后台线程只更新作业，不写事实。"""
+
+    def __init__(self):
+        self._jobs: dict[str, dict[str, Any]] = {}
+        self._lock = threading.RLock()
+        self._closed = False
+
+    def start(self, argv: list[str], *, cwd: str, env: dict[str, str] | None, timeout: float, tool: str,
+              owner: Any = None) -> str:
+        import uuid
+        from ..scope import ensure_execution_active
+
+        with self._lock:
+            ensure_execution_active()
+            if self._closed:
+                raise ValueError("本会话的后台作业表已关闭")
+            if sum(job["status"] == "running" for job in self._jobs.values()) >= 4:
+                raise ValueError("每个会话最多同时运行 4 个后台终端作业")
+            for key in list(self._jobs):
+                if len(self._jobs) < 24:
+                    break
+                if self._jobs[key]["status"] != "running":
+                    del self._jobs[key]
+            proc = subprocess.Popen(
+                argv, cwd=cwd, env=env, stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                start_new_session=os.name != "nt",
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0,
+            )
+            native_job = None
+            try:
+                native_job = _windows_background_job(proc) if os.name == "nt" else None
+                ensure_execution_active()
+            except Exception:
+                if native_job is not None:
+                    import ctypes
+                    ctypes.windll.kernel32.CloseHandle(native_job)
+                proc.kill()
+                proc.communicate()
+                raise
+            job_id = "job-" + uuid.uuid4().hex[:10]
+            job: dict[str, Any] = {
+                "id": job_id, "tool": tool, "status": "running", "exit_code": None,
+                "started": time.monotonic(), "elapsed_seconds": 0.0,
+                "stdout": "", "stderr": "", "error": "", "process": proc,
+                "done": threading.Event(),
+                "native_job": native_job,
+                "owner": owner,
+            }
+            self._jobs[job_id] = job
+
+        def read(stream, key):
+            import codecs
+            decoder = codecs.getincrementaldecoder("utf-8")("replace")
+            try:
+                while chunk := stream.read1(1024):
+                    with self._lock:
+                        job[key] = (job[key] + decoder.decode(chunk))[-16_000:]
+            finally:
+                stream.close()
+
+        readers = [threading.Thread(target=read, args=(proc.stdout, "stdout"), daemon=True),
+                   threading.Thread(target=read, args=(proc.stderr, "stderr"), daemon=True)]
+        for reader in readers:
+            reader.start()
+
+        def monitor():
+            timed_out = False
+            try:
+                proc.wait(timeout=max(.01, timeout))
+            except subprocess.TimeoutExpired:
+                timed_out = True
+                _terminate_background(proc, native_job)
+            finally:
+                # 主程序正常退出也回收它留下的子进程及管道。
+                _terminate_background(proc, native_job)
+                if native_job is not None:
+                    import ctypes
+                    ctypes.windll.kernel32.CloseHandle(native_job)
+                for reader in readers:
+                    reader.join(timeout=.5)
+                with self._lock:
+                    job["exit_code"] = proc.poll()
+                    job["elapsed_seconds"] = round(time.monotonic() - job["started"], 2)
+                    if job["status"] == "running":
+                        job["status"] = "timed_out" if timed_out else ("completed" if proc.returncode == 0 else "failed")
+                        job["error"] = f"后台执行超时（{timeout:g}s）" if timed_out else ""
+                    job["done"].set()
+        threading.Thread(target=monitor, name=f"trina-{job_id}", daemon=True).start()
+        return job_id
+
+    def snapshot(self, job_id: str = "", *, tail: int = 400) -> list[dict[str, Any]]:
+        with self._lock:
+            if job_id and job_id not in self._jobs:
+                raise ValueError("后台作业不存在或不属于当前会话")
+            rows = [self._jobs[job_id]] if job_id else list(self._jobs.values())
+            if not job_id:
+                active = [job for job in rows if job["status"] == "running"]
+                recent = [job for job in rows if job["status"] != "running"]
+                rows = active + recent[-max(1, 8 - len(active)):]
+            return [{
+                "id": job["id"], "tool": job["tool"], "status": job["status"],
+                "exit_code": job["exit_code"], "error": job["error"],
+                "elapsed_seconds": round(time.monotonic() - job["started"], 2) if job["status"] == "running" else job["elapsed_seconds"],
+                "stdout_tail": job["stdout"][-tail:], "stderr_tail": job["stderr"][-tail:],
+            } for job in rows[-8:]]
+
+    def wait(self, job_id: str, seconds: float) -> None:
+        with self._lock:
+            if job_id not in self._jobs:
+                raise ValueError("后台作业不存在或不属于当前会话")
+            done = self._jobs[job_id]["done"]
+        done.wait(max(0, min(seconds, 10)))
+
+    def stop(self, job_id: str) -> None:
+        with self._lock:
+            if job_id not in self._jobs:
+                raise ValueError("后台作业不存在或不属于当前会话")
+            job = self._jobs[job_id]
+            if job["status"] != "running":
+                return
+            job["status"], job["error"] = "cancelled", "操作者或任务生命周期取消"
+            proc = job["process"]
+            native_job = job["native_job"]
+        _terminate_background(proc, native_job)
+        self.wait(job_id, 2)
+
+    def close(self) -> None:
+        with self._lock:
+            self._closed = True
+        self.cancel_running()
+
+    def stop_owner(self, owner: Any) -> None:
+        """工具失败或超时时，仅撤销该次执行启动的作业。"""
+        with self._lock:
+            ids = [key for key, job in self._jobs.items() if job["owner"] is owner and job["status"] == "running"]
+        for job_id in ids:
+            self.stop(job_id)
+
+    def cancel_running(self) -> None:
+        with self._lock:
+            ids = [key for key, job in self._jobs.items() if job["status"] == "running"]
+        for job_id in ids:
+            self.stop(job_id)
+
+
+def _terminate_background(proc: subprocess.Popen, native_job: Any = None) -> None:
+    try:
+        if os.name != "nt":
+            os.killpg(proc.pid, signal.SIGKILL)
+        elif native_job is not None:
+            import ctypes
+            ctypes.windll.kernel32.TerminateJobObject(native_job, 1)
+        elif proc.poll() is None:
+            proc.kill()
+    except ProcessLookupError:
+        pass
+    try:
+        proc.wait(timeout=2)
+    except subprocess.TimeoutExpired:
+        pass
+
+
+def _windows_background_job(proc: subprocess.Popen):
+    """Windows Job Object 随任务关闭，包含子孙进程；不依赖 taskkill 或可见窗口。"""
+    import ctypes
+    from ctypes import wintypes as w
+
+    class Limits(ctypes.Structure):
+        _fields_ = [("process_time", ctypes.c_longlong), ("job_time", ctypes.c_longlong), ("flags", w.DWORD),
+                    ("min_working", ctypes.c_size_t), ("max_working", ctypes.c_size_t), ("active", w.DWORD),
+                    ("affinity", ctypes.c_size_t), ("priority", w.DWORD), ("scheduling", w.DWORD)]
+    class ExtendedLimits(ctypes.Structure):
+        _fields_ = [("basic", Limits), ("io", ctypes.c_ulonglong * 6),
+                    ("process_memory", ctypes.c_size_t), ("job_memory", ctypes.c_size_t),
+                    ("peak_process", ctypes.c_size_t), ("peak_job", ctypes.c_size_t)]
+    kernel = ctypes.windll.kernel32
+    kernel.CreateJobObjectW.argtypes, kernel.CreateJobObjectW.restype = [ctypes.c_void_p, w.LPCWSTR], w.HANDLE
+    kernel.SetInformationJobObject.argtypes = [w.HANDLE, ctypes.c_int, ctypes.c_void_p, w.DWORD]
+    kernel.AssignProcessToJobObject.argtypes = [w.HANDLE, w.HANDLE]
+    kernel.TerminateJobObject.argtypes = [w.HANDLE, w.UINT]
+    kernel.CloseHandle.argtypes = [w.HANDLE]
+    job = kernel.CreateJobObjectW(None, None)
+    limits = ExtendedLimits()
+    limits.basic.flags = 0x2000  # JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+    if not job:
+        raise OSError("无法创建后台进程 Job Object")
+    if not kernel.SetInformationJobObject(job, 9, ctypes.byref(limits), ctypes.sizeof(limits)) or not kernel.AssignProcessToJobObject(job, int(proc._handle)):
+        kernel.CloseHandle(job)
+        if proc.poll() is not None:
+            return None
+        raise OSError("无法绑定后台进程生命周期")
+    return job
 
 
 @dataclass
@@ -88,6 +289,7 @@ def run_external(
     cwd: str | None = None,
     env: dict[str, str] | None = None,
     audit: bool = True,
+    background: bool = False,
 ) -> ExternalRun:
     """执行外部二进制。护栏拒绝时抛 `ScopeViolation`（由注册表统一转为拒绝结果）。"""
     argv = [str(a) for a in argv]
@@ -110,6 +312,23 @@ def run_external(
         except ValueError:
             host = target
     ctx.throttle(host)
+
+    if background:
+        jobs = ctx.extra.get("background_jobs")
+        if not isinstance(jobs, BackgroundJobs):
+            raise ValueError("当前 ToolContext 不支持后台作业")
+        budget = min(float(timeout or ctx.config.run.tool_timeout), ctx.config.run.tool_timeout)
+        deadline = ctx.extra.get("task_deadline")
+        if deadline is not None:
+            budget = min(budget, max(.01, deadline - time.monotonic()))
+        job_id = jobs.start(argv, cwd=cwd or str(ctx.workspace), env=env if env is not None else _mcp_environment(),
+                            timeout=budget, tool=tool or binary, owner=ctx.extra.get("_execution_owner"))
+        try:
+            ctx.audit.append("external.background.start", tool=tool or binary, job_id=job_id, timeout=budget, target=target)
+        except Exception:
+            jobs.stop(job_id)
+            raise
+        return ExternalRun(ok=True, code=None, command=" ".join(argv), binary=binary, job_id=job_id, running=True)
 
     budget = timeout or ctx.config.run.tool_timeout
     if ctx.remaining() is not None:

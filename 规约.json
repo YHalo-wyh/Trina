@@ -133,7 +133,7 @@
       "title": "品牌首页与可读终端输出",
       "priority": "P1",
       "status": "implemented",
-      "implementation": ["trina/banner.py", "trina/terminal.py", "trina/console_ui.py", "trina/session.py"],
+      "implementation": ["trina/banner.py", "trina/terminal.py", "trina/console_ui.py", "trina/transcript.py", "trina/session.py"],
       "verification": ["V-CONTRACT", "V-TESTS"],
       "rules": [
         {
@@ -153,6 +153,12 @@
           "level": "MUST",
           "statement": "增强终端必须原位更新流式正文，结束后不得重复答复，也不得清空未发送输入；工具协议不进入正式输出。",
           "tests": ["tests.test_llm_streaming.StreamingTests.test_terminal_replaces_one_stream_card_and_keeps_draft", "tests.test_llm_streaming.StreamingTests.test_chat_history_is_append_only_and_protocol_is_not_streamed"]
+        },
+        {
+          "id": "TR-03-R04",
+          "level": "MUST",
+          "statement": "滚动不得重新解析稳定历史；流式更新只渲染变化块。鼠标拖选必须可复制 Unicode 文本且保留输入草稿，并可释放鼠标接管使用原生终端选取。",
+          "tests": ["tests.test_transcript.TranscriptTests.test_scrolling_does_not_reparse_or_rerender_stable_history", "tests.test_transcript.TranscriptTests.test_drag_selection_copies_chinese_lines_and_keeps_input_draft", "tests.test_transcript.TranscriptTests.test_native_selection_mode_can_release_mouse_tracking"]
         }
       ]
     },
@@ -161,7 +167,7 @@
       "title": "单 Agent 逐步研究",
       "priority": "P0",
       "status": "implemented",
-      "implementation": ["trina/brain/agent.py", "trina/brain/chat.py", "trina/brain/prompts.py", "trina/llm/openai_backend.py"],
+      "implementation": ["trina/brain/agent.py", "trina/brain/chat.py", "trina/brain/prompts.py", "trina/runtime_status.py", "trina/llm/openai_backend.py"],
       "verification": ["V-CONTRACT", "V-TESTS"],
       "rules": [
         {
@@ -181,6 +187,12 @@
           "level": "MUST",
           "statement": "多轮请求必须使用标准结构化消息，system 与历史前缀保持稳定，动态状态只追加；Chat、Messages 与 Responses 使用各自原生字段，未收到终止事件的流不得判为成功。",
           "tests": ["tests.test_llm_streaming.StreamingTests.test_chat_preserves_roles_streams_before_terminal_and_tallies_once", "tests.test_llm_streaming.StreamingTests.test_native_api_dialects_keep_conversation_structured", "tests.test_llm_streaming.StreamingTests.test_missing_terminal_or_responses_incomplete_never_succeeds"]
+        },
+        {
+          "id": "TR-04-R04",
+          "level": "MUST",
+          "statement": "Agent 状态栏必须作为请求末尾的动态数据追加，从当前任务变量提供进度、工具计数、环境摘要和后台作业快照；不得重写 system 或前缀，也不得继承其他任务的作业。",
+          "tests": ["tests.test_runtime_status.RuntimeStatusTests.test_statebar_is_tail_message_data_and_does_not_rewrite_prefix", "tests.test_runtime_status.RuntimeStatusTests.test_snapshot_is_bounded_redacted_and_round_trips", "tests.test_runtime_status.RuntimeStatusTests.test_timeout_cancel_and_session_isolation", "tests.test_runtime_status.RuntimeStatusTests.test_chat_reads_running_job_at_request_tail_then_observes_completion"]
         }
       ]
     },
@@ -189,7 +201,7 @@
       "title": "统一工具契约",
       "priority": "P0",
       "status": "implemented",
-      "implementation": ["trina/tools/registry.py", "trina/tools/__init__.py"],
+      "implementation": ["trina/tools/registry.py", "trina/tools/__init__.py", "trina/tools/terminal.py", "trina/tools/external.py"],
       "verification": ["V-CONTRACT", "V-TESTS"],
       "rules": [
         {
@@ -197,6 +209,12 @@
           "level": "MUST",
           "statement": "未知工具、未知参数和缺失参数必须在 ToolRegistry 执行目标动作前结构化拒绝。",
           "tests": ["tests.test_registry.TestRegistry.test_unknown_param_rejected"]
+        },
+        {
+          "id": "TR-05-R02",
+          "level": "MUST",
+          "statement": "后台终端必须通过注册表和 run_external 启动，区分运行、正常退出、非零失败、超时和取消；到期或会话结束回收进程树，默认不继承模型密钥，受限模式不得绕过等级裁决。",
+          "tests": ["tests.test_runtime_status.RuntimeStatusTests.test_background_progress_completion_and_nonzero_exit_are_real", "tests.test_runtime_status.RuntimeStatusTests.test_background_child_processes_are_cancelled_with_parent", "tests.test_runtime_status.RuntimeStatusTests.test_background_environment_does_not_inherit_model_keys", "tests.test_runtime_status.RuntimeStatusTests.test_restricted_mode_rejects_start_before_any_process_launch", "tests.test_runtime_status.RuntimeStatusTests.test_timed_out_start_call_cancels_only_its_own_background_job", "tests.test_runtime_status.RuntimeStatusTests.test_failed_start_result_does_not_leave_unreported_process"]
         }
       ]
     },

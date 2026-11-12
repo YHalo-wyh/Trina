@@ -1,0 +1,17 @@
+{
+  "baseline": "b285218de597b6220223885e3c9577d90712360a",
+  "python": "3.10.11",
+  "platform": "Windows",
+  "before": {
+    "logical_rows": 2099,
+    "scroll_1000_ms": 12414.129,
+    "stream_20_ms": 1328.423,
+    "history_block_rerenders_during_stream": 2000
+  },
+  "after": {
+    "logical_rows": 2100,
+    "scroll_1000_ms": 1.554,
+    "stream_20_ms": 55.557,
+    "history_block_rerenders_during_stream": 0
+  }
+}

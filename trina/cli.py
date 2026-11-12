@@ -512,6 +512,9 @@ def cmd_tool(args: argparse.Namespace) -> int:
     if args.name not in registry.names():
         out(f"未知工具 {args.name}；可用: {', '.join(registry.names())}", "red")
         return 2
+    if args.name.startswith("terminal_"):
+        out("后台终端作业属于持久 Agent 会话；请在 trina 对话或任务中调用，单次 tool 命令不持有作业。", "red")
+        return 2
 
     params: dict[str, Any] = {}
     if args.params:

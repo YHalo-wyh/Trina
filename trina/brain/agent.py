@@ -476,6 +476,8 @@ class PentestAgent:
                     messages.extend(pending_tool_messages)  # type: ignore[arg-type]
                     pending_tool_messages.clear()
                 messages.append({"role": "user", "content": step_prompt})
+                from ..runtime_status import render_agent_status
+                messages[-1]["content"] += render_agent_status(ctx, step=index, max_steps=max_steps, observation=observation)
                 native_call_id = ""
                 response = self._ask(messages, tool_payload)
                 if not response.ok:
@@ -790,7 +792,8 @@ class PentestAgent:
                     state.note("hint", hint)
 
                 # 预算与停止合同：连续无新增证据 / 检查数 / 逻辑预算到点就停，并留下覆盖说明
-                if controller.note_evidence(new_facts):
+                background_running = any(job["status"] == "running" for job in ctx.extra["background_jobs"].snapshot())
+                if not background_running and controller.note_evidence(new_facts):
                     state.note("budget", f"按停止合同收尾：{controller.stop_reason()}")
                     break
                 stop_reason = controller.stop_reason()
@@ -806,6 +809,9 @@ class PentestAgent:
                         state.scheduler = scheduler.to_dict()
                     self._save_state(state, workspace)
         finally:
+            from ..runtime_status import status_snapshot
+            ctx.extra["background_jobs"].close()
+            status_snapshot(ctx, step=steps, max_steps=max_steps, observation=observation)
             ctx.extra.pop("model_response_observer", None)
             with record_lock:
                 if record_handle:
@@ -922,6 +928,7 @@ class PentestAgent:
             http=ctx.http.stats(),
         )
         state.artifacts = {"workspace": str(workspace), "audit_path": str(audit.path), "state_file": str(workspace / "state.json")}
+        status_snapshot(ctx, step=steps, max_steps=max_steps, observation=observation)
         self._save_state(state, workspace)
         return state
 

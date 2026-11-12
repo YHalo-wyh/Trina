@@ -1,0 +1,138 @@
+{
+  "execution": "actual_local_process_with_replay_backend",
+  "command": [
+    "D:\\python310\\python.exe",
+    "-u",
+    "-c",
+    "import time; print('work started',flush=True); time.sleep(.8); print('done')"
+  ],
+  "model_request_snapshots": [
+    {
+      "version": 1,
+      "task": {
+        "run_id": "chat-20261112-172214",
+        "goal": "交互对话",
+        "phase": "recon",
+        "status": "chat"
+      },
+      "progress": {
+        "step": 1,
+        "max_steps": 12,
+        "turn": 1,
+        "elapsed_seconds": 0.0,
+        "remaining_seconds": null
+      },
+      "tools": {
+        "calls": 0,
+        "failures": 0,
+        "errors": 0,
+        "denied": 0
+      },
+      "environment": {
+        "workspace": "C:\\Users\\WYH\\AppData\\Local\\Temp\\tmprtqlhjo6\\runs\\chat-20261112-172214",
+        "observed_hosts": 0,
+        "findings": 0,
+        "evidence": 0
+      },
+      "last_observation": "",
+      "background_jobs": []
+    },
+    {
+      "version": 1,
+      "task": {
+        "run_id": "chat-20261112-172214",
+        "goal": "交互对话",
+        "phase": "recon",
+        "status": "chat"
+      },
+      "progress": {
+        "step": 2,
+        "max_steps": 12,
+        "turn": 1,
+        "elapsed_seconds": 0.1,
+        "remaining_seconds": null
+      },
+      "tools": {
+        "calls": 1,
+        "failures": 0,
+        "errors": 0,
+        "denied": 0
+      },
+      "environment": {
+        "workspace": "C:\\Users\\WYH\\AppData\\Local\\Temp\\tmprtqlhjo6\\runs\\chat-20261112-172214",
+        "observed_hosts": 0,
+        "findings": 0,
+        "evidence": 0
+      },
+      "last_observation": "结果] [OK] 后台作业已启动：job-91a11da42f（运行中）\n{\n \"ok\": true,\n \"code\": null,\n \"command\": \"D:\\\\python310\\\\python.exe -u -c import time; print('work started',flush=True); time.sleep(.8); print('done')\",\n \"duration\": 0.0,\n \"stdout\": \"\",\n \"stderr\": \"\",\n \"error\": \"\",\n \"job_id\": \"job-91a11da42f\",\n \"running\": true\n}",
+      "background_jobs": [
+        {
+          "id": "job-91a11da42f",
+          "tool": "terminal_start",
+          "status": "running",
+          "exit_code": null,
+          "error": "",
+          "elapsed_seconds": 0.01,
+          "stdout_tail": "",
+          "stderr_tail": ""
+        }
+      ]
+    },
+    {
+      "version": 1,
+      "task": {
+        "run_id": "chat-20261112-172214",
+        "goal": "交互对话",
+        "phase": "recon",
+        "status": "chat"
+      },
+      "progress": {
+        "step": 1,
+        "max_steps": 12,
+        "turn": 2,
+        "elapsed_seconds": 1.0,
+        "remaining_seconds": null
+      },
+      "tools": {
+        "calls": 2,
+        "failures": 0,
+        "errors": 0,
+        "denied": 0
+      },
+      "environment": {
+        "workspace": "C:\\Users\\WYH\\AppData\\Local\\Temp\\tmprtqlhjo6\\runs\\chat-20261112-172214",
+        "observed_hosts": 0,
+        "findings": 0,
+        "evidence": 0
+      },
+      "last_observation": "",
+      "background_jobs": [
+        {
+          "id": "job-91a11da42f",
+          "tool": "terminal_start",
+          "status": "completed",
+          "exit_code": 0,
+          "error": "",
+          "elapsed_seconds": 0.92,
+          "stdout_tail": "work started\ndone\n",
+          "stderr_tail": ""
+        }
+      ]
+    }
+  ],
+  "status_tool_result": {
+    "jobs": [
+      {
+        "id": "job-91a11da42f",
+        "tool": "terminal_start",
+        "status": "completed",
+        "exit_code": 0,
+        "error": "",
+        "elapsed_seconds": 0.92,
+        "stdout_tail": "work started\r\ndone\r\n",
+        "stderr_tail": ""
+      }
+    ]
+  },
+  "audit_chain_valid": true
+}

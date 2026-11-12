@@ -425,7 +425,6 @@ class EnhancedConsoleInput:
         from prompt_toolkit.layout import Layout, HSplit, Window, ConditionalContainer
         from prompt_toolkit.layout.controls import BufferControl, FormattedTextControl
         from prompt_toolkit.layout.dimension import Dimension
-        from prompt_toolkit.data_structures import Point
         from prompt_toolkit.layout.processors import BeforeInput
         from prompt_toolkit.filters import Condition
         from prompt_toolkit.styles import Style
@@ -441,6 +440,7 @@ class EnhancedConsoleInput:
         self._chunks: list[str] = []
         self._stream_index: int | None = None
         self._plain = plain
+        self._mouse_enabled = True
         self._char_count = 0
         self._content_lock = threading.RLock()
         self._fragments = None
@@ -477,6 +477,7 @@ class EnhancedConsoleInput:
         def dismiss(event):
             self.buffer.cancel_completion()
             self.dismissed = True
+            self.transcript_control.clear_selection()
 
         @bindings.add("enter")
         def submit(event):
@@ -498,7 +499,14 @@ class EnhancedConsoleInput:
 
         @bindings.add("c-c")
         def cancel(event):
-            event.app.exit(exception=KeyboardInterrupt())
+            if not self.transcript_control.copy_selection():
+                event.app.exit(exception=KeyboardInterrupt())
+
+        @bindings.add("f2")
+        def native_selection(event):
+            self._mouse_enabled = not self._mouse_enabled
+            self.transcript_control.clear_selection()
+            self.app.invalidate()
 
         @bindings.add("c-d")
         def eof(event):
@@ -531,36 +539,19 @@ class EnhancedConsoleInput:
         def follow_latest(event):
             self._scroll_to_latest()
 
-        style = Style.from_dict({} if plain else {
+        style = Style.from_dict({"selection": "reverse"} if plain else {
             "prompt": "bold " + THEME["rose"], "index": THEME["muted"],
             "selected": "bg:" + THEME["selected"] + " " + THEME["text"] + " bold", "hint": THEME["muted"],
             "status": THEME["lilac"], "title": "bold " + THEME["rose"],
             "thinking": "bold " + THEME["rose"], "thinking.dim": THEME["violet"],
             "border": THEME["violet"], "usage": THEME["muted"], "usage.value": THEME["lilac"],
+            "selection": "bg:" + THEME["selected"] + " " + THEME["text"],
         })
         control = BufferControl(buffer=self.buffer, input_processors=[BeforeInput(
             lambda: [("class:prompt", "补充  › " if self.running() else "Trina  › ")])])
-        owner = self
+        from .transcript import TranscriptControl
 
-        class TranscriptControl(FormattedTextControl):
-            """把滚轮事件交给会话视口，而不是输入框或终端原生回滚。"""
-
-            def mouse_handler(control, mouse_event):
-                from prompt_toolkit.mouse_events import MouseEventType
-
-                if mouse_event.event_type == MouseEventType.SCROLL_UP:
-                    owner._scroll_by(3)
-                    return None
-                if mouse_event.event_type == MouseEventType.SCROLL_DOWN:
-                    owner._scroll_by(-3)
-                    return None
-                return super().mouse_handler(mouse_event)
-
-        self.transcript_control = TranscriptControl(
-            self._transcript,
-            show_cursor=False,
-            get_cursor_position=lambda: Point(x=0, y=max(0, self._cursor_line())),
-        )
+        self.transcript_control = TranscriptControl(self)
         self.output_window = Window(self.transcript_control, wrap_lines=True, always_hide_cursor=True)
         self.activity_window = Window(FormattedTextControl(self._activity), height=1)
         self.input_window = Window(control, wrap_lines=True, height=Dimension(min=1, max=3), dont_extend_height=True)
@@ -583,7 +574,8 @@ class EnhancedConsoleInput:
                 self.usage_window,
             ]), focused_element=control),
             key_bindings=bindings, style=style, full_screen=True, refresh_interval=0.2,
-            mouse_support=True,
+            min_redraw_interval=1 / 60, max_render_postpone_time=.01,
+            mouse_support=Condition(lambda: self._mouse_enabled),
             color_depth=None if plain else ColorDepth.DEPTH_24_BIT,
         )
 
@@ -606,11 +598,13 @@ class EnhancedConsoleInput:
 
     def _scroll_to_latest(self) -> None:
         self._scrollback = 0
+        self.transcript_control.clear_selection()
         self.app.invalidate()
 
     def _status(self):
         from .terminal import clean_text
-        return [("class:status", clean_text(self.status()).replace("\n", " "))]
+        native = " · 原生选取模式 · F2 恢复滚动" if not self._mouse_enabled else ""
+        return [("class:status", clean_text(self.status()).replace("\n", " ") + native)]
 
     def _usage(self):
         size = self.app.output.get_size()
@@ -667,50 +661,42 @@ class EnhancedConsoleInput:
                 self._chunks[0] = self._chunks[0][-250_000:]
                 self._char_count = len(self._chunks[0])
                 pruned = True
-            previous_lines = self._line_count
-            self._line_count = max(1, "".join(self._chunks).rstrip("\n").count("\n") + 1)
+            self.transcript_control.invalidate_from(0 if pruned else len(self._chunks) - 1)
+            if pruned:
+                self.transcript_control.clear_selection()
             if self._scrollback:
-                self._scrollback = max(0, self._scrollback + self._line_count - previous_lines)
-            # 同宽度时只解析新增 ANSI 块；宽度变化时由 _transcript 统一重排。
-            if self._fragments is not None and self._fragment_width and not pruned:
-                from prompt_toolkit.formatted_text import ANSI, to_formatted_text
-                rendered = self._chunk_text(chunk, self._fragment_width)
-                self._fragments.extend(to_formatted_text(ANSI(rendered)))
-                self._rendered_lines = max(self._rendered_lines, self._line_count)
-            else:
-                self._fragments = None
+                self.transcript_control.sync(max(1, self.app.output.get_size().columns))
         self.app.invalidate()
 
     def update_stream(self, text: str, *, final: bool = False) -> None:
-        """原位更新一条模型答复，避免每个 delta 都新增卡片或最终重复输出。"""
+        """合并尚未绘制的增量；只在实际绘制或最终确认时渲染 Markdown。"""
         from .terminal import ResponsiveText, render_answer
 
-        source = render_answer(text or " ", color=not self._plain)
-        initial = str(source).rstrip("\n") + "\n\n"
-        chunk = (
-            ResponsiveText(initial, lambda width, item=source: item.at_width(width).rstrip("\n") + "\n\n")
-            if hasattr(source, "at_width") else initial
-        )
+        if final:
+            source = render_answer(text or " ", color=not self._plain)
+            chunk = ResponsiveText(str(source).rstrip("\n") + "\n\n",
+                                   lambda width: source.at_width(width).rstrip("\n") + "\n\n")
+        else:
+            # 快速到来的 delta 只替换文本，渲染频率由 Application 的帧率统一控制。
+            chunk = ResponsiveText(text, lambda width:
+                                   str(render_answer(text or " ", width=width, color=not self._plain)) + "\n\n")
         with self._content_lock:
-            previous_lines = self._line_count
             if self._stream_index is None:
                 if final and not text:
                     return
                 self._stream_index = len(self._chunks)
-                self._chunks.append(chunk)
-            elif final and not text:
-                self._chunks.pop(self._stream_index)
+                self._chunks.append("")
+            index = self._stream_index
+            old_length = len(self._chunks[index])
+            if final and not text:
+                self._chunks.pop(index)
+                self._char_count -= old_length
             else:
-                self._chunks[self._stream_index] = chunk
+                self._chunks[index] = chunk
+                self._char_count += len(chunk) - old_length
+            self.transcript_control.invalidate_from(index)
             if final:
                 self._stream_index = None
-            self._char_count = sum(len(item) for item in self._chunks)
-            rendered = "".join(str(item) for item in self._chunks).rstrip("\n")
-            self._line_count = max(1, rendered.count("\n") + 1)
-            if self._scrollback:
-                self._scrollback = max(0, self._scrollback + self._line_count - previous_lines)
-            # 被替换的块可能改变所有后续 fragment 偏移，必须按当前宽度重建。
-            self._fragments = None
         self.app.invalidate()
 
     @staticmethod
@@ -720,33 +706,20 @@ class EnhancedConsoleInput:
         return text if not text or text.endswith("\n") else text + "\n"
 
     def _cursor_line(self) -> int:
-        """光标行号：直接数当前 fragments 的真实行数。
-
-        行数缓存（`_line_count`）是按送入文本估算的，窗口宽度变化后可能多于实际渲染行；
-        prompt_toolkit 的滚动逻辑拿这个值直接索引 fragment 行，越界就抛 IndexError。
-        """
-        from prompt_toolkit.formatted_text.utils import split_lines
-
-        with self._content_lock:
-            fragments = self._fragments or []
-            count = sum(1 for _ in split_lines(fragments))
-        return max(0, count - 1 - self._scrollback)
+        """行数在内容变动时缓存；滚动和活动动画无需扫描历史。"""
+        return max(0, self._rendered_lines - 1 - self._scrollback)
 
     def _transcript(self):
-        from prompt_toolkit.formatted_text import ANSI, to_formatted_text
-        with self._content_lock:
-            width = max(20, self.app.output.get_size().columns)
-            if self._fragments is None or self._fragment_width != width:
-                rendered = "".join(
-                    self._chunk_text(chunk, width) for chunk in self._chunks
-                ).rstrip("\n")
-                # 空 transcript 必须留一行占位，否则 split_lines 返回空列表，光标行号越界。
-                self._fragments = to_formatted_text(ANSI(rendered)) if rendered else [("", "")]
-                self._fragment_width = width
-                self._rendered_lines = max(1, rendered.count("\n") + 1)
-                self._line_count = self._rendered_lines
-                self._scrollback = min(self._scrollback, max(0, self._rendered_lines - 1))
-            return self._fragments
+        """兼容文本检查入口；实际 UI 通过 create_content 按需读取缓存行。"""
+        self.transcript_control.sync(max(1, self.app.output.get_size().columns))
+        if self._fragments is None:
+            fragments = []
+            for index, row in enumerate(self.transcript_control.rows):
+                if index:
+                    fragments.append(("", "\n"))
+                fragments.extend(row)
+            self._fragments = fragments or [("", "")]
+        return self._fragments
 
     async def _consume(self) -> None:
         from prompt_toolkit.application import run_in_terminal

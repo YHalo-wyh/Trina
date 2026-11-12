@@ -336,6 +336,10 @@ class TestScopeAwareToolBehaviour(unittest.TestCase):
 
         registry = build_registry()
         for name, spec in ((n, registry.get(n).spec) for n in registry.names()):
+            if name in {"terminal_status", "terminal_stop"}:
+                self.assertIn("job_id", spec.params, "作业控制按当前会话 job_id 定位")
+                self.assertNotIn("target", spec.params, "不能给纯作业控制伪造网络目标")
+                continue
             filled = [key for key in ("target", "url") if key in spec.params]
             self.assertTrue(filled, f"{name} 既没有 target 也没有 url 参数，--target 无法使用")
 

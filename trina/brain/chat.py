@@ -145,7 +145,7 @@ class ChatAgent:
                     time.sleep(0.2)
             self._accept_steer()
 
-            response = self._ask_model()
+            response = self._ask_model(step)
             if self.stop_event is not None and self.stop_event.is_set():
                 self._cancel_stream()
                 return "（已按你的要求停止）"
@@ -228,7 +228,7 @@ class ChatAgent:
         ]
         self._messages_ready = True
 
-    def _ask_model(self):
+    def _ask_model(self, step: int = 0):
         registered = self.controller.registry.prompt_block(
             self.controller.registry.match_target(self.state.target).target_id  # type: ignore[union-attr]
             if self.state.target and self.controller.registry.match_target(self.state.target)
@@ -239,6 +239,10 @@ class ChatAgent:
             runtime_parts.append("## 已注册检查项\n" + registered)
         if self.use_ledger:
             runtime_parts.append("## 假设台账\n" + self.ledger.prompt_block())
+        from ..runtime_status import render_agent_status
+        last_observation = self.history[-1]["content"] if self.history and self.history[-1]["content"].startswith("[工具结果]") else ""
+        runtime_parts.append(render_agent_status(self.ctx, step=step, max_steps=self.MAX_TOOL_STEPS,
+                                               turn=self.turns, observation=last_observation))
         # 动态状态作为新的 user 消息追加；绝不重写 system 或把历史压成角色标签字符串。
         self._messages.append({"role": "user", "content": "\n\n".join(runtime_parts)})
         self.state.counters["llm_calls"] = self.state.counters.get("llm_calls", 0) + 1
@@ -258,6 +262,12 @@ class ChatAgent:
         if self._pending_stream is not None:
             self._pending_stream.cancel()
         self._pending_stream = None
+
+    def close(self) -> None:
+        """关闭会话时回收后台作业，并记录最终快照。"""
+        from ..runtime_status import status_snapshot
+        self.ctx.extra["background_jobs"].close()
+        status_snapshot(self.ctx, turn=self.turns)
 
     def _drain_steer(self) -> str:
         if self.steer_queue is None:
@@ -365,7 +375,9 @@ class ChatAgent:
             if hint and self.use_guard:
                 self.logger(f"[失败分类] {kind}：{hint}")
                 feedback.append(hint)
-        self.controller.note_evidence(new_information)
+        # 等待仍在运行的终端作业不属于重复漏洞验证，也不记作新增证据。
+        if not any(job["status"] == "running" for job in self.ctx.extra["background_jobs"].snapshot()):
+            self.controller.note_evidence(new_information)
         self.state.hypotheses = self.ledger.to_dict()
         self.state.loop = self.loop_guard.to_dict()
         observation = result.to_observation(max_chars=1800)

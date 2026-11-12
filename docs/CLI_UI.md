@@ -50,7 +50,7 @@ python -m trina console --plain
 | 审批 | `y`、`n` | 展示工具、等级、检查项、参数和理由；交互控制台超时仍拒绝 |
 | 帮助 | `/`、`/help`、`/help <命令>` | 实时索引、分组总览或单条命令的选项与示例 |
 
-主控制台使用全屏内容区和固定底部输入区，回车提交后界面继续运行，输入、索引、模型状态与会话用量不会随内容滚动。鼠标滚轮或触控板、`PageUp` / `PageDown` 可上下浏览内容，`Ctrl+↑` / `Ctrl+↓` 逐行移动，`Ctrl+Home` 到最早记录，`Ctrl+End` 回到最新输出。手动上翻后进入历史锁定，新输出继续追加但不会强制跳回底部，活动栏会持续提示返回最新的快捷键。鼠标模式下终端原生选中文本使用 `Shift` 配合拖动。`/model` 配置页仍为居中方角面板，关闭后恢复同一控制台内容和输入缓冲。当前没有逐 Token 流式回复，模型等待状态每 0.2 秒重绘。
+主控制台使用全屏内容区和固定底部输入区，回车提交后界面继续运行，输入、索引、模型状态与会话用量不会随内容滚动。鼠标滚轮或触控板、`PageUp` / `PageDown` 可上下浏览内容，`Ctrl+↑` / `Ctrl+↓` 逐行移动，`Ctrl+Home` 到最早记录，`Ctrl+End` 回到最新输出。手动上翻后进入历史锁定，新输出继续追加但不会强制跳回底部，活动栏会持续提示返回最新的快捷键。鼠标拖选后释放即可复制；F2 切换终端原生选取。`/model` 配置页仍为居中方角面板，关闭后恢复同一控制台内容和输入缓冲。模型正文以流式增量更新，等待动画每 0.2 秒刷新。
 
 `trina run` 与 `trina play` 也使用相同的步骤和结果展示。一次性 `play` 入口仍按原规则同步等待输入，回车拒绝；它不显示控制台专用的审批超时承诺。
 
@@ -64,7 +64,7 @@ python -m trina console --plain
 
 本会话从控制台启动或最近一次 `/new` / `/clear` 开始累计。切换模型或供应商继续累计，重新建会话后归零，不复用后端历史账本。模型验证表单使用独立后端，不计入对话用量。底栏累计范围是当前控制台会话，任务报告和审计继续按各自运行工件保存。
 
-缓存命中率按已报告缓存字段的请求计算：累计缓存读取 Token ÷ 这些请求的累计总输入 Token。OpenAI 兼容与 Responses 的输入总量包含缓存部分，缓存读写作为子集保留；Anthropic 的普通输入、缓存读和缓存写相加后得到总输入。OMP 的普通输入、`cacheRead` 与 `cacheWrite` 同样合并。缓存 Token 不再次加入会话总量，零分母不生成百分比。协议字段依据见 [OpenAI 缓存文档](https://developers.openai.com/api/docs/guides/prompt-caching)和 [Anthropic 缓存用量说明](https://platform.claude.com/docs/en/build-with-claude/prompt-caching#tracking-cache-performance)。
+缓存命中率按已报告缓存字段的请求计算：累计缓存读取 Token ÷ 这些请求的累计总输入 Token。OpenAI 兼容与 Responses 的输入总量包含缓存部分，缓存读写作为子集保留；Anthropic 的普通输入、缓存读和缓存写相加后得到总输入。缓存 Token 不再次加入会话总量，零分母不生成百分比。协议字段依据见 [OpenAI 缓存文档](https://developers.openai.com/api/docs/guides/prompt-caching)和 [Anthropic 缓存用量说明](https://platform.claude.com/docs/en/build-with-claude/prompt-caching#tracking-cache-performance)。
 
 ## 工作台数据如何阅读
 
@@ -127,3 +127,17 @@ python -m scripts.verify_course_pack
 增强终端把正文增量更新到同一张输出卡片，完成后保留该卡片。JSON/DSML 工具协议等待解析，不作为正文展示；隐藏思考只影响活动标记。网络中断或协议未完整结束时撤回未完成卡片并显示错误。输出重定向与非 TTY 入口保留一次完整答复。滚轮、PageUp/PageDown 和 Ctrl+End 在流式输出期间继续有效，输入草稿保持。
 
 对应验收为 `tests/test_llm_streaming.py`，分别检查多次增量只产生一张卡片、结束不重复和草稿保留。
+
+## 低延迟滚动与复制（2026-11-12）
+
+会话视口按块缓存排版与 ANSI 行，滚动时直接索引缓存。流式正文先合并增量，实际绘制时只更新正在变化的块，最多 60 帧/秒；稳定历史只在窗口宽度变化后重排。鼠标拖选文本后释放即可复制，中文及跨行选择保留；选区存在时 Ctrl+C 再次复制，Esc 清除选区。复制不会清空输入草稿。
+
+F2 可暂时关闭鼠标接管，使用终端自带的选取与复制，再按 F2 恢复应用滚轮。Windows 使用系统 Unicode 剪贴板；远程或其他终端使用 OSC 52，终端需允许该协议。应用内部仍保留选中文本。
+
+后台程序通过 `terminal_start` 启动，返回 job_id；`terminal_status` 可读取状态、输出和退出码，也可最多等待 10 秒；`terminal_stop` 取消作业。主任务空闲而后台仍在运行时，活动栏显示运行项数。新建会话或退出时回收作业；Swarm Worker 在本项任务结束时回收，作业不迁移到下一题。
+
+这些工具属于当前持久 Agent 会话；单次 `trina tool terminal_*` 不持有作业，不用于跨命令启动和查询后台程序。
+
+模型读取的 Agent 状态栏和屏幕底栏分别工作。模型状态栏由 `trina/runtime_status.py` 在每次请求末尾追加，内容来自实际任务状态；不会把这些字段重复附在正式答复卡片下面。
+
+本次实际运行与复现脚本见 [会话视口与状态栏验证](../evidence/20261112-viewport-statusbar/README.md)。

@@ -6,6 +6,9 @@
 > 对事实的解释与复核放在 `review/`；全量产物（每次运行的 runs/logs/reports）不入库，由 `.gitignore` 排除。
 
 ## 本目录内容
+
+- [2026-11-12 会话视口与 Agent 状态栏验证](20261112-viewport-statusbar/README.md)：缓存滚动、SGR 拖选、真实后台进程、模型请求快照及总关卡输出。
+
 ```
 evidence/20261015-lab-e2e/
 ├── audit.jsonl            审计哈希链（每条动作含护栏裁决；敏感字段已脱敏）

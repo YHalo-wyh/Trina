@@ -229,7 +229,8 @@ class ToolContext:
         #: 「外层按 verify 放行、内层按 exploit 自拒」的自相矛盾。
         self.effective_level: str = "detect"
         self._logger = logger or (lambda msg: None)
-        self.extra: dict[str, Any] = {}
+        from .external import BackgroundJobs
+        self.extra: dict[str, Any] = {"background_jobs": BackgroundJobs(), "task_deadline": deadline}
 
     # -------------------------------------------------------------- 便捷方法
     def log(self, message: str) -> None:
@@ -546,6 +547,7 @@ class ToolRegistry:
         baseline = copy.deepcopy(ctx.state)
         working.state = copy.deepcopy(baseline)
         working.extra = dict(ctx.extra)
+        working.extra["_execution_owner"] = lease
         working.deadline = min(ctx.deadline, lease.deadline) if ctx.deadline else lease.deadline
         working.guard = _LeaseProxy(ctx.guard, lease)
         working.audit = _LeaseProxy(ctx.audit, lease)
@@ -559,6 +561,7 @@ class ToolRegistry:
         except FutureTimeout:
             lease.cancelled.set()
             future.cancel()
+            ctx.extra["background_jobs"].stop_owner(lease)
             ctx.state.counters["errors"] = ctx.state.counters.get("errors", 0) + 1
             return ToolResult(
                 ok=False,
@@ -568,8 +571,10 @@ class ToolRegistry:
                 duration=time.monotonic() - started,
             )
         except ScopeViolation as exc:
+            ctx.extra["background_jobs"].stop_owner(lease)
             return denied_result(exc.decision, tool=tool.spec.name)
         except Exception as exc:  # noqa: BLE001 - 任何工具异常都不能中断整条链路
+            ctx.extra["background_jobs"].stop_owner(lease)
             ctx.state.counters["errors"] = ctx.state.counters.get("errors", 0) + 1
             detail = traceback.format_exc(limit=3)
             ctx.audit.append("tool.error", tool=tool.spec.name, decision="error", error=f"{type(exc).__name__}: {exc}"[:400])
@@ -583,10 +588,14 @@ class ToolRegistry:
         finally:
             lease.cancelled.set()
         if not isinstance(result, ToolResult):
+            ctx.extra["background_jobs"].stop_owner(lease)
             return ToolResult(ok=False, error=f"工具返回值类型错误: {type(result)!r}", summary="工具契约违反")
+        if not result.ok:
+            ctx.extra["background_jobs"].stop_owner(lease)
         for key, value in working.state.__dict__.items():
             if value != baseline.__dict__.get(key):
                 setattr(ctx.state, key, value)
+        working.extra.pop("_execution_owner", None)
         ctx.extra.update(working.extra)
         result.duration = result.duration or (time.monotonic() - started)
         return result

@@ -189,6 +189,10 @@ class Console:
         if self.session.pause_event.is_set() and self.session.running:
             return "paused", "已暂停", 0
         if not self.session.running:
+            if self.chat is not None:
+                active = [job for job in self.chat.ctx.extra["background_jobs"].snapshot() if job["status"] == "running"]
+                if active:
+                    return "tool", f"后台终端 · {len(active)} 项运行中", max(job["elapsed_seconds"] for job in active)
             return "idle", "就绪", 0
         return self.view.activity()
 
@@ -392,6 +396,8 @@ class Console:
             return True
         if command == "stop":
             self.session.request_stop()
+            if self.chat is not None and self.session.state is self.chat.state:
+                self.chat.ctx.extra["background_jobs"].cancel_running()
             return True
         if command == "status":
             self._show_status()
@@ -629,6 +635,8 @@ class Console:
         if self.session.running:
             self._emit("有任务在跑：先 /stop 再开新会话")
             return
+        if self.chat is not None:
+            self.chat.close()
         self.chat = None
         self.view.reset()
         self._emit("已开启新对话会话（历史与审计都重新开始；上一次的审计文件仍在 logs/ 下）")
@@ -1041,6 +1049,8 @@ class Console:
             self.session.thread.join(timeout=5)
         if self._scheduler_thread is not None and self._scheduler_thread is not threading.current_thread():
             self._scheduler_thread.join(timeout=2)
+        if self.chat is not None:
+            self.chat.close()
         if self._plan is not None and self._plan.started_fixtures:
             self._plan.teardown()
 
