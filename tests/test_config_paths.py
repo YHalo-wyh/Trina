@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from trina.config import PACKAGED_CONFIG_PATH, PROJECT_ROOT, TrinaConfig, _resolve
+from trina.config import ConfigError, PACKAGED_CONFIG_PATH, PROJECT_ROOT, TrinaConfig, _resolve
 
 CONFIG = PROJECT_ROOT / "configs" / "trina.yaml"
 
@@ -39,6 +39,10 @@ class ConfigPathTest(unittest.TestCase):
         target = Path(self._tmp.name) / "custom-logs"
         cfg = TrinaConfig.load(path=CONFIG, overrides={"audit.dir": str(target)})
         self.assertEqual(cfg.audit_dir, target)
+
+    def test_unknown_override_is_rejected(self) -> None:
+        with self.assertRaisesRegex(ConfigError, "未知配置字段"):
+            TrinaConfig.load(path=CONFIG, overrides={"run.removed_option": True})
 
     def test_packaged_config_writes_to_user_data_not_site_packages(self) -> None:
         data_root = Path(self._tmp.name) / "trina-home"

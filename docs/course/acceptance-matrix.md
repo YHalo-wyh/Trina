@@ -37,7 +37,7 @@
 
 - `test_brain.TestParseAction.test_fenced_json`
 - `test_brain.TestReActLoop.test_invalid_json_is_recovered`
-- `test_collaboration.TestCollaboration.test_bad_budget_config_is_rejected`
+- `test_config_paths.ConfigPathTest.test_unknown_override_is_rejected`
 
 事实文件：[unit-tests.json](../../evidence/20261021-course-pack/unit-tests.json)。执行状态按逐测试记录读取，未运行、失败和跳过不能计作通过。
 
@@ -151,7 +151,7 @@
 - `test_policy.TestController.test_budget_stops_checks`
 - `test_policy.TestController.test_no_new_evidence_triggers_stop`
 - `test_decision_evidence.TestEvidenceRun.test_repeated_facts_trigger_stop_contract`
-- `test_collaboration.TestCollaboration.test_chat_failure_feedback_is_sent_back_to_model`
+- `test_runtime_contracts.RuntimeContractTests.test_chat_failure_feedback_is_sent_back_to_model`
 
 事实文件：[unit-tests.json](../../evidence/20261021-course-pack/unit-tests.json)。执行状态按逐测试记录读取，未运行、失败和跳过不能计作通过。
 
@@ -159,7 +159,7 @@
 
 执行入口：`V-FULL`。实现位置：[trina/state.py](../../trina/state.py)、[trina/brain/agent.py](../../trina/brain/agent.py)、[trina/board.py](../../trina/board.py)。
 
-- `test_collaboration.TestCollaboration.test_atomic_save_keeps_previous_snapshot_when_replace_fails`
+- `test_runtime_contracts.RuntimeContractTests.test_atomic_save_keeps_previous_snapshot_when_replace_fails`
 - `test_insight.TestStateRoundTrip.test_to_dict_from_dict_round_trip`
 - `test_insight.TestStateRoundTrip.test_from_dict_rejects_error_payload`
 
@@ -169,31 +169,22 @@
 
 执行入口：`V-FULL`。实现位置：[trina/brain/scheduler.py](../../trina/brain/scheduler.py)、[trina/brain/agent.py](../../trina/brain/agent.py)。
 
-- `test_collaboration.TestCollaboration.test_scheduler_consumes_live_controller_coverage`
-- `test_collaboration.TestCollaboration.test_same_tool_with_wrong_test_id_is_not_compliance`
+- `test_runtime_contracts.RuntimeContractTests.test_scheduler_consumes_live_controller_coverage`
+- `test_runtime_contracts.RuntimeContractTests.test_same_tool_with_wrong_test_id_is_not_compliance`
 - `test_insight.TestInsightSwitches.test_scheduler_off_leaves_no_directive`
 
 事实文件：[unit-tests.json](../../evidence/20261021-course-pack/unit-tests.json)。执行状态按逐测试记录读取，未运行、失败和跳过不能计作通过。
 
 ### REQ-14 的 Sensor
 
-执行入口：`V-FULL`。实现位置：[trina/collaboration.py](../../trina/collaboration.py)、[trina/tools/specialists.py](../../trina/tools/specialists.py)。
-
-- `test_collaboration.TestCollaboration.test_advice_never_executes_or_mutates_facts`
-- `test_collaboration.TestCollaboration.test_recursion_unregistered_and_cross_role_tools_are_rejected`
-- `test_collaboration.TestCollaboration.test_forged_flags_status_and_findings_are_removed`
-- `test_collaboration.TestCollaboration.test_invalid_response_consumes_budget`
-- `test_collaboration.TestCollaboration.test_parent_must_issue_separate_action_and_record_replays_child`
-
-事实文件：[unit-tests.json](../../evidence/20261021-course-pack/unit-tests.json)。执行状态按逐测试记录读取，未运行、失败和跳过不能计作通过。
+2026-11-12 状态：superseded。固定 recon/web/review 咨询已删除；历史测试结果仍在原始证据文件，仅适用于旧代码基线。当前能力模型与租约检查见 [ADR-0021](../../design/adr/0021-capability-fabric.md) 和产品 TR-11，不把能力验收作为旧咨询功能的通过证据。
 
 ### REQ-15 的 Sensor
 
-执行入口：`V-AUDIT`、`V-FULL`。实现位置：[trina/audit.py](../../trina/audit.py)、[trina/state.py](../../trina/state.py)、[trina/tools/specialists.py](../../trina/tools/specialists.py)、[trina/report/markdown.py](../../trina/report/markdown.py)。
+执行入口：`V-AUDIT`、`V-FULL`。实现位置：[trina/audit.py](../../trina/audit.py)、[trina/state.py](../../trina/state.py)、[trina/report/markdown.py](../../trina/report/markdown.py)。
 
 - `test_audit.TestAuditChain.test_secrets_redacted`
 - `test_eval_report_lab.TestReport.test_credentials_redacted_in_output`
-- `test_collaboration.TestCollaboration.test_snapshot_is_bounded_and_credential_password_is_absent`
 
 事实文件：[unit-tests.json](../../evidence/20261021-course-pack/unit-tests.json)。执行状态按逐测试记录读取，未运行、失败和跳过不能计作通过。
 

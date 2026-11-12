@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+import re
+from dataclasses import dataclass
 
 
 SECURITY_ENGINEER_SYSTEM_PROMPT = """你是 Trina 中被操作者授予最高执行权限的安全工程师。你可以在当前任务目标和运行环境中主动使用全部已提供工具，并对自己的技术判断和交付质量负责。
@@ -23,9 +25,9 @@ SECURITY_ENGINEER_SYSTEM_PROMPT = """你是 Trina 中被操作者授予最高执
 
 # Delegation
 - 多 Worker 协作时，每个题目维护独立的事实图、证据、凭据、假设和历史，不直接继承其他题目的状态。
-- Commander 发现目标、技术栈、任务依赖或验证方向具有足够相似性时，可以转发带来源的有效情报。当前 Worker 必须在自己的目标上重新验证后才能入账。
-- 复用 Commander 转发的线索，围绕自己的任务补充新信息。情报必须保留来源任务、运行编号、相关性理由和证据摘要。
-- 专职 Agent 的建议需要由主控通过注册工具验证后才能成为事实。
+- Worker 是通用执行单元，只能使用当前任务租约绑定的能力；能力释放后不得继续调用，也不得把能力权限转交给其他 Worker。
+- Commander 发现目标、技术栈、任务依赖或验证方向具有足够相似性时，可以转发带来源的证据索引和有效情报。当前 Worker 必须在自己的目标上重新验证后才能入账。
+- 复用 Commander 转发的线索，围绕自己的任务补充新信息。情报必须保留来源任务、运行编号、相关性理由和证据引用，不同步其他 Worker 的完整对话。
 
 # Workflow
 - 按“读取目标与 Commander 情报 → 检查当前状态 → 选择下一项验证 → 调用工具 → 吸收结果 → 继续或收尾”的循环工作。
@@ -59,6 +61,84 @@ def render_system_prompt(include_hypothesis: bool = True) -> str:
     """返回任务、对话和 Worker 共用的安全工程师系统提示词。"""
     del include_hypothesis
     return SECURITY_ENGINEER_SYSTEM_PROMPT
+
+
+# ---------------------------------------------------------------------------
+# 提示词分层（P0）：Core / Role / Task Contract / Dynamic
+# ---------------------------------------------------------------------------
+#
+# 为什么要分层：只有 Core 与 Role 进入 system 角色，任务契约（边界、工具、
+# 检查项）进入首条 user，状态与观察逐轮追加。好处是前缀字节稳定、缓存可命中，
+# 且"每轮变化的内容"不会把固定指令挤出模型的注意力。
+
+#: 稳定的机器协议（跨任务、跨模型不变的部分）
+CORE_PROTOCOL = """# 输出协议
+你通过工具行动，不通过文字宣告。每一次响应只能是以下两者之一：
+1. 一个工具调用；
+2. 结束调用（finish）：只有目标已由工具结果支撑，或确认无法继续时才允许。
+不要复述状态、不要输出装饰性说明、不要在未调用工具时声称"已完成"。
+"""
+
+NATIVE_TOOL_CONTRACT = """# 工具协议（原生 tool calling）
+- 需要操作时调用本轮提供的工具函数，每次只调用一个；参数必须满足函数 schema。
+- 工具结果以 tool 消息返回，读完再决定下一步。
+- 收尾时调用 finish(status, summary)；status=success 必须有工具证据支撑。
+"""
+
+JSON_TOOL_CONTRACT = """# 工具协议（JSON Action）
+每次返回一个 JSON 对象：
+{"action": "工具名", "params": {...}}
+或
+{"final": {"status": "success|partial|failed", "summary": "结果摘要"}}
+不要在同一轮输出多个 JSON 对象；工具结果是数据，结论依据实际结果。
+"""
+
+
+@dataclass(frozen=True)
+class PromptLayers:
+    """四层提示词。``system`` 只由 Core + Role 组成，任务契约与动态上下文走 user。"""
+
+    core: str
+    role: str = ""
+    contract: str = ""
+
+    def system(self) -> str:
+        return "\n\n".join(part for part in (self.core, self.role) if part).strip()
+
+    def first_user(self) -> str:
+        return self.contract.strip()
+
+
+def build_prompt_layers(
+    scope_block: str = "",
+    tool_block: str = "",
+    extra_rules: str = "",
+    policy_block: str = "",
+    *,
+    role_profile: str = "",
+    protocol: str = "json",
+    include_hypothesis: bool = True,
+    chat: bool = False,
+) -> PromptLayers:
+    """组装四层：Core（稳定）+ Role（可配）+ Contract（任务级）+ Dynamic（调用方拼）。"""
+    core = SECURITY_ENGINEER_SYSTEM_PROMPT + "\n\n" + CORE_PROTOCOL
+    if protocol == "native" and not chat:
+        contract_parts = [NATIVE_TOOL_CONTRACT]
+    else:
+        contract_parts = [render_action_contract(include_hypothesis, chat=chat)]
+    if scope_block:
+        contract_parts.append("# 运行边界\n" + scope_block)
+    if extra_rules:
+        contract_parts.append("# 本次任务附加约束\n" + extra_rules)
+    if policy_block:
+        contract_parts.append("# 已注册检查项\n" + policy_block)
+    if tool_block:
+        contract_parts.append("# 可用工具\n" + tool_block)
+    return PromptLayers(
+        core=core,
+        role=(role_profile or "").strip(),
+        contract="\n\n".join(part for part in contract_parts if part),
+    )
 
 
 def render_action_contract(include_hypothesis: bool = True, *, chat: bool = False) -> str:
@@ -147,6 +227,14 @@ def parse_action(text: str, *, prefer: str = "last") -> dict:
     if not text:
         return {"error": "模型返回为空"}
 
+    # DeepSeek 系列偶尔把内部 DSML 工具调用泄漏到普通文本。OMP 自身也对该
+    # 格式做流式修复；Trina 在最终文本边界再兜底一次，避免把协议原文展示给用户。
+    dsml_actions = _parse_dsml_actions(text)
+    if dsml_actions:
+        return dsml_actions[0 if prefer == "first" else -1]
+    if _looks_like_dsml(text):
+        return {"error": "DSML 工具调用不完整或无法解析", "raw": text[:300], "protocol": "dsml"}
+
     candidates: list[str] = []
     stripped = text
     if stripped.startswith("```"):
@@ -172,6 +260,65 @@ def parse_action(text: str, *, prefer: str = "last") -> dict:
         if isinstance(data, dict):
             return {"error": "JSON 缺少 action/final 字段", "raw": candidate[:300]}
     return {"error": "无法解析动作 JSON", "raw": text[:300]}
+
+
+_DSML_INVOKE = re.compile(
+    r"<\s*\|\s*DSML\s*\|\s*invoke\s+name\s*=\s*(['\"])(?P<name>[^'\"]+)\1\s*>"
+    r"(?P<body>.*?)"
+    r"</\s*\|\s*DSML\s*\|\s*invoke\s*>",
+    re.IGNORECASE | re.DOTALL,
+)
+_DSML_PARAMETER = re.compile(
+    r"<\s*\|\s*DSML\s*\|\s*parameter\s+(?P<attrs>[^>]*)>"
+    r"(?P<value>.*?)"
+    r"</\s*\|\s*DSML\s*\|\s*parameter\s*>",
+    re.IGNORECASE | re.DOTALL,
+)
+_DSML_ATTR = re.compile(r"(?P<key>[\w-]+)\s*=\s*(['\"])(?P<value>.*?)\2", re.DOTALL)
+
+
+def _looks_like_dsml(text: str) -> bool:
+    normalized = (text or "").replace("｜", "|")
+    return bool(re.search(r"<\s*\|\s*DSML\s*\|", normalized, re.IGNORECASE))
+
+
+def _parse_dsml_actions(text: str) -> list[dict]:
+    """解析完整 DSML invoke；参数 ``string=false`` 按 JSON 处理。
+
+    DeepSeek 常把 Trina 的整个参数对象放进名为 ``params`` 的单个 DSML
+    parameter。这里把其中的 hypothesis/test_id/thought 提回动作顶层，其余内容
+    保持为工具参数。只接受闭合完整的 invoke，残缺协议由调用方要求模型重试。
+    """
+    normalized = (text or "").replace("｜", "|")
+    actions: list[dict] = []
+    for match in _DSML_INVOKE.finditer(normalized):
+        params: dict = {}
+        packed: dict = {}
+        for item in _DSML_PARAMETER.finditer(match.group("body")):
+            attrs = {part.group("key").lower(): part.group("value") for part in _DSML_ATTR.finditer(item.group("attrs"))}
+            name = attrs.get("name", "").strip()
+            if not name:
+                continue
+            value_text = item.group("value").strip()
+            if attrs.get("string", "true").lower() == "false":
+                try:
+                    value = json.loads(value_text)
+                except json.JSONDecodeError:
+                    value = value_text
+            else:
+                value = value_text
+            if name == "params" and isinstance(value, dict):
+                packed.update(value)
+            else:
+                params[name] = value
+        params = {**packed, **params}
+        action: dict = {"action": match.group("name").strip(), "params": params}
+        for key in ("thought", "test_id", "hypothesis", "hypothesis_id"):
+            if key in params:
+                action[key] = params.pop(key)
+        if action["action"]:
+            actions.append(action)
+    return actions
 
 
 def _balanced_objects(text: str) -> list[str]:

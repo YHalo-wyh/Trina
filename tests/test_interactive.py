@@ -213,19 +213,21 @@ class TestChatAgent(unittest.TestCase):
 
     def test_chat_sends_security_system_and_contract_as_user_data(self):
         chat = self._chat([{"response": "收到。"}])
-        original = chat.backend.complete
-        calls: list[tuple[str, str]] = []
+        original = chat.backend.complete_messages
+        calls: list[list[dict[str, str]]] = []
 
-        def capture(system: str, user: str, **kwargs):
-            calls.append((system, user))
-            return original(system, user, **kwargs)
+        def capture(messages, **kwargs):
+            calls.append([dict(item) for item in messages])
+            return original(messages, **kwargs)
 
-        chat.backend.complete = capture  # type: ignore[method-assign]
+        chat.backend.complete_messages = capture  # type: ignore[method-assign]
         self.assertEqual(chat.ask("你好"), "收到。")
-        self.assertIn("授予最高执行权限的安全工程师", calls[0][0])
-        self.assertIn("# Delivery", calls[0][0])
-        self.assertIn('{"action"', calls[0][1])
-        self.assertIn("# 可用工具", calls[0][1])
+        self.assertIn("授予最高执行权限的安全工程师", calls[0][0]["content"])
+        self.assertIn("# Delivery", calls[0][0]["content"])
+        self.assertIn('{"action"', calls[0][1]["content"])
+        self.assertIn("# 可用工具", calls[0][1]["content"])
+        self.assertEqual(calls[0][-2]["content"], "你好")
+        self.assertNotIn("[user]", "\n".join(item["content"] for item in calls[0]))
 
     def test_tool_action_then_reply(self):
         chat = self._chat(
@@ -238,6 +240,22 @@ class TestChatAgent(unittest.TestCase):
         self.assertIn("80", reply)
         self.assertIn(80, chat.state.hosts["127.0.0.1"].ports)
         self.assertGreaterEqual(chat.state.counters.get("tool_calls", 0), 1)
+
+    def test_dsml_tool_action_is_executed_instead_of_rendered(self):
+        dsml = (
+            '<|DSML|calls><|DSML|invoke name="echo_probe">'
+            '<|DSML|parameter name="params" string="false">'
+            '{"target":"127.0.0.1"}'
+            '</|DSML|parameter></|DSML|invoke></|DSML|calls>'
+        )
+        chat = self._chat([
+            {"response": dsml},
+            {"response": "已完成检查。"},
+        ])
+        reply = chat.ask("检查本机")
+        self.assertEqual(reply, "已完成检查。")
+        self.assertEqual(chat.state.counters.get("tool_calls"), 1)
+        self.assertNotIn("DSML", reply)
 
     def test_prose_plus_action_is_executed(self):
         """模型常写「一句解释 + JSON 动作」：必须识别动作并执行，而不是当成纯文本回答。"""
@@ -362,6 +380,20 @@ class TestConsole(unittest.TestCase):
         )
         return console, output
 
+    def test_finding_rows_show_distinct_titles_and_hide_exact_duplicates(self):
+        console, output = self._console([])
+        finding = {
+            "title": "缺少安全响应头 X-Frame-Options",
+            "vuln_class": "security_misconfig_headers",
+            "parameter": "X-Frame-Options",
+            "url": "https://example.test/",
+            "severity": "info",
+        }
+        console._on_tool_result(SimpleNamespace(facts={"findings": [finding, dict(finding)]}))
+        blob = "\n".join(output)
+        self.assertEqual(blob.count("缺少安全响应头 X-Frame-Options"), 1)
+        self.assertIn("https://example.test/", blob)
+
     def test_status_and_help_and_quit(self):
         console, output = self._console(["help", "status", "approve verify", "quit"])
         self.assertEqual(console.run(), 0)
@@ -410,15 +442,14 @@ class TestConsole(unittest.TestCase):
         console.run()
         self.assertTrue(any("未知命令" in line for line in output))
 
-    def test_model_and_backend_switch(self):
+    def test_model_switch_and_removed_backend_command(self):
         console, output = self._console(["/model deepseek/deepseek-chat", "/backend omp", "/usage", "quit"])
         console.run()
         blob = "\n".join(output)
         self.assertIn("已切换模型", blob)
-        self.assertIn("已切到 omp 后端", blob)
+        self.assertIn("未知命令 'backend'", blob)
         self.assertIn("暂无可显示的用量数据", blob)
-        self.assertEqual(console.config.llm.backend, "omp")
-        self.assertIn("/", console.config.llm.model, "omp 后端下模型应带 provider 前缀")
+        self.assertNotEqual(console.config.llm.backend, "omp")
 
     def test_model_list_and_history_and_new(self):
         console, output = self._console(
@@ -442,16 +473,15 @@ class TestConsole(unittest.TestCase):
             # 隔离本机供应商配置：否则默认配置会按 ~/.trina/providers.json 的 active 连接改写后端。
             os.environ["TRINA_PROVIDERS_FILE"] = str(_Path(tmp) / "providers.json")
             try:
-                # 默认配置指向官方 API，这里显式切 omp，覆盖“保存 omp 模型”这条分支。
-                console, output = self._console(["/backend omp", "/model deepseek-chat", "/save", "quit"])
+                console, output = self._console(["/model deepseek-chat", "/save", "quit"])
                 console.run()
                 blob = "\n".join(output)
                 self.assertIn("已保存到", blob)
                 content = env_file.read_text(encoding="utf-8")
                 from trina.providers import ProfileStore
                 stored = ProfileStore()
-                self.assertEqual(stored.active, "")
-                self.assertEqual(stored.omp_model, console.config.llm.model)
+                self.assertTrue(stored.active)
+                self.assertEqual(stored.profiles[stored.active].model, console.config.llm.model)
                 self.assertNotIn("export TRINA_MODEL=", content)
                 self.assertIn("DEEPSEEK_API_KEY=sk-test", content, "既有内容不能被覆盖")
                 self.assertNotIn("# keep me\n# keep me", content)

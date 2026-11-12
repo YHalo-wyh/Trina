@@ -30,6 +30,85 @@ FAILURE_CN = {
     "boundary_denied": "被护栏/控制器拒绝",
 }
 
+#: 模型请求层面的失败分类（P3）：决定"继续还是停下"，不是所有错误都值得重试。
+LLM_FAILURE_KINDS = (
+    "ok",                  # 正常返回（文本或工具调用）
+    "protocol_unsupported",  # 供应商/模型不支持本协议（如未开原生 tools）
+    "protocol_error",      # 协议错误：参数不是合法 JSON、未知工具、响应结构异常
+    "permission_denied",   # 权限/授权拒绝：控制器、护栏、供应商 401/403
+    "run_failure",         # 运行失败：网络、超时、5xx 等可重试故障
+    "blocked",             # 任务被阻塞：目标越界、预算耗尽、人工停止
+    "completed",           # 真正完成：拿到 final 或目标满足
+)
+LLM_FAILURE_CN = {
+    "ok": "正常返回",
+    "protocol_unsupported": "模型/供应商不支持该协议",
+    "protocol_error": "工具协议错误",
+    "permission_denied": "权限或授权拒绝",
+    "run_failure": "运行失败（可重试）",
+    "blocked": "任务被阻塞",
+    "completed": "任务完成",
+}
+
+#: 每种失败最多重试几次；`protocol_unsupported` 永不重试（重试不会改变结论）
+RETRY_BUDGET = {
+    "ok": 0,
+    "protocol_error": 2,
+    "permission_denied": 0,
+    "run_failure": 4,
+    "blocked": 0,
+    "completed": 0,
+}
+
+_PROTOCOL_UNSUPPORTED_RE = re.compile(
+    r"(PROTOCOL_UNSUPPORTED|未启用原生工具调用|does\s+not\s+support\s+tools|tools?\s+(?:is|are)\s+not\s+supported|"
+    r"function\s+calling\s+is\s+not\s+supported|不支持\s*(?:工具调用|function\s*calling))",
+    re.I,
+)
+_PROTOCOL_ERROR_RE = re.compile(
+    r"(参数不是合法 JSON|未知工具|响应格式异常|缺少模型输出字段|tool_calls|invalid\s+arguments|"
+    r"arguments?\s+must\s+be|failed\s+to\s+parse)",
+    re.I,
+)
+_PERMISSION_RE = re.compile(r"(401|403|unauthori[sz]ed|forbidden|permission\s+denied|拒绝|无权|not\s+allowed)", re.I)
+
+
+def classify_llm_response(response: Any) -> str:
+    """把一次模型响应归类到 ``LLM_FAILURE_KINDS``。
+
+    优先级：成功 > 协议不支持 > 协议错误 > 权限 > 运行失败。
+    成功判定包含原生 tool_calls——只有 tool_calls 没有正文是**正常**响应。
+    """
+    if response is None:
+        return "run_failure"
+    if getattr(response, "ok", False):
+        if getattr(response, "tool_calls", None) or str(getattr(response, "text", "") or "").strip():
+            return "ok"
+        return "protocol_error"
+    error = str(getattr(response, "error", "") or "")
+    if _PROTOCOL_UNSUPPORTED_RE.search(error):
+        return "protocol_unsupported"
+    if _PROTOCOL_ERROR_RE.search(error):
+        return "protocol_error"
+    if _PERMISSION_RE.search(error):
+        return "permission_denied"
+    return "run_failure"
+
+
+def decide_after_failure(kind: str, *, attempt: int = 0) -> str:
+    """失败后的动作：``continue`` / ``downgrade`` / ``stop``。
+
+    不做无条件重复请求：预算按种类给定，协议不支持直接降级，权限拒绝直接停。
+    """
+    if kind in ("ok", "completed"):
+        return "continue"
+    if kind == "protocol_unsupported":
+        return "downgrade"
+    if kind == "blocked" or kind == "permission_denied":
+        return "stop"
+    budget = RETRY_BUDGET.get(kind, 0)
+    return "continue" if attempt < budget else "stop"
+
 #: 环境类错误（目标不可达、超时、DNS、TLS……而不是工具自身用法错）
 _ENV_PATTERNS = re.compile(
     r"(connection\s+(refused|reset|aborted)|timed?\s*out|timeout|unreachable|no\s+route|"
@@ -204,8 +283,13 @@ def alternatives_for(registry: Any, tool_name: str, *, tried: set[str] | None = 
 __all__ = [
     "FAILURE_CN",
     "FAILURE_KINDS",
+    "LLM_FAILURE_CN",
+    "LLM_FAILURE_KINDS",
     "LoopGuard",
+    "RETRY_BUDGET",
     "advice_for",
     "alternatives_for",
     "classify_failure",
+    "classify_llm_response",
+    "decide_after_failure",
 ]

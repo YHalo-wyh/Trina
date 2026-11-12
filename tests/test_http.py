@@ -160,6 +160,23 @@ class TestHttpRedirects(unittest.TestCase):
         self.assertTrue(result.ok, result.error)
         self.assertEqual(self.client.requests_made, 2)
 
+    def test_insecure_tls_warning_does_not_leak_past_http_boundary(self):
+        import warnings
+        from urllib3.exceptions import InsecureRequestWarning
+
+        send = self.client.session.send
+
+        def noisy(*args, **kwargs):
+            warnings.warn("fixture tls warning", InsecureRequestWarning)
+            return send(*args, **kwargs)
+
+        with warnings.catch_warnings(record=True) as captured:
+            warnings.simplefilter("always")
+            with patch.object(self.client.session, "send", side_effect=noisy):
+                result = self.client.get(self.base + "/final")
+        self.assertTrue(result.ok, result.error)
+        self.assertFalse(any(item.category is InsecureRequestWarning for item in captured))
+
     def test_http_rejects_non_http_schemes_before_transport(self):
         with patch.object(self.client.session, "send") as send:
             result = self.client.get("ftp://127.0.0.1/file")

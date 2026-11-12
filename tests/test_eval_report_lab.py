@@ -307,11 +307,11 @@ class TestScopeAwareToolBehaviour(unittest.TestCase):
             registry = build_registry()
             # 真实上传点：应产出 verified 发现
             real = registry.execute("file_upload_test", {"url": f"http://127.0.0.1:{port}/upload", "field": "file"}, ctx, timeout=60)
-            self.assertTrue(real.ok)
+            self.assertTrue(real.ok, real.error or real.summary)
             self.assertTrue((real.facts or {}).get("findings"), "真实上传点应产出发现")
             # 不存在的路径（软 404，200/137B）：不得产出任何 file_upload 发现
             fake = registry.execute("file_upload_test", {"url": f"http://127.0.0.1:{port}/upload.php", "field": "file"}, ctx, timeout=60)
-            self.assertTrue(fake.ok)
+            self.assertTrue(fake.ok, fake.error or fake.summary)
             self.assertFalse((fake.facts or {}).get("findings"), f"软 404 不应产出上传发现: {fake.summary}")
             self.assertIn("没有上传成功证据", fake.summary)
             self.assertEqual([f.url for f in state.findings], [f"http://127.0.0.1:{port}/upload"])

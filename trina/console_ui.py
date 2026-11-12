@@ -159,13 +159,6 @@ COMMANDS: tuple[CommandSpec, ...] = (
         examples=("/model", "/model add", "/model edit", "/model test"),
     ),
     CommandSpec(
-        "backend", "会话与模型", "查看或切换模型后端", "backend [omp|供应商ID]",
-        positional_choices=(
-            ChoiceSpec("omp", "复用本机 omp 鉴权"),
-            ChoiceSpec("deepseek", "直连 DeepSeek 官方 API"),
-        ),
-    ),
-    CommandSpec(
         "approve", "会话与模型", "调整动作审批闸门", "approve <off|exploit|verify|all>",
         positional_choices=APPROVAL_CHOICES,
     ),
@@ -175,7 +168,7 @@ COMMANDS: tuple[CommandSpec, ...] = (
         examples=("/history 12",),
     ),
     CommandSpec("new", "会话与模型", "清空上下文并开启新会话", "new", aliases=("clear",)),
-    CommandSpec("save", "会话与模型", "持久化当前后端与模型设置", "save"),
+    CommandSpec("save", "会话与模型", "持久化当前供应商与模型设置", "save"),
     CommandSpec(
         "report", "交付", "由运行状态重建报告", "report rebuild --state <state.json>",
         positional_choices=(ChoiceSpec("rebuild", "从 state.json 重建 Markdown/HTML 报告"),),
@@ -446,6 +439,8 @@ class EnhancedConsoleInput:
         self._dispatching = False
         self._queue = None
         self._chunks: list[str] = []
+        self._stream_index: int | None = None
+        self._plain = plain
         self._char_count = 0
         self._content_lock = threading.RLock()
         self._fragments = None
@@ -514,16 +509,27 @@ class EnhancedConsoleInput:
 
         @bindings.add("pageup")
         def page_up(event):
-            self._scrollback = min(max(0, self._rendered_lines - 1),
-                                   self._scrollback + max(1, event.app.output.get_size().rows // 2))
+            self._scroll_by(self._page_size())
 
         @bindings.add("pagedown")
         def page_down(event):
-            self._scrollback = max(0, self._scrollback - max(1, event.app.output.get_size().rows // 2))
+            self._scroll_by(-self._page_size())
+
+        @bindings.add("c-up")
+        def line_up(event):
+            self._scroll_by(1)
+
+        @bindings.add("c-down")
+        def line_down(event):
+            self._scroll_by(-1)
+
+        @bindings.add("c-home")
+        def oldest(event):
+            self._scroll_to_oldest()
 
         @bindings.add("c-end")
         def follow_latest(event):
-            self._scrollback = 0
+            self._scroll_to_latest()
 
         style = Style.from_dict({} if plain else {
             "prompt": "bold " + THEME["rose"], "index": THEME["muted"],
@@ -534,9 +540,28 @@ class EnhancedConsoleInput:
         })
         control = BufferControl(buffer=self.buffer, input_processors=[BeforeInput(
             lambda: [("class:prompt", "补充  › " if self.running() else "Trina  › ")])])
-        transcript = FormattedTextControl(self._transcript, show_cursor=False,
-            get_cursor_position=lambda: Point(x=0, y=max(0, self._cursor_line())))
-        self.output_window = Window(transcript, wrap_lines=True, always_hide_cursor=True)
+        owner = self
+
+        class TranscriptControl(FormattedTextControl):
+            """把滚轮事件交给会话视口，而不是输入框或终端原生回滚。"""
+
+            def mouse_handler(control, mouse_event):
+                from prompt_toolkit.mouse_events import MouseEventType
+
+                if mouse_event.event_type == MouseEventType.SCROLL_UP:
+                    owner._scroll_by(3)
+                    return None
+                if mouse_event.event_type == MouseEventType.SCROLL_DOWN:
+                    owner._scroll_by(-3)
+                    return None
+                return super().mouse_handler(mouse_event)
+
+        self.transcript_control = TranscriptControl(
+            self._transcript,
+            show_cursor=False,
+            get_cursor_position=lambda: Point(x=0, y=max(0, self._cursor_line())),
+        )
+        self.output_window = Window(self.transcript_control, wrap_lines=True, always_hide_cursor=True)
         self.activity_window = Window(FormattedTextControl(self._activity), height=1)
         self.input_window = Window(control, wrap_lines=True, height=Dimension(min=1, max=3), dont_extend_height=True)
         self.usage_window = Window(
@@ -558,8 +583,30 @@ class EnhancedConsoleInput:
                 self.usage_window,
             ]), focused_element=control),
             key_bindings=bindings, style=style, full_screen=True, refresh_interval=0.2,
+            mouse_support=True,
             color_depth=None if plain else ColorDepth.DEPTH_24_BIT,
         )
+
+    def _page_size(self) -> int:
+        """按内容视口翻页；首次渲染前退回到半屏。"""
+        info = getattr(getattr(self, "output_window", None), "render_info", None)
+        if info is not None:
+            return max(1, info.window_height - 1)
+        return max(1, self.app.output.get_size().rows // 2)
+
+    def _scroll_by(self, lines: int) -> None:
+        """正数向历史滚动，负数向最新输出滚动。"""
+        maximum = max(0, self._rendered_lines - 1)
+        self._scrollback = min(maximum, max(0, self._scrollback + lines))
+        self.app.invalidate()
+
+    def _scroll_to_oldest(self) -> None:
+        self._scrollback = max(0, self._rendered_lines - 1)
+        self.app.invalidate()
+
+    def _scroll_to_latest(self) -> None:
+        self._scrollback = 0
+        self.app.invalidate()
 
     def _status(self):
         from .terminal import clean_text
@@ -583,8 +630,9 @@ class EnhancedConsoleInput:
         phase, label, seconds = self.activity()
         if phase == "idle" and self._dispatching:
             phase, label = "processing", "准备中"
+        history = f"  ·  ↑ 历史 {self._scrollback} 行 · Ctrl+End 最新" if self._scrollback else ""
         if phase == "idle":
-            return []
+            return [("class:status", " ↑ 已上翻历史 · 滚轮/PgUp/PgDn · Ctrl+End 回到最新")] if history else []
         if phase == "thinking":
             frame = int(time.monotonic() * 4) % 4
             marker = ("·", "✧", "✦", "✧")[frame]
@@ -592,7 +640,7 @@ class EnhancedConsoleInput:
         else:
             marker, style = ("↳", "class:status") if phase == "tool" else ("·", "class:hint")
         elapsed = f"  {seconds:.1f}s" if phase not in ("idle", "paused", "approval") else ""
-        return [(style, f" {marker} {clean_text(label).replace(chr(10), ' ')}{elapsed}")]
+        return [(style, f" {marker} {clean_text(label).replace(chr(10), ' ')}{elapsed}{history}")]
 
     def write(self, text: str) -> None:
         """后台只追加内容并请求重绘，不打印到终端或覆盖输入缓冲。"""
@@ -612,6 +660,8 @@ class EnhancedConsoleInput:
             pruned = False
             while len(self._chunks) > 1 and self._char_count > 250_000:
                 self._char_count -= len(self._chunks.pop(0))
+                if self._stream_index is not None:
+                    self._stream_index = self._stream_index - 1 if self._stream_index else None
                 pruned = True
             if len(self._chunks[0]) > 250_000:
                 self._chunks[0] = self._chunks[0][-250_000:]
@@ -629,6 +679,38 @@ class EnhancedConsoleInput:
                 self._rendered_lines = max(self._rendered_lines, self._line_count)
             else:
                 self._fragments = None
+        self.app.invalidate()
+
+    def update_stream(self, text: str, *, final: bool = False) -> None:
+        """原位更新一条模型答复，避免每个 delta 都新增卡片或最终重复输出。"""
+        from .terminal import ResponsiveText, render_answer
+
+        source = render_answer(text or " ", color=not self._plain)
+        initial = str(source).rstrip("\n") + "\n\n"
+        chunk = (
+            ResponsiveText(initial, lambda width, item=source: item.at_width(width).rstrip("\n") + "\n\n")
+            if hasattr(source, "at_width") else initial
+        )
+        with self._content_lock:
+            previous_lines = self._line_count
+            if self._stream_index is None:
+                if final and not text:
+                    return
+                self._stream_index = len(self._chunks)
+                self._chunks.append(chunk)
+            elif final and not text:
+                self._chunks.pop(self._stream_index)
+            else:
+                self._chunks[self._stream_index] = chunk
+            if final:
+                self._stream_index = None
+            self._char_count = sum(len(item) for item in self._chunks)
+            rendered = "".join(str(item) for item in self._chunks).rstrip("\n")
+            self._line_count = max(1, rendered.count("\n") + 1)
+            if self._scrollback:
+                self._scrollback = max(0, self._scrollback + self._line_count - previous_lines)
+            # 被替换的块可能改变所有后续 fragment 偏移，必须按当前宽度重建。
+            self._fragments = None
         self.app.invalidate()
 
     @staticmethod
@@ -663,6 +745,7 @@ class EnhancedConsoleInput:
                 self._fragment_width = width
                 self._rendered_lines = max(1, rendered.count("\n") + 1)
                 self._line_count = self._rendered_lines
+                self._scrollback = min(self._scrollback, max(0, self._rendered_lines - 1))
             return self._fragments
 
     async def _consume(self) -> None:

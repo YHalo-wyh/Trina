@@ -29,6 +29,8 @@ class SwarmTests(unittest.TestCase):
     def test_dag_validation_and_dedup(self) -> None:
         tasks = default_tasks("127.0.0.1", "验证目标")
         validate_tasks(tasks)
+        self.assertEqual([task.id for task in tasks], ["main"])
+        self.assertEqual(tasks[0].capabilities, ())
         with self.assertRaisesRegex(ValueError, "环"):
             validate_tasks([
                 TaskSpec("a", "127.0.0.1", "A", depends_on=("b",)),
@@ -74,7 +76,12 @@ class SwarmTests(unittest.TestCase):
             state.ended_at = time.time()
             return state
 
-        runtime = SwarmRuntime(self.config, default_tasks("127.0.0.1", "验证目标"), max_workers=2, executor=execute)
+        tasks = [
+            TaskSpec("recon", "127.0.0.1", "识别服务", ("recon",), priority=20),
+            TaskSpec("web", "127.0.0.1", "梳理 Web 面", ("web",), priority=10),
+            TaskSpec("verify", "127.0.0.1", "验证目标", (), ("recon", "web")),
+        ]
+        runtime = SwarmRuntime(self.config, tasks, max_workers=2, executor=execute)
         summary = runtime.run()
         self.assertEqual(maximum, 2)
         self.assertEqual({item["status"] for item in summary["tasks"].values()}, {"completed"})
@@ -96,6 +103,9 @@ class SwarmTests(unittest.TestCase):
         self.assertTrue(runtime.checkpoint.exists())
         self.assertTrue(all(Path(path).exists() for path in summary["report_paths"]))
         self.assertTrue(all(not worker.busy for worker in runtime.pool.workers))
+        self.assertTrue(all(not worker.capability_lease_id for worker in runtime.pool.workers))
+        self.assertTrue(all(summary["tasks"][task]["capabilities"] for task in ("recon", "web", "verify")))
+        self.assertTrue(summary["tasks"]["verify"]["evidence_refs"])
         self.assertTrue(runtime.audit.verify()[0])
 
     def test_commander_does_not_forward_unrelated_completed_task(self) -> None:

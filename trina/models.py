@@ -1,43 +1,26 @@
-"""模型目录：把「可选模型」列出来，供 `/model` 之类的交互使用。
-
-数据来源
---------
-* **omp 后端**：读 omp 的 `models.db#model_cache`（omp 自己已经拉取并缓存了各 provider 的模型清单）；
-  读不到就退回"常见模型"清单，绝不因为列不出模型就让交互失败。
-* **OpenAI 兼容后端**：给内置预设（DeepSeek 官方等）。
-
-只读、无网络：本模块只做本地读取与格式化，不发起任何请求。
-"""
+"""供应商模型目录；只读本项目预设，不依赖外部 Agent 的本地数据库。"""
 
 from __future__ import annotations
 
-import json
-import os
-import sqlite3
 from dataclasses import dataclass
-from pathlib import Path
 
-#: 内置预设：直连官方 API 时常用的 provider → (base_url, 模型 id)
 from .providers import PRESETS
 
-OPENAI_PRESETS: dict[str, dict[str, object]] = {
-    p.id: {"base_url": p.base_url, "models": list(p.models), "api_key_env": p.api_key_env, "api": p.api}
-    for p in PRESETS
-}
 
-#: 列不出 omp 模型时的兜底清单（避免命令空转）
-FALLBACK_MODELS: list[tuple[str, str]] = [
-    ("deepseek/deepseek-v4-flash", "DeepSeek V4 Flash（本机 omp 默认）"),
-    ("deepseek/deepseek-chat", "DeepSeek Chat"),
-    ("openai/gpt-5.2", "GPT-5.2"),
-    ("anthropic/claude-opus-4.8", "Claude Opus 4.8"),
-    ("google/gemini-2.5-flash", "Gemini 2.5 Flash"),
-]
+OPENAI_PRESETS: dict[str, dict[str, object]] = {
+    item.id: {
+        "base_url": item.base_url,
+        "models": list(item.models),
+        "api_key_env": item.api_key_env,
+        "api": item.api,
+    }
+    for item in PRESETS
+}
 
 
 @dataclass(frozen=True)
 class ModelEntry:
-    spec: str          # 形如 provider/model（omp 可直接用）
+    spec: str
     name: str = ""
     provider: str = ""
 
@@ -46,71 +29,22 @@ class ModelEntry:
         return f"{self.spec}{label}"
 
 
-def omp_models_db() -> Path:
-    """omp 的 models.db 位置（可用 TRINA_OMP_MODELS_DB 覆盖，便于测试）。"""
-    override = os.environ.get("TRINA_OMP_MODELS_DB")
-    if override:
-        return Path(override)
-    config_dir = os.environ.get("PI_CONFIG_DIR")
-    root = Path(config_dir) if config_dir else Path.home() / ".omp"
-    return root / "agent" / "models.db"
-
-
 def list_models(*, limit: int = 60, provider_filter: str = "") -> list[ModelEntry]:
-    """列出本机可用的模型（优先 omp 缓存，其次内置清单）。"""
-    entries: list[ModelEntry] = []
-    db = omp_models_db()
-    if db.exists():
-        try:
-            con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
-            try:
-                rows = list(con.execute("select provider_id, models from model_cache"))
-            finally:
-                con.close()
-            for provider_id, raw in rows:
-                try:
-                    models = json.loads(raw or "[]")
-                except (json.JSONDecodeError, TypeError):
-                    continue
-                for item in models if isinstance(models, list) else []:
-                    if not isinstance(item, dict):
-                        continue
-                    model_id = str(item.get("id") or "").strip()
-                    provider = str(item.get("provider") or str(provider_id).split(":")[0]).strip()
-                    if not model_id or not provider:
-                        continue
-                    # 跳过明显不是对话模型的条目
-                    if any(tag in model_id.lower() for tag in ("embed", "whisper", "tts", "rerank", "moderation")):
-                        continue
-                    entries.append(
-                        ModelEntry(spec=f"{provider}/{model_id}", name=str(item.get("name") or ""), provider=provider)
-                    )
-        except sqlite3.Error:
-            entries = []
-    if not entries:
-        entries = [ModelEntry(spec=spec, name=name, provider=spec.split("/", 1)[0]) for spec, name in FALLBACK_MODELS]
-    if provider_filter:
-        entries = [e for e in entries if e.provider == provider_filter]
-    seen: set[str] = set()
-    unique: list[ModelEntry] = []
-    for entry in sorted(entries, key=lambda e: (e.provider, e.spec)):
-        if entry.spec in seen:
-            continue
-        seen.add(entry.spec)
-        unique.append(entry)
-    return unique[:limit]
+    """列出内置供应商的已知模型；远端动态目录由模型页显式刷新。"""
+    entries = [
+        ModelEntry(spec=f"{provider.id}/{model}", name=model, provider=provider.id)
+        for provider in PRESETS
+        if not provider_filter or provider.id == provider_filter
+        for model in provider.models
+    ]
+    return entries[:limit]
 
 
-def normalize_spec(spec: str, backend: str, *, provider: str = "") -> str:
-    """把用户输入的模型规格规整成当前后端能用的形式。
-
-    * `omp`：保留 `provider/model` 原样（omp 自己会解析）。
-    * `openai`：只去掉当前连接的供应商前缀，保留远端模型的命名空间。
-    """
+def normalize_spec(spec: str, backend: str = "openai", *, provider: str = "") -> str:
+    """当前供应商前缀可省略；第三方模型自身的命名空间保持原样。"""
+    del backend
     text = (spec or "").strip()
-    if not text:
-        return text
-    if backend == "openai" and provider and text.split("/", 1)[0] == provider and "/" in text:
+    if provider and text.startswith(provider + "/"):
         suffix = text.split("/", 1)[1]
         if suffix in OPENAI_PRESETS.get(provider, {}).get("models", []):
             return suffix
@@ -121,12 +55,4 @@ def preset_for(name: str) -> dict[str, object] | None:
     return OPENAI_PRESETS.get((name or "").strip().lower())
 
 
-__all__ = [
-    "FALLBACK_MODELS",
-    "ModelEntry",
-    "OPENAI_PRESETS",
-    "list_models",
-    "normalize_spec",
-    "omp_models_db",
-    "preset_for",
-]
+__all__ = ["ModelEntry", "OPENAI_PRESETS", "list_models", "normalize_spec", "preset_for"]

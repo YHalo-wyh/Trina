@@ -66,8 +66,8 @@ class ProviderTests(unittest.TestCase):
             manager, _, _ = self.manager()
             manager._commit(self.profile())
             self.assertEqual(TrinaConfig.load().llm.model, 'deepseek-chat')
-            cfg = TrinaConfig.load(overrides={'llm.backend': 'omp', 'llm.profile': '', 'llm.model': 'provider/model'})
-            self.assertEqual((cfg.llm.backend, cfg.llm.profile, cfg.llm.model), ('omp', '', 'provider/model'))
+            with self.assertRaisesRegex(ValueError, 'openai\\|replay'):
+                TrinaConfig.load(overrides={'llm.backend': 'omp'})
 
     def test_switching_provider_changes_endpoint_and_key_together(self):
         manager, cfg, _ = self.manager()
@@ -179,15 +179,16 @@ class ProviderTests(unittest.TestCase):
         self.assertEqual(OpenAICompatBackend(cfg.llm).api_key(), 'test-second')
         self.assertNotIn('test-first', self.path.read_text())
 
-    def test_remove_last_provider_returns_to_omp_without_saved_key(self):
+    def test_remove_last_provider_returns_to_clean_standard_api_default(self):
         manager, cfg, _ = self.manager(['delete'])
         manager._commit(self.profile())
         manager.remove('work')
         self.assertEqual(ProfileStore().profiles, {})
-        self.assertEqual((cfg.llm.backend, cfg.llm.profile), ('omp', ''))
+        self.assertEqual((cfg.llm.backend, cfg.llm.profile), ('openai', ''))
+        self.assertEqual(cfg.llm.base_url, '')
         self.assertNotIn('test-work', self.path.read_text())
         with patch.dict(os.environ, {'TRINA_API': 'deepseek'}):
-            self.assertEqual(TrinaConfig.load().llm.backend, 'omp')
+            self.assertEqual(TrinaConfig.load().llm.backend, 'openai')
 
     def test_version_one_provider_file_is_rejected_without_rewrite(self):
         raw = {'version': 1, 'active': 'work', 'profiles': [
@@ -222,19 +223,25 @@ class ProviderTests(unittest.TestCase):
         manager._commit(item, previous_id=item.id)
         self.assertEqual(cfg.llm.reasoning_effort, 'default')
 
-    def test_saved_omp_settings_ignore_removed_launcher_variables(self):
-        manager, cfg, _ = self.manager(['provider/model'])
-        manager.pick_omp_model()
-        manager.set_reasoning('xhigh')
-        with patch.dict(os.environ, {'TRINA_API': 'deepseek', 'TRINA_MODEL': 'legacy'}):
-            loaded = TrinaConfig.load()
-        self.assertEqual((loaded.llm.backend, loaded.llm.model, loaded.llm.reasoning_effort), ('omp', 'provider/model', 'xhigh'))
-
-    def test_invalid_global_reasoning_does_not_replace_file(self):
+    def test_removed_omp_fields_are_dropped_when_provider_file_is_saved(self):
+        self.path.write_text(json.dumps({
+            'version': 2, 'active': '', 'omp_model': 'provider/model',
+            'reasoning_effort': 'xhigh', 'profiles': [],
+        }), encoding='utf-8')
         store = ProfileStore()
         store.save()
+        saved = json.loads(self.path.read_text(encoding='utf-8'))
+        self.assertNotIn('omp_model', saved)
+        self.assertNotIn('reasoning_effort', saved)
+        self.assertEqual(TrinaConfig.load().llm.backend, 'openai')
+
+    def test_invalid_provider_reasoning_does_not_replace_file(self):
+        store = ProfileStore()
+        store.profiles['work'] = self.profile()
+        store.active = 'work'
+        store.save()
         original = self.path.read_bytes()
-        store.reasoning_effort = 'invalid'
+        store.profiles['work'].reasoning_effort = 'invalid'
         with self.assertRaises(ValueError):
             store.save()
         self.assertEqual(self.path.read_bytes(), original)

@@ -115,12 +115,8 @@ class OpenCodeGoHeadersTest(unittest.TestCase):
             self.assertEqual(response.usage.input_tokens, 20)
             self.assertEqual(response.usage.output_tokens, 30)
 
-    def test_omp_cache_is_part_of_total_input_and_zero_denominator_stays_unknown(self):
+    def test_zero_denominator_stays_unknown(self):
         from trina.llm.base import LLMUsage
-        from trina.llm.omp_backend import _usage_from
-        usage = _usage_from({"input": 100, "output": 20, "cacheRead": 600, "cacheWrite": 300}, LLMUsage())
-        self.assertEqual(usage.input_tokens, 1000)
-        self.assertEqual(usage.to_dict()["cache_hit_rate"], .6)
         known_zero = LLMUsage(input_tokens=0, cache_reported=True, cache_input_tokens=0)
         unknown_input = LLMUsage(input_tokens=1000)
         self.assertIsNone(known_zero.merge(unknown_input).to_dict()["cache_hit_rate"])

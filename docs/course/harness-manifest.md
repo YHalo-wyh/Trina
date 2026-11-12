@@ -7,7 +7,7 @@ Trina 的 Runtime Harness 负责把一轮轮模型响应接到工具、权限、
 | 控制面 | Runtime Harness：产品实际执行 | Project Harness：仓库工程活动 |
 |---|---|---|
 | 任务与上下文 | PentestAgent / ChatAgent、阶段、事实摘要、观察、当前请求 | Intent、规格、任务卡、渐进资料、未决问题 |
-| 模型路由 | omp、OpenAI 兼容端点、ReplayBackend；按配置构造后端 | 教师验证采用固定后端，不要求商业模型账号 |
+| 模型路由 | 标准 API 流式端点、ReplayBackend；按配置构造后端 | 教师验证采用固定后端，不要求商业模型账号 |
 | 工具与权限 | ToolRegistry、AuthorizationController、ScopeGuard、可选审批 | AGENTS、允许目录、差异审查、文档追踪检查 |
 | 反馈 | 工具结果、失败建议、审计、统计、状态快照 | unittest、文档检查、两轮机制验证、review |
 | 预算与重试 | 步数、时长、检查数、无新事实停止、有限模型重试、咨询次数 | 本次不新增依赖、不新增目标工具、不运行收费实验；失败先定位再修复 |

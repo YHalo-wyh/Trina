@@ -232,9 +232,6 @@ class Console:
         if command == "model" and completed_args == ["add"]:
             from .providers import PRESETS
             return [ChoiceSpec(p.id, p.name) for p in PRESETS]
-        if command == "backend" and not completed_args:
-            from .providers import PRESETS
-            return [ChoiceSpec(p.id, p.name) for p in PRESETS]
         if command == "tool" and not completed_args:
             try:
                 registry = self.registry
@@ -336,7 +333,6 @@ class Console:
             "audit": lambda: self._delegate(["audit", *args]),
             "lab": lambda: self._delegate(["lab", *args]),
             "model": lambda: self._cmd_model(args),
-            "backend": lambda: self._cmd_backend(args),
             "history": lambda: self._cmd_history(args),
             "new": self._cmd_new,
             "clear": self._cmd_new,
@@ -549,11 +545,7 @@ class Console:
             self._model_manager().use(args[0])
             return
         if args[0] in PRESET_BY_ID:
-            # 官方预设也可用旧的 /backend <供应商> 直接启用环境变量鉴权。
-            if self._input is not None or enhanced_input_available():
-                self._model_manager().add(args[0])
-            else:
-                self._cmd_backend(args)
+            self._model_manager().add(args[0])
             return
         if args[0] in ("list", "ls", "?"):
             self._emit(f"当前后端 {llm.backend} · 模型 {_display_model(llm.model, llm.reasoning_effort)}" + (f" · base_url {llm.base_url}" if llm.backend == "openai" else ""))
@@ -613,52 +605,6 @@ class Console:
 
         return ModelManager(self.config, emit=self._emit, reload=self._reload_backend, ask=ask, choose=choose)
 
-    def _cmd_backend(self, args: list[str]) -> None:
-        llm = self.config.llm
-        if not args:
-            self._emit(f"当前后端：{llm.backend}；/model 管理供应商与密钥，/backend omp 复用 omp")
-            return
-        name = args[0].strip().lower()
-        from .models import preset_for
-
-        if name == "omp":
-            from .providers import ProfileStore
-            stored = ProfileStore()
-            stored_model = stored.omp_model
-            llm.backend = "omp"
-            llm.profile, llm.api = "", "chat"
-            llm.reasoning_effort = stored.reasoning_effort
-            if stored_model:
-                llm.model = stored_model
-            if "/" not in llm.model:
-                llm.model = f"deepseek/{llm.model}"
-            self._reload_backend()
-            self._emit(f"已切到 omp 后端（复用 omp 鉴权）：模型 {llm.model}")
-            return
-        preset = preset_for(name)
-        if preset is None:
-            self._emit(f"未知供应商 {name}；使用 /model 添加官方或自定义连接")
-            return
-        if not preset["base_url"] or not preset.get("models"):
-            self._emit(f"{name} 需要选择模型或资源地址；使用 /model add 完成配置")
-            return
-        import os
-
-        llm.backend = "openai"
-        llm.profile, llm.api = "", str(preset.get("api") or "chat")
-        llm.base_url = str(preset["base_url"])
-        llm.api_key_env = str(preset.get("api_key_env") or llm.api_key_env)
-        models = list(preset.get("models") or [])
-        if llm.model not in models:
-            llm.model = str(models[0]) if models else llm.model
-        llm.reasoning_effort = "default"
-        self._reload_backend()
-        has_key = bool(os.environ.get(llm.api_key_env))
-        self._emit(
-            f"已切到 {name} 官方 API：模型 {_display_model(llm.model, llm.reasoning_effort)} · base_url {llm.base_url}"
-            + ("" if has_key else f"（注意：环境变量 {llm.api_key_env} 未设置，调用会失败；见 scripts/env.example）")
-        )
-
     def _cmd_history(self, args: list[str]) -> None:
         if self.chat is None or not self.chat.history:
             self._emit("还没有对话历史（先说句话，或 /play 跑一轮任务）")
@@ -708,7 +654,7 @@ class Console:
         self._display(render_panel("会话用量", rows=rows, sections=[] if rows else [("", "暂无可显示的用量数据")], color=self.color))
 
     def _cmd_save(self) -> None:
-        """把当前供应商或 omp 模型写入唯一的 v2 供应商配置。"""
+        """把当前供应商与模型写入唯一的 v2 供应商配置。"""
         if self.config.llm.profile:
             from .providers import ProfileStore
             store = ProfileStore()
@@ -736,12 +682,7 @@ class Console:
             store.apply(llm)
             self._emit(f"已保存到 {store.path}：连接 {name} · 模型 {profile.model}")
             return
-        if self.config.llm.backend == "omp":
-            store.omp_model = self.config.llm.model
-            store.reasoning_effort = self.config.llm.reasoning_effort
-            store.active = ""
-            store.save()
-        elif store.active:
+        if store.active:
             store.active = ""
             store.save()
 
@@ -831,15 +772,30 @@ class Console:
                 pause_event=self.session.pause_event,
                 logger=self._agent_log,
                 on_tool=self._on_tool_result,
+                on_stream=self._on_chat_stream if self._enhanced_input is not None else None,
             )
         return self.chat
+
+    def _on_chat_stream(self, text: str, final: bool) -> None:
+        """流式正文只更新增强终端中的同一张答复卡片。"""
+        if self._enhanced_input is not None:
+            self._enhanced_input.update_stream(text, final=final)
 
     def _on_tool_result(self, result: Any) -> None:
         """把工具产出的关键事实回显（发现/凭据/flag/路径），让用户看得见"它在干什么"。"""
         facts = result.facts or {}
+        shown: set[tuple[str, str, str]] = set()
         for finding in facts.get("findings", []) or []:
             sev = finding.get("severity", "?")
-            self._emit(f"[发现] [{sev}] {finding.get('vuln_class')} {finding.get('url') or finding.get('target')}", prefix="[Trina]")
+            target = str(finding.get("url") or finding.get("target") or "")
+            title = str(finding.get("title") or finding.get("vuln_class") or "发现")
+            parameter = str(finding.get("parameter") or "")
+            key = (title, target, parameter)
+            if key in shown:
+                continue
+            shown.add(key)
+            detail = f" · {parameter}" if parameter and parameter not in title else ""
+            self._emit(f"[发现] [{sev}] {title}{detail} · {target}".rstrip(" ·"), prefix="[Trina]")
         for flag in facts.get("flags", []) or []:
             self._emit(f"[flag] {str(flag.get('value'))[:60]}", prefix="[Trina]")
         for cred in facts.get("credentials", []) or []:
@@ -867,9 +823,11 @@ class Console:
         def _worker() -> None:
             try:
                 reply = chat.ask(text)
-                self._display(render_answer(reply or "(空回复)", color=self.color))
+                if not chat.last_reply_streamed:
+                    self._display(render_answer(reply or "(空回复)", color=self.color))
                 self._last_state = chat.state
             except Exception as exc:  # noqa: BLE001 - 对话异常不能杀掉控制台
+                chat._cancel_stream()
                 self._emit(f"对话出错: {type(exc).__name__}: {exc}", prefix="[错误]")
             finally:
                 self.view.set_activity("idle", "就绪")

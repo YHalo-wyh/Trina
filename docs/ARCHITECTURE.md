@@ -24,7 +24,7 @@ flowchart TB
     TOOLS["trina.tools：17 项目标分析 + 1 项可选咨询"]
     HTTP["trina.tools.http.HttpClient<br/>带护栏的 HTTP 出口"]
     EXT["trina.tools.external.run_external<br/>外部二进制（shell=False + 护栏）"]
-    LLM["trina.llm<br/>omp / openai 兼容 / replay"]
+    LLM["trina.llm<br/>标准 API 流式传输 / replay"]
     ADAPT["trina.adapters<br/>local/docker/http-range/tsecbench"]
     EVAL["trina.eval<br/>harness + metrics + adversarial"]
     LAB["trina.lab<br/>故意脆弱靶机"]
@@ -92,12 +92,10 @@ flowchart TB
 | `trina.brain.scheduler` | `HypothesisScheduler.decide(ledger, tests, executed_tests=, goal_classes=)`、`observe(decision, test_id=, tool=)` | **确定性假设调度**：只调度能绑定注册检查项的假设；任务要求的漏洞类优先（无假设时直接派该类检查项）；未遵从进审计链与 `state.scheduler` |
 | `trina.evidence_graph` | `build(state, registry=, hypotheses=)`、`EvidenceGraph.to_mermaid/to_dict` | 结论可反向追溯：目标→主机→端口→路径→发现→证据，另有检查项/假设→发现；构建失败不影响报告 |
 | `trina.board` | `render_board(state, hypotheses=)`、`summarise`、`latest_state_file`、`load_run_state` | 工作台视图的**唯一**渲染实现（控制台 `/board` 与 `trina watch` 共用）；`load_run_state` 把 state.json 还原成 `RunState` |
-| `trina.brain.prompts` | `action_example`、`render_system_prompt`、`build_system_prompt`、`build_runtime_context`、`build_step_prompt`、`parse_action` | 任务、对话与专职 Worker 共用七模块安全工程师 system；动作协议、范围、工具与任务事实放在每轮运行数据；`thought` 非必填；关闭台账时省略假设字段 |
+| `trina.brain.prompts` | `action_example`、`render_system_prompt`、`build_system_prompt`、`build_runtime_context`、`build_step_prompt`、`parse_action` | 任务、对话与通用 Worker 共用七模块安全工程师 system；动作协议、范围、工具与任务事实放在每轮运行数据；`thought` 非必填；关闭台账时省略假设字段 |
 | `trina.context` | `normalize_briefs`、`render_commander_briefs`、`brief_digest` | 只处理 Commander 定向情报；不合并其他题目的事实、证据、Flag、假设或历史；接收方重新验证后才可写入本题状态 |
-| `trina.brain.chat` | `ChatAgent(config, registry=, backend=, approval=, steer_queue=, controller=).ask(text) -> str` | **对话式大脑**：共用护栏/控制器/审计/审批；每条消息最多 12 个动作；本轮请求 + 事实摘要 + 有界历史，保存动作/观察关系并回灌失败建议；不宣称具有任务模式的阶段机 |
-| `trina.collaboration` | `SpecialistRole/Request/Result`、`Specialist.consult` | 专职 Agent 只持有后端并接收快照，返回不可信建议；recon/web 可建议白名单工具，review 只返回摘要；无工具执行、状态写入或递归委派入口 |
-| `trina.tools.specialists` | `ConsultSpecialist`、`TOOLS` | 注册咨询工具，默认关闭；共享审批/控制器/护栏/审计；子调用数、输出长度与快照长度有界；空 facts/evidence；子响应按实际顺序进入任务录制 |
-| `trina.llm` | `make_backend(LLMConfig)`、`LLMBackend.complete(system, user)`、`LLMUsage` | 后端实现只管"给提示词 → 返回文本 + 用量"；`ledger` 汇总进报告 |
+| `trina.brain.chat` | `ChatAgent(config, registry=, backend=, approval=, steer_queue=, controller=).ask(text) -> str` | **对话式大脑**：共用护栏/控制器/审计/审批；每条消息最多 12 个动作；标准消息的追加历史 + 动态事实，保存动作/观察关系并回灌失败建议；不宣称具有任务模式的阶段机 |
+| `trina.llm` | `complete_messages(messages, on_event=, tools=)`、`LLMStreamEvent`、`LLMUsage` | 标准结构化消息与三个 API 方言的 SSE 解析；稳定前缀、终止事件校验与真实用量汇总；OMP 后端已删除 |
 | `trina.providers` / `trina.model_ui` | `ProviderPreset`、`ProviderProfile`、`ProfileStore`、`ModelManager` | 以供应商整条配置管理地址、单个 Key、模型、备注与思考档位；只接受仓库外的 v2 文件，旧格式明确拒绝；编辑、切换与删除由同一管理层原子保存 |
 | `trina.provider_form` | `ProviderEditor` | 单页草稿表单；测试通过回调复用 LLM 后端，字段修改使旧结果失效，保存前校验，取消和测试不写入配置，不切换当前供应商 |
 | `trina.adapters` | `load_adapter/list_adapters`、`RangeAdapter.prepare/status/ground_truth/check_flag`、`score_tsecbench` | 靶场自描述（目标 + ground truth + flag 模式），评测框架据此自动判分 |
@@ -182,27 +180,15 @@ flowchart TB
 | 新工具 | `trina/tools/<module>.py` 定义 `Tool` 子类 + 导出 `TOOLS` | 声明 `action_level`、`params`、`produces`；用 `ctx.http`/`run_external` |
 | 新靶场 | `~/.trina/ranges/<name>.yaml` 或显式 YAML（+ 必要时 `trina/adapters/` 新适配器类） | 仓库不预装注册表；按需给出 `targets`、`ground_truth`、`flag_patterns` |
 | 新评测场景 | `trina/eval/scenarios/<suite>.yaml` | 必须声明 ground truth 与 `scoped_classes`，否则 precision 口径失真 |
-| 新 LLM 后端 | `trina/llm/<name>_backend.py` + `make_backend` 分支 | 只需实现 `complete()` 并填 `usage` |
+| 新 LLM 后端 | `trina/llm/<name>_backend.py` + `make_backend` 分支 | 实现结构化 `complete_messages()`、流事件、终止校验及 `usage` |
 | 新报告格式 | `trina/report/` | 保持 HTML 自包含 |
 | omp 侧新工具 | `.omp/extensions/trina.ts` | 一律转调 `python3 -m trina …`，不要绕过护栏 |
 
-## 8. 专职 Agent 与状态一致性
+## 8. Capability Fabric 与上下文
 
-主控可通过 `consult_specialist` 咨询具有独立上下文的 recon/web/review 角色，
-默认关闭，配置为 `run.specialists`。它与普通工具共用执行链，子角色只返回建议，
-主控需要再发出工具动作才能执行；没有第二套共享黑板或子 Agent 直接修改事实的入口。
-`trina.board` 仍是只读视图，`RunState` 与假设台账分别保存事实和未验证问题。
+Commander 通过 `trina/capabilities/catalog.py` 发现统一能力；`broker.py` 根据依赖、策略与版本快照签发任务租约；`runtime.py` 将 Tool、CLI 或 MCP 能力投影为当前 Worker 的 ToolRegistry。Schema 与 Guidance 按租约加载，调用前后验证 TTL 和释放状态。通用 Worker 可在任务间复用执行环境，事实图、凭据、假设和对话仍默认独立。Commander 只转发相关证据索引与带来源的线索。清单、API、运行限制与验收见 [Capability Fabric](CAPABILITY_FABRIC.md) 和 [ADR-0021](../design/adr/0021-capability-fabric.md)。
 
-调度使用控制器当前的检查记录；目标驱动分支先过滤已记录执行项再按漏洞类归组，假设绑定分支在该假设已有尝试时才过滤旧检查，新假设仍可能重用同类第一项。
-已明确解析出检查 ID 时，不能仅凭同工具名把另一项检查计作遵从。
-对话提示由本轮请求、事实摘要和近期动作/观察构成，失败反馈也直接进入下一次模型输入。
-状态文件采用同目录临时文件写完后替换，避免进度视图读到半份快照。
-
-方案比较、成本、超时局限、验证与重新决策条件见
-[Agent 设计审查](AGENT_DESIGN_REVIEW.md)、
-[ADR-0017](../design/adr/0017-specialist-consultation-without-blackboard.md) 和
-[ADR-0018](../design/adr/0018-fact-context-and-atomic-snapshots.md)、
-[ADR-0020](../design/adr/0020-security-engineer-prompt-and-commander-intelligence.md)。
+任务与对话使用结构化消息，稳定 system 和初始合同处于前缀，动态状态与观察只追加到后方。当前未实现自动 Token 压缩；窗口不足由模型 API 返回明确错误。不同任务不复用完整对话。详见 [模型传输与缓存](MODELS.md#流式传输与标准消息)。
 
 ## 9. 浏览器能力状态
 

@@ -78,7 +78,7 @@ python3 -m trina play --keep-lab                         # 结束后保留自动
 
 ```bash
 trina                          # 直接进控制台（恢复已保存供应商；无选择时用项目默认）
-# 进入控制台后执行 /backend omp，可临时切到 omp
+# 进入控制台后执行 /model，管理供应商地址、Key 与模型
 ```
 
 **两种入口，同一套安全机制**：
@@ -95,8 +95,7 @@ trina                          # 直接进控制台（恢复已保存供应商�
 | 时点 | 命令 | 作用 |
 |---|---|---|
 | 空闲 | `/model [list\|<spec>]` | 看当前模型 / 列出可选模型 / 切换模型（如 `/model deepseek/deepseek-chat`） |
-| 空闲 | `/backend <omp\|deepseek>` | 切换模型后端（omp 复用 omp 鉴权；deepseek 直连官方 API） |
-| 空闲 | `/save` | 保存当前 v2 供应商选择，或保存 omp 模型与思考档位；不写旧环境文件 |
+| 空闲 | `/save` | 保存当前 v2 供应商、模型与思考档位 |
 | 空闲 | `/usage` | 本次会话的模型调用次数 / token / 成本 |
 | 空闲 | `/history [n]` | 查看最近对话（含工具结果摘要） |
 | 空闲 | `/new`（别名 `/clear`） | 开启新对话会话（清空上下文；审计另起文件） |
@@ -114,7 +113,7 @@ trina                          # 直接进控制台（恢复已保存供应商�
 | 运行中 | `pause` / `resume` / `stop` / `status` | 暂停 / 继续 / 停止 / 看状态 |
 
 > 当前模型和任务状态显示在固定底栏；输入 `/` 时才展开命令索引。人工审批默认关闭，只有显式 `--approve` 后才进入等待状态。
-> `/model` 中添加、切换供应商会保存整条连接；临时 `/backend` 或模型切换可用 `/save` 保存为 omp 选择。所有本机连接都在仓库外，不修改项目配置。
+> `/model` 中添加、切换供应商会保存整条连接；临时模型设置可用 `/save` 保存为供应商配置。所有本机连接都在仓库外，不修改项目配置。
 
 对话模式的审计：每次会话写一个 `logs/chat-<ts>.jsonl`（同样是哈希链），每轮的问答与工具动作都在里面。
 
@@ -276,7 +275,7 @@ python3 -m trina run --target http://127.0.0.1:9099 --goal "验证文件上传�
 | 大量 `拒` | 检查是否显式启用了 `scope.trust_mode=restricted` 或人工审批；默认 full 不按风险等级拒绝 |
 | 工具返回 `engine=builtin` | 外部工具缺失，属预期降级；装上 nmap/nuclei/sqlmap/hydra 会自动优先使用 |
 | 端口扫描结果为 0 | 目标不可达或端口被防火墙过滤；先用 `trina tool service_probe` 验证连通性 |
-| LLM 连续失败 | `trina doctor` 看后端；`omp -p --no-tools "OK"` 手工验证；必要时 `--model` 换模型 |
+| LLM 连续失败 | `trina doctor` 看后端；在 `/model` 表单中验证 Key 与模型；必要时 `--model` 换模型 |
 | 评测 FP 偏高 | 检查场景 `scoped_classes` 是否声明完整；范围外发现不计入误报 |
 | 报告缺章节/为空 | `state.json` 是否完整；`trina report rebuild --state …` 重建后仍有问题看 `docs/ARCHITECTURE.md` §6 |
 | 审计校验失败 | 说明文件被改过；不要续写，保留原文件用于取证，另起 run |

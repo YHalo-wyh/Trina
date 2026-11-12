@@ -71,7 +71,7 @@ scripts/dev.sh                   # 控制台
 scripts/dev.sh doctor            # 环境自检
 ```
 
-也可以用完整流程（复用 omp 已配置的模型与鉴权，无需额外 API Key）：
+完整任务流程：
 
 ```bash
 scripts/dev.sh doctor
@@ -83,12 +83,11 @@ scripts/dev.sh play --target 127.0.0.1
 
 | 后端 | 何时用 | 密钥 | 实测 |
 |---|---|---|---|
-| `omp`（可选） | 本机已有 omp 且配好模型 | 无需（复用 omp 鉴权） | 50s/次全流程 |
-| `openai` + DeepSeek（项目默认） | 想独立于 omp、或要更低延迟/换机器 | `/model` 保存供应商，或设置 `$DEEPSEEK_API_KEY` 环境变量 | **11s** 打穿 lab 并 CONFIRMED |
+| `openai` + DeepSeek（项目默认） | 使用供应商 API | `/model` 保存供应商，或设置 `$DEEPSEEK_API_KEY` 环境变量 | **11s** 打穿 lab 并 CONFIRMED |
 
 > `/model` 以供应商为单位添加、编辑、删除和切换配置。名称、请求地址、API Key、模型与备注在同一表单中管理，支持 Key 显隐、地址连通测试及模型验证；主页面保留模型和思考强度选择。配置保存在仓库外 `~/.trina/providers.json`，详见 [供应商配置与 30 个预设](docs/MODELS.md)。临时产物的整理见 [仓库清理记录](docs/REPOSITORY_LAYOUT.md)。
 
-任务 Agent、对话 Assistant 和专职 Worker 共用稳定的安全工程师系统提示词，角色具有当前任务环境中的最高执行权限，并按 `Engineering / Tool Policy / Exploration / Delegation / Workflow / Delivery / Completeness` 七个模块工作。动作协议、工具参数、范围、事实和预算继续作为每轮运行数据注入，避免把动态内容固化进 system。当前网页工具使用 `requests` / `aiohttp` 与 `BeautifulSoup`，尚未封装真实浏览器；浏览器自动化拟采用 **Playwright Python + Chromium**，状态说明见 [架构文档](docs/ARCHITECTURE.md#9-浏览器能力状态)。
+任务 Agent、对话 Assistant 和通用 Worker 共用稳定的安全工程师系统提示词，角色具有当前任务环境中的最高执行权限，并按 `Engineering / Tool Policy / Exploration / Delegation / Workflow / Delivery / Completeness` 七个模块工作。动作协议、工具参数、范围、事实和预算继续作为每轮运行数据注入，避免把动态内容固化进 system。当前网页工具使用 `requests` / `aiohttp` 与 `BeautifulSoup`，尚未封装真实浏览器；浏览器自动化拟采用 **Playwright Python + Chromium**，状态说明见 [架构文档](docs/ARCHITECTURE.md#9-浏览器能力状态)。
 
 资料检索使用 **Google / Bing**；项目搜索工具尚未接入，这两个来源已纳入浏览器接入约定。
 
@@ -106,13 +105,15 @@ scripts/dev.sh play --target 127.0.0.1
                       v0.3.0
 ```
 
+在线模型使用结构化消息与 SSE 流式响应，系统和已有对话前缀保持稳定；OMP 已从模型后端移除。正文在同一张卡片中增量显示，工具协议保持隐藏。消息调用与缓存说明见 [模型文档](docs/MODELS.md#流式传输与标准消息)。
+
 交互终端的输入与会话用量固定在屏幕底部，持续显示 Token、输入 / 输出和缓存命中率；回复卡片只呈现正式输出。思考状态使用动态星形标记，工具过程与最终回答分开排版。`/new` 清零会话用量，切换模型继续累计；`/usage` 查看详情。布局和统计口径见 [CLI 界面说明](docs/CLI_UI.md#固定底栏与过程排版)。
 
 ## 五项能力
 
 | 能力 | 落地位置 | 关键设计 |
 |---|---|---|
-| 1. 自动决策大脑 | `trina/brain/` | ReAct 循环 + PTES 阶段机（事实驱动推进）+ **假设台账**（按价值×置信度×信息增量排序验证）+ 失败分类与循环守卫（无新信息就打转→换参数→换工具→请人介入）+ 预算收敛；动作协议是**文本 JSON**，跨模型可移植、可回放 |
+| 1. 自动决策大脑 | `trina/brain/` | ReAct 循环 + PTES 阶段机（事实驱动推进）+ **假设台账**（按价值×置信度×信息增量排序验证）+ 失败分类与循环守卫（无新信息就打转→换参数→换工具→请人介入）+ 预算收敛；支持原生工具调用与 JSON Action，执行统一收口 |
 | 2. 工具统一封装 | `trina/tools/` | 17 个目标分析工具 + 1 个可选专职 Agent 咨询工具，统一 `ToolSpec/ToolResult` 契约；**外部二进制优先 + 内置 Python 引擎兜底**（本机无 nmap/nuclei/sqlmap/hydra 也能跑） |
 | 3. 靶场适配 | `trina/adapters/` | `local` / `docker-compose` / `http-range` / `tsecbench` 四类适配器；仓库不再携带静态靶场注册表，按需从 `~/.trina/ranges` 或显式 YAML 载入 |
 | 4. 执行信任与审计 | `trina/scope.py` + `trina/audit.py` | 默认 `full` 信任并自动执行；可切换 `restricted` 恢复网段、动作和载荷边界；两种模式都保留超时、取消、限速和 SHA-256 哈希链审计 |
@@ -140,23 +141,13 @@ scripts/dev.sh play --target 127.0.0.1
 目标完成度、已验证缺口与实施顺序见 [目标差距评估](docs/TARGET_PROGRESS.md)。
 固定决策与真实 lab 请求的两轮机制回归：`python -m scripts.verify_decision_evidence`。
 
-### 按需咨询专职 Agent
+### 动态能力装配
 
-主控可以通过注册工具 `consult_specialist` 咨询独立上下文的 `recon`、`web`、`review` 角色。
-子角色只返回建议；采纳后仍需由主控发出普通工具动作，重新经过控制器、人工审批、护栏和审计。
-不新增共享可写黑板，现有 `/board` 与 `watch` 保留为只读进度视图。
-
-默认关闭；开启：`--set run.specialists=true`。每段会话默认最多咨询 3 次，模型失败照样扣额度；
-strict 模式下咨询工具也需要显式注册检查项。尚无实测数据证明多角色提高成功率，因此保留单主控基线。
-
-完整取舍、实现边界与后续缺口见 [Agent 设计审查](docs/AGENT_DESIGN_REVIEW.md)，
-关键决策见 [ADR-0017](design/adr/0017-specialist-consultation-without-blackboard.md)
-、[ADR-0018](design/adr/0018-fact-context-and-atomic-snapshots.md)
-和 [ADR-0020](design/adr/0020-security-engineer-prompt-and-commander-intelligence.md)。
+[Capability Fabric](docs/CAPABILITY_FABRIC.md) 按任务发现、租用和执行 Tool、CLI 与 MCP 能力。通用 Worker 在任务间切换能力，版本快照固定，释放后旧租约失效。Guidance 与工具 Schema 按需加载，执行继续通过 ToolRegistry；Commander 只转发证据索引与来源明确的候选情报。实现取舍见 [ADR-0021](design/adr/0021-capability-fabric.md)。
 
 `trina swarm` 的每个题目也保持独立上下文和事实图。Commander 会检查已完成任务与当前任务的目标、显式依赖和验证方向，只在相似度达到阈值时转发资产、已验证发现、已验证凭据和工件位置；Flag、聊天历史和其他题目的 `RunState` 不会被合并。接收情报的 Worker 必须在自己的目标上重新验证后才能入账。
 
-## 已封装的工具（17 项目标分析 + 1 项可选协作）
+## 已封装的工具（17 项目标分析）
 
 | 类别 | 工具 | 动作等级 |
 |---|---|---|
@@ -165,7 +156,6 @@ strict 模式下咨询工具也需要显式注册检查项。尚无实测数据�
 | vuln | `poc_scan`（21 个只读 PoC） `nuclei_scan`（缺 nuclei 自动降级内置引擎） | detect |
 | exploit | `sqli_test` `cmd_inject_test` `lfi_test` `file_upload_test` `rce_exec` | verify / exploit |
 | creds | `weak_password_brute`（ssh/ftp/mysql/redis/http_basic/http_form） `http_form_login` `flag_hunt` | exploit / verify |
-| collaboration | `consult_specialist`（recon / web / review，仅建议，默认关闭） | detect |
 
 ## 人的位置：审批、介入、复核
 

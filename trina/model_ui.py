@@ -62,10 +62,10 @@ class ModelManager:
         from .llm.reasoning import reasoning_support
         llm = self.config.llm
         item = self.store.profiles.get(llm.profile)
-        name = item.id if item else ("omp" if llm.backend == "omp" else "当前配置")
+        name = item.id if item else "当前配置"
         key = (item.api_key or os.environ.get(item.api_key_env, "")) if item else os.environ.get(llm.api_key_env, "")
-        key_status = "由 omp 管理" if llm.backend == "omp" else ("••••••••" if key else "未配置 / 本地免密")
-        address = llm.base_url if llm.backend == "openai" else "由 omp 管理"
+        key_status = "••••••••" if key else "未配置 / 本地免密"
+        address = llm.base_url
         effort = reasoning_support(llm).label(llm.reasoning_effort)
         return f"供应商  {name}\n请求地址 {address}\n模型    {llm.model}\n思考    {effort}\nAPI Key {key_status}"
 
@@ -97,8 +97,6 @@ class ModelManager:
                     self.remove()
                 elif selected == "test":
                     notice = self.test_connection(self.current())
-                elif selected == "models" and self.config.llm.backend == "omp":
-                    self.pick_omp_model()
                 elif selected == "models":
                     item = self.current()
                     model = self.pick_model(item)
@@ -115,43 +113,22 @@ class ModelManager:
         llm = self.config.llm
         if level not in reasoning_support(llm).levels:
             raise ValueError("当前模型不支持该思考档位")
-        if llm.backend == "openai":
-            item = self.current()
-            item.reasoning_effort = level
-            self._commit(item, previous_id=item.id if item.id in self.store.profiles else "")
-        elif llm.backend == "omp":
-            self.store.active, self.store.omp_model, self.store.reasoning_effort = "", llm.model, level
-            self.store.save()
-            llm.reasoning_effort = level
-            self.reload()
+        item = self.current()
+        item.reasoning_effort = level
+        self._commit(item, previous_id=item.id if item.id in self.store.profiles else "")
 
     def provider_choices(self) -> list[ChoiceSpec]:
         return [ChoiceSpec(p.id, f"{'●' if p.id == self.config.llm.profile else '○'} {p.id} · {p.model}") for p in self.store.profiles.values()]
 
     def pick_provider(self) -> None:
-        selected = self.choose("切换供应商", [ChoiceSpec("use:" + p.value, p.description) for p in self.provider_choices()] + [ChoiceSpec("omp", "omp")])
-        if selected == "omp":
-            self.pick_omp_model()
-        elif selected:
-            self.use(selected[4:])
-
-    def pick_omp_model(self) -> None:
-        from .models import list_models
-        selected = self.choose("模型 · omp", [ChoiceSpec(m.spec, m.render()) for m in list_models(limit=500)])
+        selected = self.choose("切换供应商", [ChoiceSpec("use:" + p.value, p.description) for p in self.provider_choices()])
         if selected:
-            self.store.active, self.store.omp_model = "", selected
-            self.store.save()
-            llm = self.config.llm
-            llm.backend, llm.profile, llm.model, llm.api = "omp", "", selected, "chat"
-            llm.reasoning_effort = self.store.reasoning_effort
-            self.reload()
+            self.use(selected[4:])
 
     def current(self) -> ProviderProfile:
         llm = self.config.llm
         if llm.profile in self.store.profiles:
             return copy.deepcopy(self.store.profiles[llm.profile])
-        if llm.backend != "openai":
-            raise ValueError("请先添加或切换到供应商配置")
         provider = next((p.id for p in PRESETS if p.base_url.rstrip("/") == llm.base_url.rstrip("/")), "custom")
         name, suffix = provider, 2
         while name in self.store.profiles:
@@ -265,25 +242,21 @@ class ModelManager:
         if self.choose("删除供应商及其请求地址、Key 和模型设置", [ChoiceSpec("back", "取消"), ChoiceSpec("delete", f"删除 {name}")]) != "delete":
             return
         remaining = {key: value for key, value in self.store.profiles.items() if key != name}
-        old_profiles, old_active, old_omp_model = self.store.profiles, self.store.active, self.store.omp_model
+        old_profiles, old_active = self.store.profiles, self.store.active
         self.store.profiles = remaining
         active_deleted = self.config.llm.profile == name
         if self.store.active == name or active_deleted:
             self.store.active = next(iter(remaining), "")
-        if active_deleted and not self.store.active:
-            from .config import LLMConfig
-            self.store.omp_model = self.store.omp_model or LLMConfig().model
         try:
             self.store.save()
         except Exception:
             self.store.profiles, self.store.active = old_profiles, old_active
-            self.store.omp_model = old_omp_model
             raise
         if active_deleted:
             if self.store.active:
                 self.store.apply(self.config.llm)
             else:
-                llm = self.config.llm
-                llm.backend, llm.profile, llm.api = "omp", "", "chat"
-                llm.model, llm.reasoning_effort = self.store.omp_model, self.store.reasoning_effort
+                from .config import LLMConfig
+                fresh = LLMConfig()
+                self.config.llm.__dict__.update(fresh.__dict__)
             self.reload()

@@ -3,7 +3,7 @@
 一步的循环（观察 → 思考 → 动作）::
 
     状态摘要 + 阶段任务 + 上一步观察
-        → LLM（omp / openai / replay）
+        → LLM（标准结构化消息；OpenAI 兼容 / replay）
         → {"thought": ..., "action": "工具名", "params": {...}}
         → ToolRegistry.execute（参数校验 → 护栏 → 审计 → 执行）
         → 观察回灌 + 事实并入 RunState → 下一步
@@ -23,16 +23,30 @@ from typing import Any, Callable
 
 from ..audit import AuditLog
 from ..config import TrinaConfig
-from ..llm import LLMBackend, make_backend
+from ..llm import LLMBackend, LLMMessage, make_backend
 from ..scope import ScopeGuard, ScopeViolation
 from ..state import VERDICT_CN, RunState
 from ..tools import ToolRegistry, build_registry
 from ..tools.http import HttpClient
 from ..tools.registry import ToolContext
-from .failure import LoopGuard, advice_for, alternatives_for, classify_failure
+from ..tools.schema import FINISH_TOOL_NAME, parse_arguments, schema_signature, tool_schemas
+from .failure import (
+    LoopGuard,
+    advice_for,
+    alternatives_for,
+    classify_failure,
+    classify_llm_response,
+    decide_after_failure,
+)
 from .goal import GoalRequirements
 from .planner import Planner
-from .prompts import build_runtime_context, build_step_prompt, build_system_prompt, parse_action
+from .prompts import (
+    build_prompt_layers,
+    build_runtime_context,
+    build_step_prompt,
+    build_system_prompt,
+    parse_action,
+)
 from .scheduler import DEFAULT_MIN_PRIORITY, HypothesisScheduler
 
 MAX_LLM_RETRIES = 4
@@ -257,18 +271,60 @@ class PentestAgent:
                 f"注册检查项 {len(controller.registry.tests)} 个"
                 + (f"；当前目标 target_id={target_id}" if target_id else "；当前目标未在注册表中"),
             )
-        system_prompt = build_system_prompt(
-            self.config.scope_prompt_block(),
-            self.registry.prompt_block(exclude=() if self.config.run.specialists else ("consult_specialist",)),
-            extra_rules,
-            include_hypothesis=use_ledger,
-        )
-        runtime_context = build_runtime_context(
-            self.config.scope_prompt_block(),
-            self.registry.prompt_block(exclude=() if self.config.run.specialists else ("consult_specialist",)),
-            extra_rules,
-            include_hypothesis=use_ledger,
-        ) + ("\n\n# 已注册检查项\n" + policy_block if policy_block else "")
+        # ---- 协议：原生 Tool Calling 与 JSON Action 共用同一条执行链 ----
+        native_mode = self._native_tools_enabled()
+        tool_payload: list[dict[str, Any]] | None = tool_schemas(self.registry) if native_mode else None
+        if native_mode:
+            audit.append(
+                "protocol.native", decision="allow", tools=len(tool_payload or []),
+                schema_signature=schema_signature(tool_payload or []),
+            )
+            state.note("protocol", f"使用原生工具调用（{len(tool_payload or [])} 个 schema，含 finish）")
+        # ---- 提示词分层（P0）：Core/Role 进 system，任务契约进首条 user ----
+        if bool(getattr(self.config.llm, "prompt_layers", False)):
+            layers = build_prompt_layers(
+                self.config.scope_prompt_block(),
+                self.registry.prompt_block(),
+                extra_rules,
+                policy_block,
+                role_profile=str(getattr(self.config.llm, "role_profile", "") or ""),
+                protocol="native" if native_mode else "json",
+                include_hypothesis=use_ledger,
+            )
+            system_prompt, runtime_context = layers.system(), layers.first_user()
+            state.note("prompt", "使用分层提示词：Core+Role(system) / Contract(user) / Dynamic(按步)")
+            audit.append("prompt.layers", decision="allow", mode="layered", native=native_mode)
+        else:
+            system_prompt = build_system_prompt(
+                self.config.scope_prompt_block(),
+                self.registry.prompt_block(),
+                extra_rules,
+                include_hypothesis=use_ledger,
+            )
+            runtime_context = build_runtime_context(
+                self.config.scope_prompt_block(),
+                self.registry.prompt_block(),
+                extra_rules,
+                include_hypothesis=use_ledger,
+            ) + ("\n\n# 已注册检查项\n" + policy_block if policy_block else "")
+            audit.append("prompt.layers", decision="allow", mode="legacy", native=native_mode)
+        # system 与初始运行合同固定在前缀；每轮状态、观察和模型回复只向后追加。
+        # 这样既保持标准 Chat Template，也让供应商缓存看到字节级稳定前缀。
+        messages: list[LLMMessage] = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": runtime_context},
+        ]
+        #: 原生协议要求每个 tool_call 都有对应的 tool 消息，缺一条下一轮就会被供应商拒绝
+        pending_tool_messages: list[dict[str, Any]] = []
+        native_call_id = ""
+
+        def queue_tool_result(text: str) -> None:
+            """把观察结果排进 tool 消息队列（JSON 模式为空操作）。"""
+            if native_call_id:
+                pending_tool_messages.append(
+                    {"role": "tool", "tool_call_id": native_call_id, "content": (text or "")[:2000]}
+                )
+
         observation = ""
         last_action_key = ""
         stall = 0
@@ -279,15 +335,23 @@ class PentestAgent:
         if record_handle:
             record_handle.write('{"steps": [\n')
 
-        def record_response(text: str) -> None:
-            """按实际调用顺序记录主控和专职 Agent，避免多 Agent 回放错位。"""
+        def record_response(text: str, calls: list[Any] | None = None, reasoning: str = "") -> None:
+            """保存实际文本与结构化工具调用，保证原生协议也可确定性回放。"""
             nonlocal recorded_steps
             with record_lock:
                 if record_handle is None or record_handle.closed:
                     return
                 if recorded_steps:
                     record_handle.write(",\n")
-                record_handle.write(json.dumps({"response": text}, ensure_ascii=False))
+                recorded: dict[str, Any] = {"response": text}
+                if calls:
+                    recorded["tool_calls"] = [
+                        {"id": call.id, "name": call.name, "arguments": call.arguments}
+                        for call in calls
+                    ]
+                if reasoning:
+                    recorded["reasoning"] = reasoning
+                record_handle.write(json.dumps(recorded, ensure_ascii=False))
                 record_handle.flush()
                 recorded_steps += 1
 
@@ -308,10 +372,12 @@ class PentestAgent:
                         requirements = GoalRequirements.parse(state.goal)
                         audit.append("human.goal", decision="allow", goal=state.goal[:2000])
                         hints.append(f"[目标更新] {state.goal or '已清除'}")
+                        messages.append({"role": "user", "content": f"[目标更新] {state.goal or '已清除'}"})
                         accepted = True
                         continue
                     if note:
                         hints.append(f"[人工介入] {note}")
+                        messages.append({"role": "user", "content": f"[人工介入] {note}"})
                         state.note("human", f"人工补充：{note}")
                         audit.append("human.steer", decision="allow", message=str(note)[:400])
                         accepted = True
@@ -372,7 +438,7 @@ class PentestAgent:
                     state_digest=state.summary_for_prompt(),
                     last_observation=observation,
                     hints=hints,
-                    runtime_context=runtime_context,
+                    runtime_context="",
                     budget={
                         "阶段步数": f"{planner.phase_step}/{planner.max_steps_per_phase}",
                         "总步数": f"{index}/{max_steps}",
@@ -404,17 +470,45 @@ class PentestAgent:
                 )
                 hints = []
 
-                response = self._ask(system_prompt, step_prompt)
+                # 原生协议：先把上一轮的 tool 结果补进历史，再追加本步提示
+                # （顺序必须是 assistant(tool_calls) → tool(...) → user，否则供应商直接 400）
+                if pending_tool_messages:
+                    messages.extend(pending_tool_messages)  # type: ignore[arg-type]
+                    pending_tool_messages.clear()
+                messages.append({"role": "user", "content": step_prompt})
+                native_call_id = ""
+                response = self._ask(messages, tool_payload)
                 if not response.ok:
+                    failure_kind = classify_llm_response(response)
+                    state.counters[f"llm_{failure_kind}"] = state.counters.get(f"llm_{failure_kind}", 0) + 1
                     state.counters["errors"] = state.counters.get("errors", 0) + 1
-                    state.note("llm_error", response.error)
-                    self.logger(f"[{index}] LLM 失败: {response.error}")
-                    audit.append("llm.error", model=self.backend.config.model, error=response.error[:300], step=index)
-                    if state.counters["errors"] >= MAX_LLM_FAILURES:
+                    state.note("llm_error", f"[{failure_kind}] {response.error}")
+                    self.logger(f"[{index}] LLM 失败({failure_kind}): {response.error}")
+                    audit.append(
+                        "llm.error", model=self.backend.config.model, error=response.error[:300],
+                        step=index, kind=failure_kind,
+                    )
+                    # 协议不支持：降级一次，之后不再发原生请求（重试不会改变供应商结论）
+                    if (
+                        failure_kind == "protocol_unsupported"
+                        and native_mode
+                        and bool(getattr(self.config.llm, "tool_protocol_fallback", True))
+                    ):
+                        native_mode, tool_payload = False, None
+                        state.note("protocol", "供应商不支持原生工具调用，已降级为 JSON Action")
+                        audit.append("protocol.downgrade", step=index, decision="allow", reason=response.error[:200])
+                        hints.append("协议已降级为 JSON 动作")
+                        observation = (
+                            "供应商不支持原生工具调用，已切换到 JSON 动作协议。"
+                            '请只返回一个 JSON 对象：{"action": "工具名", "params": {...}} 或 {"final": {...}}。'
+                        )
+                        continue
+                    decision = decide_after_failure(failure_kind, attempt=state.counters["errors"])
+                    if decision == "stop" or state.counters["errors"] >= MAX_LLM_FAILURES:
                         state.status = "failed"
                         break
                     hints.append("上一步推理失败，请直接给出一个工具动作")
-                    observation = f"LLM 调用失败：{response.error}"
+                    observation = f"LLM 调用失败（{failure_kind}）：{response.error}"
                     time.sleep(min(2.0 * state.counters["errors"], 8.0))
                     continue
                 state.counters["llm_calls"] = state.counters.get("llm_calls", 0) + 1
@@ -425,16 +519,36 @@ class PentestAgent:
                 if accept_steers():
                     audit.append("llm.response_superseded", decision="defer", reason="收到补充，重新决策", step=index)
                     continue
-                record_response(response.text)
+                # assistant 消息必须原样带回 tool_calls 与 reasoning_content：
+                # DeepSeek 思考模式要求上一轮思维链出现在同一条消息里，否则下一轮 400。
+                assistant_message: dict[str, Any] = {"role": "assistant", "content": response.text}
+                native_calls = list(response.tool_calls) if native_mode else []
+                if native_calls:
+                    assistant_message["tool_calls"] = [call.to_dict() for call in native_calls]
+                    native_call_id = native_calls[0].id
+                    # 本步只执行一个动作；其余调用也必须回一条 tool 消息，保持协议完整
+                    for extra in native_calls[1:]:
+                        pending_tool_messages.append({
+                            "role": "tool", "tool_call_id": extra.id,
+                            "content": "未执行：每步只允许一个动作，请在下一步单独调用。",
+                        })
+                if response.reasoning:
+                    assistant_message["reasoning_content"] = response.reasoning
+                messages.append(assistant_message)  # type: ignore[arg-type]
+                record_response(response.text, response.tool_calls, response.reasoning)
 
-                action = parse_action(response.text)
+                action = self._decode_action(response, native_calls)
+                if native_calls:
+                    state.counters["native_calls"] = state.counters.get("native_calls", 0) + 1
                 if "error" in action:
                     state.counters["errors"] = state.counters.get("errors", 0) + 1
+                    state.counters["protocol_error"] = state.counters.get("protocol_error", 0) + 1
                     hints.append("输出必须是单个 JSON 对象：{\"thought\":..., \"action\":..., \"params\":{...}}")
                     observation = f"动作解析失败：{action.get('error')}；原始输出片段：{str(action.get('raw', ''))[:200]}"
                     state.log_step(
                         StepRecord(index, phase, summary="解析失败", error=action.get("error", ""), llm_seconds=response.duration).to_dict()
                     )
+                    queue_tool_result(observation)
                     continue
 
                 if "final" in action:
@@ -453,6 +567,7 @@ class PentestAgent:
                             StepRecord(index, phase, thought=str(action.get("thought", "")), action="final_rejected",
                                        summary="目标未达成，拒绝结束").to_dict()
                         )
+                        queue_tool_result(observation)
                         continue
                     final = action.get("final") if isinstance(action.get("final"), dict) else {"summary": str(action.get("final"))}
                     state.note("final", str(final.get("summary", ""))[:400])
@@ -511,6 +626,7 @@ class PentestAgent:
                         StepRecord(index, phase, thought=thought, action=tool_name, denied=True,
                                    summary=f"控制器拒绝（{policy_decision.kind}）").to_dict()
                     )
+                    queue_tool_result(observation)
                     continue
 
                 # guided 模式可能由控制器反查出检查项，审批与调度统计使用同一解析结果。
@@ -539,6 +655,7 @@ class PentestAgent:
                             StepRecord(index, phase, thought=thought, action=tool_name, denied=True,
                                        summary="人工拒绝（未执行）").to_dict()
                         )
+                        queue_tool_result(observation)
                         continue
 
                 self.logger(f"[{index}/{max_steps}] {phase} · {tool_name} {_brief_params(params)}")
@@ -562,6 +679,7 @@ class PentestAgent:
                 result = self.registry.execute(tool_name, params, ctx)
                 state.coverage = controller.coverage()
                 observation = result.to_observation()
+                queue_tool_result(observation)
                 new_facts = before_knowledge != state.knowledge_digest()
 
                 # 假设台账：模型可在动作里带 hypothesis；无论成败都用结果更新（确定性规则，不看自我宣告）
@@ -808,6 +926,32 @@ class PentestAgent:
         return state
 
     # ------------------------------------------------------------------ 内部
+    def _native_tools_enabled(self) -> bool:
+        """是否走原生 Tool Calling。
+
+        ``auto`` 看后端能力，``json`` 强制旧协议（对照实验用），``native`` 只在后端支持时生效。
+        """
+        protocol = str(getattr(self.config.llm, "tool_protocol", "auto") or "auto")
+        if protocol == "json":
+            return False
+        return bool(getattr(self.backend, "supports_native_tools", False))
+
+    @staticmethod
+    def _decode_action(response: Any, native_calls: list[Any]) -> dict[str, Any]:
+        """把模型响应解码成统一 action 字典；原生与 JSON 两种输出共用下游逻辑。
+
+        ``finish`` 是控制面：它只产生 ``{"final": ...}``，**不会**进入 ToolRegistry。
+        """
+        if native_calls:
+            call = native_calls[0]
+            params, error = parse_arguments(call.arguments)
+            if error:
+                return {"error": f"{call.name} 参数解析失败：{error}"}
+            if call.name == FINISH_TOOL_NAME:
+                return {"final": params}
+            return {"action": call.name, "params": params}
+        return parse_action(response.text)
+
     def _effective_level(self, tool_name: str, params: dict[str, Any]) -> str:
         """取工具在本次参数下的实际动作等级（动态等级优先，异常时回退静态声明）。"""
         spec = self.registry.get(tool_name)
@@ -818,17 +962,36 @@ class PentestAgent:
         except Exception:  # noqa: BLE001
             return spec.spec.action_level
 
-    def _ask(self, system: str, user: str):
-        """带重试的 LLM 调用（后端抖动时退避重试，避免直接毁掉整个场景）。"""
+    def _ask(self, messages: list[LLMMessage], tools: list[dict[str, Any]] | None = None):
+        """带重试的 LLM 调用。
+
+        重试按失败类型给预算（见 :func:`trina.brain.failure.decide_after_failure`）：
+        协议不支持立刻返回让调用方降级，权限拒绝直接停，只有运行故障才退避重试。
+        """
         last = None
-        for attempt in range(MAX_LLM_RETRIES + 1):
-            response = self.backend.complete(system, user)
-            if response.ok and response.text.strip():
+        attempt = 0
+        while True:
+            # 只用后端**自己声明**的完整消息接口：包装器（如测试用的记录后端）
+            # 通过 __getattr__ 转发时不能用内层实现，否则观察不到真实提示词。
+            method = self.backend.complete_messages if "complete_messages" in dir(type(self.backend)) else None
+            if method is not None:
+                if tools is not None:
+                    response = method(messages, tools=tools)
+                else:
+                    response = method(messages)
+            else:  # 仅供旧测试替身
+                response = self.backend.complete(messages[0]["content"], messages[-1]["content"])
+            if response.ok and (response.text.strip() or response.tool_calls):
                 return response
             last = response
-            if attempt < MAX_LLM_RETRIES:
-                time.sleep(min(2.0 * (attempt + 1), 10.0))
-        return last
+            kind = classify_llm_response(response)
+            action = decide_after_failure(kind, attempt=attempt)
+            if action in ("stop", "downgrade"):
+                return response
+            attempt += 1
+            if attempt > MAX_LLM_RETRIES:
+                return response
+            time.sleep(min(2.0 * attempt, 10.0))
 
     def _save_state(self, state: RunState, workspace: Path) -> None:
         temporary: Path | None = None

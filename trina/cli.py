@@ -148,7 +148,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     ]
     kv_table(rows, "基础")
 
-    binaries = installed("omp", "nmap", "nuclei", "sqlmap", "hydra", "ffuf", "gobuster", "nikto", "masscan", "docker")
+    binaries = installed("nmap", "nuclei", "sqlmap", "hydra", "ffuf", "gobuster", "nikto", "masscan", "docker")
     kv_table(
         [(name, path or "缺失（将使用内置引擎兜底）") for name, path in binaries.items()],
         "外部工具",
@@ -446,6 +446,26 @@ def cmd_lab(args: argparse.Namespace) -> int:
 
 def cmd_eval(args: argparse.Namespace) -> int:
     config = build_config(args)
+    if args.eval_action == "live-batch":
+        from .eval.live_batch import render_markdown, run_batch
+
+        names = tuple(item.strip() for item in (args.configs or "legacy-json,legacy-native").split(",") if item.strip())
+        summary = run_batch(
+            config, configs=names, out_dir=args.out or None, limit=args.limit or None,
+        )
+        print(render_markdown(summary) if not args.json else json.dumps(summary["by_config"], ensure_ascii=False, indent=2))
+        if summary.get("out_dir"):
+            out(f"记录已写入 {summary['out_dir']}", "green")
+        return 0
+    if args.eval_action == "protocol-matrix":
+        from .eval.protocol_matrix import render_markdown, run_matrix
+
+        summary = run_matrix(config, out_dir=args.out or None)
+        print(render_markdown(summary) if not args.json else json.dumps(summary, ensure_ascii=False, indent=2))
+        if summary.get("out_dir"):
+            out(f"记录已写入 {summary['out_dir']}", "green")
+        worst = min(row["rate"] for row in summary["by_config"].values())
+        return 0 if worst >= 0.99 else 3
     try:
         from .eval.harness import EvalHarness
     except ImportError as exc:
@@ -628,8 +648,6 @@ def _prepare_bench_llm(config: TrinaConfig, *, hosted: bool, force_gateway: bool
     """
     from urllib.parse import urlsplit, urlunsplit
 
-    if config.llm.backend == "omp" and hosted:
-        config.llm.backend = "openai"
     base = (config.llm.base_url or os.environ.get("TRINA_LLM_BASE_URL") or "").strip()
     if not base and os.environ.get("DEEPSEEK_API_KEY"):
         base = "https://api.deepseek.com/v1"
@@ -969,7 +987,7 @@ def build_parser() -> argparse.ArgumentParser:
     bench.add_argument("--dry-run", action="store_true", help="只列出题目，不启动容器")
     bench.add_argument("--gateway", action="store_true", help="强制把模型地址改写成 .tsecbench.gw 网关")
     bench.add_argument("--model", help="覆盖模型名")
-    bench.add_argument("--backend", choices=["omp", "openai", "replay"])
+    bench.add_argument("--backend", choices=["openai", "replay"])
     bench.add_argument("--allow-exploit", action="store_true", help="restricted 模式兼容项；full 模式无需设置")
     bench.add_argument("--json", action="store_true", help="输出 JSON 摘要")
     bench.set_defaults(func=cmd_bench)
@@ -989,7 +1007,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--max-steps", type=int, default=None)
     run.add_argument("--max-seconds", type=int, default=None)
     run.add_argument("--model", help="覆盖模型（如 deepseek/deepseek-v4-flash）")
-    run.add_argument("--backend", choices=["omp", "openai", "replay"])
+    run.add_argument("--backend", choices=["openai", "replay"])
     run.add_argument("--replay", help="离线回放脚本（等价于 --backend replay）")
     run.add_argument("--record", help="把本次 LLM 交互录制成回放脚本")
     run.add_argument("--hint", action="append", help="附加约束/提示，可重复")
@@ -1012,7 +1030,7 @@ def build_parser() -> argparse.ArgumentParser:
     swarm.add_argument("--max-steps", type=int, default=12, help="默认图每任务步数上限")
     swarm.add_argument("--max-seconds", type=int, default=600, help="默认图每任务秒数上限")
     swarm.add_argument("--model", help="覆盖模型名")
-    swarm.add_argument("--backend", choices=["omp", "openai", "replay"])
+    swarm.add_argument("--backend", choices=["openai", "replay"])
     swarm.add_argument("--replay", help="离线回放脚本（每个 Worker 独立加载）")
     swarm.add_argument("--allow-exploit", action="store_true", help="restricted 模式兼容项；full 模式无需设置")
     swarm.add_argument("--json", action="store_true", help="输出 JSON 摘要")
@@ -1054,6 +1072,17 @@ def build_parser() -> argparse.ArgumentParser:
     eval_adv.add_argument("--port", type=int, default=9100)
     eval_adv.add_argument("--modes", nargs="*")
     eval_adv.set_defaults(func=cmd_eval)
+    eval_matrix = eval_sub.add_parser("protocol-matrix", help="四种协议×提示词配置的对照评测")
+    eval_matrix.add_argument("--out", default="", help="输出目录（默认 reports/eval/protocol-matrix-<时间>）")
+    eval_matrix.add_argument("--json", action="store_true")
+    eval_matrix.set_defaults(func=cmd_eval)
+    eval_live = eval_sub.add_parser("live-batch", help="真模型 × 真靶机的 30 条任务跑批")
+    eval_live.add_argument("--configs", default="legacy-json,legacy-native",
+                           help="逗号分隔：legacy-json,layered-json,legacy-native,layered-native")
+    eval_live.add_argument("--out", default="", help="输出目录")
+    eval_live.add_argument("--limit", type=int, default=0, help="只跑前 N 条任务（冒烟用）")
+    eval_live.add_argument("--json", action="store_true")
+    eval_live.set_defaults(func=cmd_eval)
 
     watch = sub.add_parser("watch", help="实时监视一次运行（工作台视图）")
     add_common(watch)

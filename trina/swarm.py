@@ -1,8 +1,9 @@
-"""RASC 首版：任务 DAG、能力装配、可复用 Worker 池和任务级恢复。"""
+"""Commander：任务 DAG、通用 Worker、Capability Fabric 与任务级恢复。"""
 
 from __future__ import annotations
 
 import json
+import os
 import re
 import threading
 import time
@@ -16,6 +17,7 @@ from urllib.parse import urlsplit
 
 from .audit import AuditLog
 from .brain import PentestAgent
+from .capabilities import CapabilityCatalog, CapabilityFabric, CapabilityRuntime
 from .config import TrinaConfig
 from .context import BRIEF_VERSION
 from .llm import make_backend
@@ -23,12 +25,6 @@ from .state import RunState
 from .tools import ToolRegistry, build_registry
 
 
-CAPABILITIES: dict[str, tuple[str, ...]] = {
-    "recon": ("recon",),
-    "web": ("web",),
-    "verify": ("recon", "web", "vuln", "exploit"),
-    "full": ("recon", "web", "vuln", "exploit"),
-}
 _TASK_ID = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$")
 TERMINAL = {"completed", "blocked", "failed", "skipped"}
 
@@ -40,7 +36,8 @@ class TaskSpec:
     id: str
     target: str
     goal: str
-    capabilities: tuple[str, ...] = ("full",)
+    # 可选的 Capability ID / provides 约束；为空时由 Fabric 按目标和意图发现。
+    capabilities: tuple[str, ...] = ()
     depends_on: tuple[str, ...] = ()
     priority: int = 0
     max_steps: int = 12
@@ -67,6 +64,10 @@ class TaskRecord:
     ended_at: float = 0.0
     result: dict[str, Any] = field(default_factory=dict)
     error: str = ""
+    capability_lease_id: str = ""
+    capability_ids: list[str] = field(default_factory=list)
+    capability_snapshot: list[dict[str, str]] = field(default_factory=list)
+    evidence_refs: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -78,6 +79,8 @@ class Worker:
     busy: bool = False
     lease_id: str = ""
     completed: int = 0
+    capability_lease_id: str = ""
+    capabilities: tuple[str, ...] = ()
 
 
 class WorkerPool:
@@ -113,13 +116,15 @@ class WorkerPool:
         with self.lock:
             if not worker.busy or worker.lease_id != lease_id:
                 raise RuntimeError("Worker 租约不匹配")
+            if worker.capability_lease_id:
+                raise RuntimeError("Worker 的 Capability 租约尚未回收")
             worker.busy = False
             worker.lease_id = ""
             worker.completed += 1
 
 
 def validate_tasks(tasks: list[TaskSpec]) -> None:
-    """拒绝非法依赖、环、等价任务和未知能力。"""
+    """拒绝非法依赖、环和等价任务；能力是否存在由运行时 Catalog 判定。"""
     ids = {task.id for task in tasks}
     if not tasks or len(ids) != len(tasks):
         raise ValueError("任务不能为空且 ID 必须唯一")
@@ -129,8 +134,8 @@ def validate_tasks(tasks: list[TaskSpec]) -> None:
             raise ValueError(f"非法任务 ID: {task.id!r}")
         if not task.target or not task.goal or task.max_steps < 1 or task.max_seconds < 1:
             raise ValueError(f"任务 {task.id} 缺少目标或预算非法")
-        if not task.capabilities or any(name not in CAPABILITIES for name in task.capabilities):
-            raise ValueError(f"任务 {task.id} 存在未知能力")
+        if any(not isinstance(name, str) or not name.strip() for name in task.capabilities):
+            raise ValueError(f"任务 {task.id} 的能力约束非法")
         if any(dep not in ids or dep == task.id for dep in task.depends_on):
             raise ValueError(f"任务 {task.id} 存在无效依赖")
         signature = (task.target, task.goal.strip().casefold(), tuple(sorted(task.capabilities)))
@@ -157,12 +162,8 @@ def validate_tasks(tasks: list[TaskSpec]) -> None:
 
 
 def default_tasks(target: str, goal: str, *, max_steps: int = 12, max_seconds: int = 600) -> list[TaskSpec]:
-    """默认把独立的服务识别与 Web 面研究并行，再汇总验证。"""
-    return [
-        TaskSpec("recon", target, "识别目标服务、端口与技术栈", ("recon",), priority=20, max_steps=max_steps, max_seconds=max_seconds),
-        TaskSpec("web", target, "梳理 Web 功能、路径、参数与客户端线索", ("web",), priority=10, max_steps=max_steps, max_seconds=max_seconds),
-        TaskSpec("verify", target, goal or "根据前序发现验证最有价值的研究方向", ("verify",), ("recon", "web"), max_steps=max_steps, max_seconds=max_seconds),
-    ]
+    """默认只创建一个目标任务，不预设 Recon/Web/Verify 专职 Worker。"""
+    return [TaskSpec("main", target, goal or "分析目标并完成可验证结果", (), max_steps=max_steps, max_seconds=max_seconds)]
 
 
 def _target_identity(value: str) -> tuple[str, int | None]:
@@ -230,6 +231,8 @@ class SwarmRuntime:
         run_id: str | None = None,
         executor: Callable[[Worker, TaskSpec, str, list[str], ToolRegistry], RunState] | None = None,
         backend_factory: Callable[..., Any] = make_backend,
+        fabric: CapabilityFabric | None = None,
+        capability_dirs: list[str | Path] | None = None,
     ):
         validate_tasks(tasks)
         if max_workers < 1:
@@ -245,6 +248,13 @@ class SwarmRuntime:
         self.checkpoint = self.workspace / "swarm.json"
         self.audit = AuditLog.open(config.audit_dir, run_id=self.run_id, redact_keys=config.audit.redact_keys, resume=True)
         self.registry = build_registry()
+        if fabric is None:
+            catalog = CapabilityCatalog.from_registry(self.registry)
+            configured = [item for item in os.environ.get("TRINA_CAPABILITY_DIRS", "").split(os.pathsep) if item]
+            directories = capability_dirs or [config.runtime_root / "capabilities", Path.home() / ".trina" / "capabilities", *configured]
+            catalog.discover(directories)
+            fabric = CapabilityFabric(catalog, CapabilityRuntime(self.registry))
+        self.fabric = fabric
         self.pool = WorkerPool(config, max_workers, backend_factory=backend_factory)
         self.executor = executor or self._execute_agent
         self.stop_event = threading.Event()
@@ -252,12 +262,30 @@ class SwarmRuntime:
         self.events: list[dict[str, Any]] = []
 
     @classmethod
-    def resume(cls, config: TrinaConfig, checkpoint: str | Path, *, executor=None, backend_factory=make_backend) -> "SwarmRuntime":
+    def resume(
+        cls,
+        config: TrinaConfig,
+        checkpoint: str | Path,
+        *,
+        executor=None,
+        backend_factory=make_backend,
+        fabric: CapabilityFabric | None = None,
+        capability_dirs: list[str | Path] | None = None,
+    ) -> "SwarmRuntime":
         data = json.loads(Path(checkpoint).read_text(encoding="utf-8"))
-        if data.get("version") != 1:
+        if data.get("version") not in (1, 2):
             raise ValueError("不支持的 swarm 检查点版本")
         tasks = [TaskSpec.from_dict(item) for item in data["tasks"]]
-        runtime = cls(config, tasks, max_workers=int(data["max_workers"]), run_id=data["run_id"], executor=executor, backend_factory=backend_factory)
+        runtime = cls(
+            config,
+            tasks,
+            max_workers=int(data["max_workers"]),
+            run_id=data["run_id"],
+            executor=executor,
+            backend_factory=backend_factory,
+            fabric=fabric,
+            capability_dirs=capability_dirs,
+        )
         if Path(checkpoint).resolve() != runtime.checkpoint.resolve():
             raise ValueError("检查点路径与当前工作区不匹配")
         for task_id, item in data["records"].items():
@@ -268,6 +296,7 @@ class SwarmRuntime:
                 record.status = "pending"
                 record.worker_id = ""
                 record.lease_id = ""
+                record.capability_lease_id = ""
             runtime.records[task_id] = record
         runtime.events = list(data.get("events", []))
         return runtime
@@ -285,9 +314,31 @@ class SwarmRuntime:
         self._save()
         return True
 
-    def _task_registry(self, task: TaskSpec) -> ToolRegistry:
-        categories = {category for capability in task.capabilities for category in CAPABILITIES[capability]}
-        return ToolRegistry(tool for spec in self.registry.specs() if spec.category in categories if (tool := self.registry.get(spec.name)) is not None)
+    def _task_registry(self, task: TaskSpec, worker: Worker) -> ToolRegistry:
+        """按意图给通用 Worker 建立有限期能力租约。"""
+        record = self.records[task.id]
+        constraints = {"selectors": task.capabilities, "max_count": 6}
+        lease = self.fabric.lease(
+            worker.id,
+            task.id,
+            f"{task.goal}\n目标: {task.target}",
+            constraints=constraints,
+            ttl=task.max_seconds + 30,
+            pinned=record.capability_snapshot or None,
+        )
+        record.capability_lease_id = lease.id
+        record.capability_ids = [item.id for item in lease.capabilities]
+        record.capability_snapshot = lease.snapshot
+        worker.capability_lease_id = lease.id
+        worker.capabilities = tuple(record.capability_ids)
+        self.audit.append(
+            "capability.lease",
+            task=task.id,
+            worker=worker.id,
+            lease=lease.id,
+            capabilities=record.capability_snapshot,
+        )
+        return lease.registry
 
     def _hints(self, task: TaskSpec) -> list[str]:
         """给自定义 executor 的兼容入口，只传 Commander 选中的情报简报。"""
@@ -315,6 +366,7 @@ class SwarmRuntime:
                 "destination_task": task.id,
                 "similarity": score,
                 "reasons": reasons,
+                "evidence_refs": list(record.evidence_refs),
                 "intelligence": intelligence,
             })
         return sorted(briefs, key=lambda item: (-float(item["similarity"]), str(item["source_task"])))
@@ -334,6 +386,7 @@ class SwarmRuntime:
             max_seconds=task.max_seconds,
             commander_briefs=self._briefs(task),
             commander_brief_provider=lambda: self._briefs(task),
+            extra_rules=getattr(registry, "capability_guidance", ""),
             run_id=run_id,
         )
         if state.ledger:
@@ -388,12 +441,13 @@ class SwarmRuntime:
     def _save(self) -> None:
         self.workspace.mkdir(parents=True, exist_ok=True)
         data = {
-            "version": 1,
+            "version": 2,
             "run_id": self.run_id,
             "max_workers": self.max_workers,
             "tasks": [asdict(task) for task in self.tasks],
             "records": {key: asdict(value) for key, value in self.records.items()},
             "events": self.events,
+            "capability_memory": self.fabric.memory_snapshot(),
         }
         temporary = self.checkpoint.with_suffix(".tmp")
         temporary.write_text(json.dumps(data, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
@@ -402,7 +456,7 @@ class SwarmRuntime:
     def run(self) -> dict[str, Any]:
         """执行所有可运行任务；异常保留在任务记录，其他分支继续。"""
         self._save()
-        futures: dict[Future[RunState], tuple[TaskSpec, Worker, str]] = {}
+        futures: dict[Future[RunState], tuple[TaskSpec, Worker, str, str]] = {}
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             while True:
                 if self.stop_event.is_set() and not futures:
@@ -424,7 +478,19 @@ class SwarmRuntime:
                         worker = self.pool.acquire()
                         if worker is None:
                             break
+                        try:
+                            task_registry = self._task_registry(task, worker)
+                        except Exception as exc:  # noqa: BLE001 - 单任务能力解析失败不拖垮其余任务
+                            record.status = "failed"
+                            record.error = f"CapabilityError: {exc}"
+                            self.audit.append("capability.lease.error", task=task.id, worker=worker.id, error=record.error)
+                            worker.capability_lease_id = ""
+                            worker.capabilities = ()
+                            self.pool.release(worker, worker.lease_id)
+                            self._save()
+                            continue
                         record.status = "running"
+                        record.error = ""
                         record.attempt += 1
                         record.worker_id = worker.id
                         record.lease_id = worker.lease_id
@@ -433,8 +499,8 @@ class SwarmRuntime:
                         self.events.append({"event": "task.start", "task": task.id, "worker": worker.id, "lease": worker.lease_id, "time": record.started_at})
                         self.audit.append("swarm.task.start", task=task.id, worker=worker.id, lease=worker.lease_id, attempt=record.attempt)
                         self._save()
-                        future = executor.submit(self.executor, worker, task, task_run_id, self._hints(task), self._task_registry(task))
-                        futures[future] = (task, worker, worker.lease_id)
+                        future = executor.submit(self.executor, worker, task, task_run_id, self._hints(task), task_registry)
+                        futures[future] = (task, worker, worker.lease_id, record.capability_lease_id)
                 if not futures:
                     if all(record.status in TERMINAL for record in self.records.values()):
                         break
@@ -446,7 +512,7 @@ class SwarmRuntime:
                     raise RuntimeError("任务图无法继续调度")
                 done, _ = wait(futures, timeout=0.2, return_when=FIRST_COMPLETED)
                 for future in done:
-                    task, worker, lease = futures.pop(future)
+                    task, worker, lease, capability_lease = futures.pop(future)
                     record = self.records[task.id]
                     if record.lease_id != lease:
                         raise RuntimeError("任务租约不匹配")
@@ -454,6 +520,18 @@ class SwarmRuntime:
                         state = future.result()
                         record.result = self._result(state)
                         record.status = state.status if state.status in {"blocked", "failed"} else "completed"
+                        try:
+                            self.fabric.publish_task(self.fabric.get_lease(capability_lease), record.result)
+                        except Exception as exc:  # noqa: BLE001 - 索引故障不能改写任务真实状态
+                            self.audit.append(
+                                "capability.publish.error",
+                                task=task.id,
+                                worker=worker.id,
+                                error=f"{type(exc).__name__}: {exc}"[:300],
+                            )
+                        record.evidence_refs = self.fabric.refs_for_task(task.id)
+                        record.result["evidence_refs"] = list(record.evidence_refs)
+                        record.result["capabilities"] = list(record.capability_snapshot)
                     except Exception as exc:  # noqa: BLE001 - 单任务失败不影响其余分支
                         record.status = "failed"
                         record.error = f"{type(exc).__name__}: {exc}"
@@ -461,6 +539,11 @@ class SwarmRuntime:
                         record.ended_at = time.time()
                         self.events.append({"event": "task.end", "task": task.id, "worker": worker.id, "status": record.status, "time": record.ended_at})
                         self.audit.append("swarm.task.end", task=task.id, worker=worker.id, status=record.status, error=record.error)
+                        self.fabric.release(capability_lease)
+                        self.audit.append("capability.release", task=task.id, worker=worker.id, lease=capability_lease)
+                        worker.capability_lease_id = ""
+                        worker.capabilities = ()
+                        record.capability_lease_id = ""
                         self.pool.release(worker, lease)
                         record.lease_id = ""
                         self._save()
@@ -479,14 +562,14 @@ class SwarmRuntime:
             f"检查点：`{self.checkpoint}`",
             f"审计：`{self.audit.path}`",
             "",
-            "| 任务 | 状态 | Worker | 尝试 | 发现 | Flag |",
-            "|---|---|---|---:|---:|---:|",
+            "| 任务 | 状态 | Worker | 能力 | 尝试 | 发现 | Flag |",
+            "|---|---|---|---|---:|---:|---:|",
         ]
         for task in self.tasks:
             record = self.records[task.id]
             facts = record.result.get("facts", {})
             lines.append(
-                f"| {task.id} | {record.status} | {record.worker_id or '-'} | {record.attempt} "
+                f"| {task.id} | {record.status} | {record.worker_id or '-'} | {', '.join(record.capability_ids) or '-'} | {record.attempt} "
                 f"| {len(facts.get('findings', []))} | {len(facts.get('flags', []))} |"
             )
         lines.extend(["", "## 任务工件", ""])
@@ -515,7 +598,19 @@ class SwarmRuntime:
             "checkpoint": str(self.checkpoint),
             "audit_path": str(self.audit.path),
             "report_paths": [str(self.config.report_dir / f"{self.run_id}_report.md"), str(self.config.report_dir / f"{self.run_id}_report.html")],
-            "tasks": {task.id: {"status": self.records[task.id].status, "worker": self.records[task.id].worker_id, "attempt": self.records[task.id].attempt, "result": self.records[task.id].result, "error": self.records[task.id].error} for task in self.tasks},
+            "tasks": {
+                task.id: {
+                    "status": self.records[task.id].status,
+                    "worker": self.records[task.id].worker_id,
+                    "attempt": self.records[task.id].attempt,
+                    "capabilities": list(self.records[task.id].capability_snapshot),
+                    "evidence_refs": list(self.records[task.id].evidence_refs),
+                    "result": self.records[task.id].result,
+                    "error": self.records[task.id].error,
+                }
+                for task in self.tasks
+            },
             "workers_created": len(self.pool.workers),
             "worker_reuses": sum(max(0, worker.completed - 1) for worker in self.pool.workers),
+            "capability_memory": self.fabric.memory_snapshot(),
         }

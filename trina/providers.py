@@ -111,8 +111,6 @@ class ProfileStore:
         self.path = path or Path(os.environ.get("TRINA_PROVIDERS_FILE") or Path.home() / ".trina" / "providers.json")
         self.profiles: dict[str, ProviderProfile] = {}
         self.active = ""
-        self.reasoning_effort = "default"
-        self.omp_model = ""
         if self.path.exists():
             raw = json.loads(self.path.read_text(encoding="utf-8"))
             if raw.get("version") != 2:
@@ -126,19 +124,11 @@ class ProfileStore:
                     raise ValueError("供应商连接名称重复")
                 self.profiles[item.id] = item
             self.active = raw.get("active", "")
-            self.reasoning_effort = raw.get("reasoning_effort", "default")
-            self.omp_model = str(raw.get("omp_model") or "")
-            from .llm.reasoning import LEVEL_LABELS
-            if self.reasoning_effort not in LEVEL_LABELS:
-                raise ValueError("默认思考档位无效")
             if self.active and self.active not in self.profiles:
                 raise ValueError("当前供应商连接不存在")
 
     def save(self) -> None:
         from dataclasses import asdict
-        from .llm.reasoning import LEVEL_LABELS
-        if self.reasoning_effort not in LEVEL_LABELS:
-            raise ValueError("默认思考档位无效")
         if self.active and self.active not in self.profiles:
             raise ValueError("当前供应商连接不存在")
         for profile in self.profiles.values():
@@ -147,7 +137,7 @@ class ProfileStore:
         fd, name = tempfile.mkstemp(prefix=".providers-", dir=self.path.parent)
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as stream:
-                json.dump({"version": 2, "active": self.active, "reasoning_effort": self.reasoning_effort, "omp_model": self.omp_model,
+                json.dump({"version": 2, "active": self.active,
                            "profiles": [asdict(p) for p in self.profiles.values()]}, stream, ensure_ascii=False, indent=2)
                 stream.write("\n")
             os.chmod(name, 0o600)

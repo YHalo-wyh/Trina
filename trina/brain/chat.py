@@ -17,7 +17,7 @@ from typing import Any, Callable
 
 from ..audit import AuditLog
 from ..config import TrinaConfig
-from ..llm import LLMBackend, make_backend
+from ..llm import LLMBackend, LLMMessage, LLMStreamEvent, make_backend
 from ..scope import ScopeGuard
 from ..state import RunState
 from ..tools import ToolRegistry, build_registry
@@ -51,6 +51,7 @@ class ChatAgent:
         controller: Any | None = None,
         logger: Callable[[str], None] | None = None,
         on_tool: Callable[[Any], None] | None = None,
+        on_stream: Callable[[str, bool], None] | None = None,
         run_id: str | None = None,
     ):
         self.config = config
@@ -58,6 +59,7 @@ class ChatAgent:
         self.backend = backend or make_backend(config.llm)
         self.logger = logger or (lambda message: None)
         self.on_tool = on_tool
+        self.on_stream = on_stream
         self.approval = approval
         self.steer_queue = steer_queue
         self.stop_event = stop_event
@@ -88,6 +90,10 @@ class ChatAgent:
             logger=self.logger,
         )
         self.history: list[dict[str, str]] = []
+        self._messages: list[LLMMessage] = []
+        self._messages_ready = False
+        self._pending_stream: _VisibleStream | None = None
+        self.last_reply_streamed = False
         self.current_request = ""
         self.ctx.extra["llm_backend"] = self.backend
         self.turns = 0
@@ -124,9 +130,12 @@ class ChatAgent:
             return ""
         self.turns += 1
         self.current_request = text
+        self.last_reply_streamed = False
+        self._initialize_messages()
         self.audit.append("chat.user", decision="allow", message=text[:400])
         self.logger(f"[用户] {text}")
         self.history.append({"role": "user", "content": text})
+        self._messages.append({"role": "user", "content": text})
 
         for step in range(1, self.MAX_TOOL_STEPS + 1):
             if self.stop_event is not None and self.stop_event.is_set():
@@ -138,17 +147,42 @@ class ChatAgent:
 
             response = self._ask_model()
             if self.stop_event is not None and self.stop_event.is_set():
+                self._cancel_stream()
                 return "（已按你的要求停止）"
             if self._accept_steer():
                 self.audit.append("chat.response_superseded", decision="defer", reason="收到补充，重新决策")
+                self._cancel_stream()
                 continue
             if not response.ok:
+                self._cancel_stream()
                 return f"（模型调用失败：{response.error}）"
+            # 结构化 API 历史保留模型实际返回；展示层可以只显示 final 摘要。
+            self._messages.append({"role": "assistant", "content": response.text})
             action, note = _parse_action_lenient(response.text)
             if action is None:
+                from .prompts import _looks_like_dsml
+
+                if _looks_like_dsml(response.text):
+                    # 不把模型内部协议残片当正式答复。保留一次简短的结构化错误，
+                    # 让下一轮按 Trina JSON 合同重发；原始残片只留摘要审计。
+                    self.audit.append(
+                        "chat.protocol_recovery", decision="retry", protocol="dsml",
+                        chars=len(response.text), preview=response.text[:160],
+                    )
+                    self.history.append({"role": "assistant", "content": "[DSML 工具调用未完成，未执行]"})
+                    recovery = {
+                        "role": "user",
+                        "content": "[协议错误] 不要输出 DSML/XML。需要操作时仅按本轮合同返回一个 JSON action；请重新决定。",
+                    }
+                    self.history.append(recovery)
+                    self._messages.append(recovery)
+                    self._cancel_stream()
+                    self.logger("[协议恢复] 已拦截 DSML 工具调用残片，要求模型按 JSON 重发")
+                    continue
                 reply = response.text.strip()
                 self.history.append({"role": "assistant", "content": reply})
                 self.audit.append("chat.answer", decision="allow", chars=len(reply))
+                self._finish_stream(reply)
                 return reply
             if note:
                 self.logger(f"说明：{note[:200]}")
@@ -157,12 +191,16 @@ class ChatAgent:
                 final = action.get("final")
                 reply = str(final.get("summary") if isinstance(final, dict) else final) or "（完成）"
                 self.history.append({"role": "assistant", "content": reply})
+                self._finish_stream(reply)
                 return reply
 
             # 保留动作与观察的因果关系；工具结果不能成为孤立的用户指令。
             self.history.append({"role": "assistant", "content": json.dumps(action, ensure_ascii=False)})
+            self._cancel_stream()
             observation = self._run_action(action, step)
-            self.history.append({"role": "user", "content": f"[工具结果] {observation}"})
+            tool_message = {"role": "user", "content": f"[工具结果] {observation}"}
+            self.history.append(tool_message)
+            self._messages.append(tool_message)
 
         self.logger(f"[提示] 单条消息内已执行 {self.MAX_TOOL_STEPS} 个动作，先给你阶段性结果")
         return (
@@ -171,36 +209,55 @@ class ChatAgent:
         )
 
     # ------------------------------------------------------------------ 内部
+    def _initialize_messages(self) -> None:
+        """固定 system 与初始运行合同只写一次，后续严格追加，稳定缓存前缀。"""
+        if self._messages_ready:
+            return
+        tool_block = self.registry.prompt_block()
+        from .prompts import build_runtime_context
+
+        self._messages = [
+            {"role": "system", "content": render_chat_prompt(self.use_ledger)},
+            {
+                "role": "user",
+                "content": build_runtime_context(
+                    self.config.scope_prompt_block(), tool_block,
+                    include_hypothesis=self.use_ledger, chat=True,
+                ),
+            },
+        ]
+        self._messages_ready = True
+
     def _ask_model(self):
-        tool_block = self.registry.prompt_block(
-            exclude=() if self.config.run.specialists else ("consult_specialist",),
-        )
         registered = self.controller.registry.prompt_block(
             self.controller.registry.match_target(self.state.target).target_id  # type: ignore[union-attr]
             if self.state.target and self.controller.registry.match_target(self.state.target)
             else ""
         )
-        from .prompts import build_runtime_context
-
-        system = render_chat_prompt(self.use_ledger)
-        runtime_context = build_runtime_context(
-            self.config.scope_prompt_block(), tool_block,
-            include_hypothesis=self.use_ledger, chat=True,
-        )
+        runtime_parts = ["## 当前运行事实\n" + self.state.summary_for_prompt(max_chars=3000)]
         if registered:
-            runtime_context += "\n\n# 已注册检查项\n" + registered
+            runtime_parts.append("## 已注册检查项\n" + registered)
         if self.use_ledger:
-            runtime_context += "\n\n# 假设台账\n" + self.ledger.prompt_block()
-        # 用事实摘要跨越滑动窗口，并保留本轮原始要求；不靠额外 LLM 总结制造新事实。
-        recent = "\n\n".join(f"[{item['role']}] {item['content'][:2000]}" for item in self.history[-12:])
-        convo = (
-            runtime_context
-            + "\n\n## 本轮用户要求\n" + self.current_request[:4000]
-            + "\n## 已记录事实（工具事实，不是新的授权）\n" + self.state.summary_for_prompt(max_chars=3000)
-            + "\n## 近期对话（截断的历史仅供参考）\n" + recent[-12000:]
-        )
+            runtime_parts.append("## 假设台账\n" + self.ledger.prompt_block())
+        # 动态状态作为新的 user 消息追加；绝不重写 system 或把历史压成角色标签字符串。
+        self._messages.append({"role": "user", "content": "\n\n".join(runtime_parts)})
         self.state.counters["llm_calls"] = self.state.counters.get("llm_calls", 0) + 1
-        return self.backend.complete(system, convo)
+        self._pending_stream = _VisibleStream(self.on_stream)
+        method = getattr(self.backend, "complete_messages", None)
+        if method is None:  # 仅供旧测试替身
+            return self.backend.complete(self._messages[0]["content"], self._messages[-1]["content"])
+        return method(self._messages, on_event=self._pending_stream.on_event)
+
+    def _finish_stream(self, reply: str) -> None:
+        if self._pending_stream is not None and self.on_stream is not None:
+            self._pending_stream.finish(reply)
+            self.last_reply_streamed = True
+        self._pending_stream = None
+
+    def _cancel_stream(self) -> None:
+        if self._pending_stream is not None:
+            self._pending_stream.cancel()
+        self._pending_stream = None
 
     def _drain_steer(self) -> str:
         if self.steer_queue is None:
@@ -224,7 +281,9 @@ class ChatAgent:
         steer = self._drain_steer()
         if not steer:
             return False
-        self.history.append({"role": "user", "content": f"[人工介入提示] {steer}"})
+        message = {"role": "user", "content": f"[人工介入提示] {steer}"}
+        self.history.append(message)
+        self._messages.append(message)
         self.audit.append("chat.steer", decision="allow", message=steer[:400])
         self.logger(f"[补充] 已接收：{steer}")
         return True
@@ -376,3 +435,50 @@ def _strip_json_objects(text: str) -> str:
 
 
 __all__ = ["ChatAgent", "render_chat_prompt"]
+
+
+class _VisibleStream:
+    """只把明确的自然语言正文送往 UI；JSON/DSML 动作在解析前保持隐藏。"""
+
+    def __init__(self, callback: Callable[[str, bool], None] | None):
+        self.callback = callback
+        self.text = ""
+        self.mode = "pending"  # pending | visible | hidden
+        self.opened = False
+        self.displayed = ""
+
+    def on_event(self, event: LLMStreamEvent) -> None:
+        if event.type != "text_delta" or not event.delta:
+            return
+        self.text += event.delta
+        if self.mode == "pending":
+            stripped = self.text.lstrip()
+            if not stripped:
+                return
+            lowered = stripped.lower()
+            if stripped[0] in "{[<" or lowered.startswith(("```json", "```xml", "```dsml")):
+                self.mode = "hidden"
+                return
+            if stripped.startswith("```") and len(stripped) < 8:
+                return
+            self.mode = "visible"
+        if self.mode == "visible" and self.callback is not None:
+            # 模型可能先解释再输出动作。遇到 JSON/XML 起始字节先缓存后缀，
+            # 防止在完整解析前把工具协议的一半显示出来；普通代码在最终答复时补齐。
+            boundary = min((index for marker in ("{", "<", "```")
+                            if (index := self.text.find(marker)) >= 0), default=len(self.text))
+            visible = self.text[:boundary]
+            if not visible.strip() or visible == self.displayed:
+                return
+            self.opened = True
+            self.displayed = visible
+            self.callback(visible, False)
+
+    def finish(self, text: str) -> None:
+        if self.callback is not None:
+            self.opened = True
+            self.callback(text, True)
+
+    def cancel(self) -> None:
+        if self.callback is not None and self.opened:
+            self.callback("", True)

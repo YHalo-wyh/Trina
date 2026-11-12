@@ -26,8 +26,6 @@ def reasoning_support(config: LLMConfig) -> ReasoningSupport:
     model = config.model.lower().split("/")[-1]
     host = urlsplit(config.base_url).hostname or ""
     common = ("default", "low", "medium", "high")
-    if config.backend == "omp":
-        return ReasoningSupport("omp", tuple(LEVEL_LABELS))
     if config.backend != "openai":
         return ReasoningSupport("none", ("default",))
     # 固定思考 / 非思考型号不应显示无法生效的开关。

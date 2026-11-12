@@ -31,7 +31,7 @@ scope:
   resolve_dns: true
 
 llm:
-  # omp: 复用 omp 已配置的模型与鉴权；openai: OpenAI 兼容端点；replay: 离线回放（测试）
+  # openai: 标准 OpenAI/Anthropic/Responses API；replay: 离线回放（测试）
   # 当前接 DeepSeek 官方 API（OpenAI 兼容）；密钥由 /model 供应商配置或 DEEPSEEK_API_KEY 提供。
   backend: openai
   model: deepseek-flash
@@ -48,6 +48,14 @@ llm:
   # OpenAI 兼容后端参数（backend=openai 时生效）
   base_url: "https://api.deepseek.com/v1"
   api_key_env: "DEEPSEEK_API_KEY"
+  # 模型协议：auto=后端支持就用原生 Tool Calling；json=只用 JSON Action；native=强制原生
+  tool_protocol: auto
+  # 原生协议被供应商拒绝时只在本次运行内降级一次（不无限重试）
+  tool_protocol_fallback: true
+  # 提示词分层：true=Core/Role 进 system、任务契约进首条 user、状态逐轮追加
+  prompt_layers: false
+  # 角色配置（默认空：只保留机器协议，不带人格）
+  role_profile: ""
 
 run:
   workspace: "runs"
@@ -68,11 +76,6 @@ run:
   hypothesis_scheduler: true
   # 参与调度的最低优先级
   scheduler_min_priority: 0.15
-  # 按需咨询专职 Agent：建议交回主控，执行仍经注册表、控制器与人工审批；默认关闭以便对照评测
-  specialists: false
-  specialist_max_calls: 3
-  specialist_max_tokens: 1200
-  specialist_context_chars: 6000
   phases: ["recon", "enum", "vuln", "exploit", "post", "report"]
 
 tools:

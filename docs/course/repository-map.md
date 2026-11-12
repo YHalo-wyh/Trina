@@ -20,9 +20,9 @@
 | 范围和高风险动作在哪里拒绝 | `trina/scope.py`，HTTP 和外部工具包装器 | `tests/test_scope.py`、`test_http.py`，护栏手册 |
 | 工具怎样装配和执行 | `trina/tools/__init__.py`、`registry.py` 及 recon/web/vuln/exploit/creds | `tests/test_registry.py`、`test_probe_integrity.py` |
 | 事实和假设怎样区分 | `trina/state.py`、`trina/hypotheses.py`、`brain/failure.py` | `tests/test_state.py`、`test_insight.py`、`test_decision_evidence.py` |
-| 下一检查如何调度 | `trina/brain/scheduler.py` 和主控调用处 | `tests/test_collaboration.py`、`test_insight.py`，ADR-0016/0018 |
-| 子角色能做什么 | `trina/collaboration.py`、`trina/tools/specialists.py` | `tests/test_collaboration.py`，ADR-0017 |
-| 模型与回放怎样接入 | `trina/llm/base.py`、`omp_backend.py`、`openai_backend.py`、`replay_backend.py` | 录制回归和固定决策验证，不以模型目录等同真实连通性 |
+| 下一检查如何调度 | `trina/brain/scheduler.py` 和主控调用处 | `tests/test_runtime_contracts.py`、`test_insight.py`，ADR-0016/0018 |
+| 能力如何绑定与回收 | `trina/capabilities/` | `tests/test_capabilities.py`，ADR-0021；旧专职咨询已移除 |
+| 模型与回放怎样接入 | `trina/llm/base.py`、`openai_backend.py`、`replay_backend.py` | 录制回归和固定决策验证，不以模型目录等同真实连通性 |
 | 证据如何保存和展示 | `trina/audit.py`、`evidence_graph.py`、`board.py`、`report/`、`review.py` | `tests/test_audit.py`、`test_eval_report_lab.py` |
 | 靶机和评测怎样运行 | `trina/lab/`、`trina/adapters/`、`trina/eval/` | `scripts/verify_decision_evidence.py`、评测场景 YAML |
 | 规格引用如何保持有效 | `docs/course/traceability.json`、`scripts/verify_course_pack.py` | 课程文档检查及隔离坏引用试验 |

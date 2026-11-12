@@ -1,15 +1,17 @@
-"""LLM 后端抽象：omp / OpenAI 兼容 / 离线回放。
+"""LLM 后端抽象：结构化消息、规范化流事件与离线回放。
 
-统一契约：`complete(system, user) -> LLMResponse`。
-大脑只依赖该接口，因此可以：用 omp 跑真实决策、用回放做确定性测试、用第三方 API 做横向对比。
+生产调用使用 ``complete_messages(messages)``：对话历史始终保持标准
+``role/content`` 结构，由具体 API 方言翻译成模型原生请求。``complete`` 只保留给
+健康检查和旧测试使用，不参与 Agent 的多轮上下文拼装。
 """
 
 from __future__ import annotations
 
+import json
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Callable, Literal, TypedDict
 
 from ..config import LLMConfig
 
@@ -137,6 +139,36 @@ class LLMUsage:
 
 
 @dataclass
+class ToolCall:
+    """一次模型原生工具调用（OpenAI/DeepSeek tool_calls 的规范化形态）。
+
+    ``arguments`` 保留原始 JSON 字符串，便于原样回填进 assistant 消息——
+    思考型模型要求把上一轮的 tool_calls 结构完整带回，重新序列化会破坏供应商缓存。
+    """
+
+    id: str
+    name: str
+    arguments: str = "{}"
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "type": "function",
+            "function": {"name": self.name, "arguments": self.arguments or "{}"},
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "ToolCall":
+        function = data.get("function") if isinstance(data.get("function"), dict) else {}
+        return cls(
+            id=str(data.get("id") or ""),
+            name=str(function.get("name") or data.get("name") or ""),
+            arguments=function.get("arguments") if isinstance(function.get("arguments"), str)
+            else json.dumps(function.get("arguments") or data.get("arguments") or {}, ensure_ascii=False),
+        )
+
+
+@dataclass
 class LLMResponse:
     text: str = ""
     ok: bool = True
@@ -144,16 +176,53 @@ class LLMResponse:
     usage: LLMUsage = field(default_factory=LLMUsage)
     duration: float = 0.0
     raw: dict[str, Any] = field(default_factory=dict)
+    #: 原生工具调用（按模型给出的顺序）；为空表示这是纯文本响应
+    tool_calls: list[ToolCall] = field(default_factory=list)
+    #: 思考型模型的思维链（DeepSeek reasoning_content / Anthropic thinking）
+    reasoning: str = ""
+    #: 结束原因（stop / tool_calls / length / content_filter）
+    finish_reason: str = ""
 
     @property
     def empty(self) -> bool:
-        return not self.text.strip()
+        return not self.text.strip() and not self.tool_calls
+
+
+class _RequiredMessage(TypedDict):
+    role: Literal["system", "user", "assistant", "tool"]
+    content: str
+
+
+class LLMMessage(_RequiredMessage, total=False):
+    """跨后端的标准消息；禁止用带角色标签的字符串替代。
+
+    ``tool`` 角色只用于原生工具调用的结果回灌；``tool_calls`` / ``reasoning_content``
+    是思考型模型续写同一轮时必须原样带回的字段。
+    """
+
+    tool_calls: list[dict[str, Any]]
+    tool_call_id: str
+    reasoning_content: str
+
+
+@dataclass(frozen=True)
+class LLMStreamEvent:
+    """对 UI 暴露的最小流协议，隐藏各供应商 SSE 方言。"""
+
+    type: Literal["start", "text_delta", "thinking_delta", "done", "error"]
+    delta: str = ""
+    response: LLMResponse | None = None
+
+
+StreamCallback = Callable[[LLMStreamEvent], None]
 
 
 class LLMBackend(ABC):
-    """所有后端的基类。实现方只关心「给定提示词，返回文本 + 用量」。"""
+    """所有后端的基类。生产实现必须保留消息边界。"""
 
     name: str = "base"
+    #: 是否支持把 ``tools`` 透传给供应商的原生 Tool Calling
+    supports_native_tools: bool = False
 
     def __init__(self, config: LLMConfig):
         self.config = config
@@ -170,6 +239,37 @@ class LLMBackend(ABC):
         max_tokens: int | None = None,
     ) -> LLMResponse:
         ...
+
+    def complete_messages(
+        self,
+        messages: list[LLMMessage],
+        *,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        on_event: StreamCallback | None = None,
+        tools: list[dict[str, Any]] | None = None,
+    ) -> LLMResponse:
+        """兼容只实现旧接口的离线后端。
+
+        真实网络后端必须覆盖此方法并直接发送 ``messages``。这里不把整段历史拼成
+        ``USER:/ASSISTANT:`` 字符串，只取标准 system 与最后一条 user，供 Replay
+        和测试替身继续工作。
+
+        ``tools`` 由不支持原生调用的后端忽略——调用方据此判定是否需要回退 JSON 协议。
+        """
+        del tools
+        system = next((item["content"] for item in messages if item["role"] == "system"), "")
+        user = next((item["content"] for item in reversed(messages) if item["role"] == "user"), "")
+        if on_event is not None:
+            on_event(LLMStreamEvent("start"))
+        response = self.complete(system, user, temperature=temperature, max_tokens=max_tokens)
+        if on_event is not None:
+            if response.ok and response.text:
+                on_event(LLMStreamEvent("text_delta", delta=response.text))
+                on_event(LLMStreamEvent("done", response=response))
+            else:
+                on_event(LLMStreamEvent("error", delta=response.error, response=response))
+        return response
 
     def _tally(self, response: LLMResponse) -> LLMResponse:
         self.ledger = self.ledger.merge(response.usage)
@@ -196,10 +296,6 @@ class LLMBackend(ABC):
 
 def make_backend(config: LLMConfig) -> LLMBackend:
     """按配置构造后端（延迟导入避免循环依赖）。"""
-    if config.backend == "omp":
-        from .omp_backend import OmpBackend
-
-        return OmpBackend(config)
     if config.backend == "openai":
         from .openai_backend import OpenAICompatBackend
 
@@ -211,4 +307,7 @@ def make_backend(config: LLMConfig) -> LLMBackend:
     raise ValueError(f"未知 LLM 后端: {config.backend!r}")
 
 
-__all__ = ["LLMBackend", "LLMResponse", "LLMUsage", "make_backend"]
+__all__ = [
+    "LLMBackend", "LLMMessage", "LLMResponse", "LLMStreamEvent", "LLMUsage",
+    "StreamCallback", "ToolCall", "make_backend",
+]

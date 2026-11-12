@@ -81,6 +81,38 @@ class TestTerminalUI(unittest.TestCase):
             )
         self.assertIsNotNone(editor.buffer.completer)
         self.assertTrue(editor.app.full_screen)
+        self.assertTrue(editor.app.mouse_support())
+
+    def test_transcript_mouse_scroll_locks_history_until_returning_to_latest(self):
+        from prompt_toolkit.application.current import create_app_session
+        from prompt_toolkit.data_structures import Point
+        from prompt_toolkit.input import create_pipe_input
+        from prompt_toolkit.mouse_events import MouseButton, MouseEvent, MouseEventType
+        from prompt_toolkit.output import DummyOutput
+
+        from trina.console_ui import EnhancedConsoleInput
+
+        with create_pipe_input() as pipe_input, create_app_session(input=pipe_input, output=DummyOutput()):
+            editor = EnhancedConsoleInput(
+                status=lambda: "就绪", running=lambda: False,
+                dynamic_values=lambda _command, _args: (), plain=True,
+            )
+            editor.write("\n".join(f"消息 {index}" for index in range(30)))
+            editor._transcript()
+            wheel_up = MouseEvent(
+                Point(x=0, y=0), MouseEventType.SCROLL_UP,
+                MouseButton.NONE, frozenset(),
+            )
+            self.assertIsNone(editor.transcript_control.mouse_handler(wheel_up))
+            self.assertEqual(editor._scrollback, 3)
+            self.assertIn("Ctrl+End", "".join(text for _, text in editor._activity()))
+
+            # 阅读历史时，新输出不得把视口拉回底部。
+            editor.write("新输出")
+            self.assertGreater(editor._scrollback, 3)
+            editor._scroll_to_latest()
+            self.assertEqual(editor._scrollback, 0)
+            self.assertEqual(editor._activity(), [])
 
     def test_transcript_reflows_existing_panels_after_resize(self):
         from prompt_toolkit.application.current import create_app_session

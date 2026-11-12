@@ -2,7 +2,7 @@
   "schema_version": 1,
   "contract_id": "trina-product-contract",
   "product_version": "0.3.0",
-  "updated_at": "2026-11-11",
+  "updated_at": "2026-11-12",
   "normative_document": "规约.md",
   "requirements_document": "需求.md",
   "verification_commands": {
@@ -147,6 +147,12 @@
           "level": "MUST",
           "statement": "模型未调用或供应商未报告字段时，底栏不得显示零值或未知占位。",
           "tests": ["tests.test_console_session.ConsoleSessionTests.test_footer_before_any_call_is_hidden"]
+        },
+        {
+          "id": "TR-03-R03",
+          "level": "MUST",
+          "statement": "增强终端必须原位更新流式正文，结束后不得重复答复，也不得清空未发送输入；工具协议不进入正式输出。",
+          "tests": ["tests.test_llm_streaming.StreamingTests.test_terminal_replaces_one_stream_card_and_keeps_draft", "tests.test_llm_streaming.StreamingTests.test_chat_history_is_append_only_and_protocol_is_not_streamed"]
         }
       ]
     },
@@ -155,13 +161,13 @@
       "title": "单 Agent 逐步研究",
       "priority": "P0",
       "status": "implemented",
-      "implementation": ["trina/brain/agent.py", "trina/brain/chat.py", "trina/brain/prompts.py", "trina/collaboration.py"],
+      "implementation": ["trina/brain/agent.py", "trina/brain/chat.py", "trina/brain/prompts.py", "trina/llm/openai_backend.py"],
       "verification": ["V-CONTRACT", "V-TESTS"],
       "rules": [
         {
           "id": "TR-04-R01",
           "level": "MUST",
-          "statement": "任务 Agent、对话 Assistant 与专职 Agent 必须共用含七个模块的最高权限安全工程师系统提示词。",
+          "statement": "任务 Agent、对话 Assistant 与通用 Worker 必须共用含七个模块的最高权限安全工程师系统提示词。",
           "tests": ["tests.test_brain.TestParseAction.test_system_messages_define_the_security_engineer_modules"]
         },
         {
@@ -169,6 +175,12 @@
           "level": "MUST",
           "statement": "动态工具、范围、事实与预算必须作为本轮运行数据传入，不得固化为陈旧 system 内容。",
           "tests": ["tests.test_brain.TestReActLoop.test_agent_sends_security_system_and_runtime_contract_as_user_data"]
+        },
+        {
+          "id": "TR-04-R03",
+          "level": "MUST",
+          "statement": "多轮请求必须使用标准结构化消息，system 与历史前缀保持稳定，动态状态只追加；Chat、Messages 与 Responses 使用各自原生字段，未收到终止事件的流不得判为成功。",
+          "tests": ["tests.test_llm_streaming.StreamingTests.test_chat_preserves_roles_streams_before_terminal_and_tallies_once", "tests.test_llm_streaming.StreamingTests.test_native_api_dialects_keep_conversation_structured", "tests.test_llm_streaming.StreamingTests.test_missing_terminal_or_responses_incomplete_never_succeeds"]
         }
       ]
     },
@@ -244,7 +256,7 @@
           "id": "TR-08-R02",
           "level": "MUST",
           "statement": "状态替换失败时必须保留上一份可解析快照。",
-          "tests": ["tests.test_collaboration.TestCollaboration.test_atomic_save_keeps_previous_snapshot_when_replace_fails"]
+          "tests": ["tests.test_runtime_contracts.RuntimeContractTests.test_atomic_save_keeps_previous_snapshot_when_replace_fails"]
         }
       ]
     },
@@ -285,14 +297,19 @@
       "title": "能力装配",
       "priority": "P1",
       "status": "implemented",
-      "implementation": ["trina/swarm.py", "trina/tools/registry.py"],
+      "implementation": ["trina/swarm.py", "trina/capabilities/catalog.py", "trina/capabilities/broker.py", "trina/capabilities/runtime.py"],
       "verification": ["V-CONTRACT", "V-TESTS"],
       "rules": [
         {
           "id": "TR-11-R01",
           "level": "MUST",
-          "statement": "每个任务只能看到其能力映射允许的注册工具类别，子集构造不得被此前全量注册污染。",
-          "tests": ["tests.test_registry.TestRegistry.test_module_subset_is_not_polluted_by_previous_full_build"]
+          "statement": "能力必须按清单发现并固定版本快照，Guidance 仅租用时加载；任务只能通过有效能力租约调用统一注册表。释放后旧租约立即失效，跨 Worker 只发布隔离的证据引用。",
+          "tests": [
+            "tests.test_capabilities.CapabilityFabricTests.test_manifest_is_discovered_without_core_change_and_guidance_is_jit",
+            "tests.test_capabilities.CapabilityFabricTests.test_worker_switches_capability_and_released_lease_cannot_be_reused",
+            "tests.test_capabilities.CapabilityFabricTests.test_two_workers_reuse_definition_and_publish_independent_evidence_refs",
+            "tests.test_capabilities.CapabilityFabricTests.test_mcp_stdio_manifest_invokes_real_server_through_registry"
+          ]
         }
       ]
     },

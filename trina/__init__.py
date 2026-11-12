@@ -4,7 +4,7 @@
     trina.config    配置模型（同时是合规护栏的数据源）
     trina.scope     执行信任模式：默认 full，可切换 restricted
     trina.audit     审计哈希链：全程留痕、可校验
-    trina.llm       大模型后端：omp / openai 兼容 / 离线回放
+    trina.llm       大模型后端：标准 API 流式传输 / 离线回放
     trina.tools     工具集：recon / web / vuln / exploit
     trina.brain     ReAct 决策大脑 + PTES 阶段机 + 事实记忆
     trina.adapters  靶场适配：local / docker-compose / pikachu / dvwa / vulhub / vulnstack / tsecbench

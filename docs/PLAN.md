@@ -1,6 +1,6 @@
 # Trina · 全自动渗透测试 Agent —— 总体方案与实施计划
 
-> 代号 **Trina (Pentest AI)**。使用自研决策与执行链，支持可替换模型后端；可选 omp 集成提供模型接入与鉴权；
+> 代号 **Trina (Pentest AI)**。使用自研决策与执行链，支持可替换模型后端；模型通过标准 API 直接接入，OMP 仅保留可选工具扩展；
 > Trina 提供渗透决策大脑、工具执行内核、靶场适配、信任模式、报告与评测。
 
 ---
@@ -40,7 +40,7 @@ flowchart TB
         MEM["事实记忆: hosts/services/findings/creds/flags"]
     end
     subgraph CORE["执行内核"]
-        LLM["LLM 后端: omp -p 优先 / OpenAI 兼容 / 回放"]
+        LLM["LLM 后端: 标准 API 流式响应 / 回放"]
         REG["工具注册表 (单一收口)"]
         GUARD["ScopeGuard 护栏"]
         AUDIT["审计链 JSONL"]
@@ -79,7 +79,7 @@ flowchart TB
 | 决策 | 理由 | 代价 |
 |---|---|---|
 | **决策大脑自研 Python ReAct**，而不用 omp 内建 agent loop | 护栏、审计、指标、超时可确定性控制；评测可复现；不依赖交互式 TUI | 需自己写循环与提示词工程 |
-| **LLM 走 `omp -p --mode=json`** | 复用 omp 已配置模型与密钥，零 API Key 管理；JSONL 带 usage/cost 可入报告 | 每次调用 ~3s 进程启动开销 |
+| **LLM 使用标准消息与 SSE** | 保留模型原生角色模板，稳定前缀，正文即时显示 | 各 API 方言分别解析终止事件，不能把半截响应当作成功 |
 | **动作协议用文本 JSON**（而非原生 function-calling） | 跨模型可移植；单步可校验、可回放；便于审计"思考-动作-观察"三元组 | 需解析容错（已实现多级回退解析） |
 | **工具「外部二进制优先 + 内置 Python 引擎兜底」** | 实测 WSL 内无 nmap/nuclei/sqlmap/hydra；评测必须能跑 | 内置引擎能力弱于专业工具（明确标注覆盖边界） |
 | **护栏收口在 `ToolRegistry.execute()` 单点** | 不可能绕过：所有工具（含 LLM 直接发起的）都必经此处 | 新工具必须注册而非直连 |
@@ -116,7 +116,7 @@ flowchart TB
 │   ├── config.py             配置模型
 │   ├── scope.py              合规护栏（唯一放行判据）
 │   ├── audit.py              审计哈希链
-│   ├── llm/                  omp / openai-compat / replay 后端
+│   ├── llm/                  标准 API / replay 后端
 │   ├── tools/                工具实现 + 注册表
 │   ├── brain/                ReAct、提示词、阶段机、记忆
 │   ├── adapters/             靶场适配

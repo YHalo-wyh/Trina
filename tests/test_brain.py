@@ -72,6 +72,23 @@ class TestParseAction(unittest.TestCase):
         text = '{"thought": "payload 里有 } 和 {", "action": "sqli_test", "params": {"url": "http://x/?a={\\"b\\":1}"}}'
         self.assertEqual(parse_action(text)["action"], "sqli_test")
 
+    def test_complete_dsml_tool_call_is_recovered_as_action(self):
+        text = (
+            '<｜DSML｜tool_calls><｜DSML｜invoke name="poc_scan">'
+            '<｜DSML｜parameter name="params" string="false">'
+            '{"url":"https://example.test","hypothesis":{"statement":"验证入口","target":"example.test"}}'
+            '</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>'
+        )
+        action = parse_action(text)
+        self.assertEqual(action["action"], "poc_scan")
+        self.assertEqual(action["params"], {"url": "https://example.test"})
+        self.assertEqual(action["hypothesis"]["statement"], "验证入口")
+
+    def test_incomplete_dsml_is_protocol_error_not_plain_answer(self):
+        action = parse_action('<|DSML|invoke name="poc_scan"><|DSML|parameter name="params">{')
+        self.assertEqual(action.get("protocol"), "dsml")
+        self.assertIn("error", action)
+
     def test_garbage(self):
         action = parse_action("完全不是 JSON")
         self.assertIn("error", action)
@@ -371,31 +388,33 @@ class TestReActLoop(unittest.TestCase):
         agent = self._agent([
             {"response": '{"final": {"status": "partial", "summary": "done"}}'},
         ])
-        original = agent.backend.complete
-        calls: list[tuple[str, str]] = []
+        original = agent.backend.complete_messages
+        calls: list[list[dict[str, str]]] = []
 
-        def capture(system: str, user: str, **kwargs):
-            calls.append((system, user))
-            return original(system, user, **kwargs)
+        def capture(messages, **kwargs):
+            calls.append([dict(item) for item in messages])
+            return original(messages, **kwargs)
 
-        agent.backend.complete = capture  # type: ignore[method-assign]
+        agent.backend.complete_messages = capture  # type: ignore[method-assign]
         agent.run("127.0.0.1", max_steps=1)
         self.assertTrue(calls)
-        self.assertTrue(all("# Tool Policy" in system for system, _ in calls))
-        self.assertTrue(all("授予最高执行权限的安全工程师" in system for system, _ in calls))
-        self.assertIn('{"action"', calls[0][1])
-        self.assertIn("# 可用工具", calls[0][1])
+        self.assertTrue(all("# Tool Policy" in call[0]["content"] for call in calls))
+        self.assertTrue(all("授予最高执行权限的安全工程师" in call[0]["content"] for call in calls))
+        self.assertEqual([item["role"] for item in calls[0][:3]], ["system", "user", "user"])
+        self.assertIn('{"action"', calls[0][1]["content"])
+        self.assertIn("# 可用工具", calls[0][1]["content"])
+        self.assertNotIn("[user]", "\n".join(item["content"] for item in calls[0]))
 
     def test_commander_brief_is_visible_without_merging_foreign_facts(self):
         agent = self._agent([{"response": '{"final": {"status": "partial", "summary": "done"}}'}])
-        calls: list[str] = []
-        original = agent.backend.complete
+        calls: list[list[dict[str, str]]] = []
+        original = agent.backend.complete_messages
 
-        def capture(system: str, user: str, **kwargs):
-            calls.append(user)
-            return original(system, user, **kwargs)
+        def capture(messages, **kwargs):
+            calls.append([dict(item) for item in messages])
+            return original(messages, **kwargs)
 
-        agent.backend.complete = capture  # type: ignore[method-assign]
+        agent.backend.complete_messages = capture  # type: ignore[method-assign]
         brief = {
             "version": 1,
             "source_task": "other",
@@ -410,8 +429,9 @@ class TestReActLoop(unittest.TestCase):
             },
         }
         state = agent.run("127.0.0.1", max_steps=1, commander_briefs=[brief])
-        self.assertIn("Commander 转发情报", calls[0])
-        self.assertIn("other.test", calls[0])
+        prompt = "\n".join(item["content"] for item in calls[0])
+        self.assertIn("Commander 转发情报", prompt)
+        self.assertIn("other.test", prompt)
         self.assertNotIn("other.test", state.hosts)
         records = [json.loads(line) for line in Path(state.artifacts["audit_path"]).read_text(encoding="utf-8").splitlines()]
         self.assertTrue(any(item.get("event") == "context.commander.forward" for item in records))
@@ -421,12 +441,12 @@ class TestReActLoop(unittest.TestCase):
             {"response": '{"action": "fake_scan", "params": {"target": "127.0.0.1"}}'},
             {"response": '{"final": {"summary": "done"}}'},
         ])
-        prompts: list[str] = []
-        original = agent.backend.complete
+        prompts: list[list[dict[str, str]]] = []
+        original = agent.backend.complete_messages
 
-        def capture(system: str, user: str, **kwargs):
-            prompts.append(user)
-            return original(system, user, **kwargs)
+        def capture(messages, **kwargs):
+            prompts.append([dict(item) for item in messages])
+            return original(messages, **kwargs)
 
         calls = 0
         brief = {
@@ -445,10 +465,11 @@ class TestReActLoop(unittest.TestCase):
             calls += 1
             return [] if calls == 1 else [brief]
 
-        agent.backend.complete = capture  # type: ignore[method-assign]
+        agent.backend.complete_messages = capture  # type: ignore[method-assign]
         agent.run("127.0.0.1", max_steps=2, commander_brief_provider=provider)
-        self.assertNotIn("just-finished", prompts[0])
-        self.assertIn("just-finished", prompts[1])
+        self.assertNotIn("just-finished", "\n".join(item["content"] for item in prompts[0]))
+        self.assertIn("just-finished", "\n".join(item["content"] for item in prompts[1]))
+        self.assertEqual(prompts[1][:len(prompts[0])], prompts[0], "第二次请求必须严格继承第一次消息前缀")
 
     def test_minimal_actions_execute_without_thought_or_role_fields(self):
         agent = self._agent([

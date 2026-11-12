@@ -7,7 +7,7 @@ import unicodedata
 from dataclasses import dataclass, field
 from typing import Any
 
-from .llm.base import LLMBackend, LLMResponse, LLMUsage
+from .llm.base import LLMBackend, LLMMessage, LLMResponse, LLMUsage, StreamCallback
 
 
 def _number(value: int) -> str:
@@ -143,6 +143,39 @@ class TrackedBackend:
         response = None
         try:
             response = self.backend.complete(*args, **kwargs)
+            return response
+        finally:
+            self.view.model_finished(getattr(response, "usage", None))
+
+    def complete_messages(
+        self,
+        messages: list[LLMMessage],
+        *,
+        temperature: float | None = None,
+        max_tokens: int | None = None,
+        on_event: StreamCallback | None = None,
+        tools: list[dict[str, Any]] | None = None,
+    ) -> LLMResponse:
+        """保持结构化消息不变地委托，并只在终止响应处累计一次用量。"""
+        self.view.model_started()
+        response = None
+        try:
+            method = getattr(self.backend, "complete_messages", None)
+            if method is not None:
+                options = {"temperature": temperature, "max_tokens": max_tokens, "on_event": on_event}
+                if tools is not None:
+                    options["tools"] = tools
+                response = method(messages, **options)
+            else:
+                # 仅供旧测试替身；真实后端都实现 complete_messages。
+                system = next((item["content"] for item in messages if item["role"] == "system"), "")
+                user = next((item["content"] for item in reversed(messages) if item["role"] == "user"), "")
+                options = {}
+                if temperature is not None:
+                    options["temperature"] = temperature
+                if max_tokens is not None:
+                    options["max_tokens"] = max_tokens
+                response = self.backend.complete(system, user, **options)
             return response
         finally:
             self.view.model_finished(getattr(response, "usage", None))

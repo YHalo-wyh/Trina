@@ -3,12 +3,10 @@ from __future__ import annotations
 
 import io
 import json
-import subprocess
 import unittest
 from unittest.mock import patch
 
 from trina.config import LLMConfig
-from trina.llm.omp_backend import OmpBackend
 from trina.llm.openai_backend import OpenAICompatBackend
 from trina.llm.reasoning import reasoning_support
 
@@ -100,20 +98,6 @@ class ReasoningTests(unittest.TestCase):
                 self.assertEqual(reasoning_support(LLMConfig(backend="openai", model=model)).levels, ("default",))
         self.assertEqual(reasoning_support(LLMConfig(backend="openai", model="gpt-5.2-pro")).levels,
                          ("default", "medium", "high", "xhigh"))
-
-    def test_omp_passes_thinking_flag_and_keeps_tools_disabled(self):
-        backend = OmpBackend(LLMConfig(backend="omp", model="provider/model", reasoning_effort="high"))
-        event = {"type": "message_end", "message": {"role": "assistant", "content": [{"type": "text", "text": "OK"}]}}
-        proc = subprocess.CompletedProcess([], 0, stdout=json.dumps(event), stderr="")
-        with patch.object(backend, "available", return_value=True), patch("trina.llm.omp_backend.subprocess.run", return_value=proc) as run:
-            self.assertTrue(backend.complete("system", "user").ok)
-        argv = run.call_args.args[0]
-        self.assertEqual(argv[argv.index("--thinking") + 1], "high")
-        self.assertIn("--no-tools", argv)
-        self.assertIn("--no-session", argv)
-        self.assertEqual(argv[argv.index("--system-prompt") + 1], "system")
-        self.assertEqual(run.call_args.kwargs["input"], "user")
-
 
 if __name__ == "__main__":
     unittest.main()

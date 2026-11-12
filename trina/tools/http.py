@@ -7,7 +7,9 @@
 from __future__ import annotations
 
 import time
+import warnings
 from dataclasses import dataclass, field
+from html import unescape
 from typing import Any
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
@@ -58,7 +60,7 @@ class HttpResult:
             return ""
         start = lower.find(">", start) + 1
         end = lower.find("</title>", start)
-        return body[start:end].strip()[:120] if end > start else ""
+        return unescape(body[start:end].strip())[:120] if end > start else ""
 
     def excerpt(self, limit: int = 400) -> str:
         text = (self.body or "").replace("\r", "")
@@ -201,9 +203,17 @@ class HttpClient:
                     from ..scope import execution_budget
                     request_timeout = execution_budget(timeout or self.timeout)
                     settings = self.session.merge_environment_settings(prepared.url, {}, False, None, None)
-                    response = self.session.send(
-                        prepared, allow_redirects=False, timeout=request_timeout, **settings,
-                    )
+                    # 关闭 TLS 校验是靶场兼容选项；urllib3 的 InsecureRequestWarning
+                    # 不能越过展示边界污染全屏 TUI。仅在这一请求范围抑制该类别，
+                    # 其他网络告警仍照常出现。
+                    with warnings.catch_warnings():
+                        if self.session.verify is False:
+                            from urllib3.exceptions import InsecureRequestWarning
+
+                            warnings.simplefilter("ignore", InsecureRequestWarning)
+                        response = self.session.send(
+                            prepared, allow_redirects=False, timeout=request_timeout, **settings,
+                        )
                     break
                 except requests.exceptions.RequestException as exc:
                     if attempt >= retries:

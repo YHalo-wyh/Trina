@@ -48,7 +48,7 @@
 
 **目标与关联。** 覆盖 REQ-09、REQ-15。执行记录可校验，列明的审计、报告和子角色快照位置隐藏虚构测试口令，同时准确标识原始状态的敏感性。
 
-**输入、输出和资料。** 输入为 `trina/audit.py`、`Credential.to_dict`、报告生成和 `trina/tools/specialists.py`。输出为完整性试验、字段脱敏测试及 Raw/Derived/Masked 可见性表。
+**输入、输出和资料。** 输入为 `trina/audit.py`、`Credential.to_dict`、报告生成和 `trina/capabilities/broker.py`。输出为完整性试验、字段脱敏测试及 Raw/Derived/Masked 可见性表。
 
 **范围与依赖。** 依赖 TASK-01，独立于其他产品验证切片。只使用虚构靶场凭据；篡改试验操作独立副本。本次不得修改历史审计，不能把原始 state 宣称为已全面脱敏。
 
@@ -80,7 +80,7 @@
 
 **范围与依赖。** 依赖 TASK-03 对事实的定义。使用临时目录和替换失败注入，不改真实历史状态；本次不实现新的 resume、共享数据库或黑板。
 
-**验证。** 执行 `python -m unittest discover -s tests -p test_insight.py`、`test_collaboration.py`。检查状态 round-trip、替换失败保留旧文件、实时覆盖选择下一项、关闭调度不注入指令。
+**验证。** 执行 `python -m unittest discover -s tests -p test_insight.py`、`test_runtime_contracts.py`。检查状态 round-trip、替换失败保留旧文件、实时覆盖选择下一项、关闭调度不注入指令。
 
 **DoR / DoD。** 临时文件系统支持替换为 Ready；SC-N07/P05 对应输出可查，`executed` 的实际语义写明为 Done。URL/参数细粒度匹配不足保持 OQ-04 开放。
 

@@ -89,8 +89,8 @@ class ScopeConfig:
 
 @dataclass
 class LLMConfig:
-    backend: str = "omp"  # omp | openai | replay
-    model: str = "deepseek/deepseek-v4-flash"
+    backend: str = "openai"  # openai | replay
+    model: str = "deepseek-chat"
     timeout: int = 180
     temperature: float = 0.2
     max_tokens: int = 4096
@@ -104,12 +104,22 @@ class LLMConfig:
     reasoning_effort: str = "default"
     #: replay 后端读取的脚本路径（测试用）
     replay_script: str = ""
+    #: 模型协议：auto(后端支持就用原生 Tool Calling) | json(只用 JSON Action) | native(强制原生)
+    tool_protocol: str = "auto"
+    #: 原生协议被供应商拒绝时是否自动降级到 JSON Action（只降级一次，不无限重试）
+    tool_protocol_fallback: bool = True
+    #: 提示词分层：true 使用 Core/Role/Contract/Dynamic 四层；false 保持旧拼装（对照实验用）
+    prompt_layers: bool = False
+    #: 角色配置文本（默认空：Trina 不带人格，只保留机器协议）
+    role_profile: str = ""
 
     def validate(self) -> None:
-        if self.backend not in ("omp", "openai", "replay"):
-            raise ConfigError(f"llm.backend 必须是 omp|openai|replay，得到 {self.backend!r}")
+        if self.backend not in ("openai", "replay"):
+            raise ConfigError(f"llm.backend 必须是 openai|replay，得到 {self.backend!r}")
         if self.api not in ("chat", "anthropic", "responses"):
             raise ConfigError("llm.api 必须是 chat|anthropic|responses")
+        if self.tool_protocol not in ("auto", "json", "native"):
+            raise ConfigError("llm.tool_protocol 必须是 auto|json|native")
         from .llm.reasoning import LEVEL_LABELS
         if self.reasoning_effort not in LEVEL_LABELS:
             raise ConfigError("llm.reasoning_effort 档位无效")
@@ -134,23 +144,11 @@ class RunConfig:
     hypothesis_scheduler: bool = True
     #: 参与调度的最低优先级(低于它不占用一次调度)
     scheduler_min_priority: float = 0.15
-    #: 专职 Agent 只作建议，默认关闭，待真实任务对照评测后再决定是否默认启用。
-    specialists: bool = False
-    specialist_max_calls: int = 3
-    specialist_max_tokens: int = 1200
-    specialist_context_chars: int = 6000
     phases: list[str] = field(default_factory=lambda: ["recon", "enum", "vuln", "exploit", "post", "report"])
 
     def validate(self) -> None:
-        if type(self.specialists) is not bool:
-            raise ConfigError("run.specialists 必须为布尔值")
-        for name, lower, upper in (
-            ("specialist_max_calls", 0, 20), ("specialist_max_tokens", 128, 4096),
-            ("specialist_context_chars", 1000, 32000),
-        ):
-            value = getattr(self, name)
-            if type(value) is not int or not lower <= value <= upper:
-                raise ConfigError(f"run.{name} 必须是 {lower}–{upper} 范围内的整数")
+        if not self.phases or any(not isinstance(item, str) or not item for item in self.phases):
+            raise ConfigError("run.phases 必须是非空字符串列表")
 
 
 @dataclass
@@ -279,10 +277,6 @@ class TrinaConfig:
                 if selected not in store.profiles:
                     raise ConfigError(f"模型连接不存在: {selected}")
                 store.apply(cfg.llm, selected)
-            elif path is None:
-                if store.omp_model:
-                    cfg.llm.backend, cfg.llm.model = "omp", store.omp_model
-                    cfg.llm.reasoning_effort = store.reasoning_effort
         cfg = cls._apply_env(cfg)
         if overrides:
             cfg = cls._apply_overrides(cfg, overrides)
