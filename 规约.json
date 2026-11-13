@@ -2,7 +2,7 @@
   "schema_version": 1,
   "contract_id": "trina-product-contract",
   "product_version": "0.3.0",
-  "updated_at": "2026-11-12",
+  "updated_at": "2026-11-13",
   "normative_document": "规约.md",
   "requirements_document": "需求.md",
   "verification_commands": {
@@ -133,7 +133,7 @@
       "title": "品牌首页与可读终端输出",
       "priority": "P1",
       "status": "implemented",
-      "implementation": ["trina/banner.py", "trina/terminal.py", "trina/console_ui.py", "trina/transcript.py", "trina/session.py"],
+      "implementation": ["trina/banner.py", "trina/terminal.py", "trina/console_ui.py", "trina/transcript.py", "trina/session.py", "trina/interactive.py", "trina/chat_store.py", "trina/brain/chat.py"],
       "verification": ["V-CONTRACT", "V-TESTS"],
       "rules": [
         {
@@ -159,6 +159,27 @@
           "level": "MUST",
           "statement": "滚动不得重新解析稳定历史；流式更新只渲染变化块。鼠标拖选必须可复制 Unicode 文本且保留输入草稿，并可释放鼠标接管使用原生终端选取。",
           "tests": ["tests.test_transcript.TranscriptTests.test_scrolling_does_not_reparse_or_rerender_stable_history", "tests.test_transcript.TranscriptTests.test_drag_selection_copies_chinese_lines_and_keeps_input_draft", "tests.test_transcript.TranscriptTests.test_native_selection_mode_can_release_mouse_tracking"]
+        },
+        {
+          "id": "TR-03-R05",
+          "level": "MUST",
+          "statement": "/resume 必须检索并切换当前项目已保存的对话，恢复消息、上下文、事实与用量；保存事务失败保留旧快照，独占打开后读取最新记录，损坏或运行中不能切换，恢复不重放工具并沿用当前执行配置。",
+          "tests": [
+            "tests.test_chat_resume.ChatResumeTests.test_saved_chat_restores_messages_facts_ledger_usage_and_delta_baseline",
+            "tests.test_chat_resume.ChatResumeTests.test_recent_list_is_project_scoped_and_does_not_store_provider_configuration",
+            "tests.test_chat_resume.ChatResumeTests.test_active_chat_cannot_be_opened_twice_and_lock_releases_on_close",
+            "tests.test_chat_resume.ChatResumeTests.test_same_second_new_chats_get_distinct_ids_and_restore_uses_current_guard",
+            "tests.test_chat_resume.ChatResumeTests.test_resume_reads_latest_snapshot_after_exclusive_lock",
+            "tests.test_chat_resume.ChatResumeTests.test_corrupt_audit_refuses_resume_without_overwriting_history",
+            "tests.test_chat_resume.ChatResumeTests.test_restore_does_not_replay_executed_tool_or_revive_background_job",
+            "tests.test_chat_resume.ChatResumeTests.test_failed_sqlite_transaction_keeps_previous_snapshot",
+            "tests.test_chat_resume.ChatResumeTests.test_console_switches_by_number_and_restores_usage_without_model_call",
+            "tests.test_chat_resume.ChatResumeTests.test_corrupt_target_keeps_current_chat_and_running_resume_does_not_unpause",
+            "tests.test_chat_resume.ChatResumeTests.test_selector_is_searchable_and_cancel_keeps_current_chat",
+            "tests.test_chat_resume.ChatResumeTests.test_list_last_and_prefix_switch_without_rendering_tool_json_as_answer",
+            "tests.test_chat_resume.ChatResumeTests.test_compacted_chat_resumes_revision_and_preserves_original_instructions",
+            "tests.test_transcript.TranscriptTests.test_switching_chat_replaces_transcript_and_keeps_input_app"
+          ]
         }
       ]
     },

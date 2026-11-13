@@ -165,7 +165,8 @@ scripts/dev.sh play --target 127.0.0.1
 |---|---|---|
 | **对话式控制台** | `trina`（或 `trina console`） | **直接说人话**：需要动手时直接调用工具。默认 `full` 信任且人工审批关闭；只有显式 `--approve` 才进入确认。`/help` 看命令，`/model` 管理模型 |
 | 一条命令开打 | `trina play [--target T] [--range NAME] [--goal G] [--approve MODE]` | 自动准备靶场（默认内置 lab）→ 跑完整任务（含阶段机与结论/覆盖统计）→ 出报告 |
-| 运行中介入 | `hint <文本>`（或直接说人话）· `pause/resume` · `stop` · `status` · `/revoke <target_id>` 撤权 | 运行中说人话＝介入提示；显式开启审批后可用 `y/n`，**超时即拒绝** |
+| 历史对话 | `/resume` · `/resume list` · `/resume last` · `/resume <编号或ID>` | 搜索并切换当前项目的已保存聊天，恢复上下文、事实与用量；`/new` 开新对话 |
+| 运行中介入 | `hint <文本>`（或直接说人话）· `pause/unpause` · `stop` · `status` · `/revoke <target_id>` 撤权 | 运行中说人话＝介入提示；显式开启审批后可用 `y/n`，**超时即拒绝** |
 | 评价 Agent | `trina review [--state runs/<id>/state.json]` | 只读复核：缺证据的声明、结论一致性、覆盖缺口、边界事件、审计链 |
 
 > 对话模式与任务模式共用 `ToolRegistry`、执行超时和审计链。默认 `scope.trust_mode=full`、`approve=off`，不会逐目标或逐动作申请；显式切换 `restricted` 或 `--approve` 才启用对应限制。

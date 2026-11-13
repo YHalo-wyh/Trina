@@ -11,6 +11,8 @@
 
 ## ADR 一览
 
+历史对话与恢复：[ADR-0025](adr/0025-persistent-chat-resume.md) 记录项目隔离的 SQLite 保存、会话切换、独占打开及恢复边界。
+
 上下文与缓存生命周期：[ADR-0024](adr/0024-cache-aware-context-lifecycle.md) 记录状态差量、供应商策略、继承检查点和前缀诊断。
 
 会话视口与模型运行状态：[ADR-0023](adr/0023-transcript-cache-and-agent-status.md) 记录缓存、文本选择、后台作业和末尾状态注入的依据及限制。

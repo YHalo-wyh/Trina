@@ -4,6 +4,8 @@ logs/
 reports/
 artifacts/
 providers.json
+chats.sqlite3*
+.chat.lock
 
 # ---- Python ----
 __pycache__/

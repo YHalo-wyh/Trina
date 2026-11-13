@@ -93,6 +93,22 @@ class TranscriptTests(unittest.TestCase):
         binding.handler(SimpleNamespace())
         self.assertTrue(self.editor.app.mouse_support())
 
+    def test_switching_chat_replaces_transcript_and_keeps_input_app(self):
+        self.editor.write("old conversation\n" * 20)
+        control = self.editor.transcript_control
+        control.create_content(80, 20)
+        self.editor.buffer.text = "draft"
+        app = self.editor.app
+        self.editor.clear_transcript()
+        self.editor.write("restored conversation")
+        content = control.create_content(80, 20)
+        from prompt_toolkit.formatted_text import fragment_list_to_text
+        text = "\n".join(fragment_list_to_text(content.get_line(i)) for i in range(content.line_count))
+        self.assertNotIn("old conversation", text)
+        self.assertIn("restored conversation", text)
+        self.assertEqual(self.editor.buffer.text, "draft")
+        self.assertIs(self.editor.app, app)
+
     def test_windows_clipboard_uses_valid_owner_and_unicode_memory(self):
         import ctypes
         from types import SimpleNamespace

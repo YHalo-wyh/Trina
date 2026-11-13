@@ -200,7 +200,10 @@ COMMANDS: tuple[CommandSpec, ...] = (
         examples=("/hint 优先验证 /sqli 的 id 参数",), availability="running",
     ),
     CommandSpec("pause", "运行控制", "暂停当前任务", "pause", availability="running"),
-    CommandSpec("resume", "运行控制", "继续已暂停任务", "resume", availability="running"),
+    CommandSpec("resume", "会话与模型", "查看、搜索和切换历史对话", "resume [list|last|编号|ID]",
+                positional_choices=(ChoiceSpec("list", "列出已保存对话"), ChoiceSpec("last", "切换最近对话")),
+                examples=("/resume", "/resume list", "/resume last")),
+    CommandSpec("unpause", "运行控制", "继续已暂停任务", "unpause", availability="running"),
     CommandSpec("stop", "运行控制", "安全请求停止当前任务", "stop", availability="running"),
     CommandSpec(
         "revoke", "运行控制", "撤销注册目标授权", "revoke <target_id>", availability="always",
@@ -670,6 +673,17 @@ class EnhancedConsoleInput:
                 self.transcript_control.sync(max(1, self.app.output.get_size().columns))
         self.app.invalidate()
 
+    def clear_transcript(self) -> None:
+        """切换对话时替换内容，保留输入区与应用生命周期。"""
+        with self._content_lock:
+            self._chunks.clear()
+            self._stream_index = None
+            self._char_count = self._scrollback = 0
+            self._rendered_lines = self._line_count = 1
+            self.transcript_control.clear_selection()
+            self.transcript_control.invalidate_from(0)
+        self.app.invalidate()
+
     def update_stream(self, text: str, *, final: bool = False) -> None:
         """合并尚未绘制的增量；只在实际绘制或最终确认时渲染 Markdown。"""
         from .terminal import ResponsiveText, render_answer
@@ -733,7 +747,7 @@ class EnhancedConsoleInput:
                 call = lambda: self._handler(text)
                 command = text.strip().lstrip("/").split(maxsplit=1)[0] if text.strip() else ""
                 # 模型表单暂时接管终端，结束后恢复同一内容区和未提交输入。
-                keep = await run_in_terminal(call, in_executor=True) if command == "model" and not self.running() else await run_in_executor_with_context(call)
+                keep = await run_in_terminal(call, in_executor=True) if command in {"model", "resume"} and not self.running() else await run_in_executor_with_context(call)
                 if not keep:
                     self.app.exit()
                     return

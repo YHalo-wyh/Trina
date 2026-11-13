@@ -1,0 +1,47 @@
+{
+  "ok": false,
+  "scope": "当前产品 TR 需求、规范规则、实现路径、测试声明、六类交付物与白名单验证命令",
+  "deliverables": 6,
+  "requirements": 21,
+  "rules": 37,
+  "tests_referenced": 76,
+  "errors": [
+    "V-TESTS 执行失败，退出码 1"
+  ],
+  "commands": {
+    "V-COURSE": {
+      "argv": [
+        "D:\\python310\\python.exe",
+        "-X",
+        "utf8",
+        "-m",
+        "scripts.verify_course_pack"
+      ],
+      "exit_code": 0,
+      "output_tail": "课程工件检查：通过\n文档 31，要求 20，任务 8，场景 {'P': 11, 'N': 8, 'A': 7}\n测试引用 65（去重 65），本地链接 368\n检查范围为结构和引用；测试执行与人工验收需独立证据。"
+    },
+    "V-TESTS": {
+      "argv": [
+        "D:\\python310\\python.exe",
+        "-X",
+        "utf8",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests"
+      ],
+      "exit_code": 1,
+      "output_tail": ".....................................................................................................................................................................................................................F................................................................................................................................................................................................................................................................\n======================================================================\nFAIL: test_model_list_and_history_and_new (test_interactive.TestConsole)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"C:\\Users\\WYH\\Desktop\\网安实训中级\\tests\\test_interactive.py\", line 462, in test_model_list_and_history_and_new\n    self.assertIn(\"已开启新对话会话\", blob)\nAssertionError: '已开启新对话会话' not found in '                         ·                  ✦                  ·\\n                     ▄█████▓▄  ▄████▓▄    ▄███▓▄   █▓▄   █▓    ▄█▓▄\\n                    ▀▀ █▓ ▀▀  █▓   ▀█▓     █▓     ██▓▄  █▓   ▄█▀▀█▄\\n                       █▓     █▓   ▄█▓     █▓     █▓▀█▄ █▓  █▓    █▓\\n                      █▓     █████▓▀      █▓     █▓ ▀█▄█▓  █▓    █▓\\n                      █▓     █▓ ▀█▄       █▓     █▓  ▀██▓  ███████▓\\n                     █▓     █▓  ▀█▄      █▓     █▓   ▀█▓  █▓    █▓\\n                    ▄█▓▄    █▓   ▀█▓   ▀███▓▀   █▓    █▓  █▓    █▓\\n                                         v0.3.0\\n\\n[trina]  当前后端 openai · 模型 DeepSeek V4.1 Flash Max · base_url \\nhttps://api.deepseek.com/v1\\n[trina]  可选模型（/model <spec> 切换；加 /save 持久化）:\\n    openai/gpt-4.1 — gpt-4.1\\n    openai/gpt-4.1-mini — gpt-4.1-mini\\n    anthropic/claude-sonnet-5-5 — claude-sonnet-5-5\\n    anthropic/claude-haiku-5-5 — claude-haiku-5-5\\n    google/gemini-2.5-flash — gemini-2.5-flash\\n    google/gemini-2.5-pro — gemini-2.5-pro\\n    deepseek/deepseek-chat — deepseek-chat\\n    deepseek/deepseek-reasoner — deepseek-reasoner\\n    mistral/mistral-small-latest — mistral-small-latest\\n    mistral/mistral-large-latest — mistral-large-latest\\n    qwen/qwen-plus — qwen-plus\\n    qwen/qwen-turbo — qwen-turbo\\n    qwen/qwen-max — qwen-max\\n    qwen-intl/qwen-plus — qwen-plus\\n    qwen-intl/qwen-turbo — qwen-turbo\\n    zhipu/glm-5 — glm-5\\n    zhipu/glm-4-flash — glm-4-flash\\n    moonshot/kimi-k2.5 — kimi-k2.5\\n    moonshot/moonshot-v1-32k — moonshot-v1-32k\\n    stepfun/step-3.5-flash — step-3.5-flash\\n    hunyuan/hunyuan-turbos-latest — hunyuan-turbos-latest\\n    groq/llama-3.3-70b-versatile — llama-3.3-70b-versatile\\n    perplexity/sonar — sonar\\n    perplexity/sonar-pro — sonar-pro\\n    opencode-go/glm-5.3-flash — glm-5.3-flash\\n[trina]  内置 30 个供应商预设 · /model 打开管理页 · /model add 添加连接\\n    openai           OpenAI\\n    anthropic        Anthropic / Claude\\n    google           Google Gemini\\n    deepseek         DeepSeek\\n    xai              xAI / Grok\\n    mistral          Mistral AI\\n    qwen             阿里百炼 / 通义千问（北京）\\n    qwen-intl        阿里百炼（新加坡）\\n    ark              火山方舟 / 豆包\\n    baidu            百度千帆 / 文心\\n    zhipu            智谱 BigModel\\n    zai              Z.ai（国际）\\n    moonshot         月之暗面 / Kimi\\n    minimax          MiniMax（国内）\\n    minimax-intl     MiniMax（国际）\\n    stepfun          阶跃星辰\\n    hunyuan          腾讯混元（原平台）\\n    tokenhub         腾讯 TokenHub\\n    groq             Groq\\n    cerebras         Cerebras\\n    together         Together AI\\n    fireworks        Fireworks AI\\n    nvidia           NVIDIA NIM\\n    perplexity       Perplexity\\n    siliconflow      硅基流动\\n    openrouter       OpenRouter\\n    opencode-go      OpenCode Go 订阅\\n    azure            Azure OpenAI\\n    ollama           Ollama 本地\\n    lmstudio         LM Studio 本地\\n[trina]  还没有对话历史（先说句话，或 /play 跑一轮任务）\\n[trina]  已开启新对话；上一次对话已保存，可用 /resume 切换。\\n[trina]  还没有对话历史（先说句话，或 /play 跑一轮任务）'\n\n----------------------------------------------------------------------\nRan 493 tests in 59.708s\n\nFAILED (failures=1)"
+    },
+    "V-DIFF": {
+      "argv": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exit_code": 0,
+      "output_tail": "warning: in the working copy of 'README.md', CRLF will be replaced by LF the next time Git touches it\nwarning: in the working copy of 'docs/ARCHITECTURE.md', CRLF will be replaced by LF the next time Git touches it\nwarning: in the working copy of 'docs/CLI_UI.md', CRLF will be replaced by LF the next time Git touches it\nwarning: in the working copy of 'trina/brain/chat.py', CRLF will be replaced by LF the next time Git touches it\nwarning: in the working copy of 'trina/console_ui.py', CRLF will be replaced by LF the next time Git touches it\nwarning: in the working copy of 'trina/interactive.py', CRLF will be replaced by LF the next time Git touches it\nwarning: in the working copy of '规约.md', CRLF will be replaced by LF the next time Git touches it\nwarning: in the working copy of '设计决策.md', CRLF will be replaced by LF the next time Git touches it\nwarning: in the working copy of '需求.md', CRLF will be replaced by LF the next time Git touches it"
+    }
+  }
+}

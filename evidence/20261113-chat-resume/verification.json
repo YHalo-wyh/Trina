@@ -1,0 +1,45 @@
+{
+  "ok": true,
+  "scope": "当前产品 TR 需求、规范规则、实现路径、测试声明、六类交付物与白名单验证命令",
+  "deliverables": 6,
+  "requirements": 21,
+  "rules": 37,
+  "tests_referenced": 76,
+  "errors": [],
+  "commands": {
+    "V-COURSE": {
+      "argv": [
+        "D:\\python310\\python.exe",
+        "-X",
+        "utf8",
+        "-m",
+        "scripts.verify_course_pack"
+      ],
+      "exit_code": 0,
+      "output_tail": "课程工件检查：通过\n文档 31，要求 20，任务 8，场景 {'P': 11, 'N': 8, 'A': 7}\n测试引用 65（去重 65），本地链接 368\n检查范围为结构和引用；测试执行与人工验收需独立证据。"
+    },
+    "V-TESTS": {
+      "argv": [
+        "D:\\python310\\python.exe",
+        "-X",
+        "utf8",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests"
+      ],
+      "exit_code": 0,
+      "output_tail": "[eval] 已自动拉起 lab 靶机 127.0.0.1:49506\n.............................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................\n----------------------------------------------------------------------\nRan 493 tests in 52.953s\n\nOK"
+    },
+    "V-DIFF": {
+      "argv": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exit_code": 0,
+      "output_tail": "warning: in the working copy of 'README.md', CRLF will be replaced by LF the next time Git touches it\nwarning: in the working copy of 'docs/ARCHITECTURE.md', CRLF will be replaced by LF the next time Git touches it\nwarning: in the working copy of 'docs/CLI_UI.md', CRLF will be replaced by LF the next time Git touches it\nwarning: in the working copy of 'trina/brain/chat.py', CRLF will be replaced by LF the next time Git touches it\nwarning: in the working copy of 'trina/console_ui.py', CRLF will be replaced by LF the next time Git touches it\nwarning: in the working copy of 'trina/interactive.py', CRLF will be replaced by LF the next time Git touches it\nwarning: in the working copy of '规约.md', CRLF will be replaced by LF the next time Git touches it\nwarning: in the working copy of '设计决策.md', CRLF will be replaced by LF the next time Git touches it\nwarning: in the working copy of '需求.md', CRLF will be replaced by LF the next time Git touches it"
+    }
+  }
+}

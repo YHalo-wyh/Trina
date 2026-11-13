@@ -5,7 +5,7 @@
 三条交互路径
 ------------
 1. **一条命令开打**：`play`（自动起 lab 靶机 → 跑 → 出报告）
-2. **运行中实时介入**：`hint <文本>` 注入提示、`pause`/`resume`、`stop`、`status`
+2. **运行中实时介入**：`hint <文本>` 注入提示、`pause`/`unpause`、`stop`、`status`
 3. **可选审批闸门**：默认关闭；显式指定 `--approve` 后，超时未答复按拒绝处理。
 
 命令都只是薄封装：能委托给 CLI 的（tools/guard/ranges/report/audit）直接复用同一实现，避免两套行为。
@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import difflib
+import json
 import shlex
 import sys
 import threading
@@ -218,7 +219,13 @@ class Console:
         return f"trina · {status} · {short} > " if terminal_width() >= 60 else f"trina · {status} > "
 
     def _completion_values(self, command: str, completed_args: list[str]) -> list[ChoiceSpec]:
-        """补全运行时才能知道的模型、工具、靶场和产物路径。"""
+        """补全运行时才能知道的历史会话、模型、工具、靶场和产物路径。"""
+        if command == "resume" and not completed_args:
+            from .chat_store import ChatStore
+            try:
+                return [ChoiceSpec(row["id"], row["title"]) for row in ChatStore(self.config.workspace_dir).list()[:40]]
+            except Exception:
+                return []
         from pathlib import Path
 
         if command == "model" and not completed_args:
@@ -322,7 +329,8 @@ class Console:
             "approve": lambda: self._cmd_approve(args),
             "hint": lambda: self.session.steer(" ".join(args)),
             "pause": lambda: self._emit("当前没有运行中的任务"),
-            "resume": lambda: self._emit("当前没有运行中的任务"),
+            "resume": lambda: self._cmd_resume(args),
+            "unpause": lambda: self._emit("当前没有运行中的任务"),
             "stop": lambda: self._emit("当前没有运行中的任务"),
             "revoke": lambda: self._cmd_revoke(args, True),
             "grant": lambda: self._cmd_revoke(args, False),
@@ -390,11 +398,17 @@ class Console:
         if command == "pause":
             self.session.toggle_pause()
             return True
-        if command == "resume":
+        if command == "unpause":
             if self.session.pause_event.is_set():
                 self.session.toggle_pause()
             else:
                 self._emit("任务未处于暂停状态")
+            return True
+        if command == "resume":
+            if args == ["list"]:
+                self._cmd_resume(args)
+                return True
+            self._emit("任务运行中不能切换对话；/unpause 继续暂停的任务，/stop 停止后再 /resume")
             return True
         if command == "stop":
             self.session.request_stop()
@@ -423,7 +437,7 @@ class Console:
             # 运行中说人话 = 人工介入提示（最自然的交互）；已知命令名仍按命令处理
             self.session.steer(line)
             return True
-        self._emit("任务运行中，可用命令：y / n · hint <文本> · status · pause · resume · stop（也可直接说人话＝介入提示）")
+        self._emit("任务运行中，可用命令：y / n · hint <文本> · status · pause · unpause · stop（也可直接说人话＝介入提示）")
         return True
 
     # ------------------------------------------------------------------ 工作台视图
@@ -646,8 +660,82 @@ class Console:
         if self.chat is not None:
             self.chat.close()
         self.chat = None
+        self.session.state = self._last_state = None
         self.view.reset()
-        self._emit("已开启新对话会话（历史与审计都重新开始；上一次的审计文件仍在 logs/ 下）")
+        self._emit("已开启新对话会话；上一次对话已保存，可用 /resume 切换。")
+
+    def _cmd_resume(self, args: list[str]) -> None:
+        from .chat_store import ChatStore
+        from .brain.chat import ChatAgent
+        from .console_ui import select_option
+        if len(args) > 1:
+            raise ValueError("用法：/resume [list|last|编号|ID]")
+        store = ChatStore(self.config.workspace_dir)
+        rows = store.list()
+        if not rows:
+            self._emit("暂无已保存的历史对话；新对话会自动保存。旧审计日志不含完整回复，无法还原未保存的会话。")
+            return
+        current = self.chat.run_id if self.chat is not None else ""
+        selector = args[0] if args else ""
+        if selector in {"", "list"}:
+            choices = [ChoiceSpec(row["id"],
+                f"{'● ' if row['id'] == current else ''}{row['title']} · {time.strftime('%m-%d %H:%M', time.localtime(row['updated']))} · {row['turns']} 轮 · {row['id']}") for row in rows]
+            if not selector and self._input is None and not self._custom_output and enhanced_input_available():
+                selected = select_option("历史对话", choices, subtitle="搜索标题或 ID · Enter 切换 · Esc 返回")
+                if selected is None:
+                    return
+                selector = selected
+            else:
+                self._display(render_panel("历史对话", sections=[("", "\n".join(f"{i:02d}  {item.description}" for i, item in enumerate(choices, 1)))],
+                                           footer="/resume <编号或ID> 切换 · /resume last 最近一条", color=self.color))
+                return
+        if selector == "last":
+            selector = next((row["id"] for row in rows if row["id"] != current), rows[0]["id"])
+        elif selector.isdigit():
+            index = int(selector) - 1
+            if not 0 <= index < len(rows):
+                raise ValueError("对话编号超出范围")
+            selector = rows[index]["id"]
+        matches = [row["id"] for row in rows if row["id"] == selector] or [row["id"] for row in rows if row["id"].startswith(selector)]
+        if len(matches) != 1:
+            raise ValueError("对话 ID 不存在或前缀不唯一；使用 /resume list 查看")
+        if matches[0] == current:
+            self._emit("已经是当前对话")
+            return
+        restored = ChatAgent.resume(self.config, matches[0], registry=self.registry, backend=self._backend(),
+            approval=self.session.request_approval, steer_queue=self.session.steers, stop_event=self.session.stop_event,
+            pause_event=self.session.pause_event, logger=self._agent_log, on_tool=self._on_tool_result,
+            on_stream=self._on_chat_stream if self._enhanced_input is not None else None)
+        try:
+            if self.chat is not None:
+                self.chat.close()
+        except Exception:
+            restored.close()
+            raise
+        self.chat = restored
+        restored.save()
+        self.session.reset_for_run()
+        self.session.state = self._last_state = restored.state
+        self.view.reset()
+        self.view.usage = restored.usage
+        for name, value in restored.usage_gaps.items():
+            setattr(self.view, name, value)
+        if self._enhanced_input is not None:
+            self._enhanced_input.clear_transcript()
+        self._emit(f"已恢复：{restored.title} · {restored.turns} 轮 · {restored.run_id}")
+        for item in restored.history:
+            role, text = item.get("role"), item.get("content", "")
+            if role == "assistant":
+                try:
+                    action = json.loads(text)
+                except (ValueError, TypeError):
+                    action = None
+                if isinstance(action, dict) and "action" in action:
+                    self._display(render_process(f"{action['action']} {json.dumps(action.get('params', {}), ensure_ascii=False)}", label="执行记录", color=self.color))
+                else:
+                    self._display(render_answer(text, color=self.color))
+            else:
+                self._display(render_message(text, label="工具" if text.startswith("[工具结果]") else "你", color=self.color))
 
     def _cmd_usage(self) -> None:
         data = self.view.usage_data()
@@ -701,6 +789,7 @@ class Console:
         before = self.chat.context.epoch
         try:
             self.chat.context.prepare(self.chat._messages, force=True)
+            self.chat.save()
         except ContextBudgetError as exc:
             self._emit(str(exc))
             return
@@ -907,7 +996,7 @@ class Console:
                     ("耗时", f"{max(0, time.monotonic() - self.session.started_at):.0f}s")]
             if step is not None:
                 rows.append(("最近一步", f"第 {step.index} 步 · {step.action} · {step.summary}"))
-            self._display(render_panel("当前任务", rows=rows, footer="/board 查看 · /pause 暂停 · /resume 继续 · /stop 停止；直接输入文字介入。", color=self.color))
+            self._display(render_panel("当前任务", rows=rows, footer="/board 查看 · /pause 暂停 · /unpause 继续 · /stop 停止；直接输入文字介入。", color=self.color))
             if self.session.pending:
                 self._display(render_approval(self.session.pending, self.session.approval_timeout, color=self.color))
         elif self._last_state is not None:

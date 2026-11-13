@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import json
 import time
+import uuid
+from dataclasses import fields
 from typing import Any, Callable
 
 from ..audit import AuditLog
@@ -37,6 +39,12 @@ class ChatAgent:
 
     MAX_TOOL_STEPS = 12
 
+    def __del__(self) -> None:
+        # 异常退出或旧调用方未显式 close 时，仅释放占用，不执行或写入数据。
+        stream = getattr(self, "_file_lock", None)
+        if stream is not None:
+            stream.close()
+
     def __init__(
         self,
         config: TrinaConfig,
@@ -53,6 +61,7 @@ class ChatAgent:
         on_tool: Callable[[Any], None] | None = None,
         on_stream: Callable[[str, bool], None] | None = None,
         run_id: str | None = None,
+        resume_saved: bool = False,
     ):
         self.config = config
         self.registry = registry or build_registry()
@@ -66,14 +75,22 @@ class ChatAgent:
         self.pause_event = pause_event
         self._controller = controller
 
-        self.run_id = run_id or f"chat-{time.strftime('%Y%m%d-%H%M%S')}"
-        self.audit = audit or AuditLog.open(
-            config.audit_dir,
-            run_id=self.run_id,
-            redact_keys=config.audit.redact_keys,
-            record_output_digest=config.audit.record_output_digest,
-            resume=False,
-        )
+        from ..chat_store import ChatStore
+        self.store = ChatStore(config.workspace_dir)
+        self.run_id = run_id or f"chat-{time.strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:6]}"
+        self._file_lock = self.store.acquire(self.run_id)
+        self._closed = False
+        self.in_flight = False
+        self.title = ""
+        try:
+            # 先取得独占锁再读取，避免读取到另一实例关闭保存前的旧快照。
+            resume_data = self.store.load(self.run_id) if resume_saved else None
+            self.audit = audit or AuditLog.open(
+                config.audit_dir, run_id=self.run_id, redact_keys=config.audit.redact_keys,
+                record_output_digest=config.audit.record_output_digest, resume=resume_saved)
+        except Exception:
+            self._file_lock.close()
+            raise
         self.guard = ScopeGuard(config.scope, audit=self.audit)
         self.state = RunState(run_id=self.run_id, target="", goal="交互对话", status="chat")
         self.workspace = config.workspace_dir / self.run_id
@@ -107,6 +124,17 @@ class ChatAgent:
         # 洞察层开关（与任务模式同源配置）：关闭只影响"模型看到什么"，统计口径不变
         self.use_ledger = bool(getattr(config.run, "hypothesis_ledger", True))
         self.use_guard = bool(getattr(config.run, "loop_guard", True))
+        from ..llm import LLMUsage
+        self.usage = LLMUsage(calls=0)
+        self.usage_gaps = {"missing_" + name: 0 for name in
+                           ("tokens", "input", "output", "cache", "cache_read", "cache_write", "cost")}
+        if resume_data is not None:
+            try:
+                self._restore(resume_data)
+            except Exception:
+                self.ctx.extra["background_jobs"].close()
+                self._file_lock.close()
+                raise
 
     # ------------------------------------------------------------------ 控制器
     @property
@@ -126,12 +154,24 @@ class ChatAgent:
 
     # ------------------------------------------------------------------ 主循环
     def ask(self, message: str) -> str:
+        if self._closed:
+            raise ValueError("对话已关闭，请使用 /resume 恢复")
+        self.in_flight = True
+        try:
+            return self._ask_turn(message)
+        finally:
+            self.in_flight = False
+            self.save()
+
+    def _ask_turn(self, message: str) -> str:
         """处理一条用户消息：回答，或边执行工具边推进；返回最终自然语言回复。"""
         text = (message or "").strip()
         if not text:
             return ""
         self.turns += 1
         self.current_request = text
+        if not self.title:
+            self.title = " ".join(text.split())[:80]
         self.context.remember_user(text)
         self.last_reply_streamed = False
         self._initialize_messages()
@@ -139,6 +179,7 @@ class ChatAgent:
         self.logger(f"[用户] {text}")
         self.history.append({"role": "user", "content": text})
         self._messages.append({"role": "user", "content": text})
+        self.save()
 
         for step in range(1, self.MAX_TOOL_STEPS + 1):
             if self.stop_event is not None and self.stop_event.is_set():
@@ -200,10 +241,12 @@ class ChatAgent:
             # 保留动作与观察的因果关系；工具结果不能成为孤立的用户指令。
             self.history.append({"role": "assistant", "content": json.dumps(action, ensure_ascii=False)})
             self._cancel_stream()
+            self.save()
             observation = self._run_action(action, step)
             tool_message = {"role": "user", "content": f"[工具结果] {observation}"}
             self.history.append(tool_message)
             self._messages.append(tool_message)
+            self.save()
 
         self.logger(f"[提示] 单条消息内已执行 {self.MAX_TOOL_STEPS} 个动作，先给你阶段性结果")
         return (
@@ -270,8 +313,9 @@ class ChatAgent:
         else:
             response = method(self._messages, on_event=self._pending_stream.on_event)
         self.context.after_response(diagnostic, response)
-        if self.context.epoch:
-            self.history[:] = self.history[-200:]
+        self.usage = self.usage.merge(response.usage)
+        for name in self.usage_gaps:
+            self.usage_gaps[name] += int(not getattr(response.usage, name[8:] + "_reported"))
         return response
 
     def _finish_stream(self, reply: str) -> None:
@@ -287,9 +331,79 @@ class ChatAgent:
 
     def close(self) -> None:
         """关闭会话时回收后台作业，并记录最终快照。"""
+        if self._closed:
+            return
         from ..runtime_status import status_snapshot
-        self.ctx.extra["background_jobs"].close()
-        status_snapshot(self.ctx, turn=self.turns)
+        try:
+            self.ctx.extra["background_jobs"].close()
+            status_snapshot(self.ctx, turn=self.turns)
+            self.save()
+        finally:
+            self._closed = True
+            self._file_lock.close()
+
+    def save(self) -> None:
+        """只保存对话运行数据；标准消息和最近显示记录分别保留。"""
+        if not self._messages_ready or not self.history or self._closed:
+            return
+        context = self.context
+        self.store.save({"version": 1, "run_id": self.run_id, "project": self.store.project,
+                         "title": self.title, "turns": self.turns, "in_flight": self.in_flight,
+                         "history": self.history, "messages": self._messages, "state": self.state.to_dict(),
+                         "hypotheses": self.ledger.to_dict(), "usage": self.usage.to_dict(),
+                         "usage_gaps": self.usage_gaps,
+                         "controller": self._controller.coverage() if self._controller is not None else {},
+                         "controller_elapsed": self._controller.elapsed if self._controller is not None else 0,
+                         "stale_steps": self._controller.stale_steps if self._controller is not None else 0,
+                         "context": {"revision": context.revision, "epoch": context.epoch,
+                                     "snapshot": context.snapshot, "instructions": context.instructions,
+                                     "stats": context.stats, "events": context.events,
+                                     "last_request": context.last_request.decode("utf-8"),
+                                     "last_signature": context.last_signature},
+                         "model": self.config.llm.model})
+
+    def _restore(self, data: dict) -> None:
+        from ..hypotheses import Hypothesis
+        from ..llm import LLMUsage
+        if data["run_id"] != self.run_id or data["project"] != self.store.project:
+            raise ValueError("对话不属于当前项目")
+        self.state = RunState.from_dict(data["state"])
+        if self.state.run_id != self.run_id:
+            raise ValueError("对话运行状态与 ID 不一致")
+        self.ctx.state = self.state
+        self.history = data["history"]
+        self._messages, self._messages_ready = data["messages"], True
+        self.turns, self.title = data["turns"], data["title"]
+        allowed = {item.name for item in fields(Hypothesis)}
+        for row in data.get("hypotheses", []):
+            item = Hypothesis(**{key: value for key, value in row.items() if key in allowed})
+            self.ledger.items[item.id] = item
+        self.ledger._seq = max((int(key[2:]) for key in self.ledger.items if key.startswith("H-") and key[2:].isdigit()), default=0)
+        usage_fields = {item.name for item in fields(LLMUsage)}
+        self.usage = LLMUsage(**{key: value for key, value in data.get("usage", {}).items() if key in usage_fields})
+        self.usage_gaps.update({key: int(value) for key, value in data.get("usage_gaps", {}).items() if key in self.usage_gaps})
+        saved = data.get("context", {})
+        for name in ("revision", "epoch", "snapshot", "instructions", "stats", "events", "last_signature"):
+            if name in saved:
+                setattr(self.context, name, saved[name])
+        self.context.last_request = saved.get("last_request", "").encode("utf-8")
+        # 不继承旧权限判据或进程，只按当前配置创建控制器。
+        controller = self.controller
+        coverage = data.get("controller", {})
+        controller.checks_used = int(coverage.get("checks_used", self.state.counters.get("tool_calls", 0)))
+        controller.started_at = time.monotonic() - float(data.get("controller_elapsed", 0))
+        controller.stale_steps = int(data.get("stale_steps", 0))
+        controller.executed = [key for key in coverage.get("executed", []) if key in controller.registry.tests]
+        controller.revoked = set(coverage.get("revoked", []))
+        if data.get("in_flight") or any(job.get("status") == "running" for job in self.state.runtime_status.get("background_jobs", [])):
+            self._messages.append({"role": "user", "content": "[会话恢复] 上次执行已中断，旧后台进程未恢复。根据已保存事实和审计核对结果，不自动重放旧工具动作。"})
+        self.state.runtime_status = {}
+        self.audit.append("chat.resumed", turns=self.turns)
+        self.save()
+
+    @classmethod
+    def resume(cls, config: TrinaConfig, run_id: str, **kwargs) -> ChatAgent:
+        return cls(config, run_id=run_id, resume_saved=True, **kwargs)
 
     def _drain_steer(self) -> str:
         if self.steer_queue is None:
