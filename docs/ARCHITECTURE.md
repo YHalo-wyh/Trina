@@ -2,9 +2,9 @@
 
 决策流程及每一步的设计理由详见[《设计决策》](../设计决策.md)。该文按实际执行顺序展开输入输出、规则、替代方案、失败分支和验证依据；本页保留总体模块契约。系统提示词与 Commander 情报部分于 2026-11-11 对照实现核对。
 
-## V2 首版：Swarm 运行层
+## V2：事件驱动 Swarm 运行层
 
-`trina swarm` 在现有单 Agent 执行链外增加 `trina.swarm.SwarmRuntime`。Commander 验证任务 DAG、按优先级领取就绪任务、用租约绑定 Worker，并在任务结束时原子写入 `swarm.json`。`WorkerPool` 复用后端资源；每个任务重新创建 `PentestAgent` 与按能力筛选的 `ToolRegistry`，所以 ReAct 上下文、事实图、工作目录、状态、审计和报告彼此独立。Commander 主动比较已完成题目与当前题目的规范化目标、显式依赖和任务语义，只把达到阈值的有效情报作为带来源候选线索转发；接收方必须重新验证，情报不会合并进当前 `RunState`。网络目标和工具动作仍由 `ScopeGuard` 与注册表执行链处理；默认 full 信任，restricted 才做边界拒绝。详见 [Swarm 使用说明](SWARM.md)。
+`trina swarm` 在现有单 Agent 执行链外增加 `SwarmRuntime` 与 `CoordinationRuntime`。Commander 验证 DAG；事件驱动 Planner 只在 Intent、事实或终态发生变化时推进，不因 Worker 的每个 ReAct 步骤重新规划。共享 Todolist 持久保存目标和依赖；Intent 队列负责优先级、等价去重、领取租约、超时回收与终态。事实图只存实际验证结果，探索图存尚未完成的 Intent、依赖和事实锚点。Worker 的完整 ReAct 上下文、`RunState`、工作目录、审计和报告仍按题隔离，但可查询其他 Worker 有来源的观察与失败留痕。网络目标和工具动作仍由 `ScopeGuard` 与注册表执行链处理；默认 full 信任，restricted 才做边界拒绝。详见 [Swarm 使用说明](SWARM.md)。
 
 ## 1. 总览
 
@@ -21,7 +21,8 @@ flowchart TB
     GUARD["trina.scope.ScopeGuard<br/>full / restricted 信任模式"]
     AUDIT["trina.audit.AuditLog<br/>SHA-256 哈希链"]
     STATE["trina.state.RunState<br/>hosts/findings/creds/flags/evidence/timeline"]
-    TOOLS["trina.tools：31 项注册工具（含 10 项 binary、1 项 CTFY）"]
+    COORD["trina.coordination<br/>事件 Planner / Todo / Intent / 双图 / Trace"]
+    TOOLS["trina.tools：38 项注册工具（含编码、协作、10 项 binary、1 项 CTFY）"]
     HTTP["trina.tools.http.HttpClient<br/>带护栏的 HTTP 出口"]
     EXT["trina.tools.external.run_external<br/>外部二进制（shell=False + 护栏）"]
     LLM["trina.llm<br/>标准 API 流式传输 / replay"]
@@ -31,9 +32,11 @@ flowchart TB
     REPORT["trina.report<br/>Markdown + 自包含 HTML"]
 
     CLI --> AGENT
+    CLI --> COORD
     OMPEXT --> CLI
     AGENT --> PLANNER --> PROMPTS
     AGENT --> LLM
+    COORD --> AGENT
     AGENT --> POLICY --> APPROVAL --> REG
     REG --> GUARD
     REG --> AUDIT
@@ -82,11 +85,13 @@ flowchart TB
 | `trina.audit` | `AuditLog.open/append/verify/summary` | 每条记录 `hash = sha256(canonical(record - hash))`，`prev_hash` 链接；写入即 fsync；敏感字段自动脱敏 |
 | `trina.state` | `RunState.absorb(facts)`、`add_finding`、`knowledge_digest`、`summary_for_prompt`、`to_dict/from_dict` | 工具声明 facts，状态集中合并；`knowledge_digest` 排除时间、重复条目与笔记，用事实变化计算进展；`from_dict` 供工作台/复核读历史运行 |
 | `trina.tools.registry` | `ToolSpec`/`ParamSpec`/`ToolResult`/`ToolContext`/`Tool`/`ToolRegistry.execute` | 执行链是**唯一**入口；工具实现 `run(ctx, **params)`，返回 `ToolResult` |
+| `trina.tools.workspace` | `terminal_exec`、`workspace_read/write/edit` | 前台 argv 命令和项目文件编码工具；命令经 `run_external`，路径经 `ScopeGuard.check_workspace_path`，写入原子替换，编辑要求精确匹配数 |
+| `trina.coordination` / `trina.tools.coordination` | `CoordinationRuntime.plan/claim/settle/publish_state/search_traces`、`shared_context/shared_trace_*` | 事件驱动规划、共享 Todo、Intent 租约/去重/恢复、事实图与探索图、跨 Worker 可追踪观察和失败；不共享完整对话或直接合并当前题事实 |
 | `trina.binary` / `trina.tools.binary` | `BinarySessions`、`R2Backend`、`GDBBackend`、`AddressRef`、10 个语义化工具 | r2 stdio JSON 与 GDB/MI3 持久会话；按任务和能力租约隔离，地址空间显式，完整协议写证据；见 [二进制工具链](BINARY_TOOLS.md) |
 | `trina.ctfy` / `trina.tools.ctfy` | `CTFYTask`、`run_ctfy`、`ctfy_task` | CTFY v3 instance/QA 任务读取、门控刷新和平台权威提交；不读取个人模型配置；见 [CTFY 接入](CTFY.md) |
 | `trina.tools.http` | `HttpClient.request/get/post`、`HttpResult.as_evidence()` | 出网唯一出口：护栏 → 限速 → 请求 → 证据化；护栏拒绝时返回带 `error` 的结果而不是抛异常 |
 | `trina.tools.external` | `run_external(argv, ctx, …)`、`which/have` | `shell=False`、先护栏后执行、命令与输出摘要进审计 |
-| `trina.brain.agent` | `PentestAgent(config, registry=, backend=, on_step=).run(target, goal=, max_steps=, max_seconds=, record_path=) -> RunState` | 评测框架与 CLI 都只依赖这个签名 |
+| `trina.brain.agent` | `PentestAgent(config, registry=, backend=, on_step=, shared_context=).run(target, goal=, max_steps=, max_seconds=, record_path=) -> RunState` | 评测框架与 CLI 继续使用原签名；Swarm 可额外注入只读协作上下文，不改变单 Agent 路径 |
 | `trina.brain.planner` | `Planner.tick/objective_met/force_advance/should_finish` | 阶段推进只看**事实**；每阶段有步数预算，停滞可推进；不向模型注入阶段作业攻略 |
 | `trina.brain.goal` | `GoalRequirements.parse(goal)`、`unsatisfied(state)/soft_hints/satisfied` | 漏洞类与端口形成硬条件；路径在没有类要求时为硬条件，否则为提示；凭据形成验证提示。最终成功依据已表达的条件，不读取 ground truth；关键词解析不能表达全部自然语言语义 |
 | `trina.hypotheses` | `HypothesisLedger.add/from_action/record_tool_outcome/record_outcome/prompt_block/finalize/summary` | 假设的排序/状态机与证据判定；模型仍选择动作，但确定性选取由 `trina.brain.scheduler` 每步派发；任务/对话共用验证对象匹配；`hypothesis_id` 复用台账；无新信息只降优先级，明确反证才能否定 |
@@ -99,7 +104,7 @@ flowchart TB
 | `trina.conversation` | `ConversationContext.state_update/prepare/before_request/after_response` | 每任务状态差量、周期完整状态、原子归档及继承检查点；保护用户约束、事实和最近工具链；区分可见前缀变化与实际用量 |
 | `trina.llm.cache` | `CachePolicy.for_request/apply` | 供应商缓存字段在请求边界适配；内部前缀标识、明确能力及一次有界降级；不推测服务端 KV 命中 |
 | `trina.chat_store` | `ChatStore.save/list/load/acquire` | 按项目保存 SQLite 事务快照，列表只查元数据；对话独占锁先于读取；不导出供应商配置、不执行历史动作 |
-| `trina.brain.chat` | `ChatAgent.ask/save/close`、`ChatAgent.resume(config, run_id, **kwargs)` | **对话式大脑**：共用护栏/控制器/审计/审批；每条消息最多 12 个动作；标准消息追加与差量事实；自动保存及跨实例恢复消息、事实、台账、上下文与用量，当前配置裁决后续执行；不恢复旧进程或重放工具 |
+| `trina.brain.chat` | `ChatAgent.ask/save/close`、`ChatAgent.resume(config, run_id, **kwargs)` | **对话式大脑**：使用标准 API 的原生 `tools` / `tool_calls` 并维护 assistant-tool 配对；JSON/DSML 仅为兼容回退且不会显示成正文；共用护栏、控制器、审计和审批；自动保存及跨实例恢复，但不恢复旧进程或重放工具 |
 | `trina.llm` | `complete_messages(messages, on_event=, tools=)`、`LLMStreamEvent`、`LLMUsage` | 标准结构化消息与三个 API 方言的 SSE 解析；稳定前缀、终止事件校验与真实用量汇总；OMP 后端已删除 |
 | `trina.providers` / `trina.model_ui` | `ProviderPreset`、`ProviderProfile`、`ProfileStore`、`ModelManager` | 以供应商整条配置管理地址、单个 Key、模型、备注、思考档位与上下文窗口；只接受仓库外的 v2 文件，旧格式明确拒绝；编辑、切换与删除由同一管理层原子保存 |
 | `trina.provider_form` | `ProviderEditor` | 单页草稿表单；测试通过回调复用 LLM 后端，字段修改使旧结果失效，保存前校验，取消和测试不写入配置，不切换当前供应商 |
@@ -111,7 +116,7 @@ flowchart TB
 | `trina.terminal` | `render_home/render_panel/render_message/render_step/render_approval` | CLI 统一展示；按显示宽度折行并清除外部控制字符，正式输出支持 Markdown；无色和无 rich 时降级；不参与模型上下文或动作执行 |
 | `trina.console_state` | `ConsoleState`、`TrackedBackend` | 展示层被动观测模型等待与实际返回用量；跨模型累计，建新会话清零；只展示实际返回的字段，未知项不占位；不修改提示词、动作、授权或后端账本 |
 | `trina.console_ui` | `EnhancedConsoleInput.run/write` | 持续全屏内容区与固定底部输入、索引和用量；后台只追加内容；模型表单临时接管终端后恢复 |
-| `trina.transcript` | `TranscriptControl.sync/create_content/selected_text/copy_selection` | 按块缓存 ANSI 行；滚动按行索引；流式更新只重排变化块；拖选复制与原生鼠标模式切换 |
+| `trina.transcript` | `TranscriptControl.sync/create_content/precondition_scroll/selected_text/copy_selection` | 脏块一次完成 ANSI/Unicode 物理行折行，视口使用直接行偏移；VT 终端以滚动区域搬运不变行并同步差分旧屏，失败时退回普通重绘；流式更新只重排变化块；支持拖选复制与原生鼠标模式切换 |
 | `trina.runtime_status` | `status_snapshot/render_agent_status` | 模型请求末尾的动态运行快照，独立于屏幕底栏；保持消息前缀，任务、工具和作业数据只取当前上下文 |
 | `trina.tools.terminal` / `BackgroundJobs` | `terminal_start/status/stop`、`run_external(background=True)` | 当前任务专属的有界后台作业；真实退出码、超时和进程树回收；监视线程不写漏洞事实 |
 | `trina.interactive` | `Console(config, input_fn=, output=).run()/handle(line)` | 行式交互控制台；空闲命令复用 CLI，运行中支持介入、状态和只读工作台；2026-10-28 展示更新见 [CLI 说明](CLI_UI.md) |

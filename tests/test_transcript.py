@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from prompt_toolkit.application.current import create_app_session
@@ -9,6 +10,7 @@ from prompt_toolkit.data_structures import Point
 from prompt_toolkit.input import create_pipe_input
 from prompt_toolkit.mouse_events import MouseButton, MouseEvent, MouseEventType
 from prompt_toolkit.output import DummyOutput
+from prompt_toolkit.layout.screen import Char, Screen
 
 from trina.console_ui import EnhancedConsoleInput
 from trina.terminal import ResponsiveText
@@ -41,6 +43,43 @@ class TranscriptTests(unittest.TestCase):
         self.editor.update_stream("new answer")
         control.create_content(80, 20)
         self.assertEqual(len(renders), 100, "新流只更新可变尾部")
+
+    def test_plain_long_lines_are_wrapped_once_and_window_does_not_wrap_again(self):
+        self.editor.write("1234567890中中")
+        content = self.editor.transcript_control.create_content(6, 3)
+        from prompt_toolkit.formatted_text import fragment_list_to_text
+        rows = [fragment_list_to_text(content.get_line(index)) for index in range(content.line_count)]
+        self.assertEqual(rows[:3], ["123456", "7890中", "中"])
+        self.assertFalse(self.editor.output_window.wrap_lines())
+
+    def test_oldest_position_has_no_dead_scroll_range(self):
+        self.editor.write("\n".join(f"line {index}" for index in range(20)))
+        control = self.editor.transcript_control
+        control.create_content(80, 5)
+        self.editor._scroll_to_oldest()
+        self.assertEqual(control.viewport_start(), 0)
+        self.assertEqual(self.editor._scrollback, control.max_scrollback())
+        before = self.editor._scrollback
+        with patch.object(self.editor.app, "invalidate") as invalidate:
+            self.editor._scroll_by(100)
+            invalidate.assert_not_called()
+        self.assertEqual(self.editor._scrollback, before)
+
+    def test_terminal_scroll_region_reuses_unchanged_rows(self):
+        control = self.editor.transcript_control
+        control.viewport_height = 4
+        self.editor._rendered_lines = 10
+        screen = Screen(initial_width=20, initial_height=8)
+        for row, value in enumerate("ABCD"):
+            screen.data_buffer[row][0] = Char(value, "")
+        self.editor.app.renderer._last_screen = screen
+        self.editor.output_window.render_info = SimpleNamespace(window_height=4, y_offset=0)
+        with patch.object(self.editor.app.output, "write_raw") as raw:
+            self.editor._scroll_by(2)
+        sequence = raw.call_args.args[0]
+        self.assertIn("\x1b[1;4r", sequence)
+        self.assertIn("\x1b[2T", sequence)
+        self.assertEqual([screen.data_buffer[row][0].char for row in range(4)], [" ", " ", "A", "B"])
 
     def test_deltas_are_coalesced_until_a_frame_needs_them(self):
         control = self.editor.transcript_control
@@ -156,6 +195,38 @@ class TranscriptTests(unittest.TestCase):
                     await asyncio.sleep(.15)
                     self.assertEqual(editor.app.clipboard.get_data().text, "alpha beta\nsecond")
                     self.assertEqual(editor.buffer.text, "keep draft")
+                    editor.app.exit()
+                except BaseException as exc:
+                    editor.app.exit(exception=exc)
+            def rendered(app):
+                nonlocal scheduled
+                if not scheduled:
+                    scheduled = True
+                    app.create_background_task(exercise())
+            editor.app.after_render += rendered
+            editor.app.run()
+
+    def test_real_vt_wheel_uses_scroll_region_and_keeps_bottom_chrome(self):
+        import asyncio
+        import io
+        from prompt_toolkit.data_structures import Size
+        from prompt_toolkit.output.vt100 import Vt100_Output
+        stream = io.StringIO()
+        output = Vt100_Output(stream, lambda: Size(rows=24, columns=80), enable_cpr=False)
+        with create_app_session(input=self.input, output=output):
+            editor = EnhancedConsoleInput(status=lambda: "ready", running=lambda: False, dynamic_values=lambda *_: (), plain=True)
+            editor.write("\n".join(f"history {index}" for index in range(80)))
+            scheduled = False
+            async def exercise():
+                try:
+                    before = len(stream.getvalue())
+                    self.input.send_text("\x1b[<64;1;1M")
+                    await asyncio.sleep(.15)
+                    delta = stream.getvalue()[before:]
+                    self.assertEqual(editor._scrollback, 3)
+                    self.assertIn("\x1b[3T", delta)
+                    self.assertIn("\x1b[r", delta)
+                    self.assertEqual(editor.buffer.text, "")
                     editor.app.exit()
                 except BaseException as exc:
                     editor.app.exit(exception=exc)

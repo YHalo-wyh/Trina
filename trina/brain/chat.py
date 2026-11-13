@@ -25,6 +25,7 @@ from ..state import RunState
 from ..tools import ToolRegistry, build_registry
 from ..tools.http import HttpClient
 from ..tools.registry import ToolContext
+from ..tools.schema import FINISH_TOOL_NAME, parse_arguments, tool_schemas
 from .failure import LoopGuard, advice_for, classify_failure
 
 def render_chat_prompt(include_hypothesis: bool = True) -> str:
@@ -201,9 +202,31 @@ class ChatAgent:
             if not response.ok:
                 self._cancel_stream()
                 return f"（模型调用失败：{response.error}）"
-            # 结构化 API 历史保留模型实际返回；展示层可以只显示 final 摘要。
-            self._messages.append({"role": "assistant", "content": response.text})
-            action, note = _parse_action_lenient(response.text)
+            # 标准 API 原生 tool_calls 原样进入历史；JSON/DSML 只作为兼容回退。
+            native_calls = list(response.tool_calls) if self._native_tools_enabled() else []
+            assistant_message: dict[str, Any] = {"role": "assistant", "content": response.text}
+            if native_calls:
+                assistant_message["tool_calls"] = [call.to_dict() for call in native_calls]
+            if response.reasoning:
+                assistant_message["reasoning_content"] = response.reasoning
+            self._messages.append(assistant_message)
+            native_call_id = native_calls[0].id if native_calls else ""
+            deferred_tool_messages = [
+                {"role": "tool", "tool_call_id": call.id,
+                 "content": "未执行：每一步只执行一个工具调用，请下一轮单独调用。"}
+                for call in native_calls[1:]
+            ]
+            if native_calls:
+                call = native_calls[0]
+                params, error = parse_arguments(call.arguments)
+                if error:
+                    action, note = {"error": f"{call.name} 参数解析失败：{error}"}, ""
+                elif call.name == FINISH_TOOL_NAME:
+                    action, note = {"final": params}, ""
+                else:
+                    action, note = {"action": call.name, "params": params}, ""
+            else:
+                action, note = _parse_action_lenient(response.text)
             if action is None:
                 from .prompts import _looks_like_dsml
 
@@ -229,6 +252,17 @@ class ChatAgent:
                 self.audit.append("chat.answer", decision="allow", chars=len(reply))
                 self._finish_stream(reply)
                 return reply
+            if "error" in action:
+                error = str(action.get("error") or "工具调用协议错误")
+                if native_call_id:
+                    self._messages.append({"role": "tool", "tool_call_id": native_call_id, "content": error})
+                    self._messages.extend(deferred_tool_messages)
+                else:
+                    self._messages.append({"role": "user", "content": f"[协议错误] {error}；请重新决定。"})
+                self.history.append({"role": "assistant", "content": f"[协议错误] {error}"})
+                self._cancel_stream()
+                self.audit.append("chat.protocol_recovery", decision="retry", protocol="native" if native_call_id else "json", error=error[:300])
+                continue
             if note:
                 self.logger(f"说明：{note[:200]}")
 
@@ -236,6 +270,9 @@ class ChatAgent:
                 final = action.get("final")
                 reply = str(final.get("summary") if isinstance(final, dict) else final) or "（完成）"
                 self.history.append({"role": "assistant", "content": reply})
+                if native_call_id:
+                    self._messages.append({"role": "tool", "tool_call_id": native_call_id, "content": reply})
+                    self._messages.extend(deferred_tool_messages)
                 self._finish_stream(reply)
                 return reply
 
@@ -244,9 +281,14 @@ class ChatAgent:
             self._cancel_stream()
             self.save()
             observation = self._run_action(action, step)
-            tool_message = {"role": "user", "content": f"[工具结果] {observation}"}
+            tool_message = (
+                {"role": "tool", "tool_call_id": native_call_id, "content": observation[:4000]}
+                if native_call_id
+                else {"role": "user", "content": f"[工具结果] {observation}"}
+            )
             self.history.append(tool_message)
             self._messages.append(tool_message)
+            self._messages.extend(deferred_tool_messages)
             self.save()
 
         self.logger(f"[提示] 单条消息内已执行 {self.MAX_TOOL_STEPS} 个动作，先给你阶段性结果")
@@ -302,26 +344,47 @@ class ChatAgent:
                                                turn=self.turns, observation=last_observation))
         # 动态状态作为新的 user 消息追加；绝不重写 system 或把历史压成角色标签字符串。
         self._messages.append({"role": "user", "content": "\n\n".join(runtime_parts)})
+        tool_payload = tool_schemas(self.registry) if self._native_tools_enabled() else None
         try:
-            self.context.prepare(self._messages)
+            self.context.prepare(self._messages, tool_payload)
         except ContextBudgetError as exc:
             from ..llm import LLMResponse
             self.state.context_stats = {**self.context.stats, "budget_error": str(exc)}
             self.audit.append("context.budget_error", error=str(exc))
             return LLMResponse(ok=False, error=str(exc))
-        diagnostic = self.context.before_request(self._messages)
+        diagnostic = self.context.before_request(self._messages, tool_payload)
         self.state.counters["llm_calls"] = self.state.counters.get("llm_calls", 0) + 1
         self._pending_stream = _VisibleStream(self.on_stream)
         method = getattr(self.backend, "complete_messages", None)
         if method is None:  # 仅供旧测试替身
             response = self.backend.complete(self._messages[0]["content"], self._messages[-1]["content"])
         else:
-            response = method(self._messages, on_event=self._pending_stream.on_event)
+            kwargs: dict[str, Any] = {"on_event": self._pending_stream.on_event}
+            if tool_payload is not None:
+                import inspect
+
+                try:
+                    parameters = inspect.signature(method).parameters.values()
+                    accepts_tools = any(
+                        item.name == "tools" or item.kind == inspect.Parameter.VAR_KEYWORD
+                        for item in parameters
+                    )
+                except (TypeError, ValueError):
+                    # 某些本地扩展/装饰器不可反射；后端已经声明支持原生工具时，
+                    # 仍按标准 API 传入 tools，由后端负责协议错误。
+                    accepts_tools = True
+                if accepts_tools:
+                    kwargs["tools"] = tool_payload
+            response = method(self._messages, **kwargs)
         self.context.after_response(diagnostic, response)
         self.usage = self.usage.merge(response.usage)
         for name in self.usage_gaps:
             self.usage_gaps[name] += int(not getattr(response.usage, name[8:] + "_reported"))
         return response
+
+    def _native_tools_enabled(self) -> bool:
+        protocol = str(getattr(self.config.llm, "tool_protocol", "auto") or "auto")
+        return protocol != "json" and bool(getattr(self.backend, "supports_native_tools", False))
 
     def _finish_stream(self, reply: str) -> None:
         if self._pending_stream is not None and self.on_stream is not None:

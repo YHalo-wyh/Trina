@@ -84,6 +84,17 @@ class TestParseAction(unittest.TestCase):
         self.assertEqual(action["params"], {"url": "https://example.test"})
         self.assertEqual(action["hypothesis"]["statement"], "验证入口")
 
+    def test_gateway_expanded_dsml_delimiters_are_not_rendered_as_text(self):
+        text = (
+            '< | | DSML | | calls>< | | DSML | | invoke name="poc_scan">'
+            '< | | DSML | | parameter name="params" string="false">'
+            '{"url":"https://example.test"}'
+            '</ | | DSML | | parameter></ | | DSML | | invoke></ | | DSML | | calls>'
+        )
+        action = parse_action(text)
+        self.assertEqual(action["action"], "poc_scan")
+        self.assertEqual(action["params"], {"url": "https://example.test"})
+
     def test_incomplete_dsml_is_protocol_error_not_plain_answer(self):
         action = parse_action('<|DSML|invoke name="poc_scan"><|DSML|parameter name="params">{')
         self.assertEqual(action.get("protocol"), "dsml")

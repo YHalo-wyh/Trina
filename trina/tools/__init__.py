@@ -20,7 +20,7 @@ from .registry import (
 )
 
 #: 工具子模块（顺序即提示词中的分组顺序）
-TOOL_MODULES = ("recon", "web", "vuln", "exploit", "creds", "terminal", "binary", "ctfy")
+TOOL_MODULES = ("recon", "web", "vuln", "exploit", "creds", "terminal", "workspace", "coordination", "binary", "ctfy")
 
 LOAD_ERRORS: dict[str, str] = {}
 

@@ -1,8 +1,8 @@
 # Trina Commander 与通用 Worker
 
-`trina swarm` 是任务级运行入口。Commander 负责 DAG、优先级、相似性路由和任务恢复；Worker 是可复用的通用执行单元，由 Capability Fabric 在每个任务开始时动态绑定能力。每个任务仍有独立的 ReAct 上下文、事实图、工作目录、状态、审计和报告。
+`trina swarm` 是任务级 Agent Runtime。Commander 决定什么 Intent 可以执行；事件驱动 Planner 只在任务图、事实或终态变化时推进；Capability Fabric 决定 Worker 本轮能调用哪些能力；通用 Worker 通过独立 `PentestAgent` 执行。每题的完整消息、`RunState`、工作目录、审计和报告保持隔离，协作平面只共享结构化待办、事实候选、观察、失败及证据引用。
 
-Capability 的模型、清单与租约边界见 [Capability Fabric](CAPABILITY_FABRIC.md)。
+本轮架构取舍参考 [ARTEX](https://github.com/RuoJi6/ARTEX) 的 Planner 唤醒、Todo、Intent 生命周期和 Worker Trace 思路，但没有复制其 Go/PostgreSQL/前端栈。Trina 使用现有 Python 运行时、JSON 检查点、`ToolRegistry` 和 Capability Fabric，避免新增第二套执行边界。
 
 ## 快速运行
 
@@ -10,7 +10,19 @@ Capability 的模型、清单与租约边界见 [Capability Fabric](CAPABILITY_F
 .\.venv\Scripts\python.exe -m trina swarm --target http://127.0.0.1:9099 --goal "验证目标并获取 flag" --workers 2
 ```
 
-默认只创建一个 `main` 任务，不再预设 Recon、Web、Verify 三类 Worker。Fabric 根据目标和意图选择少量可用能力；Worker 在任务结束后释放能力租约，但模型后端实例可被后续任务复用。
+默认创建一个 `main` Intent。需要并行分支时提供清单；运行中也可通过 `SwarmRuntime.add_task()` 增加任务。Fabric 根据任务发现少量能力；编码和协作查询工具作为所有 Worker 的核心运行时能力提供。Worker 完成后释放能力租约，模型后端实例可复用，但前一题的 Agent、状态和工具视图不会复用。
+
+## 五个协作部件
+
+| 部件 | 当前行为 | 持久位置 |
+|---|---|---|
+| 事件驱动 Planner | 仅在 `intent.added/settled/recovered/timeout` 或 `facts.published` 等修订变化时增加规划轮；轮询不触发重规划 | `coordination.planner_rounds/revision` |
+| 共享 Todolist | 保存目标、依赖、`waiting/ready/in_progress/终态` 和证据引用；Worker 轮换后仍存在 | `coordination.todo` |
+| Intent 队列 | 按目标、目标描述和能力生成稳定签名去重；按优先级领取，使用租约和 deadline，恢复时回收在途任务 | `coordination.intents` |
+| 双图 | 事实图只保存从真实 `RunState` 投影的资产、带证据发现和已验证凭据；探索图保存 Intent、依赖、状态、事实引用和锚点 | `coordination.facts/exploration` |
+| Worker Trace | 索引工具观察、失败、Intent 生命周期和来源 Worker；可查询其他 Intent，但不复制完整对话 | `coordination.traces` |
+
+Planner 当前是确定性的就绪队列调度器，不会为每个工具步骤调用主模型，也不会自动从任意模型文本生成无限分支。`add_task()` 是经过 DAG 校验和等价去重的动态入口；自动任务分解仍属于后续能力。
 
 ## 自定义任务图
 
@@ -41,47 +53,85 @@ tasks:
 .\.venv\Scripts\python.exe -m trina swarm --manifest tasks.yaml --workers 2
 ```
 
-`capabilities` 是可选约束，接受精确 Capability ID 或 `provides` 标签；留空时按任务意图发现。能力是否存在、依赖是否满足和运行时是否可用，在签发租约时判定。任务 ID、重复目标、缺失依赖和依赖环仍在启动前拒绝。
+`capabilities` 接受精确 Capability ID 或 `provides` 标签；留空时按任务意图发现。启动前拒绝空图、重复 ID、等价 Intent、未知能力、非法依赖、依赖环及非法预算。队列再次接收等价任务时返回去重结果，不会启动第二份执行。
 
-## 运行生命周期
+## 执行与唤醒顺序
 
-1. Commander 选择依赖已完成的就绪任务并领取空闲通用 Worker。
-2. Catalog 解析意图；Broker 过滤依赖和策略，固定 `id/version/digest/source` 快照。
-3. Worker 获得任务级租约、临时 `ToolRegistry` 以及 JIT Guidance。
-4. 所有动作仍经参数校验、`ScopeGuard`、审计、超时和 `ToolResult` 归一。
-5. Fabric 发布事实摘要哈希和证据引用；完整事实只留在本任务 `RunState`。
-6. 任务收尾后释放租约；旧 Registry 的后续调用会被拒绝，Worker 可领取另一组能力。
+```text
+清单 / add_task
+  → 事件修订增加
+  → Planner 消费到最新 revision，更新共享 Todo
+  → Intent Queue 返回依赖已完成的 ready 项
+  → WorkerPool + Capability Lease + Intent Lease
+  → 每任务新建 PentestAgent / ToolRegistry / RunState
+  → 工具结果进入本题状态与 Worker Trace
+  → 终态投影事实图，并以 anchor 连接探索图
+  → Intent settle 产生事件，唤醒下一轮 Planner
+  → 原子保存 swarm.json
+```
 
-## 独立上下文与证据交接
+Worker 的普通 ReAct 步骤只写留痕，不唤醒 Planner。一个任务完成、失败、发布新事实、恢复或新增 Intent 时才产生可调度事件。这使主调度成本与图变化相关，而不是与所有工具调用数线性绑定。
 
-Commander 在 Worker 每次决策前比较已完成任务和当前任务：
+## 命令行编码能力
 
-- 规范化目标和端口相同：`0.95`；主机相同但端口不同：`0.90`。
-- 当前任务显式依赖来源任务：至少 `0.75`。
-- 目标完全相同：至少 `0.70`；有效词项高度重合：至少 `0.65`。
-- 低于 `0.60` 不转发。
+通用 Worker 始终拥有以下核心工具，不依赖领域能力匹配：
 
-转发包包含来源任务、运行编号、相似度、理由、结构化情报和 `evidence_refs`。Flag、聊天历史、假设台账和其他题目的 `RunState` 不会直接合并。接收 Worker 必须在当前目标重新调用能力验证，才可写入自己的事实图。
+- `terminal_exec`：以前台 argv 形式执行命令，返回真实退出码、stdout、stderr 和耗时；通过 `run_external`，不使用 shell 字符串拼接。
+- `workspace_read`：按行有界读取项目文件。
+- `workspace_write`：原子创建或覆盖 UTF-8 文件，并记录前后哈希。
+- `workspace_edit`：按期望匹配次数精确替换；不匹配时不改文件。
+- `shared_context`、`shared_trace_search`、`shared_trace_get`：查看共享 Todo/双图摘要，检索或展开其他 Worker 的观察与失败。
 
-## 恢复与产物
+路径必须通过 `ScopeGuard.check_workspace_path`；外部命令仍走统一审计、超时和 ToolResult 归一。后台长任务继续使用 `terminal_start/status/stop`。
+
+## 独立上下文与经验交接
+
+Commander 在当前任务与已结束任务之间计算相关性：规范化目标与端口相同权重最高，显式依赖次之，再比较目标词项。达到阈值后，简报可以包含：
+
+- 来源明确的资产、带证据发现、已验证凭据和工件引用；
+- 成功观察，以及非零退出、超时、解析失败等失败经验；
+- 来源任务、运行 ID、状态、相关性和错误摘要。
+
+Flag、完整聊天、开放假设和来源题目的 `RunState` 不进入简报。失败经验只说明什么已经尝试、实际发生了什么；它不自动证明当前任务也会失败。接收 Worker 必须重新调用本题工具，结果才能进入自己的事实图。
+
+协作查询工具提供第二条按需路径：Worker 可以用关键词搜索所有其他 Intent 的 trace，再按 Intent 和 step 展开细节。Trace ID 使用单调序号，即使旧记录因上限被裁剪或运行恢复也不重复。
+
+## 双图定义
+
+事实图和探索图不能互相替代：
+
+- `facts`：实际工具状态投影，只有活跃资产、带证据且为 `verified/exploited` 的发现、已验证凭据及内部 Flag 记录。跨题简报会过滤 Flag。
+- `exploration.nodes`：Intent 节点与事实引用节点。
+- `exploration.edges`：`enables` 表示依赖，`yields` 表示某 Intent 产出事实。
+- `exploration.anchors`：事实来源锚点，用于复盘“哪次探索产生哪条事实”。
+
+待办、猜测和未验证线索只留在探索侧；模型文字不会直接写入事实图。
+
+## 超时、恢复与产物
 
 ```powershell
 .\.venv\Scripts\python.exe -m trina swarm --resume runs\<swarm-id>\swarm.json
 ```
 
-检查点版本 2 保存每个任务的能力快照和证据引用。恢复保留已完成任务，只把中断时为 `running` 的任务改回 `pending`；新租约必须精确匹配原快照，清单版本或摘要漂移会失败关闭。恢复粒度仍是整个任务，不恢复某个 ReAct 中间步骤或旧进程。
+检查点版本 3 保存任务记录、能力快照和完整 coordination 状态。恢复保留终态任务；检查点中的 `running` Intent 释放旧 Worker/Intent 租约并回到 `pending`，下一次领取增加尝试号。运行中的 `PentestAgent` 由任务 `max_seconds` 收尾；`expire_leases()` 只用于确认没有活跃执行器后的租约回收，不能并发杀死任意自定义 Python executor。
 
 | 产物 | 路径 |
 |---|---|
-| Commander 检查点 | `runs/<swarm-id>/swarm.json` |
+| Commander 检查点（含 Todo、Intent、双图、Trace） | `runs/<swarm-id>/swarm.json` |
 | Commander 哈希链审计 | `logs/<swarm-id>.jsonl` |
 | Commander 汇总报告 | `reports/<swarm-id>_report.{md,html}` |
 | Worker 状态 | `runs/<swarm-id>-<task-id>-<attempt>/state.json` |
 | Worker 哈希链审计 | `logs/<swarm-id>-<task-id>-<attempt>.jsonl` |
 | Worker 报告 | `reports/<swarm-id>-<task-id>-<attempt>_report.{md,html}` |
 
-当前首版已实现任务并行、通用 Worker 复用、能力发现、租约回收、版本快照、JIT Guidance、MCP/CLI 接入、证据索引、Commander 定向交接和任务级恢复。尚未实现运行中人工拆分新任务、长驻 MCP 服务池、语义向量检索或自动能力组合优化。
+恢复粒度仍是整个任务，不恢复某个 ReAct 中间请求或旧原生进程。检查点中的能力版本或摘要漂移时失败关闭。
+
+## 当前边界
+
+已实现：事件驱动调度、共享 Todo、Intent 去重/租约/恢复、双图、跨 Worker 观察与失败检索、任务留痕、并行 Worker、能力装配和任务级恢复。
+
+尚未实现：LLM 自动生成和裁剪任意探索分支、跨运行向量经验库、运行中的 CLI Worker 接管、长驻 MCP 服务池、跨 Worker 自动冲突裁决，以及同模型同预算的完整 A/B/C/D 协作收益实验。
 
 ## 上下文与缓存生命周期
 
-Worker 使用任务独立的状态差量和继承检查点；完整旧消息保存在对应运行目录的 context 下。相同 Core 和工具快照生成稳定缓存标识，当前题目、运行编号和计时不进入该标识。工具快照不同则进入请求条件变化诊断，任务上下文仍保持隔离。后端复用不等于 KV 缓存已共享，当前也不为维持缓存加载全部工具；供应商策略和验证边界见 [缓存感知运行时](CACHE_RUNTIME.md)。
+Worker 使用任务独立的状态差量和继承检查点；完整旧消息保存在对应运行目录的 context 下。相同 Core 和工具快照生成稳定缓存标识，当前题目、运行编号和计时不进入该标识。工具快照不同则进入请求条件变化诊断。后端对象复用不等于服务端 KV Cache 已共享；当前也不为维持缓存加载全部领域工具。供应商策略和验证边界见[缓存感知运行时](CACHE_RUNTIME.md)。

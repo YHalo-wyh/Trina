@@ -161,8 +161,8 @@
         {
           "id": "TR-03-R04",
           "level": "MUST",
-          "statement": "滚动不得重新解析稳定历史；流式更新只渲染变化块。鼠标拖选必须可复制 Unicode 文本且保留输入草稿，并可释放鼠标接管使用原生终端选取。",
-          "tests": ["tests.test_transcript.TranscriptTests.test_scrolling_does_not_reparse_or_rerender_stable_history", "tests.test_transcript.TranscriptTests.test_drag_selection_copies_chinese_lines_and_keeps_input_draft", "tests.test_transcript.TranscriptTests.test_native_selection_mode_can_release_mouse_tracking"]
+          "statement": "滚动不得重新解析稳定历史或二次折行；流式更新只渲染变化块。支持 VT 滚动区域时复用未变化行，不支持时安全回退；最早位置不得存在无效滚动范围。鼠标拖选必须可复制 Unicode 文本且保留输入草稿，并可释放鼠标接管使用原生终端选取。",
+          "tests": ["tests.test_transcript.TranscriptTests.test_scrolling_does_not_reparse_or_rerender_stable_history", "tests.test_transcript.TranscriptTests.test_plain_long_lines_are_wrapped_once_and_window_does_not_wrap_again", "tests.test_transcript.TranscriptTests.test_oldest_position_has_no_dead_scroll_range", "tests.test_transcript.TranscriptTests.test_terminal_scroll_region_reuses_unchanged_rows", "tests.test_transcript.TranscriptTests.test_real_vt_wheel_uses_scroll_region_and_keeps_bottom_chrome", "tests.test_transcript.TranscriptTests.test_drag_selection_copies_chinese_lines_and_keeps_input_draft", "tests.test_transcript.TranscriptTests.test_native_selection_mode_can_release_mouse_tracking"]
         },
         {
           "id": "TR-03-R05",
@@ -230,6 +230,12 @@
           "level": "MUST",
           "statement": "缓存诊断必须区分可见消息追加、前缀修改、请求条件变化及压缩，未命中输入只用供应商实际总输入与缓存读取求差，不得编造缓存损失归因。",
           "tests": ["tests.test_cache_runtime.CacheRuntimeTests.test_diagnostics_distinguish_growth_rewrite_and_settings_without_inventing_miss_cause", "tests.test_cache_runtime.CacheRuntimeTests.test_deepseek_hit_and_miss_can_supply_total_without_double_counting"]
+        },
+        {
+          "id": "TR-04-R07",
+          "level": "MUST",
+          "statement": "支持原生工具的 Chat 后端必须通过标准 API tools/tool_calls 调用并维护 assistant-tool 配对；JSON/DSML 仅作兼容回退，网关插入空格或重复分隔符的 DSML 也不得显示为最终正文。",
+          "tests": ["tests.test_interactive.TestChatAgent.test_native_tool_calls_use_standard_api_and_keep_tool_pairs", "tests.test_brain.TestParseAction.test_gateway_expanded_dsml_delimiters_are_not_rendered_as_text"]
         }
       ]
     },
@@ -238,7 +244,7 @@
       "title": "统一工具契约",
       "priority": "P0",
       "status": "implemented",
-      "implementation": ["trina/tools/registry.py", "trina/tools/__init__.py", "trina/tools/terminal.py", "trina/tools/external.py", "trina/tools/binary.py", "trina/binary/models.py", "trina/binary/backends.py", "trina/binary/sessions.py"],
+      "implementation": ["trina/tools/registry.py", "trina/tools/__init__.py", "trina/tools/terminal.py", "trina/tools/workspace.py", "trina/tools/external.py", "trina/tools/binary.py", "trina/binary/models.py", "trina/binary/backends.py", "trina/binary/sessions.py"],
       "verification": ["V-CONTRACT", "V-TESTS"],
       "rules": [
         {
@@ -258,6 +264,12 @@
           "level": "MUST",
           "statement": "radare2 与 GDB 必须作为真实注册工具运行，按任务和能力租约隔离持久会话，显式区分文件偏移、静态 VA 与运行 VA；超时、释放、关闭或恢复时不得留下可复用旧进程。",
           "tests": ["tests.test_binary.BinaryContractTests.test_real_registry_schemas_and_500k_default", "tests.test_binary.BinaryContractTests.test_address_ref_keeps_offset_static_and_runtime_spaces_separate", "tests.test_binary.RealBinaryTests.test_real_static_dynamic_candidate_and_authoritative_local_verification", "tests.test_binary.RealBinaryTests.test_capability_release_and_tool_timeout_cancel_real_processes", "tests.test_binary.RealBinaryTests.test_two_workers_hold_distinct_debuggers_and_idle_expiration", "tests.test_binary.RealBinaryTests.test_chat_resume_expires_saved_handles_and_does_not_restart_processes"]
+        },
+        {
+          "id": "TR-05-R04",
+          "level": "MUST",
+          "statement": "通用 Agent 必须有真实前台 argv 命令和项目文件读写编辑能力；命令经 run_external，路径经工作区护栏，写入原子替换，编辑匹配失败时不破坏原文件。",
+          "tests": ["tests.test_workspace_tools.WorkspaceToolTests.test_registered_coding_toolchain_writes_edits_reads_and_executes", "tests.test_workspace_tools.WorkspaceToolTests.test_edit_mismatch_is_non_destructive"]
         }
       ]
     },
@@ -348,7 +360,7 @@
       "title": "任务 DAG 定义与校验",
       "priority": "P1",
       "status": "implemented",
-      "implementation": ["trina/swarm.py", "docs/SWARM.md"],
+      "implementation": ["trina/swarm.py", "trina/coordination.py", "docs/SWARM.md"],
       "verification": ["V-CONTRACT", "V-TESTS"],
       "rules": [
         {
@@ -356,6 +368,12 @@
           "level": "MUST",
           "statement": "任务图必须在启动前拒绝重复 ID、等价任务、未知依赖、依赖环和非法预算。",
           "tests": ["tests.test_swarm.SwarmTests.test_dag_validation_and_dedup"]
+        },
+        {
+          "id": "TR-10-R02",
+          "level": "MUST",
+          "statement": "Planner 只在协作事件修订变化时增加规划轮；普通轮询不重新规划，共享 Todolist 必须保存目标、依赖、状态和证据引用。",
+          "tests": ["tests.test_coordination.CoordinationTests.test_planner_only_advances_on_events_and_todo_keeps_dependencies"]
         }
       ]
     },
@@ -385,7 +403,7 @@
       "title": "并行领取、租约与 Worker 复用",
       "priority": "P1",
       "status": "implemented",
-      "implementation": ["trina/swarm.py"],
+      "implementation": ["trina/swarm.py", "trina/coordination.py"],
       "verification": ["V-CONTRACT", "V-TESTS"],
       "rules": [
         {
@@ -396,6 +414,12 @@
             "tests.test_swarm.SwarmTests.test_parallel_leases_reuse_and_handoff",
             "tests.test_swarm.SwarmTests.test_worker_lease_rejects_stale_release"
           ]
+        },
+        {
+          "id": "TR-12-R02",
+          "level": "MUST",
+          "statement": "Intent 必须稳定去重并记录优先级、依赖、deadline 和尝试号；没有活跃执行器的超时租约或恢复时遗留租约必须可回收到 pending。",
+          "tests": ["tests.test_coordination.CoordinationTests.test_timeout_recovery_dedup_and_checkpoint_round_trip"]
         }
       ]
     },
@@ -404,7 +428,7 @@
       "title": "独立上下文与 Commander 定向情报",
       "priority": "P1",
       "status": "implemented",
-      "implementation": ["trina/context.py", "trina/swarm.py", "trina/brain/agent.py"],
+      "implementation": ["trina/context.py", "trina/swarm.py", "trina/coordination.py", "trina/tools/coordination.py", "trina/brain/agent.py"],
       "verification": ["V-CONTRACT", "V-TESTS"],
       "rules": [
         {
@@ -421,6 +445,12 @@
             "tests.test_swarm.SwarmTests.test_parallel_leases_reuse_and_handoff",
             "tests.test_swarm.SwarmTests.test_commander_does_not_forward_unrelated_completed_task"
           ]
+        },
+        {
+          "id": "TR-13-R03",
+          "level": "MUST",
+          "statement": "协作层必须把已验证事实与未完成探索分成双图，并允许相关 Worker 复用带来源的成功观察和失败经验；完整对话、Flag 和当前题事实判定仍隔离。",
+          "tests": ["tests.test_coordination.CoordinationTests.test_fact_and_exploration_graphs_are_separate_and_anchored", "tests.test_coordination.CoordinationTests.test_trace_search_reuses_failures_but_excludes_current_worker", "tests.test_swarm.SwarmTests.test_related_worker_receives_prior_failure_experience"]
         }
       ]
     },
@@ -429,14 +459,14 @@
       "title": "检查点与任务级恢复",
       "priority": "P1",
       "status": "implemented",
-      "implementation": ["trina/swarm.py"],
+      "implementation": ["trina/swarm.py", "trina/coordination.py"],
       "verification": ["V-CONTRACT", "V-TESTS"],
       "rules": [
         {
           "id": "TR-14-R01",
           "level": "MUST",
-          "statement": "恢复必须保留终态任务，只把中断的 running 任务重新置为 pending 并增加下一次尝试号。",
-          "tests": ["tests.test_swarm.SwarmTests.test_resume_retries_only_inflight"]
+          "statement": "恢复必须保留终态任务，只把中断的 running TaskRecord 与 Intent 租约重新置为 pending 并增加下一次尝试号；Todo、双图、Trace 和单调 Trace 序号必须随版本 3 检查点恢复。",
+          "tests": ["tests.test_swarm.SwarmTests.test_resume_retries_only_inflight", "tests.test_coordination.CoordinationTests.test_timeout_recovery_dedup_and_checkpoint_round_trip"]
         }
       ]
     },
@@ -494,16 +524,22 @@
     {
       "id": "TR-18",
       "title": "可复用研究经验与协作评测",
-      "priority": "P2",
-      "status": "planned",
-      "implementation": ["trina/swarm.py", "trina/eval"],
-      "verification": ["V-CONTRACT"],
-      "limitations": ["尚无持久经验检索和固定同预算的 A/B/C/D 协作收益评测。"],
+      "priority": "P1",
+      "status": "partial",
+      "implementation": ["trina/swarm.py", "trina/coordination.py", "trina/tools/coordination.py", "trina/eval"],
+      "verification": ["V-CONTRACT", "V-TESTS"],
+      "limitations": ["当前经验只在一次 Swarm 运行及其检查点内持久；尚无跨运行向量检索、自动冲突裁决和固定同预算的 A/B/C/D 协作收益评测。"],
       "rules": [
         {
           "id": "TR-18-R01",
+          "level": "MUST",
+          "statement": "当前运行内的工具观察、错误和 Intent 生命周期必须以来源 Worker、Intent、步骤、结果与时间留痕并可检索；复用内容在当前题目仍须重新验证。",
+          "tests": ["tests.test_coordination.CoordinationTests.test_trace_search_reuses_failures_but_excludes_current_worker", "tests.test_swarm.SwarmTests.test_related_worker_receives_prior_failure_experience"]
+        },
+        {
+          "id": "TR-18-R02",
           "level": "PLANNED",
-          "statement": "未来经验复用必须保留来源并在当前题目重新验证，协作收益必须按同模型、同题集和可比总预算评测。",
+          "statement": "跨运行经验检索和协作收益必须按同模型、同题集和可比总预算进行 A/B/C/D 评测。",
           "tests": []
         }
       ]

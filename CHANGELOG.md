@@ -2,6 +2,14 @@
 
 ## 开发中 · 2026-11-13
 
+### Agent 协作运行时与编码能力
+
+- 参考 ARTEX 的事件唤醒、Todo、Intent 生命周期和 Worker Trace 思路，在现有 `SwarmRuntime` 外加入轻量 `CoordinationRuntime`：Planner 只响应图变化，普通 Worker 步骤不触发主规划。
+- 新增持久共享 Todolist、带稳定签名去重/优先级/依赖/租约/超时回收的 Intent 队列，以及事实图与探索图双图；检查点升级到版本 3。
+- Worker Trace 记录真实工具观察、错误和 Intent 生命周期。相关 Worker 可复用带来源的成功观察与失败经验，但每题 `RunState`、完整消息和事实判定仍隔离。
+- 新增 `terminal_exec`、`workspace_read/write/edit` 四个编码工具，以及 `shared_context`、`shared_trace_search/get` 三个协作查询工具；注册工具总数由 31 增至 38。
+- Chat Agent 改为优先使用标准 API 原生 `tools` / `tool_calls` 并维护工具消息配对；修复网关把 DSML 分隔符扩成 `< | | DSML | | ...>` 后被当作最终正文的问题。
+
 ### radare2 + GDB 原生工具链
 
 - 新增 10 个 ToolRegistry binary 工具，使用 r2 stdio JSON 与 GDB/MI3 持久会话；支持静态索引、PIE/ASLR 地址转换、断点、寄存器/内存/帧、文本 stdin、候选执行与结构化错误。
@@ -30,6 +38,8 @@
 
 ### 滚动性能、复制与模型状态栏
 
+- 对照 Oh My Pi 的“稳定历史与可变视口分离”后，视口改为按脏块一次性完成 ANSI/Unicode 物理行折行，关闭 `prompt_toolkit` 二次折行；支持 VT 的终端用 SU/SD 滚动区域搬运不变行并同步旧屏缓存，下一帧只补新露出的行，其他终端保持安全降级。
+- 修正最早历史位置多出一整屏无效滚动范围的问题；到达上下边界后不再提交无画面变化的重绘。
 - 会话内容改为按块缓存排版行，滚动和活动动画不再扫描全文；流式增量合并到实际绘制帧，只更新变化块。
 - 支持鼠标拖选中文与多行文本，释放后复制；Ctrl+C 在有选区时复制，Esc 清除，F2 切换终端原生选择模式。
 - 新增独立的模型 Agent 状态栏，在每次请求末尾追加真实进度、工具计数、环境观察及后台作业快照，保留既有结构化消息前缀。

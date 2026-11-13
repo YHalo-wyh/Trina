@@ -103,6 +103,7 @@ class PentestAgent:
         stop_event: Any | None = None,
         pause_event: Any | None = None,
         controller: Any | None = None,
+        shared_context: dict[str, Any] | None = None,
     ):
         self.config = config
         self.registry = registry or build_registry()
@@ -119,6 +120,8 @@ class PentestAgent:
         self.pause_event = pause_event
         #: 独立授权控制器（None 时按 config.policy 自动创建）
         self.controller = controller
+        #: Swarm 只读协作平面；普通任务为空，不改变单 Agent 契约。
+        self.shared_context = dict(shared_context or {})
 
     # ------------------------------------------------------------------ 入口
     def run(
@@ -199,6 +202,7 @@ class PentestAgent:
         self._ctx = ctx
         ctx.extra["stop_event"] = self.stop_event
         ctx.extra["llm_backend"] = self.backend
+        ctx.extra.update(self.shared_context)
         state.note("run", f"开始对 {target} 的自动化渗透测试", goal=goal)
 
         # 各题状态保持独立。Commander 只把判断为相关的有效情报作为候选线索转发，

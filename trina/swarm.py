@@ -19,6 +19,7 @@ from .audit import AuditLog
 from .brain import PentestAgent
 from .capabilities import CapabilityCatalog, CapabilityFabric, CapabilityRuntime
 from .config import TrinaConfig
+from .coordination import CoordinationRuntime
 from .context import BRIEF_VERSION
 from .llm import make_backend
 from .state import RunState
@@ -26,7 +27,7 @@ from .tools import ToolRegistry, build_registry
 
 
 _TASK_ID = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$")
-TERMINAL = {"completed", "blocked", "failed", "skipped"}
+TERMINAL = {"completed", "blocked", "failed", "skipped", "timed_out"}
 
 
 @dataclass(frozen=True)
@@ -260,6 +261,7 @@ class SwarmRuntime:
         self.stop_event = threading.Event()
         self.pause_event = threading.Event()
         self.events: list[dict[str, Any]] = []
+        self.coordination = CoordinationRuntime(self.tasks)
 
     @classmethod
     def resume(
@@ -273,7 +275,7 @@ class SwarmRuntime:
         capability_dirs: list[str | Path] | None = None,
     ) -> "SwarmRuntime":
         data = json.loads(Path(checkpoint).read_text(encoding="utf-8"))
-        if data.get("version") not in (1, 2):
+        if data.get("version") not in (1, 2, 3):
             raise ValueError("不支持的 swarm 检查点版本")
         tasks = [TaskSpec.from_dict(item) for item in data["tasks"]]
         runtime = cls(
@@ -299,6 +301,9 @@ class SwarmRuntime:
                 record.capability_lease_id = ""
             runtime.records[task_id] = record
         runtime.events = list(data.get("events", []))
+        runtime.coordination = CoordinationRuntime.restore(tasks, data.get("coordination"))
+        runtime.coordination.recover_inflight()
+        runtime.coordination.sync_records(runtime.records)
         return runtime
 
     def add_task(self, task: TaskSpec) -> bool:
@@ -310,6 +315,10 @@ class SwarmRuntime:
         validate_tasks(self.tasks + [task])
         self.tasks.append(task)
         self.records[task.id] = TaskRecord()
+        if not self.coordination.add_intent(task):
+            self.tasks.pop()
+            del self.records[task.id]
+            return False
         self.audit.append("swarm.task.add", task=task.id, depends_on=task.depends_on)
         self._save()
         return True
@@ -344,6 +353,13 @@ class SwarmRuntime:
             lease=lease.id,
             capabilities=record.capability_snapshot,
         )
+        # 编码能力和协作读取属于所有通用 Worker 的基础能力，不随领域能力租约裁掉。
+        from .tools.coordination import TOOLS as COORDINATION_TOOLS
+        from .tools.workspace import TOOLS as WORKSPACE_TOOLS
+
+        for tool in [*COORDINATION_TOOLS, *WORKSPACE_TOOLS]:
+            if lease.registry.get(tool.spec.name) is None:
+                lease.registry.register(tool)
         return lease.registry
 
     def _hints(self, task: TaskSpec) -> list[str]:
@@ -355,14 +371,19 @@ class SwarmRuntime:
         by_id = {item.id: item for item in self.tasks}
         briefs: list[dict[str, Any]] = []
         for source_id, record in self.records.items():
-            if source_id == task.id or record.status != "completed":
+            if source_id == task.id or record.status not in TERMINAL:
                 continue
             intelligence = record.result.get("intelligence")
             source = by_id.get(source_id)
-            if source is None or not isinstance(intelligence, dict) or not intelligence:
+            if source is None:
                 continue
             score, reasons = _task_similarity(source, task)
             if score < 0.6:
+                continue
+            experience = self.coordination.experience_for(source_id)
+            if not isinstance(intelligence, dict):
+                intelligence = {}
+            if not intelligence and not any(experience.values()) and not record.error:
                 continue
             briefs.append({
                 "version": BRIEF_VERSION,
@@ -374,6 +395,9 @@ class SwarmRuntime:
                 "reasons": reasons,
                 "evidence_refs": list(record.evidence_refs),
                 "intelligence": intelligence,
+                "experience": experience,
+                "source_status": record.status,
+                "source_error": record.error[:300],
             })
         return sorted(briefs, key=lambda item: (-float(item["similarity"]), str(item["source_task"])))
 
@@ -383,7 +407,14 @@ class SwarmRuntime:
             scope__max_qps=self.config.scope.max_qps / self.max_workers,
             scope__max_host_concurrency=max(1, self.config.scope.max_host_concurrency // self.max_workers),
         )
-        agent = PentestAgent(worker_config, backend=worker.backend, registry=registry, stop_event=self.stop_event, pause_event=self.pause_event)
+        agent = PentestAgent(
+            worker_config,
+            backend=worker.backend,
+            registry=registry,
+            stop_event=self.stop_event,
+            pause_event=self.pause_event,
+            shared_context={"coordination_runtime": self.coordination, "intent_id": task.id},
+        )
         usage_before = worker.backend.ledger.to_dict()
         state = agent.run(
             task.target,
@@ -447,13 +478,14 @@ class SwarmRuntime:
     def _save(self) -> None:
         self.workspace.mkdir(parents=True, exist_ok=True)
         data = {
-            "version": 2,
+            "version": 3,
             "run_id": self.run_id,
             "max_workers": self.max_workers,
             "tasks": [asdict(task) for task in self.tasks],
             "records": {key: asdict(value) for key, value in self.records.items()},
             "events": self.events,
             "capability_memory": self.fabric.memory_snapshot(),
+            "coordination": self.coordination.snapshot(),
         }
         temporary = self.checkpoint.with_suffix(".tmp")
         temporary.write_text(json.dumps(data, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
@@ -468,6 +500,13 @@ class SwarmRuntime:
                 if self.stop_event.is_set() and not futures:
                     break
                 if not self.stop_event.is_set() and not self.pause_event.is_set():
+                    previous_rounds = self.coordination.planner_rounds
+                    ready_intents = set(self.coordination.plan(self.records))
+                    if self.coordination.planner_rounds != previous_rounds:
+                        self.audit.append(
+                            "planner.round", round=self.coordination.planner_rounds,
+                            revision=self.coordination.revision, ready=sorted(ready_intents),
+                        )
                     for task in sorted(list(self.tasks), key=lambda item: (-item.priority, item.id)):
                         record = self.records[task.id]
                         if record.status != "pending":
@@ -476,10 +515,13 @@ class SwarmRuntime:
                         if any(status in {"failed", "blocked", "skipped"} for status in deps):
                             record.status = "skipped"
                             record.error = "前序任务未完成"
+                            self.coordination.terminate_unclaimed(task.id, "skipped", record.error)
                             self.audit.append("swarm.task.skip", task=task.id, reason=record.error)
                             self._save()
                             continue
                         if any(status != "completed" for status in deps):
+                            continue
+                        if task.id not in ready_intents:
                             continue
                         worker = self.pool.acquire()
                         if worker is None:
@@ -489,6 +531,7 @@ class SwarmRuntime:
                         except Exception as exc:  # noqa: BLE001 - 单任务能力解析失败不拖垮其余任务
                             record.status = "failed"
                             record.error = f"CapabilityError: {exc}"
+                            self.coordination.terminate_unclaimed(task.id, "failed", record.error)
                             self.audit.append("capability.lease.error", task=task.id, worker=worker.id, error=record.error)
                             worker.capability_lease_id = ""
                             worker.capabilities = ()
@@ -501,6 +544,10 @@ class SwarmRuntime:
                         record.worker_id = worker.id
                         record.lease_id = worker.lease_id
                         record.started_at = time.time()
+                        self.coordination.claim(
+                            task.id, worker.id, lease_id=worker.lease_id,
+                            ttl=task.max_seconds + 30,
+                        )
                         task_run_id = f"{self.run_id}-{task.id}-{record.attempt}"
                         self.events.append({"event": "task.start", "task": task.id, "worker": worker.id, "lease": worker.lease_id, "time": record.started_at})
                         self.audit.append("swarm.task.start", task=task.id, worker=worker.id, lease=worker.lease_id, attempt=record.attempt)
@@ -522,6 +569,7 @@ class SwarmRuntime:
                     record = self.records[task.id]
                     if record.lease_id != lease:
                         raise RuntimeError("任务租约不匹配")
+                    state: RunState | None = None
                     try:
                         state = future.result()
                         record.result = self._result(state)
@@ -538,11 +586,13 @@ class SwarmRuntime:
                         record.evidence_refs = self.fabric.refs_for_task(task.id)
                         record.result["evidence_refs"] = list(record.evidence_refs)
                         record.result["capabilities"] = list(record.capability_snapshot)
+                        self.coordination.publish_state(task.id, state, evidence_refs=record.evidence_refs)
                     except Exception as exc:  # noqa: BLE001 - 单任务失败不影响其余分支
                         record.status = "failed"
                         record.error = f"{type(exc).__name__}: {exc}"
                     finally:
                         record.ended_at = time.time()
+                        self.coordination.settle(task.id, lease, record.status, error=record.error)
                         self.events.append({"event": "task.end", "task": task.id, "worker": worker.id, "status": record.status, "time": record.ended_at})
                         self.audit.append("swarm.task.end", task=task.id, worker=worker.id, status=record.status, error=record.error)
                         self.fabric.release(capability_lease)
@@ -619,4 +669,9 @@ class SwarmRuntime:
             "workers_created": len(self.pool.workers),
             "worker_reuses": sum(max(0, worker.completed - 1) for worker in self.pool.workers),
             "capability_memory": self.fabric.memory_snapshot(),
+            "coordination": self.coordination.overview(),
+            "graphs": {
+                "facts": list(self.coordination.facts.values()),
+                "exploration": self.coordination.exploration,
+            },
         }

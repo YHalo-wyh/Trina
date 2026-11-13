@@ -53,7 +53,7 @@
 
 **CLI 界面更新（2026-10-28）**：[首页、审批与工作台使用说明](docs/CLI_UI.md) · [单主控 / 多 Agent / 黑板研究复核](design/adr/0017-specialist-consultation-without-blackboard.md)
 
-**V2 智能体群首版**：[Swarm 使用说明](docs/SWARM.md) · `trina swarm --target http://127.0.0.1:9099 --goal "验证目标" --workers 2`
+**V2 智能体群运行时**：[Swarm 使用说明](docs/SWARM.md) · `trina swarm --target http://127.0.0.1:9099 --goal "验证目标" --workers 2`
 
 自动化渗透测试 Agent：**大模型 ReAct 决策 + 全套工具封装 + 多靶场适配 + 默认完全信任 + 标准报告 + 评测框架**。
 
@@ -117,7 +117,7 @@ scripts/dev.sh play --target 127.0.0.1
 | 能力 | 落地位置 | 关键设计 |
 |---|---|---|
 | 1. 自动决策大脑 | `trina/brain/` | ReAct 循环 + PTES 阶段机（事实驱动推进）+ **假设台账**（按价值×置信度×信息增量排序验证）+ 失败分类与循环守卫（无新信息就打转→换参数→换工具→请人介入）+ 预算收敛；支持原生工具调用与 JSON Action，执行统一收口 |
-| 2. 工具统一封装 | `trina/tools/` | 31 个注册工具统一 `ToolSpec/ToolResult` 契约；目标分析能力可按约定降级，10 个原生二进制工具缺少 r2/GDB/bwrap 时明确报错，不模拟成功 |
+| 2. 工具统一封装 | `trina/tools/` | 38 个注册工具统一 `ToolSpec/ToolResult` 契约；包含前台命令、文件读写编辑、共享追踪查询及 10 个原生二进制工具；缺少依赖时明确报错，不模拟成功 |
 | 3. 靶场适配 | `trina/adapters/` | `local` / `docker-compose` / `http-range` / `tsecbench` 四类适配器；仓库不再携带静态靶场注册表，按需从 `~/.trina/ranges` 或显式 YAML 载入 |
 | 4. 执行信任与审计 | `trina/scope.py` + `trina/audit.py` | 默认 `full` 信任并自动执行；可切换 `restricted` 恢复网段、动作和载荷边界；两种模式都保留超时、取消、限速和 SHA-256 哈希链审计 |
 | 5. 标准报告 | `trina/report/` | Markdown + 自包含 HTML（内联 CSS/SVG，无外部依赖），含执行摘要、攻击路径、漏洞详情（CVSS/CWE/证据/复现/修复）、**证据链与假设台账**（mermaid 关系图，结论可反向追溯）、凭据与 flag、工具时间线、合规声明 |
@@ -148,9 +148,9 @@ scripts/dev.sh play --target 127.0.0.1
 
 [Capability Fabric](docs/CAPABILITY_FABRIC.md) 按任务发现、租用和执行 Tool、CLI 与 MCP 能力。通用 Worker 在任务间切换能力，版本快照固定，释放后旧租约失效。Guidance 与工具 Schema 按需加载，执行继续通过 ToolRegistry；Commander 只转发证据索引与来源明确的候选情报。实现取舍见 [ADR-0021](design/adr/0021-capability-fabric.md)。
 
-`trina swarm` 的每个题目也保持独立上下文和事实图。Commander 会检查已完成任务与当前任务的目标、显式依赖和验证方向，只在相似度达到阈值时转发资产、已验证发现、已验证凭据和工件位置；Flag、聊天历史和其他题目的 `RunState` 不会被合并。接收情报的 Worker 必须在自己的目标上重新验证后才能入账。
+`trina swarm` 使用事件驱动 Planner、共享 Todolist、可去重且带租约的 Intent 队列，以及事实图 / 探索图双图。每个题目的 `RunState` 与聊天仍隔离；Commander 只把来源明确的观察、失败经验和事实候选定向交给相关 Worker，接收方必须在自己的目标上重新验证后才能入账。Flag、完整聊天和其他题目的 `RunState` 不会被合并。
 
-## 已封装的工具（31 项）
+## 已封装的工具（38 项）
 
 | 类别 | 工具 | 动作等级 |
 |---|---|---|
@@ -159,7 +159,9 @@ scripts/dev.sh play --target 127.0.0.1
 | vuln | `poc_scan`（21 个只读 PoC） `nuclei_scan`（缺 nuclei 自动降级内置引擎） | detect |
 | exploit | `sqli_test` `cmd_inject_test` `lfi_test` `file_upload_test` `rce_exec` | verify / exploit |
 | creds | `weak_password_brute`（ssh/ftp/mysql/redis/http_basic/http_form） `http_form_login` `flag_hunt` | exploit / verify |
-| utility | `terminal_start` / `terminal_status` / `terminal_stop`（后台程序启动、等待、查询和取消） | exploit / detect |
+| utility | `terminal_exec`（前台 argv 命令）、`terminal_start` / `terminal_status` / `terminal_stop`（后台程序启动、等待、查询和取消） | exploit / detect |
+| workspace | `workspace_read` / `workspace_write` / `workspace_edit`（项目内有界读取、原子写入、精确替换） | detect / exploit |
+| coordination | `shared_context` / `shared_trace_search` / `shared_trace_get`（共享待办、双图摘要、其他 Worker 观察与失败留痕） | detect |
 | binary | `binary_open` `binary_overview` `binary_functions` `binary_function` `binary_xrefs` `debug_start` `debug_control` `debug_inspect` `binary_session` `binary_execute` | detect / exploit |
 | benchmark | `ctfy_task`（读取、刷新或提交当前 CTFY v3 问题） | detect |
 

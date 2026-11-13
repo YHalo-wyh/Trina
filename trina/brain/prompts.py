@@ -278,8 +278,24 @@ _DSML_PARAMETER = re.compile(
 _DSML_ATTR = re.compile(r"(?P<key>[\w-]+)\s*=\s*(['\"])(?P<value>.*?)\2", re.DOTALL)
 
 
-def _looks_like_dsml(text: str) -> bool:
+_DSML_PREFIX = re.compile(
+    r"<\s*(?P<close>/?)\s*(?:\|\s*)+DSML\s*(?:\|\s*)+",
+    re.IGNORECASE,
+)
+
+
+def _normalize_dsml(text: str) -> str:
+    """归一 DeepSeek 网关偶发的全角/重复分隔符 DSML 标签。
+
+    部分兼容网关会把 ``<|DSML|invoke>`` 展开成
+    ``< | | DSML | | invoke>``。只规范标签前缀，不改参数正文中的管道符。
+    """
     normalized = (text or "").replace("｜", "|")
+    return _DSML_PREFIX.sub(lambda match: f"<{match.group('close')}|DSML|", normalized)
+
+
+def _looks_like_dsml(text: str) -> bool:
+    normalized = _normalize_dsml(text)
     return bool(re.search(r"<\s*\|\s*DSML\s*\|", normalized, re.IGNORECASE))
 
 
@@ -290,7 +306,7 @@ def _parse_dsml_actions(text: str) -> list[dict]:
     parameter。这里把其中的 hypothesis/test_id/thought 提回动作顶层，其余内容
     保持为工具参数。只接受闭合完整的 invoke，残缺协议由调用方要求模型重试。
     """
-    normalized = (text or "").replace("｜", "|")
+    normalized = _normalize_dsml(text)
     actions: list[dict] = []
     for match in _DSML_INVOKE.finditer(normalized):
         params: dict = {}

@@ -350,6 +350,15 @@ class TestScopeAwareToolBehaviour(unittest.TestCase):
                 self.assertNotIn("target", spec.params)
                 self.assertNotIn("url", spec.params)
                 continue
+            if spec.category == "coordination":
+                self.assertNotIn("target", spec.params, "协作查询按当前 Swarm/Intent 定位")
+                self.assertNotIn("url", spec.params)
+                continue
+            if spec.category == "workspace":
+                self.assertIn("path", spec.params, "工作区工具按项目文件路径定位")
+                self.assertNotIn("target", spec.params)
+                self.assertNotIn("url", spec.params)
+                continue
             filled = [key for key in ("target", "url") if key in spec.params]
             self.assertTrue(filled, f"{name} 既没有 target 也没有 url 参数，--target 无法使用")
 

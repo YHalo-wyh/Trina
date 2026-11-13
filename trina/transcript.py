@@ -6,10 +6,12 @@ import os
 from typing import Any
 
 from prompt_toolkit.data_structures import Point
-from prompt_toolkit.formatted_text import ANSI, fragment_list_to_text, to_formatted_text
+from prompt_toolkit.formatted_text import ANSI, fragment_list_to_text, fragment_list_width, to_formatted_text
 from prompt_toolkit.formatted_text.utils import split_lines
 from prompt_toolkit.layout.controls import UIContent, UIControl
+from prompt_toolkit.layout.utils import explode_text_fragments
 from prompt_toolkit.mouse_events import MouseButton, MouseEventType
+from prompt_toolkit.utils import get_cwidth
 
 
 class TranscriptControl(UIControl):
@@ -20,6 +22,7 @@ class TranscriptControl(UIControl):
         self.rows: list[list[tuple[str, str]]] = []
         self.starts: list[int] = []
         self.width = 0
+        self.viewport_height = 1
         self.dirty = 0
         self.anchor: tuple[int, int] | None = None
         self.head: tuple[int, int] | None = None
@@ -49,19 +52,60 @@ class TranscriptControl(UIControl):
                 lines = list(split_lines(to_formatted_text(ANSI(rendered))))
                 if rendered.endswith("\n"):
                     lines.pop()
-                self.rows.extend(lines)
+                for line in lines:
+                    self.rows.extend(_wrap_physical_line(line, width))
             self.dirty = len(owner._chunks)
             owner._rendered_lines = owner._line_count = max(1, len(self.rows))
             if owner._scrollback or self.anchor is not None:
                 owner._scrollback = max(0, owner._scrollback + owner._rendered_lines - previous)
-            owner._scrollback = min(owner._scrollback, owner._rendered_lines - 1)
+            owner._scrollback = min(owner._scrollback, self.max_scrollback())
 
     def create_content(self, width: int, height: int) -> UIContent:
+        self.viewport_height = max(1, height)
         self.sync(max(1, width))
         return UIContent(
             get_line=self.get_line, line_count=max(1, len(self.rows)),
             cursor_position=Point(x=0, y=self.owner._cursor_line()), show_cursor=False,
         )
+
+    def viewport_start(self) -> int:
+        """当前可见区首行；排版后滚动只改变这个整数。"""
+        return max(0, self.owner._rendered_lines - self.viewport_height - self.owner._scrollback)
+
+    def max_scrollback(self) -> int:
+        """只允许滚到首屏，避免顶部仍有一整屏无画面变化的空行程。"""
+        return max(0, self.owner._rendered_lines - self.viewport_height)
+
+    def precondition_scroll(self, old_start: int, new_start: int) -> bool:
+        """用终端滚动区域搬运不变行，并同步 prompt_toolkit 的旧屏。
+
+        下一帧差分只需绘制新露出的行。缺少真实 VT 屏幕、首次渲染、
+        跨越整屏或旧式 Win32 Console 时安全退回普通差分重绘。
+        """
+        delta = new_start - old_start
+        info = getattr(getattr(self.owner, "output_window", None), "render_info", None)
+        renderer = getattr(getattr(self.owner, "app", None), "renderer", None)
+        screen = getattr(renderer, "_last_screen", None)
+        output = getattr(getattr(self.owner, "app", None), "output", None)
+        if not delta or info is None or screen is None or output is None or not hasattr(output, "write_raw"):
+            return False
+        height = int(getattr(info, "window_height", 0) or 0)
+        top = int(getattr(info, "y_offset", 0) or 0)
+        count = abs(delta)
+        if height <= 1 or count >= height or top < 0 or type(output).__module__.endswith(".win32"):
+            return False
+        bottom = top + height - 1
+        direction = "S" if delta > 0 else "T"  # SU 向最新；SD 向历史。
+        try:
+            output.write_raw(
+                f"\x1b[?2026h\x1b7\x1b[{top + 1};{bottom + 1}r"
+                f"\x1b[{top + 1};1H\x1b[{count}{direction}\x1b[r\x1b8\x1b[?2026l"
+            )
+        except Exception:
+            return False
+        _shift_screen_rows(screen.data_buffer, top, bottom, delta)
+        _shift_screen_rows(screen.zero_width_escapes, top, bottom, delta)
+        return True
 
     def get_line(self, index: int):
         row = self.rows[index] if 0 <= index < len(self.rows) else [("", "")]
@@ -130,6 +174,38 @@ class TranscriptControl(UIControl):
             self.owner.app.invalidate()
             return None
         return NotImplemented
+
+
+def _wrap_physical_line(line, width: int):
+    """把 ANSI 片段一次性折成物理行，滚动帧不再重复计算宽度。"""
+    if fragment_list_width(line) <= width:
+        return [line]
+    rows, current, cells = [], [], 0
+    for fragment in explode_text_fragments(line):
+        style, text, *_ = fragment
+        size = 0 if "[ZeroWidthEscape]" in style else get_cwidth(text)
+        if current and size > 0 and cells + size > width:
+            rows.append(current)
+            current, cells = [], 0
+        current.append(fragment)
+        cells += size
+    rows.append(current)
+    return rows
+
+
+def _shift_screen_rows(buffer, top: int, bottom: int, delta: int) -> None:
+    """让渲染器旧屏与已发送的 SU/SD 指令保持同一行布局。"""
+    count = abs(delta)
+    if delta > 0:
+        for row in range(top, bottom - count + 1):
+            buffer[row] = buffer[row + count].copy()
+        for row in range(bottom - count + 1, bottom + 1):
+            buffer[row].clear()
+    else:
+        for row in range(bottom, top + count - 1, -1):
+            buffer[row] = buffer[row - count].copy()
+        for row in range(top, top + count):
+            buffer[row].clear()
 
 
 def copy_to_terminal(text: str, output: Any) -> None:

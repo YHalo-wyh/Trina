@@ -265,6 +265,24 @@ class TestChatAgent(unittest.TestCase):
         self.assertEqual(chat.state.counters.get("tool_calls"), 1)
         self.assertNotIn("DSML", reply)
 
+    def test_native_tool_calls_use_standard_api_and_keep_tool_pairs(self):
+        chat = self._chat([
+            {"native_only": True, "tool_calls": [
+                {"id": "call_probe", "name": "echo_probe", "arguments": {"target": "127.0.0.1"}},
+            ]},
+            {"native_only": True, "tool_calls": [
+                {"id": "call_finish", "name": "finish", "arguments": {"status": "success", "summary": "编码链路完成"}},
+            ]},
+        ])
+        reply = chat.ask("使用标准工具调用检查本机")
+        self.assertEqual(reply, "编码链路完成")
+        self.assertTrue(chat.backend._tools_supplied)
+        assistant_calls = [item for item in chat._messages if item.get("role") == "assistant" and item.get("tool_calls")]
+        tool_results = [item for item in chat._messages if item.get("role") == "tool"]
+        self.assertEqual({item["tool_calls"][0]["id"] for item in assistant_calls}, {"call_probe", "call_finish"})
+        self.assertEqual({item["tool_call_id"] for item in tool_results}, {"call_probe", "call_finish"})
+        self.assertIn(80, chat.state.hosts["127.0.0.1"].ports)
+
     def test_prose_plus_action_is_executed(self):
         """模型常写「一句解释 + JSON 动作」：必须识别动作并执行，而不是当成纯文本回答。"""
         chat = self._chat(

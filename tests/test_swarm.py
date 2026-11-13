@@ -127,6 +127,31 @@ class SwarmTests(unittest.TestCase):
         self.assertEqual(observed["first"], [])
         self.assertEqual(observed["second"], [])
 
+    def test_related_worker_receives_prior_failure_experience(self) -> None:
+        observed: dict[str, list[dict]] = {}
+
+        def execute(worker, task, run_id, hints, registry):
+            if task.id == "first":
+                raise RuntimeError("scanner handshake timeout")
+            observed[task.id] = [json.loads(item) for item in hints]
+            state = RunState(run_id=run_id, target=task.target, goal=task.goal, status="success")
+            state.ended_at = time.time()
+            return state
+
+        runtime = SwarmRuntime(self.config, [
+            TaskSpec("first", "http://same.test", "检查 Web 服务", priority=20),
+            TaskSpec("second", "http://same.test", "复核 Web 服务", priority=10),
+        ], max_workers=1, executor=execute)
+        summary = runtime.run()
+        self.assertEqual(summary["tasks"]["first"]["status"], "failed")
+        self.assertTrue(observed["second"])
+        brief = observed["second"][0]
+        self.assertEqual(brief["source_status"], "failed")
+        self.assertIn("scanner handshake timeout", brief["source_error"])
+        self.assertTrue(brief["experience"]["failures"])
+        self.assertGreaterEqual(summary["coordination"]["planner_rounds"], 2)
+        self.assertIn("exploration", summary["graphs"])
+
     def test_resume_retries_only_inflight(self) -> None:
         calls: list[str] = []
 

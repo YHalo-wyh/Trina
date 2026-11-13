@@ -557,7 +557,13 @@ class EnhancedConsoleInput:
         from .transcript import TranscriptControl
 
         self.transcript_control = TranscriptControl(self)
-        self.output_window = Window(self.transcript_control, wrap_lines=True, always_hide_cursor=True)
+        # transcript 已按脏块缓存成物理行；关闭 Window 二次折行并直接给出视口偏移。
+        self.output_window = Window(
+            self.transcript_control,
+            wrap_lines=False,
+            always_hide_cursor=True,
+            get_vertical_scroll=lambda _window: self.transcript_control.viewport_start(),
+        )
         self.activity_window = Window(FormattedTextControl(self._activity), height=1)
         self.input_window = Window(control, wrap_lines=True, height=Dimension(min=1, max=3), dont_extend_height=True)
         self.usage_window = Window(
@@ -593,17 +599,32 @@ class EnhancedConsoleInput:
 
     def _scroll_by(self, lines: int) -> None:
         """正数向历史滚动，负数向最新输出滚动。"""
-        maximum = max(0, self._rendered_lines - 1)
-        self._scrollback = min(maximum, max(0, self._scrollback + lines))
+        old_start = self.transcript_control.viewport_start()
+        maximum = self.transcript_control.max_scrollback()
+        updated = min(maximum, max(0, self._scrollback + lines))
+        if updated == self._scrollback:
+            return
+        self._scrollback = updated
+        self.transcript_control.precondition_scroll(old_start, self.transcript_control.viewport_start())
         self.app.invalidate()
 
     def _scroll_to_oldest(self) -> None:
-        self._scrollback = max(0, self._rendered_lines - 1)
+        old_start = self.transcript_control.viewport_start()
+        updated = self.transcript_control.max_scrollback()
+        if updated == self._scrollback:
+            return
+        self._scrollback = updated
+        self.transcript_control.precondition_scroll(old_start, self.transcript_control.viewport_start())
         self.app.invalidate()
 
     def _scroll_to_latest(self) -> None:
+        selected = self.transcript_control.anchor is not None
+        if not self._scrollback and not selected:
+            return
+        old_start = self.transcript_control.viewport_start()
         self._scrollback = 0
         self.transcript_control.clear_selection()
+        self.transcript_control.precondition_scroll(old_start, self.transcript_control.viewport_start())
         self.app.invalidate()
 
     def _status(self):
