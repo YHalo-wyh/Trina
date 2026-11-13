@@ -9,7 +9,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from trina.console_state import ConsoleState, TrackedBackend
-from trina.llm.base import LLMResponse, LLMUsage
+from trina.llm.base import LLMResponse, LLMStreamEvent, LLMUsage
 
 
 class ConsoleSessionTests(unittest.TestCase):
@@ -21,6 +21,7 @@ class ConsoleSessionTests(unittest.TestCase):
             TrackedBackend(backend, view).complete("s", "u")
         data = view.usage_data()
         self.assertEqual((data["calls"], data["total_tokens"]), (2, 1800))
+        self.assertEqual(view.context_tokens, 500)
         self.assertEqual(data["cache_hit_rate"], .6)
         self.assertIn("60.0%", view.footer(88))
         view.reset()
@@ -73,7 +74,7 @@ class ConsoleSessionTests(unittest.TestCase):
         worker = threading.Thread(target=lambda: backend.complete("s", "u"))
         worker.start()
         self.assertTrue(entered.wait(1))
-        self.assertEqual(view.activity()[0], "thinking")
+        self.assertEqual(view.activity()[0], "waiting")
         release.set()
         worker.join(2)
         self.assertEqual(view.activity()[0], "processing")
@@ -83,6 +84,21 @@ class ConsoleSessionTests(unittest.TestCase):
         self.assertNotEqual(view.activity()[0], "thinking")
         self.assertEqual(view.pending, 0)
         self.assertEqual(view.usage_data()["calls"], 2)
+
+    def test_stream_activity_distinguishes_waiting_reasoning_and_reply(self):
+        view, seen, phases = ConsoleState(), [], []
+        def complete(_messages, **options):
+            phases.append(view.activity()[0])
+            for kind in ("start", "thinking_delta", "text_delta"):
+                options["on_event"](LLMStreamEvent(kind, delta="内容"))
+                phases.append(view.activity()[0])
+            return LLMResponse(text="回答")
+        backend = TrackedBackend(SimpleNamespace(complete_messages=complete), view)
+        backend.complete_messages([{"role": "user", "content": "你好"}], on_event=seen.append)
+        self.assertEqual(phases, ["waiting", "waiting", "thinking", "responding"])
+        self.assertEqual([event.type for event in seen], ["start", "thinking_delta", "text_delta"])
+        self.assertEqual(view.pending, 0)
+        self.assertEqual(view.usage_data()["calls"], 1)
 
     def test_usage_fits_narrow_and_short_terminals(self):
         from rich.cells import cell_len
@@ -97,11 +113,13 @@ class ConsoleSessionTests(unittest.TestCase):
     def test_reply_has_no_automatic_digest_and_thought_summary_has_a_separate_style(self):
         from trina.terminal import render_answer, render_process, clean_text
         answer = render_answer("## 结果\n\n完成。\n\n```python\nprint('ok')\n```", width=60, color=True)
-        self.assertIn("[Trina] 输出", clean_text(answer))
+        self.assertNotIn("[Trina] 输出", clean_text(answer))
+        self.assertIn("完成。", clean_text(answer))
         for unwanted in ("会话 chat-", "轮次", "目标 未指定", "假设 待验证"):
             self.assertNotIn(unwanted, answer)
         process = render_process("检查返回的登录状态", label="思考摘要", width=40, color=True)
-        self.assertIn("┊ 思考摘要", clean_text(process))
+        self.assertIn("思考摘要", clean_text(process))
+        self.assertNotIn("┊", clean_text(process))
         self.assertNotIn("[Trina] 输出", process)
 
     def test_bottom_stays_fixed_during_output_and_enter_keeps_the_application_alive(self):
@@ -207,7 +225,9 @@ class ConsoleSessionTests(unittest.TestCase):
                             await asyncio.sleep(.05)
                             pipe.send_text("hello\r")
                             await until(entered.is_set)
-                            self.assertEqual(console._activity()[0], "thinking")
+                            self.assertEqual(console._activity()[0], "waiting")
+                            self.assertEqual(console._footer_context().task, "hello")
+                            self.assertEqual(console._footer_context().directory, str(Path.cwd()))
                             editor.buffer.text = "保留未发送补充"
                             release.set()
                             await until(lambda: not console.session.running)
@@ -226,6 +246,7 @@ class ConsoleSessionTests(unittest.TestCase):
                             self.assertEqual(console.view.usage_data()["total_tokens"], 120)
                             pipe.send_text("/new\r")
                             await until(lambda: console.view.usage_data()["calls"] == 0)
+                            self.assertEqual(console._footer_context().task, "新对话")
                             pipe.send_text("/quit\r")
                         except BaseException as exc:
                             release.set()
@@ -260,6 +281,86 @@ class ConsoleSessionTests(unittest.TestCase):
             phase[0] = "idle"
             with patch("trina.console_ui.time.monotonic", return_value=.25):
                 self.assertEqual(editor._activity(), editor._activity())
+
+
+    def test_context_footer_keeps_model_directory_task_and_draft_at_different_widths(self):
+        from prompt_toolkit.application.current import create_app_session
+        from prompt_toolkit.data_structures import Size
+        from prompt_toolkit.input import create_pipe_input
+        from prompt_toolkit.output.vt100 import Vt100_Output
+        from rich.cells import cell_len
+        from trina.console_state import ConsoleContext
+        from trina.console_ui import EnhancedConsoleInput
+        for columns in (170, 88, 40, 20):
+            with self.subTest(columns=columns):
+                frames, stream = [], io.StringIO()
+                context = [ConsoleContext("运行中", "DeepSeek V4.1 Flash Max",
+                                          "C:/Users/WYH/Desktop/网安实训中级", "修复会话日志",
+                                          "步骤 3/12", 125_000, 500_000)]
+                output = Vt100_Output(stream, lambda: Size(rows=30, columns=columns), enable_cpr=False)
+                with create_pipe_input() as pipe, create_app_session(input=pipe, output=output):
+                    editor = EnhancedConsoleInput(status=lambda: "running", running=lambda: True,
+                        dynamic_values=lambda *_: (), activity=lambda: ("thinking", "思考中", 20),
+                        context=lambda: context[0], plain=True)
+                    editor.buffer.text = "保留草稿"
+                    started = False
+                    async def exercise():
+                        try:
+                            await asyncio.sleep(.08)
+                            context[0] = ConsoleContext("运行中", "GPT-5.2 High", context[0].directory,
+                                                        "检查事件流", "步骤 4/12", 150_000, 500_000)
+                            editor.write("事件输出")
+                            await asyncio.sleep(.12)
+                            self.assertEqual(editor.buffer.text, "保留草稿")
+                            footer = "".join(text for _, text in editor._status())
+                            rail = "".join(text for _, text in editor._rail())
+                            activity = "".join(text for _, text in editor._activity())
+                            self.assertNotIn("\n", activity)
+                            self.assertEqual(editor._activity_height(), 1)
+                            self.assertEqual(editor._hint(), "")
+                            self.assertLessEqual(max(cell_len(line) for line in footer.splitlines()), columns)
+                            self.assertLessEqual(cell_len(rail), columns)
+                            self.assertLessEqual(max(cell_len(line) for line in activity.splitlines()), columns)
+                            editor.app.exit()
+                        except BaseException as exc:
+                            editor.app.exit(exception=exc)
+                    def rendered(app):
+                        nonlocal started
+                        if not app.is_done:
+                            screen = app.renderer.last_rendered_screen
+                            frames.append("\n".join("".join(screen.data_buffer[y][x].char for x in range(columns)) for y in range(30)))
+                        if not started:
+                            started = True
+                            app.create_background_task(exercise())
+                    editor.app.after_render += rendered
+                    editor.run(lambda _: True)
+                visible = "\n".join(frames)
+                for expected in ("DeepSeek", "GPT-5.2 High", "📁", "网安实训中级",
+                                 "修复会话日志" if columns >= 40 else "修复…",
+                                 "检查事件流" if columns >= 40 else "检查…"):
+                    self.assertIn(expected, visible)
+                self.assertNotIn("Enter 发送补充", visible)
+                self.assertNotIn("已上翻历史", visible)
+
+    def test_session_title_contract_uses_short_goal_and_safe_fallback(self):
+        from trina.session_title import fallback_session_title, generate_session_title, parse_generated_title
+
+        self.assertEqual(parse_generated_title("<title>修复损坏的会话日志</title>"), "修复损坏的会话日志")
+        self.assertIsNone(parse_generated_title("解释文字，没有标记"))
+        self.assertIsNone(parse_generated_title("<title/>"))
+        self.assertEqual(fallback_session_title("你好"), "新对话")
+        fallback = fallback_session_title("请帮我修复 corrupt session log。然后补回归测试")
+        self.assertEqual(fallback, "修复 corrupt session log")
+        self.assertLessEqual(len(fallback), 32)
+        requests = []
+        backend = SimpleNamespace(complete_messages=lambda messages, **kwargs:
+                                  requests.append((messages, kwargs)) or
+                                  LLMResponse(text="<title>修复损坏的会话日志</title>"))
+        title, response = generate_session_title("修复损坏的会话日志", backend)
+        self.assertEqual(title, "修复损坏的会话日志")
+        self.assertTrue(response.ok)
+        self.assertEqual(requests[0][1]["max_tokens"], 96)
+        self.assertIn("3-6", requests[0][0][0]["content"])
 
 
 if __name__ == "__main__":

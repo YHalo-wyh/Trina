@@ -43,7 +43,8 @@ class CoordinationRuntime:
 
     VERSION = 1
 
-    def __init__(self, tasks: Iterable[Any]):
+    def __init__(self, tasks: Iterable[Any], *, event_bus: Any = None):
+        self.event_bus = event_bus
         self.lock = threading.RLock()
         self.todo: dict[str, dict[str, Any]] = {}
         self.intents: dict[str, dict[str, Any]] = {}
@@ -105,6 +106,9 @@ class CoordinationRuntime:
                 "time": time.time(), "payload": payload,
             })
             del self.events[:-2000]
+            if self.event_bus is not None:
+                self.event_bus.publish("coordination." + kind, source="commander", task_id=intent_id,
+                                       revision=self.revision, **payload)
 
     def plan(self, records: dict[str, Any]) -> list[str]:
         """消费一批图变更事件并返回当前可领取 Intent；无新事件不新增规划轮。"""
@@ -147,6 +151,7 @@ class CoordinationRuntime:
             self.todo[intent_id]["status"] = "in_progress"
             self.exploration["nodes"][f"intent:{intent_id}"]["status"] = "running"
             self._trace(intent_id, worker_id, "intent.start", f"{worker_id} 领取 Intent", "", True)
+            self.emit("intent.claimed", intent_id=intent_id, worker_id=worker_id, lease_id=lease)
             return lease
 
     def settle(self, intent_id: str, lease_id: str, status: str, *, error: str = "") -> None:
@@ -229,12 +234,12 @@ class CoordinationRuntime:
                 self.emit("intent.timeout", intents=expired)
             return expired
 
-    def publish_state(self, intent_id: str, state: Any, *, evidence_refs: Iterable[str] = ()) -> list[str]:
+    def publish_state(self, intent_id: str, state: Any, *, evidence_refs: Iterable[str] = (), include_steps: bool = True) -> list[str]:
         """把实际 RunState 投影成可复用事实和可检索步骤，不复制 Worker 对话。"""
         refs = [str(item) for item in evidence_refs]
         added: list[str] = []
         with self.lock:
-            for index, step in enumerate(list(getattr(state, "steps", []) or []), 1):
+            for index, step in enumerate(list(getattr(state, "steps", []) or []) if include_steps else [], 1):
                 action = str(step.get("action") or "step")
                 summary = str(step.get("summary") or step.get("error") or action)[:300]
                 detail = _canonical({key: step.get(key) for key in ("phase", "action", "summary", "error", "ok") if key in step})
@@ -282,6 +287,13 @@ class CoordinationRuntime:
             if added:
                 self.emit("facts.published", intent_id=intent_id, facts=added)
             return added
+
+    def observe_tool(self, event: Any) -> None:
+        """Commander 线程消费统一事件，实时建立工具观察和失败索引。"""
+        with self.lock:
+            payload = event.payload
+            self._trace(event.task_id, event.worker_id, "tool", str(payload.get("summary") or payload.get("error") or payload.get("tool", "")),
+                        _canonical({"call_id": event.call_id, **payload}), bool(payload.get("ok")))
 
     def _trace(self, intent_id: str, worker_id: str, kind: str, summary: str, detail: str,
                ok: bool, *, step_id: int | None = None) -> None:

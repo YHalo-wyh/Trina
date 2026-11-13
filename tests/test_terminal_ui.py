@@ -105,7 +105,8 @@ class TestTerminalUI(unittest.TestCase):
             )
             self.assertIsNone(editor.transcript_control.mouse_handler(wheel_up))
             self.assertEqual(editor._scrollback, 3)
-            self.assertIn("Ctrl+End", "".join(text for _, text in editor._activity()))
+            self.assertNotIn("已上翻历史", "".join(text for _, text in editor._activity()))
+            self.assertNotIn("Ctrl+End", "".join(text for _, text in editor._activity()))
 
             # 阅读历史时，新输出不得把视口拉回底部。
             editor.write("新输出")
@@ -162,7 +163,7 @@ class TestTerminalUI(unittest.TestCase):
         with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
             editor = EnhancedConsoleInput(status=lambda: "运行中", running=lambda: True,
                                           dynamic_values=lambda *_: (), plain=True)
-            self.assertIn("Enter 发送补充", editor._hint())
+            self.assertEqual(editor._hint(), "")
             pipe.send_text("\x1b[200~" + text + "\x1b[201~\r")
             self.assertEqual(editor.read(), text)
 

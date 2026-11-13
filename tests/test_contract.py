@@ -17,7 +17,7 @@ class MachineContractTests(unittest.TestCase):
         report = check(ROOT)
         self.assertTrue(report.ok, "\n".join(report.errors))
         self.assertEqual(report.deliverables, 6)
-        self.assertEqual(report.requirements, 21)
+        self.assertEqual(report.requirements, 22)
 
     def test_contract_cannot_replace_whitelisted_commands(self) -> None:
         data = copy.deepcopy(load_contract(ROOT))

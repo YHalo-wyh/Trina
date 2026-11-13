@@ -9,7 +9,7 @@ import threading
 import time
 import uuid
 from html import escape
-from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Callable
@@ -20,6 +20,7 @@ from .brain import PentestAgent
 from .capabilities import CapabilityCatalog, CapabilityFabric, CapabilityRuntime
 from .config import TrinaConfig
 from .coordination import CoordinationRuntime
+from .events import EventBus
 from .context import BRIEF_VERSION
 from .llm import make_backend
 from .state import RunState
@@ -234,6 +235,7 @@ class SwarmRuntime:
         backend_factory: Callable[..., Any] = make_backend,
         fabric: CapabilityFabric | None = None,
         capability_dirs: list[str | Path] | None = None,
+        _restoring: bool = False,
     ):
         validate_tasks(tasks)
         if max_workers < 1:
@@ -261,7 +263,9 @@ class SwarmRuntime:
         self.stop_event = threading.Event()
         self.pause_event = threading.Event()
         self.events: list[dict[str, Any]] = []
-        self.coordination = CoordinationRuntime(self.tasks)
+        self.event_bus = EventBus(self.workspace / "events.sqlite3", self.run_id, redact_keys=config.audit.redact_keys)
+        self.coordination = CoordinationRuntime(self.tasks, event_bus=None if _restoring else self.event_bus)
+        self._commander_events = self.event_bus.subscribe(name="commander", after=0)
 
     @classmethod
     def resume(
@@ -287,21 +291,33 @@ class SwarmRuntime:
             backend_factory=backend_factory,
             fabric=fabric,
             capability_dirs=capability_dirs,
+            _restoring=True,
         )
         if Path(checkpoint).resolve() != runtime.checkpoint.resolve():
             raise ValueError("检查点路径与当前工作区不匹配")
+        # 事件事务先于 JSON 检查点提交，崩溃留下的旧 JSON 可从事件快照补齐。
+        after = int(data.get("checkpoint_seq", 0))
+        while batch := runtime.event_bus.replay(after, kinds=("runtime.checkpoint",)):
+            data = runtime.event_bus.runtime_payload(batch[-1])["snapshot"]
+            after = batch[-1].seq
+        tasks = [TaskSpec.from_dict(item) for item in data["tasks"]]
+        validate_tasks(tasks)
+        runtime.tasks = tasks
+        runtime.records = {task.id: TaskRecord() for task in tasks}
+        runtime._commander_events.cursor = int(data.get("commander_cursor", 0))
         for task_id, item in data["records"].items():
             if task_id not in runtime.records:
                 raise ValueError(f"检查点包含未知任务: {task_id}")
             record = TaskRecord(**item)
-            if record.status == "running":
-                record.status = "pending"
-                record.worker_id = ""
-                record.lease_id = ""
-                record.capability_lease_id = ""
             runtime.records[task_id] = record
         runtime.events = list(data.get("events", []))
         runtime.coordination = CoordinationRuntime.restore(tasks, data.get("coordination"))
+        runtime.coordination.event_bus = runtime.event_bus
+        runtime._consume_events()
+        runtime.event_bus.interrupt_open_calls()
+        for record in runtime.records.values():
+            if record.status == "running":
+                record.status, record.worker_id, record.lease_id, record.capability_lease_id = "pending", "", "", ""
         runtime.coordination.recover_inflight()
         runtime.coordination.sync_records(runtime.records)
         return runtime
@@ -414,7 +430,9 @@ class SwarmRuntime:
             stop_event=self.stop_event,
             pause_event=self.pause_event,
             shared_context={"coordination_runtime": self.coordination, "intent_id": task.id},
+            event_bus=self.event_bus,
         )
+        agent.shared_context["worker_id"] = worker.id
         usage_before = worker.backend.ledger.to_dict()
         state = agent.run(
             task.target,
@@ -486,10 +504,38 @@ class SwarmRuntime:
             "events": self.events,
             "capability_memory": self.fabric.memory_snapshot(),
             "coordination": self.coordination.snapshot(),
+            "commander_cursor": self._commander_events.cursor,
+            "events_path": str(self.event_bus.path),
         }
+        event = self.event_bus.publish("runtime.checkpoint", source="commander", snapshot=data)
+        data["checkpoint_seq"] = event.seq
         temporary = self.checkpoint.with_suffix(".tmp")
         temporary.write_text(json.dumps(data, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
         temporary.replace(self.checkpoint)
+
+    def _consume_events(self) -> None:
+        """实时事实和工具终态在 Commander 线程消费，不由 Worker 修改任务记录。"""
+        high_water = self.event_bus.last_seq
+        while self._commander_events.cursor < high_water:
+            batch = self._commander_events.poll()
+            self._consume_batch(batch)
+            if not batch:
+                break
+
+    def _consume_batch(self, batch: list[Any]) -> None:
+        for event in batch:
+            record = self.records.get(event.task_id)
+            if record is None or record.status != "running" or record.worker_id != event.worker_id:
+                continue
+            expected_run = f"{self.run_id}-{event.task_id}-{record.attempt}"
+            if event.run_id != expected_run:
+                continue
+            if event.kind == "state.updated":
+                state = RunState.from_dict(self.event_bus.runtime_payload(event)["state"])
+                if state.run_id == expected_run:
+                    self.coordination.publish_state(event.task_id, state, include_steps=False)
+            elif event.kind == "tool.finished":
+                self.coordination.observe_tool(event)
 
     def run(self) -> dict[str, Any]:
         """执行所有可运行任务；异常保留在任务记录，其他分支继续。"""
@@ -497,6 +543,7 @@ class SwarmRuntime:
         futures: dict[Future[RunState], tuple[TaskSpec, Worker, str, str]] = {}
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             while True:
+                self._consume_events()
                 if self.stop_event.is_set() and not futures:
                     break
                 if not self.stop_event.is_set() and not self.pause_event.is_set():
@@ -550,10 +597,14 @@ class SwarmRuntime:
                         )
                         task_run_id = f"{self.run_id}-{task.id}-{record.attempt}"
                         self.events.append({"event": "task.start", "task": task.id, "worker": worker.id, "lease": worker.lease_id, "time": record.started_at})
+                        self.event_bus.publish("task.started", source="commander", task_id=task.id,
+                                               worker_id=worker.id, attempt=record.attempt, lease_id=worker.lease_id)
                         self.audit.append("swarm.task.start", task=task.id, worker=worker.id, lease=worker.lease_id, attempt=record.attempt)
                         self._save()
                         future = executor.submit(self.executor, worker, task, task_run_id, self._hints(task), task_registry)
                         futures[future] = (task, worker, worker.lease_id, record.capability_lease_id)
+                        future.add_done_callback(lambda _future, task_id=task.id:
+                                                 self.event_bus.publish("worker.finished", source="executor", task_id=task_id))
                 if not futures:
                     if all(record.status in TERMINAL for record in self.records.values()):
                         break
@@ -563,7 +614,14 @@ class SwarmRuntime:
                     if self.stop_event.is_set():
                         break
                     raise RuntimeError("任务图无法继续调度")
-                done, _ = wait(futures, timeout=0.2, return_when=FIRST_COMPLETED)
+                # Future、Intent 和事实共用同一唤醒条件；不再只等待任务终态轮询。
+                cursor = self._commander_events.cursor
+                done = {future for future in futures if future.done()}
+                if not done:
+                    self.event_bus.wait(cursor, timeout=.2)
+                    done = {future for future in futures if future.done()}
+                # Future 完成前已提交的尾部必须在任务变成终态前全部投影。
+                self._consume_events()
                 for future in done:
                     task, worker, lease, capability_lease = futures.pop(future)
                     record = self.records[task.id]
@@ -594,6 +652,8 @@ class SwarmRuntime:
                         record.ended_at = time.time()
                         self.coordination.settle(task.id, lease, record.status, error=record.error)
                         self.events.append({"event": "task.end", "task": task.id, "worker": worker.id, "status": record.status, "time": record.ended_at})
+                        self.event_bus.publish("task.finished", source="commander", task_id=task.id,
+                                               worker_id=worker.id, status=record.status, error=record.error)
                         self.audit.append("swarm.task.end", task=task.id, worker=worker.id, status=record.status, error=record.error)
                         self.fabric.release(capability_lease)
                         self.audit.append("capability.release", task=task.id, worker=worker.id, lease=capability_lease)
@@ -603,7 +663,10 @@ class SwarmRuntime:
                         self.pool.release(worker, lease)
                         record.lease_id = ""
                         self._save()
+                        self._commander_events.ack()
         self.audit.append("swarm.run.end", statuses={key: value.status for key, value in self.records.items()})
+        self.event_bus.publish("runtime.finished", source="commander",
+                               statuses={key: value.status for key, value in self.records.items()})
         self._write_report()
         return self.summary()
 
@@ -652,6 +715,7 @@ class SwarmRuntime:
         return {
             "run_id": self.run_id,
             "checkpoint": str(self.checkpoint),
+            "events_path": str(self.event_bus.path),
             "audit_path": str(self.audit.path),
             "report_paths": [str(self.config.report_dir / f"{self.run_id}_report.md"), str(self.config.report_dir / f"{self.run_id}_report.html")],
             "tasks": {

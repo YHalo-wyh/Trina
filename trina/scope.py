@@ -55,6 +55,83 @@ def execution_budget(timeout: float) -> float:
     return min(timeout, max(.001, lease.deadline - time.monotonic())) if lease else timeout
 
 
+def execute_streamed(argv: list[str], *, timeout: float, cwd: str | None, env: dict[str, str] | None,
+                     input_data: str | None, on_output: Callable[[str, str], None],
+                     stop_event: Any = None) -> Any:
+    """受现有 run_external 放行后使用的进程出口；流式读取与取消仍受执行租约约束。"""
+    import codecs
+    import os
+    import subprocess
+    from .tools.external import _terminate_background, _windows_background_job
+
+    ensure_execution_active()
+    proc = subprocess.Popen(argv, cwd=cwd, env=env, stdin=subprocess.PIPE if input_data is not None else subprocess.DEVNULL,
+                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=os.name != "nt",
+                            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0)
+    native_job = None
+    buffers: dict[str, list[str]] = {"stdout": [], "stderr": []}
+    errors: list[Exception] = []
+
+    def read(stream: Any, name: str) -> None:
+        decoder = codecs.getincrementaldecoder("utf-8")("replace")
+        try:
+            while chunk := stream.read1(4096):
+                text = decoder.decode(chunk)
+                if text:
+                    buffers[name].append(text)
+                    on_output(name, text)
+            tail = decoder.decode(b"", final=True)
+            if tail:
+                buffers[name].append(tail)
+                on_output(name, tail)
+        except Exception as exc:
+            errors.append(exc)
+        finally:
+            stream.close()
+
+    def write() -> None:
+        try:
+            proc.stdin.write((input_data or "").encode("utf-8"))
+            proc.stdin.flush()
+        except (BrokenPipeError, OSError):
+            pass
+        finally:
+            proc.stdin.close()
+
+    readers: list[threading.Thread] = []
+    deadline = time.monotonic() + timeout
+    try:
+        native_job = _windows_background_job(proc) if os.name == "nt" else None
+        readers = [threading.Thread(target=read, args=(proc.stdout, "stdout"), daemon=True),
+                   threading.Thread(target=read, args=(proc.stderr, "stderr"), daemon=True)]
+        for reader in readers:
+            reader.start()
+        if input_data is not None:
+            threading.Thread(target=write, daemon=True).start()
+        while proc.poll() is None:
+            ensure_execution_active()
+            if stop_event is not None and stop_event.is_set():
+                raise RuntimeError("操作者取消了工具执行")
+            if errors:
+                raise errors[0]
+            if time.monotonic() >= deadline:
+                raise subprocess.TimeoutExpired(argv, timeout, output="".join(buffers["stdout"]), stderr="".join(buffers["stderr"]))
+            try:
+                proc.wait(timeout=min(.1, max(.001, deadline - time.monotonic())))
+            except subprocess.TimeoutExpired:
+                pass
+    finally:
+        _terminate_background(proc, native_job)
+        if native_job is not None:
+            import ctypes
+            ctypes.windll.kernel32.CloseHandle(native_job)
+        for reader in readers:
+            reader.join(timeout=1)
+    if errors:
+        raise errors[0]
+    return subprocess.CompletedProcess(argv, proc.returncode, "".join(buffers["stdout"]), "".join(buffers["stderr"]))
+
+
 @contextmanager
 def execution_window(lease: ExecutionLease):
     lease.check()

@@ -142,6 +142,7 @@ def run_plan(
     write_report: bool = True,
     log: Callable[[str], None] = print,
     on_step: Callable[[Any], None] | None = None,
+    on_event: Callable[[Any], None] | None = None,
 ) -> Any:
     """按计划跑一轮，返回 `RunState`（可选写报告）。"""
     from .brain import PentestAgent
@@ -158,6 +159,7 @@ def run_plan(
         backend=backend,
         logger=log,
         on_step=on_step,
+        on_event=on_event,
         approval=approval,
         steer_queue=steer_queue,
         stop_event=stop_event,

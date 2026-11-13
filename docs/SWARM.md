@@ -64,13 +64,16 @@ tasks:
   → Intent Queue 返回依赖已完成的 ready 项
   → WorkerPool + Capability Lease + Intent Lease
   → 每任务新建 PentestAgent / ToolRegistry / RunState
-  → 工具结果进入本题状态与 Worker Trace
-  → 终态投影事实图，并以 anchor 连接探索图
+  → 工具结果提交统一事件流
+  → Commander 实时消费工具观察与状态，更新 Worker Trace 和事实图
+  → 新事实以 anchor 连接探索图并唤醒 Planner
   → Intent settle 产生事件，唤醒下一轮 Planner
-  → 原子保存 swarm.json
+  → 先提交 runtime.checkpoint，再原子保存 swarm.json
 ```
 
 Worker 的普通 ReAct 步骤只写留痕，不唤醒 Planner。一个任务完成、失败、发布新事实、恢复或新增 Intent 时才产生可调度事件。这使主调度成本与图变化相关，而不是与所有工具调用数线性绑定。
+
+Worker 与 Commander 共用 `events.sqlite3`。Commander 在本线程验证任务、Worker 和尝试运行 ID 后消费事件，Worker 尚未返回时产生的真实事实即可进入协作平面。Future 完成与协作变更经同一事件流唤醒调度；DAG 依赖按任务终态解锁，重复事实不增加规划轮。见[统一运行事件](EVENTS.md)。
 
 ## 命令行编码能力
 
@@ -118,6 +121,7 @@ Flag、完整聊天、开放假设和来源题目的 `RunState` 不进入简报�
 | 产物 | 路径 |
 |---|---|
 | Commander 检查点（含 Todo、Intent、双图、Trace） | `runs/<swarm-id>/swarm.json` |
+| 统一事件流与消费者游标 | `runs/<swarm-id>/events.sqlite3` |
 | Commander 哈希链审计 | `logs/<swarm-id>.jsonl` |
 | Commander 汇总报告 | `reports/<swarm-id>_report.{md,html}` |
 | Worker 状态 | `runs/<swarm-id>-<task-id>-<attempt>/state.json` |
@@ -125,6 +129,8 @@ Flag、完整聊天、开放假设和来源题目的 `RunState` 不进入简报�
 | Worker 报告 | `reports/<swarm-id>-<task-id>-<attempt>_report.{md,html}` |
 
 恢复粒度仍是整个任务，不恢复某个 ReAct 中间请求或旧原生进程。检查点中的能力版本或摘要漂移时失败关闭。
+
+检查点事件先于 JSON 提交。恢复优先读取较新的已提交事件快照，再消费未处理的尾部；失去原执行器的工具标记为 `interrupted`，事件重放不重新执行历史命令。观察消费者可按序号或命名确认游标接续。
 
 ## 当前边界
 

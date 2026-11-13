@@ -63,6 +63,8 @@ class ChatAgent:
         on_stream: Callable[[str, bool], None] | None = None,
         run_id: str | None = None,
         resume_saved: bool = False,
+        event_bus: Any = None,
+        on_event: Callable[[Any], None] | None = None,
     ):
         self.config = config
         self.registry = registry or build_registry()
@@ -70,6 +72,7 @@ class ChatAgent:
         self.logger = logger or (lambda message: None)
         self.on_tool = on_tool
         self.on_stream = on_stream
+        self.on_event = on_event
         self.approval = approval
         self.steer_queue = steer_queue
         self.stop_event = stop_event
@@ -106,7 +109,13 @@ class ChatAgent:
             tools=self.registry,
             deadline=None,
             logger=self.logger,
+            event_bus=event_bus,
         )
+        self.events = self.ctx.events
+        if resume_saved:
+            self.events.interrupt_open_calls()
+        self._event_subscription = self.events.subscribe(on_event, after=self.events.last_seq) if on_event else None
+        self._message_id = ""
         self.history: list[dict[str, str]] = []
         self._messages: list[LLMMessage] = []
         self._messages_ready = False
@@ -158,9 +167,13 @@ class ChatAgent:
     def ask(self, message: str) -> str:
         if self._closed:
             raise ValueError("对话已关闭，请使用 /resume 恢复")
+        should_name = not self.title
         self.in_flight = True
         try:
-            return self._ask_turn(message)
+            reply = self._ask_turn(message)
+            if should_name and reply and not reply.startswith("（模型调用失败"):
+                self._generate_title(message)
+            return reply
         finally:
             self.in_flight = False
             self.save()
@@ -173,11 +186,14 @@ class ChatAgent:
         self.turns += 1
         self.current_request = text
         if not self.title:
-            self.title = " ".join(text.split())[:80]
+            from ..session_title import fallback_session_title
+
+            self.title = fallback_session_title(text)
         self.context.remember_user(text)
         self.last_reply_streamed = False
         self._initialize_messages()
         self.audit.append("chat.user", decision="allow", message=text[:400])
+        self.ctx.emit("user.message", text=text)
         self.logger(f"[用户] {text}")
         self.history.append({"role": "user", "content": text})
         self._messages.append({"role": "user", "content": text})
@@ -201,6 +217,7 @@ class ChatAgent:
                 continue
             if not response.ok:
                 self._cancel_stream()
+                self.last_reply_streamed = self.on_event is not None  # model.error 已经通过统一事件回显。
                 return f"（模型调用失败：{response.error}）"
             # 标准 API 原生 tool_calls 原样进入历史；JSON/DSML 只作为兼容回退。
             native_calls = list(response.tool_calls) if self._native_tools_enabled() else []
@@ -263,8 +280,9 @@ class ChatAgent:
                 self._cancel_stream()
                 self.audit.append("chat.protocol_recovery", decision="retry", protocol="native" if native_call_id else "json", error=error[:300])
                 continue
-            if note:
-                self.logger(f"说明：{note[:200]}")
+            if native_calls and response.text.strip():
+                # 原生工具调用前的自然语言说明保留在主内容区。
+                note = response.text.strip()
 
             if "final" in action:
                 final = action.get("final")
@@ -278,7 +296,10 @@ class ChatAgent:
 
             # 保留动作与观察的因果关系；工具结果不能成为孤立的用户指令。
             self.history.append({"role": "assistant", "content": json.dumps(action, ensure_ascii=False)})
-            self._cancel_stream()
+            if note:
+                self._finish_stream(note)
+            else:
+                self._cancel_stream()
             self.save()
             observation = self._run_action(action, step)
             tool_message = (
@@ -306,19 +327,20 @@ class ChatAgent:
         from .prompts import build_runtime_context
         from .binary_prompt import role_for_registry
         role = role_for_registry(self.registry, self.config.llm.role_profile)
+        protocol = "native" if self._native_tools_enabled() else "json"
 
         if self.config.llm.prompt_layers:
             from .prompts import build_prompt_layers
             layers = build_prompt_layers(self.config.scope_prompt_block(), tool_block,
                                          include_hypothesis=self.use_ledger, chat=True,
-                                         role_profile=role)
+                                         role_profile=role, protocol=protocol)
             system, contract = layers.system(), layers.first_user()
         else:
             system = render_chat_prompt(self.use_ledger)
             if role:
                 system += "\n\n" + role
             contract = build_runtime_context(self.config.scope_prompt_block(), tool_block,
-                                             include_hypothesis=self.use_ledger, chat=True)
+                                             include_hypothesis=self.use_ledger, chat=True, protocol=protocol)
         self._messages = [
             {"role": "system", "content": system},
             {
@@ -345,21 +367,26 @@ class ChatAgent:
         # 动态状态作为新的 user 消息追加；绝不重写 system 或把历史压成角色标签字符串。
         self._messages.append({"role": "user", "content": "\n\n".join(runtime_parts)})
         tool_payload = tool_schemas(self.registry) if self._native_tools_enabled() else None
+        from ..events import ModelEventStream
+        self._message_id = uuid.uuid4().hex
+        self._pending_stream = _VisibleStream(self._visible_update)
+        stream = ModelEventStream(self.ctx.emit, self._pending_stream.on_event)
         try:
             self.context.prepare(self._messages, tool_payload)
         except ContextBudgetError as exc:
             from ..llm import LLMResponse
             self.state.context_stats = {**self.context.stats, "budget_error": str(exc)}
             self.audit.append("context.budget_error", error=str(exc))
-            return LLMResponse(ok=False, error=str(exc))
+            response = LLMResponse(ok=False, error=str(exc))
+            stream.finish(response)
+            return response
         diagnostic = self.context.before_request(self._messages, tool_payload)
         self.state.counters["llm_calls"] = self.state.counters.get("llm_calls", 0) + 1
-        self._pending_stream = _VisibleStream(self.on_stream)
         method = getattr(self.backend, "complete_messages", None)
         if method is None:  # 仅供旧测试替身
-            response = self.backend.complete(self._messages[0]["content"], self._messages[-1]["content"])
+            response = stream.invoke(self.backend.complete, self._messages[0]["content"], self._messages[-1]["content"])
         else:
-            kwargs: dict[str, Any] = {"on_event": self._pending_stream.on_event}
+            kwargs: dict[str, Any] = {"on_event": stream.on_event}
             if tool_payload is not None:
                 import inspect
 
@@ -375,22 +402,53 @@ class ChatAgent:
                     accepts_tools = True
                 if accepts_tools:
                     kwargs["tools"] = tool_payload
-            response = method(self._messages, **kwargs)
+            response = stream.invoke(method, self._messages, **kwargs)
+        stream.finish(response)
         self.context.after_response(diagnostic, response)
-        self.usage = self.usage.merge(response.usage)
-        for name in self.usage_gaps:
-            self.usage_gaps[name] += int(not getattr(response.usage, name[8:] + "_reported"))
+        self._record_usage(response.usage)
         return response
+
+    def _record_usage(self, usage: Any) -> None:
+        """主回复与独立标题请求使用同一真实用量账本。"""
+        self.usage = self.usage.merge(usage)
+        for name in self.usage_gaps:
+            self.usage_gaps[name] += int(not getattr(usage, name[8:] + "_reported"))
+
+    def _generate_title(self, message: str) -> None:
+        """在线会话用隔离请求生成短标题；测试替身和回放保留确定性降级名。"""
+        backend = getattr(self.backend, "backend", self.backend)
+        if not isinstance(backend, LLMBackend) or getattr(backend, "name", "") != "openai":
+            return
+        from ..session_title import generate_session_title
+
+        try:
+            title, response = generate_session_title(message, self.backend)
+        except Exception as exc:  # noqa: BLE001 - 标题失败不能影响主回复
+            self.audit.append("chat.title", decision="fallback", error=f"{type(exc).__name__}: {exc}"[:300])
+            return
+        if response is not None:
+            self.state.counters["llm_calls"] = self.state.counters.get("llm_calls", 0) + 1
+            self._record_usage(response.usage)
+        if title:
+            self.title = title
+            self.audit.append("chat.title", decision="allow", title=title)
+        elif response is not None:
+            self.audit.append("chat.title", decision="fallback", reason="标题响应为空或格式无效")
 
     def _native_tools_enabled(self) -> bool:
         protocol = str(getattr(self.config.llm, "tool_protocol", "auto") or "auto")
         return protocol != "json" and bool(getattr(self.backend, "supports_native_tools", False))
 
     def _finish_stream(self, reply: str) -> None:
-        if self._pending_stream is not None and self.on_stream is not None:
+        if self._pending_stream is not None:
             self._pending_stream.finish(reply)
-            self.last_reply_streamed = True
+            self.last_reply_streamed = self.on_stream is not None or self.on_event is not None
         self._pending_stream = None
+
+    def _visible_update(self, text: str, final: bool) -> None:
+        self.ctx.emit("assistant.message", message_id=self._message_id, text=text, final=final)
+        if self.on_stream is not None:
+            self.on_stream(text, final)
 
     def _cancel_stream(self) -> None:
         if self._pending_stream is not None:
@@ -410,6 +468,8 @@ class ChatAgent:
         finally:
             self._closed = True
             self._file_lock.close()
+            if self._event_subscription is not None:
+                self._event_subscription.close()
 
     def save(self) -> None:
         """只保存对话运行数据；标准消息和最近显示记录分别保留。"""
@@ -441,6 +501,7 @@ class ChatAgent:
         if self.state.run_id != self.run_id:
             raise ValueError("对话运行状态与 ID 不一致")
         self.ctx.state = self.state
+        self.state.artifacts["events_path"] = str(self.events.path)
         self.ctx.extra["binary_sessions"].previous = [{**row, "state": "EXPIRED", "live": False}
                                                     for row in data.get("binary_sessions", [])]
         self.history = data["history"]
@@ -511,6 +572,7 @@ class ChatAgent:
         tool_name = str(action.get("action", ""))
         params = action.get("params") if isinstance(action.get("params"), dict) else {}
         params = dict(params)
+        call_id = uuid.uuid4().hex
         inline_test_id = params.pop("test_id", "") if isinstance(params.get("test_id"), str) else ""
         test_id = str(action.get("test_id", "") or inline_test_id or "")
         thought = str(action.get("thought", ""))
@@ -519,6 +581,7 @@ class ChatAgent:
             self.state.target = target
         level = self._effective_level(tool_name, params)
         hypothesis = self.ledger.from_action(action) if self.use_ledger else None
+        self.ctx.emit("tool.requested", call_id=call_id, tool=tool_name, params=params)
 
         self.audit.append(
             "chat.action", step=step, decision="allow", tool=tool_name, level=level, params=params, thought=thought[:200],
@@ -537,6 +600,8 @@ class ChatAgent:
             {"step": step, "tool": tool_name, "params": params, "level": level, "target": target, "test_id": test_id}
         )
         if not decision.allowed:
+            self.ctx.emit("tool.finished", call_id=call_id, tool=tool_name, status="denied", ok=False,
+                          error=decision.reason, duration=0)
             if hypothesis is not None:
                 self.ledger.record_outcome(hypothesis.id, new_information=False, blocked=True, note=decision.reason)
             self.state.note_boundary(tool=tool_name, reason=decision.reason, kind=decision.kind, target=target)
@@ -545,9 +610,13 @@ class ChatAgent:
 
         # 人工审批
         test_id = decision.test_id or test_id
+        if self.approval is not None:
+            self.ctx.emit("tool.approval_requested", call_id=call_id, tool=tool_name, level=level)
         if self.approval is not None and not self.approval(
             {"step": step, "tool": tool_name, "level": level, "params": params, "thought": thought, "target": target, "test_id": test_id}
         ):
+            self.ctx.emit("tool.finished", call_id=call_id, tool=tool_name, status="denied", ok=False,
+                          error="人工审批未通过", duration=0)
             if hypothesis is not None:
                 self.ledger.record_outcome(hypothesis.id, new_information=False, blocked=True, note="人工审批未通过")
             self.state.note_boundary(tool=tool_name, reason="人工审批未通过", kind="human", target=target)
@@ -556,7 +625,7 @@ class ChatAgent:
             return f"操作者拒绝了 {tool_name}（未执行）。换更保守的做法，或先说明为什么需要它。"
 
         before_knowledge = self.state.knowledge_digest()
-        result = self.registry.execute(tool_name, params, self.ctx)
+        result = self.registry.execute(tool_name, params, self.ctx, call_id=call_id, request_emitted=True)
         if self.on_tool is not None:
             self.on_tool(result)
         new_information = before_knowledge != self.state.knowledge_digest()

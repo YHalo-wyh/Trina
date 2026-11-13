@@ -50,6 +50,7 @@ class ExternalRun:
     binary: str = ""
     job_id: str = ""
     running: bool = False
+    timed_out: bool = False
 
     @property
     def output(self) -> str:
@@ -66,6 +67,7 @@ class ExternalRun:
             "error": self.error,
             "job_id": self.job_id,
             "running": self.running,
+            "timed_out": self.timed_out,
         }
 
 
@@ -78,7 +80,7 @@ class BackgroundJobs:
         self._closed = False
 
     def start(self, argv: list[str], *, cwd: str, env: dict[str, str] | None, timeout: float, tool: str,
-              owner: Any = None) -> str:
+              owner: Any = None, on_event: Any = None) -> str:
         import uuid
         from ..scope import ensure_execution_active
 
@@ -91,7 +93,7 @@ class BackgroundJobs:
             for key in list(self._jobs):
                 if len(self._jobs) < 24:
                     break
-                if self._jobs[key]["status"] != "running":
+                if self._jobs[key]["status"] != "running" and self._jobs[key]["done"].is_set():
                     del self._jobs[key]
             proc = subprocess.Popen(
                 argv, cwd=cwd, env=env, stdin=subprocess.DEVNULL,
@@ -121,13 +123,45 @@ class BackgroundJobs:
             }
             self._jobs[job_id] = job
 
+        delivery = threading.RLock()
+        stream_open = True
+
+        def emit(kind, **payload):
+            with delivery:
+                if kind == "job.output" and not stream_open:
+                    return
+                if on_event is not None:
+                    on_event(kind, job_id=job_id, call_id=job_id, tool=tool, **payload)
+
+        try:
+            emit("job.started", params={"argv": argv}, status="running")
+        except Exception:
+            _terminate_background(proc, native_job)
+            if native_job is not None:
+                import ctypes
+                ctypes.windll.kernel32.CloseHandle(native_job)
+            proc.stdout.close()
+            proc.stderr.close()
+            job["status"] = "failed"
+            job["done"].set()
+            raise
+
         def read(stream, key):
             import codecs
             decoder = codecs.getincrementaldecoder("utf-8")("replace")
+            def append(text):
+                if not text:
+                    return
+                with delivery:
+                    if not stream_open:
+                        return
+                    with self._lock:
+                        job[key] = (job[key] + text)[-16_000:]
+                    emit("job.output", stream=key, delta=text)
             try:
                 while chunk := stream.read1(1024):
-                    with self._lock:
-                        job[key] = (job[key] + decoder.decode(chunk))[-16_000:]
+                    append(decoder.decode(chunk))
+                append(decoder.decode(b"", final=True))
             finally:
                 stream.close()
 
@@ -137,6 +171,7 @@ class BackgroundJobs:
             reader.start()
 
         def monitor():
+            nonlocal stream_open
             timed_out = False
             try:
                 proc.wait(timeout=max(.01, timeout))
@@ -157,6 +192,12 @@ class BackgroundJobs:
                     if job["status"] == "running":
                         job["status"] = "timed_out" if timed_out else ("completed" if proc.returncode == 0 else "failed")
                         job["error"] = f"后台执行超时（{timeout:g}s）" if timed_out else ""
+                try:
+                    with delivery:
+                        stream_open = False
+                        emit("job.finished", status=job["status"], ok=job["status"] == "completed", error=job["error"],
+                             duration=job["elapsed_seconds"], data={"stdout": job["stdout"], "stderr": job["stderr"], "exit_code": job["exit_code"]})
+                finally:
                     job["done"].set()
         threading.Thread(target=monitor, name=f"trina-{job_id}", daemon=True).start()
         return job_id
@@ -189,18 +230,22 @@ class BackgroundJobs:
             if job_id not in self._jobs:
                 raise ValueError("后台作业不存在或不属于当前会话")
             job = self._jobs[job_id]
-            if job["status"] != "running":
-                return
-            job["status"], job["error"] = "cancelled", "操作者或任务生命周期取消"
-            proc = job["process"]
-            native_job = job["native_job"]
-        _terminate_background(proc, native_job)
+            proc = None
+            if job["status"] == "running":
+                job["status"], job["error"] = "cancelled", "操作者或任务生命周期取消"
+                proc, native_job = job["process"], job["native_job"]
+        if proc is not None:
+            _terminate_background(proc, native_job)
         self.wait(job_id, 2)
 
     def close(self) -> None:
         with self._lock:
             self._closed = True
         self.cancel_running()
+        with self._lock:
+            jobs = list(self._jobs.values())
+        for job in jobs:
+            job["done"].wait(2)
 
     def stop_owner(self, owner: Any) -> None:
         """工具失败或超时时，仅撤销该次执行启动的作业。"""
@@ -554,8 +599,13 @@ def run_external(
         deadline = ctx.extra.get("task_deadline")
         if deadline is not None:
             budget = min(budget, max(.01, deadline - time.monotonic()))
+        def job_event(kind, **payload):
+            events = getattr(ctx, "events", None)
+            if events is not None:
+                events.publish(kind, run_id=ctx.state.run_id, source="background", task_id=ctx.extra.get("intent_id", ""),
+                               worker_id=ctx.extra.get("worker_id", ""), parent_call_id=ctx.extra.get("_tool_call_id", ""), **payload)
         job_id = jobs.start(argv, cwd=cwd or str(ctx.workspace), env=env if env is not None else _mcp_environment(),
-                            timeout=budget, tool=tool or binary, owner=ctx.extra.get("_execution_owner"))
+                            timeout=budget, tool=tool or binary, owner=ctx.extra.get("_execution_owner"), on_event=job_event)
         try:
             ctx.audit.append("external.background.start", tool=tool or binary, job_id=job_id, timeout=budget, target=target)
         except Exception:
@@ -571,17 +621,15 @@ def run_external(
     budget = execution_budget(budget)
     started = time.monotonic()
     try:
-        proc = subprocess.run(
-            argv,
-            input=input_data,
-            capture_output=True,
-            text=True,
-            timeout=budget,
-            check=False,
-            errors="replace",
-            cwd=cwd,
-            env=env,
-        )
+        if getattr(ctx, "emit", None) is not None and ctx.extra.get("_tool_call_id"):
+            from ..scope import execute_streamed
+            proc = execute_streamed(argv, timeout=budget, cwd=cwd, env=env, input_data=input_data,
+                                    on_output=lambda stream, delta: ctx.emit("tool.output", tool=tool or binary,
+                                                                            stream=stream, delta=delta),
+                                    stop_event=ctx.extra.get("stop_event"))
+        else:
+            proc = subprocess.run(argv, input=input_data, capture_output=True, text=True, timeout=budget,
+                                  check=False, errors="replace", cwd=cwd, env=env)
         result = ExternalRun(
             ok=proc.returncode == 0,
             stdout=proc.stdout or "",
@@ -591,8 +639,9 @@ def run_external(
             duration=time.monotonic() - started,
             binary=binary,
         )
-    except subprocess.TimeoutExpired:
-        result = ExternalRun(ok=False, error=f"超时 {budget:.0f}s", command=" ".join(argv), duration=time.monotonic() - started, binary=binary)
+    except subprocess.TimeoutExpired as exc:
+        result = ExternalRun(ok=False, error=f"超时 {budget:.0f}s", stdout=exc.stdout or "", stderr=exc.stderr or "",
+                             command=" ".join(argv), duration=time.monotonic() - started, binary=binary, timed_out=True)
     except OSError as exc:
         result = ExternalRun(ok=False, error=str(exc), command=" ".join(argv), duration=time.monotonic() - started, binary=binary)
 

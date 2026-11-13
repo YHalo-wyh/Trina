@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>Trina 工具窗口预览</title>
+<style>body{background:#101012;color:#d8d8dc;margin:0;padding:28px}
+pre{font:15px/1.55 Consolas,'Microsoft YaHei',monospace;margin:0;white-space:pre}
+.r1 {color: #a595b3; text-decoration-color: #a595b3}
+.r2 {color: #f8f8f2; text-decoration-color: #f8f8f2; background-color: #101012}
+.r3 {color: #ae81ff; text-decoration-color: #ae81ff; background-color: #101012}
+.r4 {color: #e6db74; text-decoration-color: #e6db74; background-color: #101012}
+.r5 {color: #747477; text-decoration-color: #747477}
+.r6 {color: #dcc86e; text-decoration-color: #dcc86e}</style></head><body><pre>先检查命令的标准输出和错误输出。工具的输入与执行结果会显示在下面的窗口中。      
+
+<span class="r1">╭─ terminal_exec · 完成 ───────────────────────────────────────────────────────╮</span>
+<span class="r1">│</span> <span class="r2">$ C:</span><span class="r3">\U</span><span class="r2">sers</span><span class="r3">\W</span><span class="r2">YH</span><span class="r3">\D</span><span class="r2">esktop</span><span class="r3">\网</span><span class="r2">安实训中级</span><span class="r3">\.</span><span class="r2">venv</span><span class="r3">\S</span><span class="r2">cripts</span><span class="r3">\p</span><span class="r2">ython.exe -u -c </span><span class="r4">&quot;import </span>  <span class="r1">│</span>
+<span class="r1">│</span> <span class="r4">sys,time; print(&#x27;event stream connected&#x27;); time.sleep(.15); print(&#x27;stderr </span>   <span class="r1">│</span>
+<span class="r1">│</span> <span class="r4">channel ready&#x27;, file=sys.stderr); print(&#x27;command completed&#x27;)&quot;</span>                <span class="r1">│</span>
+<span class="r1">│</span> Output <span class="r5">─────────────────────────────────────────────────────────────────────</span> <span class="r1">│</span>
+<span class="r1">│</span> event stream connected                                                       <span class="r1">│</span>
+<span class="r1">│</span> command completed                                                            <span class="r1">│</span>
+<span class="r1">│</span>                                                                              <span class="r1">│</span>
+<span class="r1">│</span> <span class="r6">stderr</span>                                                                       <span class="r1">│</span>
+<span class="r1">│</span> stderr channel ready                                                         <span class="r1">│</span>
+<span class="r1">│</span>                                                                              <span class="r1">│</span>
+<span class="r1">╰─────────────────────────────── 0.5s · exit 0 ────────────────────────────────╯</span>
+
+检查完成。命令正常退出，stdout 和 stderr                                        
+均已进入事件流；正文与工具窗口按执行顺序排列。                                  
+</pre></body></html>

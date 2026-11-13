@@ -20,3 +20,7 @@ evidence/20261026-decision-docs/unit-tests.log -whitespace
 # 2026-10-28 CLI 验证原始输出与摘要保留归档字节。
 evidence/20261028-cli-ui/** -text
 evidence/20261028-cli-ui/*.log -whitespace
+
+# 2026-11-13 事件流与控制台预览保留渲染填充、原始 CRLF 和运行日志字节。
+evidence/20261113-console-footer/** -whitespace
+evidence/20261113-unified-events/** -whitespace

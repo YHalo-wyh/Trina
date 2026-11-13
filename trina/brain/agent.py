@@ -104,6 +104,8 @@ class PentestAgent:
         pause_event: Any | None = None,
         controller: Any | None = None,
         shared_context: dict[str, Any] | None = None,
+        event_bus: Any = None,
+        on_event: Callable[[Any], None] | None = None,
     ):
         self.config = config
         self.registry = registry or build_registry()
@@ -122,6 +124,7 @@ class PentestAgent:
         self.controller = controller
         #: Swarm 只读协作平面；普通任务为空，不改变单 Agent 契约。
         self.shared_context = dict(shared_context or {})
+        self.event_bus, self.on_event = event_bus, on_event
 
     # ------------------------------------------------------------------ 入口
     def run(
@@ -155,6 +158,11 @@ class PentestAgent:
         state = RunState(run_id=run_id, target=target, goal=goal, max_evidence=self.config.run.max_evidence)
         workspace = self.config.workspace_dir / run_id
         workspace.mkdir(parents=True, exist_ok=True)
+        from ..events import EventBus
+        self.events = self.event_bus or EventBus(workspace / "events.sqlite3", run_id,
+                                                 redact_keys=self.config.audit.redact_keys)
+        event_subscription = self.events.subscribe(self.on_event, after=self.events.last_seq) if self.on_event else None
+        self.events.publish("run.started", run_id=run_id, target=target, goal=goal)
 
         audit.append(
             "run.start",
@@ -185,6 +193,10 @@ class PentestAgent:
             audit.append("run.blocked", target=target, decision="deny", reason=decision.reason)
             state.ended_at = time.time()
             state.artifacts = {"workspace": str(workspace), "audit_path": str(audit.path), "state_file": str(workspace / "state.json")}
+            state.artifacts["events_path"] = str(self.events.path)
+            self.events.publish("run.finished", run_id=run_id, status="blocked", error=decision.reason)
+            if event_subscription is not None:
+                event_subscription.close()
             self._save_state(state, workspace)
             return state
 
@@ -198,6 +210,7 @@ class PentestAgent:
             tools=self.registry,
             deadline=time.monotonic() + max_seconds,
             logger=self.logger,
+            event_bus=self.events,
         )
         self._ctx = ctx
         ctx.extra["stop_event"] = self.stop_event
@@ -496,6 +509,10 @@ class PentestAgent:
                 diagnostic = context.before_request(messages, tool_payload)
                 response = self._ask(messages, tool_payload)
                 context.after_response(diagnostic, response)
+                if self.stop_event is not None and self.stop_event.is_set():
+                    state.note("human", "收到人工停止指令")
+                    state.status = "stopped"
+                    break
                 if not response.ok:
                     failure_kind = classify_llm_response(response)
                     state.counters[f"llm_{failure_kind}"] = state.counters.get(f"llm_{failure_kind}", 0) + 1
@@ -530,10 +547,6 @@ class PentestAgent:
                     time.sleep(min(2.0 * state.counters["errors"], 8.0))
                     continue
                 state.counters["llm_calls"] = state.counters.get("llm_calls", 0) + 1
-                if self.stop_event is not None and self.stop_event.is_set():
-                    state.note("human", "收到人工停止指令")
-                    state.status = "stopped"
-                    break
                 if accept_steers():
                     audit.append("llm.response_superseded", decision="defer", reason="收到补充，重新决策", step=index)
                     continue
@@ -569,6 +582,10 @@ class PentestAgent:
                     queue_tool_result(observation)
                     continue
 
+                if native_calls and response.text.strip():
+                    ctx.emit("assistant.message", message_id=f"{run_id}-{index}-note",
+                             text=response.text.strip(), final=True)
+
                 if "final" in action:
                     missing = requirements.unsatisfied(state) if not requirements.empty else []
                     if missing and final_rejects < MAX_FINAL_REJECTS:
@@ -588,6 +605,8 @@ class PentestAgent:
                         queue_tool_result(observation)
                         continue
                     final = action.get("final") if isinstance(action.get("final"), dict) else {"summary": str(action.get("final"))}
+                    ctx.emit("assistant.message", message_id=f"{run_id}-{index}-final",
+                             text=str(final.get("summary", "")), final=True)
                     state.note("final", str(final.get("summary", ""))[:400])
                     state.log_step(
                         StepRecord(index, phase, thought=str(action.get("thought", "")), action="final", summary=str(final.get("summary", ""))[:200], ok=True).to_dict()
@@ -605,6 +624,9 @@ class PentestAgent:
                 action_target = str(params.get("target") or params.get("url") or target)
                 level = self._effective_level(tool_name, params)
                 hypothesis = ledger.from_action(action) if use_ledger else None
+                import uuid
+                call_id = uuid.uuid4().hex
+                ctx.emit("tool.requested", call_id=call_id, tool=tool_name, params=params)
                 if use_ledger and action.get("hypothesis_id") and hypothesis is None:
                     hints.append("hypothesis_id 不存在：请引用台账中的编号或提出新假设")
 
@@ -620,6 +642,8 @@ class PentestAgent:
                     }
                 )
                 if not policy_decision.allowed:
+                    ctx.emit("tool.finished", call_id=call_id, tool=tool_name, status="denied", ok=False,
+                             error=policy_decision.reason, duration=0)
                     if hypothesis is not None:
                         ledger.record_outcome(hypothesis.id, new_information=False, blocked=True,
                                               note=policy_decision.reason)
@@ -650,6 +674,7 @@ class PentestAgent:
                 # guided 模式可能由控制器反查出检查项，审批与调度统计使用同一解析结果。
                 test_id = policy_decision.test_id or test_id
                 if self.approval is not None:
+                    ctx.emit("tool.approval_requested", call_id=call_id, tool=tool_name, level=level)
                     request = {
                         "index": index,
                         "phase": phase,
@@ -661,6 +686,8 @@ class PentestAgent:
                         "test_id": test_id,
                     }
                     if not self.approval(request):
+                        ctx.emit("tool.finished", call_id=call_id, tool=tool_name, status="denied", ok=False,
+                                 error="人工审批未通过", duration=0)
                         if hypothesis is not None:
                             ledger.record_outcome(hypothesis.id, new_information=False, blocked=True,
                                                   note="人工审批未通过")
@@ -694,7 +721,7 @@ class PentestAgent:
                 )
                 before_knowledge = state.knowledge_digest()
 
-                result = self.registry.execute(tool_name, params, ctx)
+                result = self.registry.execute(tool_name, params, ctx, call_id=call_id, request_emitted=True)
                 state.coverage = controller.coverage()
                 observation = result.to_observation()
                 queue_tool_result(observation)
@@ -946,9 +973,12 @@ class PentestAgent:
             ledger=state.ledger,
             http=ctx.http.stats(),
         )
-        state.artifacts = {"workspace": str(workspace), "audit_path": str(audit.path), "state_file": str(workspace / "state.json")}
+        state.artifacts.update({"workspace": str(workspace), "audit_path": str(audit.path), "state_file": str(workspace / "state.json")})
+        ctx.emit("run.finished", status=state.status, duration=state.duration)
         status_snapshot(ctx, step=steps, max_steps=max_steps, observation=observation)
         self._save_state(state, workspace)
+        if event_subscription is not None:
+            event_subscription.close()
         return state
 
     # ------------------------------------------------------------------ 内部
@@ -997,16 +1027,24 @@ class PentestAgent:
         last = None
         attempt = 0
         while True:
+            from ..events import ModelEventStream
+            import inspect
+            ctx = getattr(self, "_ctx", None)
+            stream = ModelEventStream(ctx.emit) if ctx is not None else None
             # 只用后端**自己声明**的完整消息接口：包装器（如测试用的记录后端）
             # 通过 __getattr__ 转发时不能用内层实现，否则观察不到真实提示词。
             method = self.backend.complete_messages if "complete_messages" in dir(type(self.backend)) else None
             if method is not None:
-                if tools is not None:
-                    response = method(messages, tools=tools)
-                else:
-                    response = method(messages)
+                kwargs: dict[str, Any] = {"tools": tools} if tools is not None else {}
+                parameters = inspect.signature(method).parameters
+                if stream is not None and ("on_event" in parameters or any(p.kind == p.VAR_KEYWORD for p in parameters.values())):
+                    kwargs["on_event"] = stream.on_event
+                response = stream.invoke(method, messages, **kwargs) if stream is not None else method(messages, **kwargs)
             else:  # 仅供旧测试替身
-                response = self.backend.complete(messages[0]["content"], messages[-1]["content"])
+                args = (messages[0]["content"], messages[-1]["content"])
+                response = stream.invoke(self.backend.complete, *args) if stream is not None else self.backend.complete(*args)
+            if stream is not None:
+                stream.finish(response)
             if response.ok and (response.text.strip() or response.tool_calls):
                 return response
             last = response
@@ -1017,7 +1055,14 @@ class PentestAgent:
             attempt += 1
             if attempt > MAX_LLM_RETRIES:
                 return response
-            time.sleep(min(2.0 * attempt, 10.0))
+            delay = min(2.0 * attempt, 10.0)
+            if ctx is not None:
+                ctx.emit("model.retry", request_id=stream.request_id, attempt=attempt, delay=delay, failure_kind=kind)
+            if self.stop_event is not None:
+                if self.stop_event.wait(delay):
+                    return response
+            else:
+                time.sleep(delay)
 
     def _save_state(self, state: RunState, workspace: Path) -> None:
         temporary: Path | None = None

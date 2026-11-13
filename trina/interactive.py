@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import difflib
 import json
+from pathlib import Path
 import shlex
 import sys
 import threading
@@ -22,7 +23,7 @@ import time
 from typing import Any, Callable
 
 from .config import TrinaConfig
-from .console_state import ConsoleState, TrackedBackend
+from .console_state import ConsoleContext, ConsoleState, TrackedBackend
 from .model_names import display_model as _display_model
 from .console_ui import (
     ChoiceSpec, EnhancedConsoleInput, command_detail_sections, command_help_sections,
@@ -84,6 +85,9 @@ class Console:
         self._scheduler = None
         self._scheduler_thread = None
         self._task_config = None
+        self._event_transcript = None
+        self._task_title = ""
+        self._task_max_steps = 0
 
     # ------------------------------------------------------------------ 输出
     def _display(self, text: str) -> None:
@@ -101,25 +105,28 @@ class Console:
             self._emit(message)
 
     def _agent_log(self, message: str) -> None:
-        if message.startswith("[用户] "):
-            self._display(render_message(message[5:], label="你", color=self.color))
-        elif "想法：" in message:
+        import re
+        if message.startswith(("[用户] ", "[动作 ")) or re.match(r"^\[\d+/\d+\]", message) or message.lstrip().startswith("→"):
+            return  # 已由结构化事件渲染，避免日志重复成为另一条消息。
+        if "想法：" in message:
             self._display(render_process(message.split("想法：", 1)[1].strip(), label="思考摘要", color=self.color))
         else:
-            import re
-            if message.startswith("[动作 ") or re.match(r"^\[\d+/\d+\]", message):
-                self.view.set_activity("tool", "工具处理中")
-                label = "执行"
-            elif message.lstrip().startswith("→"):
-                self.view.set_activity("processing", "整理结果")
-                label = "结果"
-            else:
-                label = "过程"
-            self._display(render_process(message.strip(), label=label, color=self.color))
+            self._display(render_process(message.strip(), label="过程", color=self.color))
 
     def _on_step(self, step: Any) -> None:
         self._live_step = step
-        self._display(render_step(step, color=self.color))
+
+    def _on_runtime_event(self, event: Any) -> None:
+        from .event_view import EventTranscript
+        if self._event_transcript is None:
+            self._event_transcript = EventTranscript(self._display, editor=self._enhanced_input, color=self.color)
+        if event.kind == "tool.started":
+            self.view.set_activity("tool", str(event.payload.get("tool", "工具处理中")))
+        elif event.kind == "model.retry":
+            self.view.set_activity("retry", f"等待重试 · 第 {event.payload.get('attempt')} 次")
+        elif event.kind == "model.error":
+            self.view.set_activity("error", "模型请求失败")
+        self._event_transcript.consume(event)
 
     def _show_help(self, args: list[str] | None = None) -> None:
         name = (args or [""])[0].lstrip("/")
@@ -146,6 +153,7 @@ class Console:
                 status=self._prompt_status, running=lambda: self.session.running,
                 dynamic_values=self._completion_values, plain=self._plain or not self.color,
                 usage=self.view.footer, activity=self._activity,
+                context=self._footer_context,
             )
             original_output = self.output
             self.output = self._enhanced_input.write
@@ -197,10 +205,9 @@ class Console:
             return "idle", "就绪", 0
         return self.view.activity()
 
-    def _prompt_status(self) -> str:
-        """增强输入框底栏的紧凑动态状态。"""
+    def _footer_context(self) -> ConsoleContext:
+        """直接读取当前任务配置，模型切换、恢复和新会话在下一帧生效。"""
         llm = (self._task_config or self.config).llm
-        short = clean_text(_display_model(llm.model, llm.reasoning_effort) or "?").replace("\n", " ")[:24]
         status = "就绪"
         if self.session.running:
             status = "待审批 y/n" if self.session.pending else (
@@ -210,7 +217,33 @@ class Console:
             )
         pending = self.session.steers.qsize()
         queued = f" · 补充 {pending} 条待处理" if pending else ""
-        return f"{status}{queued} · {llm.profile or llm.backend}/{short}"
+        state = self.session.state or self._last_state
+        is_chat = self.chat is not None and state is self.chat.state
+        context_tokens = self.view.context_tokens
+        progress = ""
+        if is_chat:
+            estimated = self.chat.context.stats.get("estimated_input_tokens")
+            if isinstance(estimated, int):
+                context_tokens = estimated
+            tools = int(self.chat.state.counters.get("tool_calls", 0))
+            progress = f"轮次 {self.chat.turns}" + (f" · 工具 {tools}" if tools else "")
+        else:
+            stats = getattr(state, "context_stats", {}) if state is not None else {}
+            estimated = stats.get("estimated_input_tokens") if isinstance(stats, dict) else None
+            if isinstance(estimated, int):
+                context_tokens = estimated
+            step = int(getattr(self._live_step, "index", 0) or
+                       (getattr(state, "counters", {}) or {}).get("steps", 0))
+            if self._task_max_steps:
+                progress = f"步骤 {step}/{self._task_max_steps}"
+        return ConsoleContext(status=status + queued, model=_display_model(llm.model, llm.reasoning_effort),
+                              directory=str(Path.cwd()), task=self._task_title or "新对话",
+                              progress=progress, context_tokens=context_tokens,
+                              context_window=llm.effective_context_window)
+
+    def _prompt_status(self) -> str:
+        context = self._footer_context()
+        return f"{context.status} · {context.model} · 目录 {context.directory} · 任务 {context.task}"
 
     def _prompt(self) -> str:
         short = clean_text(_display_model(self.config.llm.model, self.config.llm.reasoning_effort) or "?").replace("\n", " ")[:28]
@@ -670,6 +703,7 @@ class Console:
         if self.chat is not None:
             self.chat.close()
         self.chat = None
+        self._task_title = ""
         self.session.state = self._last_state = None
         self.view.reset()
         self._emit("已开启新对话会话；上一次对话已保存，可用 /resume 切换。")
@@ -693,6 +727,7 @@ class Console:
         chat = self._ensure_chat()
         chat._initialize_messages()
         chat.title = chat.title or f"手动工具 {tool.spec.name}"
+        self._task_title = chat.title
         instruction = {"role": "user", "content": "[手动工具] " + json.dumps({"action": tool.spec.name, "params": params}, ensure_ascii=False)}
         action = {"action": tool.spec.name, "params": params}
         assistant = {"role": "assistant", "content": json.dumps(action, ensure_ascii=False)}
@@ -749,8 +784,7 @@ class Console:
             return
         restored = ChatAgent.resume(self.config, matches[0], registry=self.registry, backend=self._backend(),
             approval=self.session.request_approval, steer_queue=self.session.steers, stop_event=self.session.stop_event,
-            pause_event=self.session.pause_event, logger=self._agent_log, on_tool=self._on_tool_result,
-            on_stream=self._on_chat_stream if self._enhanced_input is not None else None)
+            pause_event=self.session.pause_event, logger=self._agent_log, on_tool=self._on_tool_result)
         try:
             if self.chat is not None:
                 self.chat.close()
@@ -758,6 +792,7 @@ class Console:
             restored.close()
             raise
         self.chat = restored
+        self._task_title = restored.title
         restored.save()
         self.session.reset_for_run()
         self.session.state = self._last_state = restored.state
@@ -767,7 +802,27 @@ class Console:
             setattr(self.view, name, value)
         if self._enhanced_input is not None:
             self._enhanced_input.clear_transcript()
+        self._event_transcript = None
         self._emit(f"已恢复：{restored.title} · {restored.turns} 轮 · {restored.run_id}")
+        restored.on_event = self._on_runtime_event
+        history_actions = 0
+        for item in restored.history:
+            if item.get("role") == "assistant":
+                try:
+                    value = json.loads(item.get("content", ""))
+                    history_actions += int(isinstance(value, dict) and "action" in value)
+                except (ValueError, TypeError):
+                    pass
+        recorded_actions = sum(1 for _ in restored.events.replay(kinds=("tool.requested",), limit=history_actions + 1))
+        if restored.events.last_seq and recorded_actions >= history_actions:
+            after = 0
+            while batch := restored.events.replay(after):
+                for event in batch:
+                    self._on_runtime_event(event)
+                after = batch[-1].seq
+            restored._event_subscription = restored.events.subscribe(self._on_runtime_event, after=after)
+            return
+        restored._event_subscription = restored.events.subscribe(self._on_runtime_event, after=restored.events.last_seq)
         for item in restored.history:
             role, text = item.get("role"), item.get("content", "")
             if role == "assistant":
@@ -888,6 +943,8 @@ class Console:
             self._goal_text = value
             if self.session.running:
                 self.session.update_goal(value)
+                if self._task_config is not None:
+                    self._task_title = value or f"扫描 {self._plan.target}"
         self._display(render_panel("Goal", sections=[("当前目标", self._goal_text or "未设置")], color=self.color))
 
     def _cmd_schedule(self, args: list[str]) -> None:
@@ -963,7 +1020,7 @@ class Console:
                 pause_event=self.session.pause_event,
                 logger=self._agent_log,
                 on_tool=self._on_tool_result,
-                on_stream=self._on_chat_stream if self._enhanced_input is not None else None,
+                on_event=self._on_runtime_event,
             )
         return self.chat
 
@@ -1006,6 +1063,7 @@ class Console:
             chat.ctx.extra["llm_backend"] = chat.backend
         self.session.reset_for_run()
         self.view.set_activity("processing", "准备回复")
+        self._task_title = chat.title or " ".join(text.split())[:80]
         self._live_step = None
         chat.state.goal = self._goal_text
         self.session.state = chat.state
@@ -1014,6 +1072,7 @@ class Console:
         def _worker() -> None:
             try:
                 reply = chat.ask(text)
+                self._task_title = chat.title or self._task_title
                 if not chat.last_reply_streamed:
                     self._display(render_answer(reply or "(空回复)", color=self.color))
                 self._last_state = chat.state
@@ -1170,6 +1229,8 @@ class Console:
         self._task_config = task_config
         self._last_state = None
         self._plan = plan
+        self._task_title = plan.goal or f"扫描 {plan.target}"
+        self._task_max_steps = max_steps or task_config.llm.max_steps
         self.session.state = None
         self.session.started_at = time.monotonic()
         teardown_after = bool(plan.started_fixtures)
@@ -1198,6 +1259,7 @@ class Console:
                     max_steps=max_steps,
                     log=self._agent_log,
                     on_step=self._on_step,
+                    on_event=self._on_runtime_event,
                 )
                 self._last_state = state
                 self.session.state = state

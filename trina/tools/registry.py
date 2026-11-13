@@ -211,6 +211,7 @@ class ToolContext:
         deadline: float | None = None,
         logger: Callable[[str], None] | None = None,
         dry_run: bool = False,
+        event_bus: Any = None,
     ):
         from .http import HttpClient
 
@@ -229,6 +230,9 @@ class ToolContext:
         #: 「外层按 verify 放行、内层按 exploit 自拒」的自相矛盾。
         self.effective_level: str = "detect"
         self._logger = logger or (lambda msg: None)
+        from ..events import EventBus
+        self.events = event_bus or EventBus(self.workspace / "events.sqlite3", state.run_id, redact_keys=config.audit.redact_keys)
+        self.state.artifacts["events_path"] = str(self.events.path)
         from .external import BackgroundJobs
         self.extra: dict[str, Any] = {"background_jobs": BackgroundJobs(), "task_deadline": deadline}
         from ..binary.sessions import BinarySessions
@@ -238,7 +242,31 @@ class ToolContext:
     def log(self, message: str) -> None:
         from ..scope import ensure_execution_active
         ensure_execution_active()
+        if self.extra.get("_tool_call_id"):
+            self.emit("tool.output", stream="log", delta=message + "\n")
         self._logger(message)
+
+    def emit(self, kind: str, **payload: Any) -> Any:
+        """调用链中的事件继承任务来源和租约，迟到工具不能写入事件流。"""
+        gate = self.extra.get("_event_gate")
+        if gate is not None and kind == "tool.output":
+            with gate["lock"]:
+                if not gate["open"]:
+                    raise RuntimeError("工具事件流已结束")
+                return self._emit_event(kind, **payload)
+        return self._emit_event(kind, **payload)
+
+    def _emit_event(self, kind: str, **payload: Any) -> Any:
+        from ..scope import ensure_execution_active
+        ensure_execution_active()
+        owner = self.extra.get("_execution_owner")
+        if owner is not None:
+            owner.check()
+        call_id = str(payload.pop("call_id", self.extra.get("_tool_call_id", "")))
+        return self.events.publish(kind, run_id=self.state.run_id, source="worker",
+                                   task_id=str(self.extra.get("intent_id", "")),
+                                   worker_id=str(self.extra.get("worker_id", "")),
+                                   call_id=call_id, **payload)
 
     def remaining(self) -> float | None:
         if self.deadline is None:
@@ -378,6 +406,47 @@ class ToolRegistry:
         ctx: ToolContext | None = None,
         *,
         timeout: float | None = None,
+        call_id: str | None = None,
+        request_emitted: bool = False,
+    ) -> ToolResult:
+        """所有结果分支都有 requested 和唯一 finished，未开始执行也可复盘。"""
+        if ctx is None:
+            raise ValueError("execute 需要 ToolContext（护栏与审计的载体）")
+        import uuid
+        invocation = copy.copy(ctx)
+        invocation.extra = dict(ctx.extra)
+        invocation.extra["_tool_call_id"] = call_id or uuid.uuid4().hex
+        import threading
+        gate = {"lock": threading.RLock(), "open": True}
+        invocation.extra["_event_gate"] = gate
+        if not request_emitted:
+            invocation.emit("tool.requested", tool=name, params=params or {})
+        started = time.monotonic()
+        try:
+            result = self._execute(name, params, invocation, timeout=timeout)
+        except Exception as exc:
+            with gate["lock"]:
+                gate["open"] = False
+                invocation.emit("tool.finished", tool=name, status="failed", ok=False,
+                                error=f"{type(exc).__name__}: {exc}", duration=time.monotonic() - started)
+            raise
+        finally:
+            ctx.extra.update({key: value for key, value in invocation.extra.items() if key not in {"_tool_call_id", "_event_gate"}})
+            ctx.effective_level = invocation.effective_level
+        terminal = {"failed", "invalid", "unavailable", "timed_out", "cancelled", "interrupted"}
+        status = "completed" if result.ok else ("denied" if result.denied else
+                                                 result.category if result.category in terminal else "failed")
+        if not result.ok and ctx.extra.get("stop_event") is not None and ctx.extra["stop_event"].is_set():
+            status = "cancelled"
+        with gate["lock"]:
+            gate["open"] = False
+            invocation.emit("tool.finished", tool=name, status=status, raw=result.raw, **result.to_dict())
+        if result.facts or result.evidence:
+            invocation.emit("state.updated", tool=name, state=ctx.state.to_dict())
+        return result
+
+    def _execute(
+        self, name: str, params: dict[str, Any] | None, ctx: ToolContext, *, timeout: float | None,
     ) -> ToolResult:
         if ctx is None:
             raise ValueError("execute 需要 ToolContext（护栏与审计的载体）")
@@ -389,6 +458,7 @@ class ToolRegistry:
                 ok=False,
                 error=f"未知工具 {name!r}",
                 summary=f"未知工具 {name}",
+                category="invalid",
                 data={"available_tools": self.names()},
                 next_hints=["请从工具清单里选择合法工具名"],
                 duration=time.monotonic() - started,
@@ -406,6 +476,7 @@ class ToolRegistry:
                 ok=False,
                 error=error,
                 summary=f"参数非法: {error}",
+                category="invalid",
                 data={"valid_params": {p: str(ps.type) for p, ps in spec.params.items()}},
                 next_hints=["按参数表重试"],
                 duration=time.monotonic() - started,
@@ -415,7 +486,9 @@ class ToolRegistry:
         available, why = tool.available()
         if not available:
             ctx.audit.append("tool.unavailable", tool=name, decision="deny", reason=why)
-            return ToolResult(ok=False, error=why, summary=f"工具不可用: {why}", duration=time.monotonic() - started)
+            return ToolResult(ok=False, error=why, summary=f"工具不可用: {why}", category="unavailable", duration=time.monotonic() - started)
+
+        ctx.emit("tool.validated", tool=name, params=validated)
 
         # 3) 护栏：动作等级 + 破坏性 + 目标范围
         target = str(validated.get("target") or validated.get("url") or validated.get("host") or "")
@@ -452,6 +525,7 @@ class ToolRegistry:
 
         # 4) 审计：放行
         ctx.effective_level = audit_level
+        ctx.emit("tool.started", tool=name, params=validated, action_level=audit_level, target=target)
         ctx.audit.append(
             "tool.start",
             tool=name,
@@ -570,6 +644,7 @@ class ToolRegistry:
                 ok=False,
                 error=f"工具 {tool.spec.name} 超时（{timeout:.0f}s）",
                 summary=f"{tool.spec.name} 超时",
+                category="timed_out",
                 next_hints=["降低扫描范围或改用更快的工具"],
                 duration=time.monotonic() - started,
             )

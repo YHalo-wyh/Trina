@@ -1,0 +1,9 @@
+[用户] {"schema_version": 3, "run_mode": "instance", "challenge": {"id": "local-fixture"}, "competition_id": "local", "questions": [{"id": "flag"}], "gated_questions": 1, "platform_url": "http://127.0.0.1:56666", "target_instance": "this-instance"}
+[动作 1] ctfy_task {"action": "submit", "question_id": "flag", "answer": "right"}
+          → OK: CTFY 权威响应
+（模型调用失败：上下文预算不足：用户约束、当前事实及最新请求无法完整保留；未删除历史，请调整 context_window）
+[eval] 已自动拉起 lab 靶机 127.0.0.1:56691
+----------------------------------------------------------------------
+Ran 563 tests in 119.684s
+
+OK (skipped=10)

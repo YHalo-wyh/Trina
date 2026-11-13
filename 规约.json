@@ -630,6 +630,34 @@
           "tests": ["tests.test_contract.MachineContractTests.test_ctf_skill_inventory_is_complete"]
         }
       ]
+    },
+    {
+      "id": "TR-22",
+      "title": "统一运行事件与游标续流",
+      "priority": "P0",
+      "status": "implemented",
+      "implementation": ["trina/events.py", "trina/event_view.py", "trina/tools/registry.py", "trina/scope.py", "trina/tools/external.py", "trina/brain/agent.py", "trina/brain/chat.py", "trina/swarm.py", "trina/coordination.py", "trina/console_ui.py", "trina/cli.py"],
+      "verification": ["V-CONTRACT", "V-TESTS"],
+      "rules": [
+        {
+          "id": "TR-22-R01",
+          "level": "MUST",
+          "statement": "事件必须事务持久化并按流内序号投递，重放与实时共用游标，显式确认跨进程持久化，未确认批次至少投递一次。",
+          "tests": ["tests.test_events.EventTests.test_concurrent_publish_is_ordered_and_payload_is_a_snapshot", "tests.test_events.EventTests.test_deep_checkpoint_data_is_preserved_and_redaction_is_idempotent", "tests.test_events.EventTests.test_acknowledged_cursor_survives_reopen_unacked_delivery_repeats", "tests.test_events.EventTests.test_replay_to_live_handoff_has_no_gap_and_failure_can_retry", "tests.test_events.EventTests.test_cross_process_wait_and_filtered_cursor"]
+        },
+        {
+          "id": "TR-22-R02",
+          "level": "MUST",
+          "statement": "工具必须有唯一关联终态和实时输出，超时拒绝迟到写入；工具窗口原位更新，普通正文直接排版，事件重放不得执行历史动作。",
+          "tests": ["tests.test_events.EventTests.test_tool_success_invalid_exception_and_timeout_have_one_terminal", "tests.test_events.EventTests.test_external_stdout_and_stderr_arrive_before_process_completion", "tests.test_events.EventTests.test_tool_window_updates_in_place_and_replay_matches_live", "tests.test_events.EventTests.test_cli_consumer_replays_then_resumes_without_executing_tools"]
+        },
+        {
+          "id": "TR-22-R03",
+          "level": "MUST",
+          "statement": "Commander 必须在 Worker 结束前消费真实事实与观察，并从领先 JSON 的持久事件检查点恢复；失去执行器的工具标为 interrupted，执行恢复以任务为单位。",
+          "tests": ["tests.test_events.EventTests.test_commander_consumes_live_facts_before_worker_terminal", "tests.test_events.EventTests.test_commander_recovers_durable_checkpoint_ahead_of_json_file", "tests.test_events.EventTests.test_recovery_marks_open_call_interrupted_without_reexecuting"]
+        }
+      ]
     }
   ]
 }

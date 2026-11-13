@@ -36,6 +36,7 @@ LLM_FAILURE_KINDS = (
     "protocol_unsupported",  # 供应商/模型不支持本协议（如未开原生 tools）
     "protocol_error",      # 协议错误：参数不是合法 JSON、未知工具、响应结构异常
     "permission_denied",   # 权限/授权拒绝：控制器、护栏、供应商 401/403
+    "quota_exhausted",     # 余额/额度用尽；等待不会恢复的账户故障
     "run_failure",         # 运行失败：网络、超时、5xx 等可重试故障
     "blocked",             # 任务被阻塞：目标越界、预算耗尽、人工停止
     "completed",           # 真正完成：拿到 final 或目标满足
@@ -45,6 +46,7 @@ LLM_FAILURE_CN = {
     "protocol_unsupported": "模型/供应商不支持该协议",
     "protocol_error": "工具协议错误",
     "permission_denied": "权限或授权拒绝",
+    "quota_exhausted": "余额或额度不足",
     "run_failure": "运行失败（可重试）",
     "blocked": "任务被阻塞",
     "completed": "任务完成",
@@ -55,6 +57,7 @@ RETRY_BUDGET = {
     "ok": 0,
     "protocol_error": 2,
     "permission_denied": 0,
+    "quota_exhausted": 0,
     "run_failure": 4,
     "blocked": 0,
     "completed": 0,
@@ -71,12 +74,18 @@ _PROTOCOL_ERROR_RE = re.compile(
     re.I,
 )
 _PERMISSION_RE = re.compile(r"(401|403|unauthori[sz]ed|forbidden|permission\s+denied|拒绝|无权|not\s+allowed)", re.I)
+_QUOTA_RE = re.compile(
+    r"(HTTP\s+402\b|insufficient[_\s-]*(?:quota|balance|credits?|funds)|"
+    r"(?:quota|credits?|balance)[_\s-]*(?:exhausted|depleted)|credit[_\s-]*balance|"
+    r"billing[_\s-]*hard[_\s-]*limit|exceeded\s+your\s+current\s+quota|"
+    r"余额不足|欠费|额度(?:不足|耗尽|用尽)|配额(?:不足|耗尽|用尽))", re.I,
+)
 
 
 def classify_llm_response(response: Any) -> str:
     """把一次模型响应归类到 ``LLM_FAILURE_KINDS``。
 
-    优先级：成功 > 协议不支持 > 协议错误 > 权限 > 运行失败。
+    优先级：成功 > 额度 > 权限 > 协议不支持 > 协议错误 > 运行失败。
     成功判定包含原生 tool_calls——只有 tool_calls 没有正文是**正常**响应。
     """
     if response is None:
@@ -86,12 +95,14 @@ def classify_llm_response(response: Any) -> str:
             return "ok"
         return "protocol_error"
     error = str(getattr(response, "error", "") or "")
+    if _QUOTA_RE.search(error):
+        return "quota_exhausted"
+    if _PERMISSION_RE.search(error):
+        return "permission_denied"
     if _PROTOCOL_UNSUPPORTED_RE.search(error):
         return "protocol_unsupported"
     if _PROTOCOL_ERROR_RE.search(error):
         return "protocol_error"
-    if _PERMISSION_RE.search(error):
-        return "permission_denied"
     return "run_failure"
 
 
@@ -104,7 +115,7 @@ def decide_after_failure(kind: str, *, attempt: int = 0) -> str:
         return "continue"
     if kind == "protocol_unsupported":
         return "downgrade"
-    if kind == "blocked" or kind == "permission_denied":
+    if kind in {"blocked", "permission_denied", "quota_exhausted"}:
         return "stop"
     budget = RETRY_BUDGET.get(kind, 0)
     return "continue" if attempt < budget else "stop"

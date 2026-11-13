@@ -26,7 +26,7 @@ from . import __version__
 from .config import TrinaConfig, PROJECT_ROOT, ConfigError, _default_runtime_root
 from .model_names import display_model
 from .scope import ScopeGuard
-from .terminal import render_approval, render_message, render_panel, render_step, use_color
+from .terminal import render_approval, render_message, render_panel, use_color
 
 # ---------------------------------------------------------------------------
 # 输出helpers（rich 可选）
@@ -234,6 +234,14 @@ def cmd_guard(args: argparse.Namespace) -> int:
     return 1
 
 
+def _runtime_log(message: str) -> None:
+    """事件已展示的工具摘要不再重复打印，其余运行说明直接排版。"""
+    import re
+    if message.startswith(("[用户] ", "[动作 ")) or re.match(r"^\[\d+/\d+\]", message) or message.lstrip().startswith("→"):
+        return
+    print(render_message(message, label="过程", color=use_color()))
+
+
 def cmd_run(args: argparse.Namespace) -> int:
     from .brain import PentestAgent
     from .llm import make_backend
@@ -270,10 +278,9 @@ def cmd_run(args: argparse.Namespace) -> int:
                        ("模型", f"{display_model(config.llm.model, config.llm.reasoning_effort)} · {config.llm.backend}"),
                        ("信任模式", config.scope.trust_mode)], color=use_color()))
 
-    def on_step(step) -> None:
-        print(render_step(step, color=use_color()))
-
-    agent = PentestAgent(config, registry=registry, backend=backend, logger=lambda msg: print(render_message(msg, label="  ·", color=use_color())), on_step=on_step)
+    from .event_view import EventTranscript
+    transcript = EventTranscript(print, color=use_color())
+    agent = PentestAgent(config, registry=registry, backend=backend, logger=_runtime_log, on_event=transcript.consume)
     state = agent.run(
         target,
         goal=goal,
@@ -495,6 +502,31 @@ def cmd_eval(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_events(args: argparse.Namespace) -> int:
+    """重放或续接已有事件流；只投递观察，不执行历史动作。"""
+    from .events import EventBus
+    from .event_view import EventTranscript
+    bus = EventBus.open_existing(args.path)
+    subscription = bus.subscribe(after=args.after, name=args.consumer or "", kinds=args.kind or (), task_id=args.task)
+    transcript = EventTranscript(out, color=use_color())
+    try:
+        while True:
+            batch = subscription.poll(timeout=.5 if args.follow else 0)
+            for event in batch:
+                if args.json:
+                    print(json.dumps(event.to_dict(), ensure_ascii=False), flush=True)
+                else:
+                    transcript.consume(event)
+            subscription.ack()
+            if not args.follow and not batch:
+                break
+    except KeyboardInterrupt:
+        pass
+    finally:
+        subscription.close()
+    return 0
+
+
 def cmd_tool(args: argparse.Namespace) -> int:
     """执行单个工具（经护栏与审计），供 omp 扩展与手工运维使用。"""
     import time
@@ -613,6 +645,8 @@ def cmd_play(args: argparse.Namespace) -> int:
             answer = ""
         return answer in ("y", "yes")
 
+    from .event_view import EventTranscript
+    transcript = EventTranscript(print, color=use_color())
     try:
         state = run_plan(
             config,
@@ -624,8 +658,8 @@ def cmd_play(args: argparse.Namespace) -> int:
             controller=None,
             max_steps=getattr(args, "max_steps", None),
             max_seconds=getattr(args, "max_seconds", None),
-            log=lambda message: print(render_message(message, label="  ·", color=use_color())),
-            on_step=lambda step: print(render_step(step, color=use_color())),
+            log=_runtime_log,
+            on_event=transcript.consume,
             write_report=not getattr(args, "no_report", False),
         )
     finally:
@@ -1047,6 +1081,16 @@ def build_parser() -> argparse.ArgumentParser:
     swarm.add_argument("--allow-exploit", action="store_true", help="restricted 模式兼容项；full 模式无需设置")
     swarm.add_argument("--json", action="store_true", help="输出 JSON 摘要")
     swarm.set_defaults(func=cmd_swarm)
+
+    events = sub.add_parser("events", help="重放统一事件流，按游标断点续流（不执行历史工具）")
+    events.add_argument("path", help="runs/<id>/events.sqlite3")
+    events.add_argument("--after", type=int, default=None, help="只读取大于该序号的事件")
+    events.add_argument("--follow", action="store_true", help="历史重放完成后继续实时接收")
+    events.add_argument("--consumer", help="保存消费游标；下次使用同一名称接续")
+    events.add_argument("--kind", action="append", help="事件类型筛选，支持 tool.*，可重复")
+    events.add_argument("--task", help="仅接收指定 Intent 的事件")
+    events.add_argument("--json", action="store_true", help="逐行输出完整事件信封")
+    events.set_defaults(func=cmd_events)
 
     audit = sub.add_parser("audit", help="审计日志")
     audit_sub = audit.add_subparsers(dest="audit_action", required=True)

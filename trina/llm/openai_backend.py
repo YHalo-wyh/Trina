@@ -24,6 +24,13 @@ from .base import (
 )
 
 
+def _provider_error(value: Any) -> str:
+    """保留错误码、类别与消息，供分类器区分限流和额度耗尽。"""
+    if isinstance(value, dict):
+        return " · ".join(str(value[name]) for name in ("code", "type", "message") if value.get(name)) or str(value)
+    return str(value)
+
+
 class OpenAICompatBackend(LLMBackend):
     """支持三种常用官方方言；多轮消息始终以结构化列表传递。"""
 
@@ -76,6 +83,32 @@ class OpenAICompatBackend(LLMBackend):
         key = self.api_key()
         return detail.replace(key, "<redacted>") if key else detail
 
+    def _http_error(self, exc: urllib.error.HTTPError) -> str:
+        """错误头已足以判定失败；限量读一次正文，不等待网关关闭连接。"""
+        detail = str(exc.reason or "")
+        try:
+            # urllib 的 HTTPError 保留原 HTTPResponse；只缩短错误正文的等待。
+            raw = getattr(getattr(exc.fp, "fp", None), "raw", None)
+            sock = getattr(raw, "_sock", None)
+            if sock is not None:
+                sock.settimeout(min(1.0, max(.1, self.config.timeout)))
+            read = getattr(exc.fp, "read1", None) or exc.read
+            body = read(8192).decode("utf-8", "replace").strip()
+            if body:
+                detail = body
+                try:
+                    data = json.loads(body)
+                    error = data.get("error", data) if isinstance(data, dict) else None
+                    if error:
+                        detail = _provider_error(error)
+                except ValueError:
+                    pass
+        except (OSError, ValueError):
+            pass  # 正文缺失、超时或截断仍保留已收到的 HTTP 状态。
+        finally:
+            exc.close()
+        return f"HTTP {exc.code}: {self._redact_error(detail)[:500]}"
+
     def _request_json(
         self, url: str, payload: dict | None = None, *, connectivity: bool = False,
     ) -> tuple[dict, str]:
@@ -98,8 +131,7 @@ class OpenAICompatBackend(LLMBackend):
             if connectivity:
                 exc.close()
                 return {"status": exc.code}, ""
-            detail = self._redact_error(exc.read().decode("utf-8", "replace"))
-            return {}, f"HTTP {exc.code}: {detail[:300]}"
+            return {}, self._http_error(exc)
         except Exception as exc:  # noqa: BLE001 - 网络层统一转成后端错误
             return {}, f"请求失败: {self._redact_error(exc)}"
 
@@ -349,12 +381,13 @@ class OpenAICompatBackend(LLMBackend):
                     if data == "[DONE]":
                         if self.config.api == "chat":
                             terminal = True
+                            break
                         continue
                     if not isinstance(data, dict):
                         continue
                     last_event = data
-                    if isinstance(data.get("error"), dict):
-                        terminal_error = str(data["error"].get("message") or data["error"])
+                    if data.get("error") or event_name == "error" or data.get("type") == "error":
+                        terminal_error = _provider_error(data.get("error") or data)
                         break
                     response_data = data.get("response")
                     response_model = response_data.get("model") if isinstance(response_data, dict) else ""
@@ -380,9 +413,11 @@ class OpenAICompatBackend(LLMBackend):
                             on_event(LLMStreamEvent(kind, delta=delta))
                     if terminal_error:
                         break
+                    if terminal and self.config.api != "chat":
+                        break
         except urllib.error.HTTPError as exc:
-            detail = self._redact_error(exc.read().decode("utf-8", "replace"))
-            return self._finish_error(f"HTTP {exc.code}: {detail[:300]}", on_event=on_event)
+            return self._finish_error(self._http_error(exc), on_event=on_event,
+                                      duration=round(time.monotonic() - started, 2))
         except Exception as exc:  # noqa: BLE001 - 网络/流解析失败统一返回
             return self._finish_error(
                 f"请求失败: {self._redact_error(exc)}", on_event=on_event,

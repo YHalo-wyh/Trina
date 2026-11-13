@@ -230,9 +230,9 @@ class TestChatAgent(unittest.TestCase):
 
         chat.backend.complete_messages = capture  # type: ignore[method-assign]
         self.assertEqual(chat.ask("你好"), "收到。")
-        self.assertIn("授予最高执行权限的安全工程师", calls[0][0]["content"])
+        self.assertIn("CTF / 攻防比赛", calls[0][0]["content"])
         self.assertIn("# Delivery", calls[0][0]["content"])
-        self.assertIn('{"action"', calls[0][1]["content"])
+        self.assertIn("原生 tool calling", calls[0][1]["content"])
         self.assertIn("# 可用工具", calls[0][1]["content"])
         self.assertEqual(calls[0][-2]["content"], "你好")
         self.assertNotIn("[user]", "\n".join(item["content"] for item in calls[0]))
@@ -420,6 +420,43 @@ class TestConsole(unittest.TestCase):
         self.assertEqual(blob.count("缺少安全响应头 X-Frame-Options"), 1)
         self.assertIn("https://example.test/", blob)
 
+    def test_model_failure_is_visible_once_and_console_returns_to_idle(self):
+        from trina.llm import LLMResponse
+        for error in ("HTTP 403: forbidden", "HTTP 429: insufficient_quota"):
+            with self.subTest(error=error), tempfile.TemporaryDirectory() as directory:
+                backend = ReplayBackend(LLMConfig(backend="replay"))
+                backend.complete_messages = lambda *_args, **_kwargs: LLMResponse(ok=False, error=error)
+                console, output = self._console([], backend=backend)
+                console.config = console.config.with_overrides(run__workspace=str(Path(directory) / "runs"),
+                                                               audit__dir=str(Path(directory) / "logs"))
+                try:
+                    console._start_chat_turn("你好")
+                    console.session.thread.join(3)
+                    self.assertFalse(console.session.running)
+                    self.assertEqual(console.view.activity()[0], "idle")
+                    self.assertEqual("\n".join(output).count(error), 1)
+                    events = console.chat.events.replay(kinds=("model.error", "model.finished"))
+                    self.assertEqual([event.kind for event in events], ["model.error", "model.finished"])
+                finally:
+                    console._cleanup()
+
+    def test_context_budget_failure_is_visible_before_any_backend_request(self):
+        with tempfile.TemporaryDirectory() as directory:
+            backend = ReplayBackend(LLMConfig(backend="replay"))
+            console, output = self._console([], backend=backend)
+            console.config = console.config.with_overrides(run__workspace=str(Path(directory) / "runs"),
+                                                           audit__dir=str(Path(directory) / "logs"),
+                                                           llm__context_window=3072, llm__max_tokens=1024)
+            try:
+                console._start_chat_turn("你好")
+                console.session.thread.join(3)
+                self.assertFalse(console.session.running)
+                self.assertEqual(console.view.activity()[0], "idle")
+                self.assertIn("上下文预算不足", "\n".join(output))
+                self.assertEqual(backend.calls, 0)
+            finally:
+                console._cleanup()
+
     def test_status_and_help_and_quit(self):
         console, output = self._console(["help", "status", "approve verify", "quit"])
         self.assertEqual(console.run(), 0)
@@ -477,7 +514,8 @@ class TestConsole(unittest.TestCase):
             console.run()
             console.session.thread.join(timeout=5) if console.session.thread else None
             blob = "\n".join(output)
-            self.assertIn("[Trina]", blob)
+            self.assertIn("你好！我是 Trina", blob)
+            self.assertNotIn("[Trina] 输出", blob)
             self.assertNotIn("未知命令", blob)
 
     def test_unknown_slash_command_is_reported(self):
@@ -493,6 +531,7 @@ class TestConsole(unittest.TestCase):
         self.assertIn("未知命令 'backend'", blob)
         self.assertIn("暂无可显示的用量数据", blob)
         self.assertNotEqual(console.config.llm.backend, "omp")
+        self.assertIn("DeepSeek Chat", console._footer_context().model)
 
     def test_model_list_and_history_and_new(self):
         console, output = self._console(
@@ -503,6 +542,7 @@ class TestConsole(unittest.TestCase):
         self.assertTrue("可选模型" in blob or "没能列出" in blob)
         self.assertIn("还没有对话历史", blob)
         self.assertIn("已开启新对话会话", blob)
+        self.assertEqual(console._footer_context().task, "新对话")
 
     def test_save_persists_backend_and_model(self):
         import os

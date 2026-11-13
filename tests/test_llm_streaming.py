@@ -26,6 +26,93 @@ def sse(*events):
 
 
 class StreamingTests(unittest.TestCase):
+    def _reply_while_connection_is_open(self, status, body, *, api="chat"):
+        """模拟网关已回结果但连接保持开启，验证不依赖 EOF。"""
+        release, done = threading.Event(), threading.Event()
+        results, events = [], []
+        class Handler(BaseHTTPRequestHandler):
+            protocol_version = "HTTP/1.1"
+            def log_message(self, *_):
+                pass
+
+            def do_POST(self):
+                self.rfile.read(int(self.headers["Content-Length"]))
+                self.send_response(status)
+                self.send_header("Content-Type", "text/event-stream" if status == 200 else "application/json")
+                self.end_headers()
+                self.wfile.write(body)
+                self.wfile.flush()
+                release.wait(5)
+                self.close_connection = True
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        serving = threading.Thread(target=server.serve_forever, daemon=True)
+        serving.start()
+        backend = OpenAICompatBackend(LLMConfig(api=api, base_url=f"http://127.0.0.1:{server.server_port}/v1", timeout=5),
+                                      key_override="private-key")
+        def request():
+            try:
+                results.append(backend.complete_messages([{"role": "user", "content": "你好"}], on_event=events.append))
+            finally:
+                done.set()
+        worker = threading.Thread(target=request)
+        try:
+            worker.start()
+            self.assertTrue(done.wait(2), "收到错误或终止事件后，必须在服务器断开连接前返回")
+            self.assertFalse(release.is_set())
+        finally:
+            release.set()
+            worker.join(6)
+            server.shutdown()
+            server.server_close()
+            serving.join(2)
+        self.assertEqual(backend.ledger.calls, 1)
+        return results[0], events
+
+    def test_http_account_errors_return_without_waiting_for_eof_and_redact_keys(self):
+        from trina.brain.failure import classify_llm_response
+        for status, code, expected in ((401, "invalid_api_key", "permission_denied"),
+                                        (403, "forbidden", "permission_denied"),
+                                        (402, "insufficient_balance", "quota_exhausted"),
+                                        (429, "insufficient_quota", "quota_exhausted")):
+            with self.subTest(status=status):
+                wire = json.dumps({"error": {"code": code, "message": "private-key rejected"}}).encode()
+                result, events = self._reply_while_connection_is_open(status, wire)
+                self.assertFalse(result.ok)
+                self.assertIn(f"HTTP {status}", result.error)
+                self.assertIn(code, result.error)
+                self.assertNotIn("private-key", result.error)
+                self.assertEqual(classify_llm_response(result), expected)
+                self.assertEqual(events[-1].type, "error")
+
+    def test_http_error_with_stalled_body_still_reports_received_status(self):
+        result, _ = self._reply_while_connection_is_open(403, b"")
+        self.assertFalse(result.ok)
+        self.assertIn("HTTP 403", result.error)
+
+    def test_stream_errors_keep_error_code_and_arrive_before_eof(self):
+        for data in ({"error": {"code": "insufficient_quota", "message": "account limit"}},
+                     {"error": "余额不足"}, {"type": "error", "code": "insufficient_quota", "message": "account limit"}):
+            with self.subTest(data=data):
+                wire = f"event: error\ndata: {json.dumps(data, ensure_ascii=False)}\n\n".encode()
+                result, events = self._reply_while_connection_is_open(200, wire)
+                self.assertFalse(result.ok)
+                self.assertEqual(events[-1].type, "error")
+                from trina.brain.failure import classify_llm_response
+                self.assertEqual(classify_llm_response(result), "quota_exhausted")
+
+    def test_stream_terminal_events_finish_without_waiting_for_eof(self):
+        cases = {
+            "chat": b'data: {"choices":[{"delta":{"content":"OK"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n',
+            "anthropic": b'data: {"type":"content_block_delta","delta":{"type":"text_delta","text":"OK"}}\n\ndata: {"type":"message_stop"}\n\n',
+            "responses": b'data: {"type":"response.output_text.delta","delta":"OK"}\n\ndata: {"type":"response.completed","response":{}}\n\n',
+        }
+        for api, wire in cases.items():
+            with self.subTest(api=api):
+                result, events = self._reply_while_connection_is_open(200, wire, api=api)
+                self.assertTrue(result.ok, result.error)
+                self.assertEqual(result.text, "OK")
+                self.assertEqual(events[-1].type, "done")
+
     def test_real_http_delivers_delta_before_server_completes_response(self):
         release, first_delta = threading.Event(), threading.Event()
         requests, results = [], []
@@ -169,7 +256,8 @@ class StreamingTests(unittest.TestCase):
             editor.update_stream("first second", final=True)
             self.assertEqual(len(editor._chunks), 2)
             self.assertEqual(editor.buffer.text, "未发送补充")
-            self.assertEqual("".join(editor._chunks).count("[Trina] 输出"), 1)
+            self.assertNotIn("[Trina] 输出", "".join(editor._chunks))
+            self.assertEqual("".join(editor._chunks).count("first second"), 1)
             self.assertIn("first second", "".join(editor._chunks))
 
     def test_protocol_after_prose_is_held_before_it_can_reach_the_ui(self):

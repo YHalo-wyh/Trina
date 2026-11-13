@@ -68,6 +68,8 @@ class BinaryContractTests(unittest.TestCase):
     def test_binary_role_only_follows_fixed_binary_capability(self):
         role = role_for_registry(build_registry(["binary"]))
         self.assertIn("<gdb_tool_policy>", role)
+        self.assertIn("仅在当前任务需要分析或调试二进制时适用", role)
+        self.assertNotIn("# Binary Worker", role)
         self.assertNotIn("binary-role-v1", role_for_registry(build_registry(["web"])))
         self.assertIn("自定义", role_for_registry(build_registry(["web"]), "自定义"))
 

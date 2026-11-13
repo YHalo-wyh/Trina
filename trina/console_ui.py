@@ -422,7 +422,7 @@ def enhanced_input_available() -> bool:
 class EnhancedConsoleInput:
     """可滚动内容区与固定底部的活动、输入、索引和会话用量。"""
 
-    def __init__(self, *, status, running, dynamic_values, plain: bool = False, usage=None, activity=None) -> None:
+    def __init__(self, *, status, running, dynamic_values, plain: bool = False, usage=None, activity=None, context=None) -> None:
         from prompt_toolkit import Application
         from prompt_toolkit.buffer import Buffer
         from prompt_toolkit.history import InMemoryHistory
@@ -437,6 +437,7 @@ class EnhancedConsoleInput:
         from .terminal import THEME
 
         self.status = status
+        self.context = context
         self.usage = usage or (lambda _width, _compact=False: "")
         self.activity = activity or (lambda: ("processing", "运行中", 0) if running() else ("idle", "就绪", 0))
         self._handler = None
@@ -444,6 +445,7 @@ class EnhancedConsoleInput:
         self._queue = None
         self._chunks: list[str] = []
         self._stream_index: int | None = None
+        self._tool_indices: dict[str, int] = {}
         self._plain = plain
         self._mouse_enabled = True
         self._char_count = 0
@@ -548,8 +550,15 @@ class EnhancedConsoleInput:
             "prompt": "bold " + THEME["rose"], "index": THEME["muted"],
             "selected": "bg:" + THEME["selected"] + " " + THEME["text"] + " bold", "hint": THEME["muted"],
             "status": THEME["lilac"], "title": "bold " + THEME["rose"],
-            "thinking": "bold " + THEME["rose"], "thinking.dim": THEME["violet"],
-            "border": THEME["violet"], "usage": THEME["muted"], "usage.value": THEME["lilac"],
+            "thinking": THEME["rose"], "thinking.dim": THEME["violet"],
+            "border": THEME["violet"], "rail": THEME["violet"],
+            "usage": THEME["muted"], "usage.value": THEME["lilac"],
+            "context.model": THEME["rose"], "context.path": THEME["lilac"],
+            "context.model.icon": "bold " + THEME["rose"],
+            "context.state": "bold " + THEME["lilac"],
+            "context.progress": THEME["lilac"], "context.progress.icon": "bold " + THEME["violet"],
+            "context.meter": "bold " + THEME["rose"],
+            "context.label": THEME["muted"], "context.task": "italic " + THEME["lilac"],
             "selection": "bg:" + THEME["selected"] + " " + THEME["text"],
         })
         control = BufferControl(buffer=self.buffer, input_processors=[BeforeInput(
@@ -564,7 +573,7 @@ class EnhancedConsoleInput:
             always_hide_cursor=True,
             get_vertical_scroll=lambda _window: self.transcript_control.viewport_start(),
         )
-        self.activity_window = Window(FormattedTextControl(self._activity), height=1)
+        self.activity_window = Window(FormattedTextControl(self._activity), height=1, wrap_lines=False)
         self.input_window = Window(control, wrap_lines=True, height=Dimension(min=1, max=3), dont_extend_height=True)
         self.usage_window = Window(
             FormattedTextControl(self._usage), wrap_lines=True, dont_extend_height=True,
@@ -574,14 +583,14 @@ class EnhancedConsoleInput:
             layout=Layout(HSplit([
                 self.output_window,
                 self.activity_window,
-                Window(height=1, char="─", style="class:border"),
+                Window(FormattedTextControl(self._rail), height=1, wrap_lines=False),
                 self.input_window,
                 ConditionalContainer(Window(FormattedTextControl(self._menu), dont_extend_height=True,
                                              height=lambda: Dimension(max=max(2, min(8, self.app.output.get_size().rows - 10)))),
                                      Condition(lambda: bool(self._items()) and not self.dismissed)),
                 Window(FormattedTextControl(lambda: [("class:hint", self._hint())]),
                        height=lambda: 1 if self._hint() else 0),
-                Window(FormattedTextControl(self._status), height=1),
+                Window(FormattedTextControl(self._status), height=self._status_height, wrap_lines=False),
                 self.usage_window,
             ]), focused_element=control),
             key_bindings=bindings, style=style, full_screen=True, refresh_interval=0.2,
@@ -629,8 +638,25 @@ class EnhancedConsoleInput:
 
     def _status(self):
         from .terminal import clean_text
+        if self.context is not None:
+            fragments = self.context().footer(self.app.output.get_size().columns)
+            if not self._mouse_enabled:
+                from .console_state import _fit_cells
+                fragments += [("class:context.label", "\n" + _fit_cells("原生选取模式 · F2 恢复滚动", self.app.output.get_size().columns))]
+            return fragments
         native = " · 原生选取模式 · F2 恢复滚动" if not self._mouse_enabled else ""
         return [("class:status", clean_text(self.status()).replace("\n", " ") + native)]
+
+    def _status_height(self) -> int:
+        return "".join(text for _, text in self._status()).count("\n") + 1
+
+    def _rail(self):
+        if self.context is None:
+            return [("class:rail", "─" * max(1, self.app.output.get_size().columns))]
+        return self.context().rail(self.app.output.get_size().columns)
+
+    def _activity_height(self) -> int:
+        return 1
 
     def _usage(self):
         size = self.app.output.get_size()
@@ -650,17 +676,35 @@ class EnhancedConsoleInput:
         phase, label, seconds = self.activity()
         if phase == "idle" and self._dispatching:
             phase, label = "processing", "准备中"
-        history = f"  ·  ↑ 历史 {self._scrollback} 行 · Ctrl+End 最新" if self._scrollback else ""
         if phase == "idle":
-            return [("class:status", " ↑ 已上翻历史 · 滚轮/PgUp/PgDn · Ctrl+End 回到最新")] if history else []
+            return self._with_task([])
         if phase == "thinking":
             frame = int(time.monotonic() * 4) % 4
             marker = ("·", "✧", "✦", "✧")[frame]
             style = "class:thinking" if frame == 2 else "class:thinking.dim"
         else:
-            marker, style = ("↳", "class:status") if phase == "tool" else ("·", "class:hint")
+            marker = {"waiting": "◌", "responding": "▸", "tool": "◆", "retry": "↻",
+                      "processing": "◇", "approval": "?", "paused": "Ⅱ", "stopping": "■",
+                      "error": "!"}.get(phase, "·")
+            style = "class:status" if phase in {"tool", "responding"} else "class:hint"
+        if phase == "waiting" and seconds >= 15:
+            label = "等待供应商响应"
         elapsed = f"  {seconds:.1f}s" if phase not in ("idle", "paused", "approval") else ""
-        return [(style, f" {marker} {clean_text(label).replace(chr(10), ' ')}{elapsed}{history}")]
+        return self._with_task([(style, f" {marker} {clean_text(label).replace(chr(10), ' ')}{elapsed}")])
+
+    def _with_task(self, fragments: list[tuple[str, str]]) -> list[tuple[str, str]]:
+        """活动和任务始终共用一行；窄窗口省略标题及较长状态。"""
+        from .console_state import _cells, _fit_cells
+        width = max(1, self.app.output.get_size().columns)
+        left = "".join(text for _, text in fragments)
+        style = fragments[0][0] if fragments else "class:status"
+        if self.context is None or width < 12:
+            return [(style, _fit_cells(left, width))] if left else []
+        task = "▣ " + self.context().task
+        right = _fit_cells(task, max(1, width * 2 // 5) if left else width)
+        left = _fit_cells(left, max(1, width - _cells(right) - 2)) if left else ""
+        return [(style, left), ("", " " * max(0, width - _cells(left) - _cells(right))),
+                ("class:context.task", right)]
 
     def write(self, text: str) -> None:
         """后台只追加内容并请求重绘，不打印到终端或覆盖输入缓冲。"""
@@ -680,6 +724,7 @@ class EnhancedConsoleInput:
             pruned = False
             while len(self._chunks) > 1 and self._char_count > 250_000:
                 self._char_count -= len(self._chunks.pop(0))
+                self._tool_indices = {key: index - 1 for key, index in self._tool_indices.items() if index > 0}
                 if self._stream_index is not None:
                     self._stream_index = self._stream_index - 1 if self._stream_index else None
                 pruned = True
@@ -698,11 +743,28 @@ class EnhancedConsoleInput:
         """切换对话时替换内容，保留输入区与应用生命周期。"""
         with self._content_lock:
             self._chunks.clear()
+            self._tool_indices.clear()
             self._stream_index = None
             self._char_count = self._scrollback = 0
             self._rendered_lines = self._line_count = 1
             self.transcript_control.clear_selection()
             self.transcript_control.invalidate_from(0)
+        self.app.invalidate()
+
+    def update_tool(self, call_id: str, card: str) -> None:
+        """工具生命周期更新同一个块；保留输入草稿、其他窗口和滚动位置。"""
+        from .terminal import ResponsiveText
+        with self._content_lock:
+            index = self._tool_indices.get(call_id)
+            if index is None:
+                self.write(card)
+                self._tool_indices[call_id] = len(self._chunks) - 1
+                return
+            chunk = ResponsiveText(str(card).rstrip("\n") + "\n\n",
+                                   lambda width: card.at_width(width).rstrip("\n") + "\n\n")
+            self._char_count += len(chunk) - len(self._chunks[index])
+            self._chunks[index] = chunk
+            self.transcript_control.invalidate_from(index)
         self.app.invalidate()
 
     def update_stream(self, text: str, *, final: bool = False) -> None:
@@ -727,6 +789,8 @@ class EnhancedConsoleInput:
             old_length = len(self._chunks[index])
             if final and not text:
                 self._chunks.pop(index)
+                self._tool_indices = {key: (value - 1 if value > index else value)
+                                      for key, value in self._tool_indices.items() if value != index}
                 self._char_count -= old_length
             else:
                 self._chunks[index] = chunk
@@ -797,8 +861,6 @@ class EnhancedConsoleInput:
         self.dismissed = False
 
     def _hint(self) -> str:
-        if self.running() and not self.buffer.text.startswith("/"):
-            return "Enter 发送补充 · /stop 停止"
         return command_hint(self.buffer.text)
 
     def _items(self):

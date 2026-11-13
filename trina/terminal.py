@@ -150,11 +150,10 @@ def render_message(message: str, *, label: str = "提示", width: int | None = N
 
 
 def render_process(message: str, *, label: str = "过程", width: int | None = None, color: bool = False) -> str:
-    """过程与动作摘要使用轻量缩进，和正式输出的卡片保持区别。"""
+    """普通进展直接写入内容区，不套工具窗口。"""
     requested_width = width
     width = max(20, width if width is not None else terminal_width())
-    content = _wrap(f"{clean_text(label)}  {clean_text(message)}", width - 3)
-    text = "\n".join("┊ " + line for line in content.splitlines())
+    text = _wrap(f"{clean_text(label)}  {clean_text(message)}", width)
     if color:
         rgb = ";".join(str(int(THEME["muted"][index:index + 2], 16)) for index in (1, 3, 5))
         value = f"\x1b[38;2;{rgb}m" + text + "\x1b[0m"
@@ -171,23 +170,65 @@ def render_answer(message: str, *, width: int | None = None, color: bool = False
     try:
         from rich.console import Console
         from rich.markdown import Markdown
-        from rich.panel import Panel
-        from rich.text import Text
-        from rich import box
     except ImportError:
-        value = str(render_panel("[Trina] 输出", sections=[("", message)], width=width, color=False))
+        value = _wrap(message, width)
         return _responsive(value, lambda new_width: str(render_answer(
             message, width=new_width, color=color)), requested_width)
     stream = io.StringIO()
     console = Console(file=stream, width=width, force_terminal=color, no_color=not color,
                       color_system="truecolor" if color else None, legacy_windows=False)
-    console.print(Panel(Markdown(clean_text(message), hyperlinks=False),
-                        title=Text("[Trina] 输出", style="bold " + THEME["rose"]), title_align="left",
-                        border_style=THEME["lilac"], box=box.ROUNDED,
-                        padding=(1, 2) if width >= 48 else (0, 1)))
+    console.print(Markdown(clean_text(message), hyperlinks=False))
     value = stream.getvalue().rstrip("\n")
     return _responsive(value, lambda new_width: str(render_answer(
         message, width=new_width, color=color)), requested_width)
+
+
+def render_tool_call(tool: str, params: dict[str, Any], *, status: str = "running", output: str = "",
+                     stderr: str = "", error: str = "", duration: float = 0, command: str = "",
+                     exit_code: int | None = None, width: int | None = None, color: bool = False) -> str:
+    """工具输入、输出和状态共用一个窗口，脚本与 JSON 按字面量高亮。"""
+    import json
+    import shlex
+    import subprocess
+    requested_width = width
+    width = max(20, width if width is not None else terminal_width())
+    original = dict(tool=tool, params=params, status=status, output=output, stderr=stderr, error=error,
+                    duration=duration, command=command, exit_code=exit_code, color=color)
+    label = {"requested": "准备", "awaiting_approval": "待审批", "running": "运行中", "completed": "完成", "failed": "失败",
+             "denied": "已拒绝", "invalid": "参数错误", "unavailable": "不可用",
+             "timed_out": "超时", "interrupted": "已中断", "cancelled": "已取消"}.get(status, status)
+    argv = params.get("argv")
+    script = ("$ " + (subprocess.list2cmdline([str(item) for item in argv]) if os.name == "nt" else
+                     shlex.join([str(item) for item in argv]))) if isinstance(argv, list) else ""
+    script = script or command or json.dumps(params, ensure_ascii=False, indent=2)
+    title = f"{clean_text(tool)} · {label}"
+    footer = f"{duration:.1f}s" + (f" · exit {exit_code}" if exit_code is not None else "")
+    try:
+        from rich import box
+        from rich.console import Console, Group
+        from rich.panel import Panel
+        from rich.rule import Rule
+        from rich.syntax import Syntax
+        from rich.text import Text
+    except ImportError:
+        value = render_panel(title, sections=[("Input", script), ("Output", output or "（暂无输出）"),
+                             *([("stderr", stderr)] if stderr else []), *([("错误", error)] if error else [])],
+                             footer=footer, width=width, color=False)
+    else:
+        parts = [Syntax(clean_text(script), "bash" if script.startswith("$ ") or command else "json",
+                        theme="monokai", background_color="default", word_wrap=True),
+                 Rule("Output", style="dim", align="left"), Text(clean_text(output or "（暂无输出）"))]
+        if stderr:
+            parts.extend([Text("stderr", style="yellow"), Text(clean_text(stderr))])
+        if error:
+            parts.append(Text(clean_text(error), style="red"))
+        stream = io.StringIO()
+        Console(file=stream, width=width, force_terminal=color, no_color=not color,
+                color_system="truecolor" if color else None, legacy_windows=False).print(
+                    Panel(Group(*parts), title=Text(title), title_align="left", subtitle=Text(footer),
+                          border_style="red" if error else THEME["muted"], box=box.ROUNDED, padding=(0, 1)))
+        value = stream.getvalue().rstrip("\n")
+    return _responsive(str(value), lambda new_width: str(render_tool_call(**original, width=new_width)), requested_width)
 
 
 def render_home(*, width: int | None = None, color: bool = False) -> str:

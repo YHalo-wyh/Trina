@@ -7,6 +7,8 @@
 
 ## 1. 目标与验收
 
+2026-11-13 已接入统一运行事件、工具窗口、Commander 实时事实和持久游标续流。协议与任务级恢复边界见 [EVENTS.md](EVENTS.md)，决定见 [ADR-0027](../design/adr/0027-unified-runtime-events.md)，验证入口为 `tests/test_events.py` 和机器规约 TR-22。
+
 ### 1.1 五项核心能力（对应用户需求）
 
 | # | 能力 | 交付物 | 验收方式 |

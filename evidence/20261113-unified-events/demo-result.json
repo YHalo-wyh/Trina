@@ -1,0 +1,13 @@
+{
+  "ok": true,
+  "run_id": "event-demo-1794557225825486000",
+  "event_count": 12,
+  "events_path": "C:\\Users\\WYH\\Desktop\\网安实训中级\\runs\\event-demo-1794557225825486000\\events.sqlite3",
+  "audit_path": "C:\\Users\\WYH\\Desktop\\网安实训中级\\logs\\event-demo-1794557225825486000.jsonl",
+  "audit_verified": true,
+  "live_equals_replay": true,
+  "transcript_blocks": 3,
+  "draft_preserved": true,
+  "prose_source": "固定演示文本",
+  "tool_source": "ToolRegistry 执行真实 Python 子进程"
+}

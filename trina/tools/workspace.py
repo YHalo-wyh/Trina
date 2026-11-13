@@ -72,6 +72,7 @@ class TerminalExec(Tool):
         stderr = (call.stderr or "")[-4_000:]
         return ToolResult(
             ok=call.ok,
+            category="timed_out" if call.timed_out else "",
             summary=f"命令完成，退出码 {call.code}" if call.ok else (error or "命令执行失败"),
             error=error,
             command=call.command,

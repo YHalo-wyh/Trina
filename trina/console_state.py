@@ -22,6 +22,100 @@ def _cells(value: str) -> int:
     return sum(0 if unicodedata.combining(c) else 2 if unicodedata.east_asian_width(c) in "WF" else 1 for c in value)
 
 
+def _fit_cells(value: str, width: int, *, tail: bool = False) -> str:
+    """按终端显示宽度省略文本；路径保留末尾目录。"""
+    from .terminal import clean_text
+    value = clean_text(value).replace("\n", " ").strip()
+    width = max(1, width)
+    if _cells(value) <= width:
+        return value
+    selected, used = [], 0
+    for char in reversed(value) if tail else value:
+        size = _cells(char)
+        if used + size > width - 1:
+            break
+        selected.append(char)
+        used += size
+    return "…" + "".join(reversed(selected)) if tail else "".join(selected) + "…"
+
+
+@dataclass(frozen=True)
+class ConsoleContext:
+    """底栏只读上下文：当前模型、任务、进度与窗口占用。"""
+
+    status: str
+    model: str
+    directory: str
+    task: str
+    progress: str = ""
+    context_tokens: int | None = None
+    context_window: int = 0
+
+    def footer(self, width: int) -> list[tuple[str, str]]:
+        """状态、模型和步骤按组折行；目录单独嵌在上方横线。"""
+        icon = "◌"
+        if "运行" in self.status:
+            icon = "●"
+        elif "暂停" in self.status:
+            icon = "Ⅱ"
+        elif "审批" in self.status:
+            icon = "?"
+        elif "停止" in self.status:
+            icon = "■"
+        groups: list[list[tuple[str, str]]] = [
+            [("class:context.state", icon + " "), ("class:status", self.status)],
+            [("class:context.model.icon", "◈ "), ("class:context.model", self.model)],
+        ]
+        if self.progress:
+            groups.append([("class:context.progress.icon", "◆ "),
+                           ("class:context.progress", self.progress)])
+        separator = [("class:context.label", "  ·  ")]
+        rows: list[list[tuple[str, str]]] = []
+        current: list[tuple[str, str]] = []
+        for group in groups:
+            prefix = separator if current else []
+            needed = sum(_cells(text) for _, text in current + prefix + group)
+            if current and needed > width:
+                rows.append(current)
+                current = []
+            available = max(1, width - sum(_cells(text) for _, text in current + (separator if current else [])))
+            fixed = sum(_cells(text) for _, text in group[:-1])
+            fitted = list(group[:-1]) + [(group[-1][0], _fit_cells(group[-1][1], max(1, available - fixed)))]
+            current += (separator if current else []) + fitted
+        if current:
+            rows.append(current)
+        return [(style, text) for index, row in enumerate(rows)
+                for style, text in ([("", "\n")] if index else []) + row]
+
+    def rail(self, width: int) -> list[tuple[str, str]]:
+        """在输入框横线上展示上下文仪表，并把工作目录锚定到最右。"""
+        width = max(1, width)
+        path_prefix = " 📁 "
+        path_limit = width if width < 28 else max(12, min(width // 2, 54))
+        path_text = path_prefix + _fit_cells(self.directory, max(1, path_limit - _cells(path_prefix)), tail=True)
+        context_text = ""
+        if width >= 28 and self.context_window > 0:
+            if self.context_tokens is None:
+                context_text = f" ◔ {_number(self.context_window)} "
+            else:
+                ratio = max(0.0, self.context_tokens / self.context_window)
+                percent = min(999, round(ratio * 100))
+                if width < 40:
+                    context_text = f" ◔ {percent}% "
+                else:
+                    filled = min(8, max(0, round(min(1.0, ratio) * 8)))
+                    gauge = "▰" * filled + "▱" * (8 - filled)
+                    context_text = f" ◔ {percent}% {gauge} "
+        remaining = max(0, width - _cells(path_text) - _cells(context_text))
+        before = remaining if not context_text else (remaining * 2) // 3
+        after = max(0, remaining - before)
+        fragments: list[tuple[str, str]] = [("class:rail", "─" * before)]
+        if context_text:
+            fragments.extend([("class:context.meter", context_text), ("class:rail", "─" * after)])
+        fragments.append(("class:context.path", path_text))
+        return fragments
+
+
 @dataclass
 class ConsoleState:
     """只记录实际返回的用量；不估算 Token、缓存或费用。"""
@@ -38,6 +132,7 @@ class ConsoleState:
     missing_cache_read: int = 0
     missing_cache_write: int = 0
     missing_cost: int = 0
+    context_tokens: int | None = None
     _lock: Any = field(default_factory=threading.RLock, repr=False)
 
     def set_activity(self, phase: str, label: str) -> None:
@@ -47,11 +142,22 @@ class ConsoleState:
     def model_started(self) -> None:
         with self._lock:
             self.pending += 1
-            self.set_activity("thinking", "思考中")
+            self.set_activity("waiting", "请求模型")
+
+    def model_event(self, event: Any) -> None:
+        """仅在实际流事件到达后改变标签，计时继续覆盖完整请求。"""
+        labels = {"start": ("waiting", "等待输出"), "thinking_delta": ("thinking", "思考中"),
+                  "text_delta": ("responding", "正在回复"), "error": ("error", "模型请求失败")}
+        with self._lock:
+            if event.type in labels:
+                self.phase, self.label = labels[event.type]
 
     def model_finished(self, usage: LLMUsage | None) -> None:
         with self._lock:
             usage = usage or LLMUsage()
+            if usage.input_reported:
+                # 最近一次完整请求的输入量近似当前窗口占用；累计 Token 另行统计。
+                self.context_tokens = usage.input_tokens
             self.usage = self.usage.merge(usage)
             self.missing_tokens += int(not usage.tokens_reported)
             self.missing_input += int(not usage.input_reported)
@@ -74,6 +180,7 @@ class ConsoleState:
             self.missing_tokens = self.missing_input = self.missing_output = 0
             self.missing_cache = self.missing_cache_read = self.missing_cache_write = 0
             self.missing_cost = self.pending = 0
+            self.context_tokens = None
             self.set_activity("idle", "就绪")
 
     def usage_data(self) -> dict[str, Any]:
@@ -159,10 +266,14 @@ class TrackedBackend:
         """保持结构化消息不变地委托，并只在终止响应处累计一次用量。"""
         self.view.model_started()
         response = None
+        def observe(event: Any) -> None:
+            self.view.model_event(event)
+            if on_event is not None:
+                on_event(event)
         try:
             method = getattr(self.backend, "complete_messages", None)
             if method is not None:
-                options = {"temperature": temperature, "max_tokens": max_tokens, "on_event": on_event}
+                options = {"temperature": temperature, "max_tokens": max_tokens, "on_event": observe}
                 if tools is not None:
                     options["tools"] = tools
                 response = method(messages, **options)

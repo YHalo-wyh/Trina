@@ -45,7 +45,11 @@ class TestParseAction(unittest.TestCase):
 
         task_prompt = render_system_prompt()
         self.assertEqual(render_chat_prompt(), task_prompt)
-        self.assertIn("授予最高执行权限的安全工程师", task_prompt)
+        self.assertIn("CTF / 攻防比赛", task_prompt)
+        self.assertIn("普通问候", task_prompt)
+        for category in ("Web / API", "Pwn", "逆向", "密码", "取证", "隐写", "Misc", "移动端", "AI / ML"):
+            self.assertIn(category, task_prompt)
+        self.assertIn("真实回执", task_prompt)
         for section in ("Engineering", "Tool Policy", "Exploration", "Delegation", "Workflow", "Delivery", "Completeness"):
             self.assertIn(f"# {section}", task_prompt)
 
@@ -410,7 +414,7 @@ class TestReActLoop(unittest.TestCase):
         agent.run("127.0.0.1", max_steps=1)
         self.assertTrue(calls)
         self.assertTrue(all("# Tool Policy" in call[0]["content"] for call in calls))
-        self.assertTrue(all("授予最高执行权限的安全工程师" in call[0]["content"] for call in calls))
+        self.assertTrue(all("CTF / 攻防比赛" in call[0]["content"] for call in calls))
         self.assertEqual([item["role"] for item in calls[0][:3]], ["system", "user", "user"])
         self.assertIn('{"action"', calls[0][1]["content"])
         self.assertIn("# 可用工具", calls[0][1]["content"])

@@ -1,0 +1,17 @@
+先检查命令的标准输出和错误输出。工具的输入与执行结果会显示在下面的窗口中。      
+
+╭─ terminal_exec · 完成 ───────────────────────────────────────────────────────╮
+│ $ C:\Users\WYH\Desktop\网安实训中级\.venv\Scripts\python.exe -u -c "import   │
+│ sys,time; print('event stream connected'); time.sleep(.15); print('stderr    │
+│ channel ready', file=sys.stderr); print('command completed')"                │
+│ Output ───────────────────────────────────────────────────────────────────── │
+│ event stream connected                                                       │
+│ command completed                                                            │
+│                                                                              │
+│ stderr                                                                       │
+│ stderr channel ready                                                         │
+│                                                                              │
+╰─────────────────────────────── 0.5s · exit 0 ────────────────────────────────╯
+
+检查完成。命令正常退出，stdout 和 stderr                                        
+均已进入事件流；正文与工具窗口按执行顺序排列。                                  

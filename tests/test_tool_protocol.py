@@ -15,6 +15,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from trina.brain.agent import PentestAgent
 from trina.brain.failure import classify_llm_response, decide_after_failure
@@ -248,6 +249,11 @@ class ClassificationTest(unittest.TestCase):
             (LLMResponse(ok=False, error="PROTOCOL_UNSUPPORTED: 未启用原生工具调用"), "protocol_unsupported"),
             (LLMResponse(ok=False, error="响应格式异常：缺少模型输出字段"), "protocol_error"),
             (LLMResponse(ok=False, error="HTTP 401: Unauthorized"), "permission_denied"),
+            (LLMResponse(ok=False, error="HTTP 403: tools forbidden"), "permission_denied"),
+            (LLMResponse(ok=False, error="HTTP 402: Payment Required"), "quota_exhausted"),
+            (LLMResponse(ok=False, error="HTTP 429: insufficient_quota · Check your plan"), "quota_exhausted"),
+            (LLMResponse(ok=False, error="流式响应失败: 余额不足"), "quota_exhausted"),
+            (LLMResponse(ok=False, error="HTTP 429: rate_limit_exceeded"), "run_failure"),
             (LLMResponse(ok=False, error="请求失败: timed out"), "run_failure"),
         ]
         for response, expected in cases:
@@ -256,13 +262,57 @@ class ClassificationTest(unittest.TestCase):
 
         self.assertEqual(decide_after_failure("protocol_unsupported", attempt=0), "downgrade")
         self.assertEqual(decide_after_failure("permission_denied", attempt=0), "stop")
+        self.assertEqual(decide_after_failure("quota_exhausted", attempt=0), "stop")
         self.assertEqual(decide_after_failure("protocol_error", attempt=0), "continue")
         self.assertEqual(decide_after_failure("protocol_error", attempt=2), "stop")
         self.assertEqual(decide_after_failure("run_failure", attempt=3), "continue")
         self.assertEqual(decide_after_failure("run_failure", attempt=9), "stop")
 
 
+class ModelFailureVisibilityTest(ProtocolTestBase):
+    def test_account_errors_stop_after_one_request_without_backoff(self):
+        for error in ("HTTP 403: forbidden", "HTTP 402: insufficient_balance", "HTTP 429: insufficient_quota"):
+            with self.subTest(error=error):
+                agent, backend, _, tool = self._agent([{"error": error}])
+                with patch("trina.brain.agent.time.sleep") as wait:
+                    state = agent.run("127.0.0.1")
+                self.assertEqual(len(backend.requests), 1)
+                self.assertEqual(state.status, "failed")
+                self.assertEqual(getattr(tool, "calls", 0), 0)
+                wait.assert_not_called()
+
+    def test_transient_error_is_displayed_before_retry_wait(self):
+        from trina.event_view import EventTranscript
+        from trina.events import EventBus
+        from types import SimpleNamespace
+        agent, backend, _, _ = self._agent([{"error": "HTTP 503: temporarily unavailable"}, {"text": "恢复"}])
+        bus = EventBus(Path(self.tmp.name) / "retry.sqlite3", "retry")
+        output = []
+        bus.subscribe(EventTranscript(output.append).consume)
+        agent._ctx = SimpleNamespace(emit=bus.publish)
+        def backoff(_delay):
+            visible = "\n".join(output)
+            self.assertIn("HTTP 503", visible)
+            self.assertIn("第 1 次重试", visible)
+        with patch("trina.brain.agent.time.sleep", side_effect=backoff) as wait:
+            response = agent._ask([{"role": "user", "content": "继续"}])
+        self.assertTrue(response.ok)
+        self.assertEqual(len(backend.requests), 2)
+        self.assertEqual(wait.call_count, 1)
+        self.assertEqual("\n".join(output).count("HTTP 503"), 1)
+
+
 class PromptLayerTest(unittest.TestCase):
+    def test_chat_layers_allow_plain_answers_without_task_only_protocol(self):
+        for protocol in ("native", "json"):
+            with self.subTest(protocol=protocol):
+                layers = build_prompt_layers(chat=True, protocol=protocol)
+                self.assertNotIn("每一次响应只能是以下两者之一", layers.system())
+                self.assertIn("直接", layers.first_user())
+                if protocol == "native":
+                    self.assertIn("原生 tool calling", layers.first_user())
+                    self.assertNotIn("JSON 工具动作", layers.first_user())
+
     def test_layers_split_stable_and_task_scoped_content(self) -> None:
         layers = build_prompt_layers(
             scope_block="授权网段: 127.0.0.0/8",
