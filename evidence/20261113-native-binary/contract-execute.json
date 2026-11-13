@@ -1,0 +1,45 @@
+{
+  "ok": true,
+  "scope": "当前产品 TR 需求、规范规则、实现路径、测试声明、六类交付物与白名单验证命令",
+  "deliverables": 6,
+  "requirements": 21,
+  "rules": 40,
+  "tests_referenced": 90,
+  "errors": [],
+  "commands": {
+    "V-COURSE": {
+      "argv": [
+        "D:\\python310\\python.exe",
+        "-X",
+        "utf8",
+        "-m",
+        "scripts.verify_course_pack"
+      ],
+      "exit_code": 0,
+      "output_tail": "课程工件检查：通过\n文档 31，要求 20，任务 8，场景 {'P': 11, 'N': 8, 'A': 7}\n测试引用 65（去重 65），本地链接 379\n检查范围为结构和引用；测试执行与人工验收需独立证据。"
+    },
+    "V-TESTS": {
+      "argv": [
+        "D:\\python310\\python.exe",
+        "-X",
+        "utf8",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests"
+      ],
+      "exit_code": 0,
+      "output_tail": "[用户] {\"schema_version\": 3, \"run_mode\": \"instance\", \"challenge\": {\"id\": \"local-fixture\"}, \"competition_id\": \"local\", \"questions\": [{\"id\": \"flag\"}], \"gated_questions\": 1, \"platform_url\": \"http://127.0.0.1:59792\", \"target_instance\": \"this-instance\"}\n[动作 1] ctfy_task {\"action\": \"submit\", \"question_id\": \"flag\", \"answer\": \"right\"}\n          → OK: CTFY 权威响应\n本地协议夹具结束\n[eval] 已自动拉起 lab 靶机 127.0.0.1:59817\n............................ssssssssss.................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................\n----------------------------------------------------------------------\nRan 519 tests in 56.044s\n\nOK (skipped=10)"
+    },
+    "V-DIFF": {
+      "argv": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exit_code": 0,
+      "output_tail": "warning: in the working copy of 'README.md', CRLF will be replaced by LF the next time Git touches it\nwarning: in the working copy of 'configs/trina.yaml', CRLF will be replaced by LF the next time Git touches it\nwarning: in the working copy of 'docs/ARCHITECTURE.md', CRLF will be replaced by LF the next time Git touches it\nwarning: in the working copy of 'docs/MODELS.md', CRLF will be replaced by LF the next time Git touches it\nwarning: in the working copy of 'tests/test_eval_report_lab.py', CRLF will be replaced by LF the next time Git touches it\nwarning: in the working copy of 'tests/test_interactive.py', CRLF will be replaced by LF the next time Git touches it\nwarning: in the working copy of 'tests/test_terminal_ui.py', CRLF will be replaced by LF the next time Git touches it\nwarning: in the working copy of 'trina/brain/agent.py', CRLF will be replaced by LF the next time Git touches it\nwarning: in the working copy of 'trina/brain/chat.py', CRLF will be replaced by LF the next time Git touches it\nwarning: in the working copy of 'trina/cli.py', CRLF will be replaced by LF the next time Git touches it\nwarning: in the working copy of 'trina/config.py', CRLF will be replaced by LF the next time Git touches it\nwarning: in the working copy of 'trina/console_ui.py', CRLF will be replaced by LF the next time Git touches it\nwarning: in the working copy of 'trina/interactive.py', CRLF will be replaced by LF the next time Git touches it\nwarning: in the working copy of 'trina/model_ui.py', CRLF will be replaced by LF the next time Git touches it\nwarning: in the working copy of 'trina/providers.py', CRLF will be replaced by LF the next time Git touches it\nwarning: in the working copy of 'trina/scope.py', CRLF will be replaced by LF the next time Git touches it\nwarning: in the working copy of 'trina/swarm.py', CRLF will be replaced by LF the next time Git touches it\nwarning: in the working copy of 'trina/tools/__init__.py', CRLF will be replaced by LF the next time Git touches it\nwarning: in the working copy of 'trina/tools/external.py', CRLF will be replaced by LF the next time Git touches it\nwarning: in the working copy of 'trina/tools/registry.py', CRLF will be replaced by LF the next time Git touches it\nwarning: in the working copy of '规约.md', CRLF will be replaced by LF the next time Git touches it\nwarning: in the working copy of '设计决策.md', CRLF will be replaced by LF the next time Git touches it\nwarning: in the working copy of '需求.md', CRLF will be replaced by LF the next time Git touches it"
+    }
+  }
+}

@@ -37,6 +37,14 @@ class _EchoTool(Tool):
         return ToolResult(ok=True, summary=f"probe {target}", facts={"ports": [{"host": target, "port": 80}]})
 
 
+class _BinaryEchoTool(Tool):
+    spec = ToolSpec(name="binary_echo", summary="二进制会话手工入口夹具", category="binary",
+                    action_level="detect", params={"value": ParamSpec("int", "测试值", required=True)})
+
+    def run(self, ctx, value):
+        return ToolResult(ok=True, summary=f"binary {value}", data={"value": value})
+
+
 class TestApprovalModes(unittest.TestCase):
     def test_level_thresholds(self):
         self.assertFalse(level_needs_approval("off", "exploit"))
@@ -408,6 +416,23 @@ class TestConsole(unittest.TestCase):
         console, _ = self._console([])
         self.assertEqual(console.session.approval_mode, "off")
         self.assertNotIn("审批", console._prompt_status())
+
+    def test_manual_binary_tool_reuses_chat_context_without_model_call(self):
+        with tempfile.TemporaryDirectory() as directory:
+            cfg = TrinaConfig.load().with_overrides(run__workspace=str(Path(directory) / "runs"),
+                                                     audit__dir=str(Path(directory) / "logs"), policy__mode="free")
+            backend = ReplayBackend(LLMConfig(backend="replay"))
+            output = []
+            console = __import__("trina.interactive", fromlist=["Console"]).Console(
+                cfg, output=output.append, backend=backend, registry=ToolRegistry([_BinaryEchoTool()]), autostart_lab=False)
+            try:
+                console._cmd_tool(["binary_echo", "--param", "value=7"])
+                self.assertEqual(backend.calls, 0)
+                self.assertEqual(console.chat.state.counters["tool_calls"], 1)
+                self.assertTrue(any("binary_echo" in row["content"] for row in console.chat.history))
+                self.assertTrue(any("binary 7" in row["content"] for row in console.chat.history))
+            finally:
+                console._cleanup()
 
     def test_free_text_goes_to_chat(self):
         """非命令的自然语言应进入对话，而不是报"未知命令"。"""

@@ -14,6 +14,7 @@ __pycache__/
 .venv/
 venv/
 .pytest_cache/
+.playwright-mcp/
 
 # ---- 编辑器 / 系统 ----
 .DS_Store

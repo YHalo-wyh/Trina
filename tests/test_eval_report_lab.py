@@ -330,7 +330,7 @@ class TestScopeAwareToolBehaviour(unittest.TestCase):
         self.assertEqual(_sensitive_robots_entries("User-agent: *\nDisallow: /public\n"), [])
 
     def test_cli_target_fills_declared_param_only(self):
-        """--target 只能填工具声明过的目标参数（url 或 target），否则参数校验会直接拒。"""
+        """网络、文件和会话工具使用各自声明的定位字段，不能互相伪造。"""
         from trina.cli import build_parser, build_config  # noqa: F401 - 触发导入
         from trina.tools import build_registry
 
@@ -339,6 +339,16 @@ class TestScopeAwareToolBehaviour(unittest.TestCase):
             if name in {"terminal_status", "terminal_stop"}:
                 self.assertIn("job_id", spec.params, "作业控制按当前会话 job_id 定位")
                 self.assertNotIn("target", spec.params, "不能给纯作业控制伪造网络目标")
+                continue
+            if spec.category == "binary":
+                self.assertNotIn("target", spec.params)
+                self.assertNotIn("url", spec.params)
+                self.assertTrue("path" in spec.params or "session_id" in spec.params)
+                continue
+            if spec.category == "benchmark":
+                self.assertIn("action", spec.params)
+                self.assertNotIn("target", spec.params)
+                self.assertNotIn("url", spec.params)
                 continue
             filled = [key for key in ("target", "url") if key in spec.params]
             self.assertTrue(filled, f"{name} 既没有 target 也没有 url 参数，--target 无法使用")

@@ -67,13 +67,14 @@ class ModelManager:
         key_status = "••••••••" if key else "未配置 / 本地免密"
         address = llm.base_url
         effort = reasoning_support(llm).label(llm.reasoning_effort)
-        return f"供应商  {name}\n请求地址 {address}\n模型    {llm.model}\n思考    {effort}\nAPI Key {key_status}"
+        window = f"{llm.effective_context_window:,}" + ("（自动）" if not llm.context_window else "（手动）")
+        return f"供应商  {name}\n请求地址 {address}\n模型    {llm.model}\n上下文  {window}\n思考    {effort}\nAPI Key {key_status}"
 
     def run(self) -> None:
         notice = ""
         while True:
             choices = [ChoiceSpec("models", "切换模型"), ChoiceSpec("providers", "切换供应商"),
-                       ChoiceSpec("reasoning", "思考强度"), ChoiceSpec("add", "添加供应商"),
+                       ChoiceSpec("reasoning", "思考强度"), ChoiceSpec("context", "上下文窗口"), ChoiceSpec("add", "添加供应商"),
                        ChoiceSpec("edit", "编辑供应商"), ChoiceSpec("remove", "删除供应商"),
                        ChoiceSpec("test", "测试当前供应商"), ChoiceSpec("back", "返回")]
             selected = self.choose("Model", choices, subtitle=self.status_text() + ("\n" + notice if notice else ""))
@@ -83,6 +84,9 @@ class ModelManager:
             try:
                 if selected == "providers":
                     self.pick_provider()
+                elif selected == "context":
+                    value = self.ask("上下文窗口（auto / 500K / 1M / Token 整数）", str(self.config.llm.context_window or "auto"))
+                    self.set_context_window(value)
                 elif selected == "reasoning":
                     from .llm.reasoning import reasoning_support
                     support = reasoning_support(self.config.llm)
@@ -117,6 +121,12 @@ class ModelManager:
         item.reasoning_effort = level
         self._commit(item, previous_id=item.id if item.id in self.store.profiles else "")
 
+    def set_context_window(self, value: str) -> None:
+        from .model_context import parse_context_window
+        item = self.current()
+        item.context_window = parse_context_window(value)
+        self._commit(item, previous_id=item.id if item.id in self.store.profiles else "")
+
     def provider_choices(self) -> list[ChoiceSpec]:
         return [ChoiceSpec(p.id, f"{'●' if p.id == self.config.llm.profile else '○'} {p.id} · {p.model}") for p in self.store.profiles.values()]
 
@@ -135,7 +145,7 @@ class ModelManager:
             name, suffix = f"{provider}-{suffix}", suffix + 1
         return ProviderProfile(name, provider, llm.base_url, llm.model, llm.api_key_env, llm.api,
                                reasoning_effort=llm.reasoning_effort, cache_mode=llm.cache_mode,
-                               cache_ttl=llm.cache_ttl, cache_features=list(llm.cache_features))
+                               cache_ttl=llm.cache_ttl, cache_features=list(llm.cache_features), context_window=llm.context_window)
 
     @staticmethod
     def protocol_choices() -> list[ChoiceSpec]:
@@ -159,6 +169,9 @@ class ModelManager:
             if key:
                 draft.api_key = "" if key == "-" else key
             draft.model = self.ask("模型", draft.model)
+            from .model_context import parse_context_window
+            draft.context_window = parse_context_window(self.ask(
+                "上下文窗口（auto / 500K / 1M / Token 整数）", str(draft.context_window or "auto")))
             api = self.choose("接口协议", self.protocol_choices())
             if not api:
                 return None

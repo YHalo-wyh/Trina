@@ -9,6 +9,8 @@
 | [设计决策](设计决策.md) | 原有单 Agent 决策链，以及 0.2.0—0.3.0 的更新记录、修改原因与兼容边界 |
 | [更新日志](CHANGELOG.md) | 各版本面向使用者的变更摘要、兼容说明与验证状态 |
 | [缓存感知运行时](docs/CACHE_RUNTIME.md) | 状态差量、供应商缓存策略、上下文继承检查点与 `/context` 诊断 |
+| [原生二进制工具链](docs/BINARY_TOOLS.md) | radare2 stdio、GDB/MI3、地址模型、会话隔离、真实 ELF 验证与限制 |
+| [CTFY v3 接入](docs/CTFY.md) | instance/QA 任务、平台权威提交、环境契约和本地协议验证边界 |
 | [对抗组计划文档（网安实训中级课程）](网安实训中级课程——对抗组计划文档.md) | Trina 与桌面助手的需求变更、Evaluation、Observability、交叉复查和回归安排 |
 | [对抗组计划文档（专业综合能力提升课程）](专业综合能力提升课程——对抗组计划文档.md) | Trina 与图片隐写分析系统的格式兼容、异常处理、任务恢复、可观测性和交叉复查安排 |
 
@@ -80,7 +82,7 @@ scripts/dev.sh
 scripts/dev.sh play --target 127.0.0.1
 ```
 
-直连模型在 `/model` 中以一条供应商配置保存请求地址、API Key、模型和思考强度；无需再维护启动脚本参数或旧 `~/.trina/env` 选择项。
+直连模型在 `/model` 中以一条供应商配置保存请求地址、API Key、模型、思考强度和上下文窗口；无需再维护启动脚本参数或旧 `~/.trina/env` 选择项。DeepSeek 自动使用 500K 本地预算，明确识别的百万窗口型号自动使用 1M；`/model context` 可查看或覆盖。
 
 | 后端 | 何时用 | 密钥 | 实测 |
 |---|---|---|---|
@@ -115,7 +117,7 @@ scripts/dev.sh play --target 127.0.0.1
 | 能力 | 落地位置 | 关键设计 |
 |---|---|---|
 | 1. 自动决策大脑 | `trina/brain/` | ReAct 循环 + PTES 阶段机（事实驱动推进）+ **假设台账**（按价值×置信度×信息增量排序验证）+ 失败分类与循环守卫（无新信息就打转→换参数→换工具→请人介入）+ 预算收敛；支持原生工具调用与 JSON Action，执行统一收口 |
-| 2. 工具统一封装 | `trina/tools/` | 17 个目标分析工具 + 1 个可选专职 Agent 咨询工具，统一 `ToolSpec/ToolResult` 契约；**外部二进制优先 + 内置 Python 引擎兜底**（本机无 nmap/nuclei/sqlmap/hydra 也能跑） |
+| 2. 工具统一封装 | `trina/tools/` | 31 个注册工具统一 `ToolSpec/ToolResult` 契约；目标分析能力可按约定降级，10 个原生二进制工具缺少 r2/GDB/bwrap 时明确报错，不模拟成功 |
 | 3. 靶场适配 | `trina/adapters/` | `local` / `docker-compose` / `http-range` / `tsecbench` 四类适配器；仓库不再携带静态靶场注册表，按需从 `~/.trina/ranges` 或显式 YAML 载入 |
 | 4. 执行信任与审计 | `trina/scope.py` + `trina/audit.py` | 默认 `full` 信任并自动执行；可切换 `restricted` 恢复网段、动作和载荷边界；两种模式都保留超时、取消、限速和 SHA-256 哈希链审计 |
 | 5. 标准报告 | `trina/report/` | Markdown + 自包含 HTML（内联 CSS/SVG，无外部依赖），含执行摘要、攻击路径、漏洞详情（CVSS/CWE/证据/复现/修复）、**证据链与假设台账**（mermaid 关系图，结论可反向追溯）、凭据与 flag、工具时间线、合规声明 |
@@ -148,7 +150,7 @@ scripts/dev.sh play --target 127.0.0.1
 
 `trina swarm` 的每个题目也保持独立上下文和事实图。Commander 会检查已完成任务与当前任务的目标、显式依赖和验证方向，只在相似度达到阈值时转发资产、已验证发现、已验证凭据和工件位置；Flag、聊天历史和其他题目的 `RunState` 不会被合并。接收情报的 Worker 必须在自己的目标上重新验证后才能入账。
 
-## 已封装的工具（17 项目标分析 + 3 项后台终端）
+## 已封装的工具（31 项）
 
 | 类别 | 工具 | 动作等级 |
 |---|---|---|
@@ -158,6 +160,10 @@ scripts/dev.sh play --target 127.0.0.1
 | exploit | `sqli_test` `cmd_inject_test` `lfi_test` `file_upload_test` `rce_exec` | verify / exploit |
 | creds | `weak_password_brute`（ssh/ftp/mysql/redis/http_basic/http_form） `http_form_login` `flag_hunt` | exploit / verify |
 | utility | `terminal_start` / `terminal_status` / `terminal_stop`（后台程序启动、等待、查询和取消） | exploit / detect |
+| binary | `binary_open` `binary_overview` `binary_functions` `binary_function` `binary_xrefs` `debug_start` `debug_control` `debug_inspect` `binary_session` `binary_execute` | detect / exploit |
+| benchmark | `ctfy_task`（读取、刷新或提交当前 CTFY v3 问题） | detect |
+
+Binary 能力只在附件或能力清单需要时 JIT 绑定，Role 不会把通用 Worker 改成固定逆向流水线。用法、依赖、证据和已知限制见[原生二进制工具链](docs/BINARY_TOOLS.md)。
 
 ## 人的位置：审批、介入、复核
 

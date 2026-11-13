@@ -11,6 +11,8 @@
 
 ## ADR 一览
 
+原生二进制与模型窗口：[ADR-0026](adr/0026-native-binary-runtime-and-model-windows.md) 记录 r2/GDB 受控会话、CTFY 权威提交和 DeepSeek 500K / 已确认模型 1M 的可配置预算。
+
 历史对话与恢复：[ADR-0025](adr/0025-persistent-chat-resume.md) 记录项目隔离的 SQLite 保存、会话切换、独占打开及恢复边界。
 
 上下文与缓存生命周期：[ADR-0024](adr/0024-cache-aware-context-lifecycle.md) 记录状态差量、供应商策略、继承检查点和前缀诊断。

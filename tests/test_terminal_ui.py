@@ -349,8 +349,10 @@ class TestTerminalUI(unittest.TestCase):
     def test_dynamic_completion_reads_real_tools_and_ranges(self):
         console, _ = self.console()
         tools = [item.value for item in console._completion_values("tool", [])]
+        contexts = [item.value for item in console._completion_values("model", ["context"])]
         ranges = [item.value for item in console._completion_values("ranges", ["status"])]
         self.assertIn("port_scan", tools)
+        self.assertEqual(contexts, ["auto", "500K", "1M"])
         self.assertEqual(ranges, [])
 
     def test_prompt_distinguishes_approval_pause_and_stop(self):

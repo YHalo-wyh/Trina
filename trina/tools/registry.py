@@ -231,6 +231,8 @@ class ToolContext:
         self._logger = logger or (lambda msg: None)
         from .external import BackgroundJobs
         self.extra: dict[str, Any] = {"background_jobs": BackgroundJobs(), "task_deadline": deadline}
+        from ..binary.sessions import BinarySessions
+        self.extra["binary_sessions"] = BinarySessions(self)
 
     # -------------------------------------------------------------- 便捷方法
     def log(self, message: str) -> None:
@@ -562,6 +564,7 @@ class ToolRegistry:
             lease.cancelled.set()
             future.cancel()
             ctx.extra["background_jobs"].stop_owner(lease)
+            ctx.extra["binary_sessions"].cancel_owner(lease)
             ctx.state.counters["errors"] = ctx.state.counters.get("errors", 0) + 1
             return ToolResult(
                 ok=False,
@@ -572,9 +575,11 @@ class ToolRegistry:
             )
         except ScopeViolation as exc:
             ctx.extra["background_jobs"].stop_owner(lease)
+            ctx.extra["binary_sessions"].cancel_owner(lease)
             return denied_result(exc.decision, tool=tool.spec.name)
         except Exception as exc:  # noqa: BLE001 - 任何工具异常都不能中断整条链路
             ctx.extra["background_jobs"].stop_owner(lease)
+            ctx.extra["binary_sessions"].cancel_owner(lease)
             ctx.state.counters["errors"] = ctx.state.counters.get("errors", 0) + 1
             detail = traceback.format_exc(limit=3)
             ctx.audit.append("tool.error", tool=tool.spec.name, decision="error", error=f"{type(exc).__name__}: {exc}"[:400])

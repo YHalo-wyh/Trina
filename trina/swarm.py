@@ -318,6 +318,12 @@ class SwarmRuntime:
         """按意图给通用 Worker 建立有限期能力租约。"""
         record = self.records[task.id]
         constraints = {"selectors": task.capabilities, "max_count": 6}
+        if not task.capabilities:
+            from urllib.parse import unquote
+            local = unquote(urlsplit(task.target).path) if task.target.startswith("file://") else task.target
+            if Path(local).is_file():
+                # 通用 Worker 根据附件领取语义能力，保留自由选择静态、动态或脚本的权利。
+                constraints["selectors"] = ("category.binary", "tool.terminal_start", "tool.terminal_status", "tool.terminal_stop")
         lease = self.fabric.lease(
             worker.id,
             task.id,

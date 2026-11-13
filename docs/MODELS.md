@@ -32,6 +32,8 @@ Tab / Shift+Tab 切换字段与按钮，Ctrl+S 保存，Esc / Ctrl+C 取消。Ke
 | `/model list` | 查看供应商预设模型目录 |
 | `/model <已保存连接>` | 切换该连接 |
 | `/model <模型ID>` | 修改模型；已有连接自动保存，旧会话设置用 `/save` 保存 |
+| `/model context` | 查看当前连接的有效上下文窗口 |
+| `/model context auto|500K|1M|Token数` | 设置并保存当前连接的本地上下文预算 |
 
 ## 存储和配置顺序
 
@@ -40,6 +42,20 @@ Tab / Shift+Tab 切换字段与按钮，Ctrl+S 保存，Esc / Ctrl+C 取消。Ke
 默认启动顺序为项目 YAML → 已选择的本地连接 → `TRINA_LLM_*` 环境变量 → 命令行 `--set`。显式 `--config` 文件仅在指定 `llm.profile` 时读取连接。`TRINA_API`、`TRINA_MODEL` 和启动脚本的旧选择参数不再参与装配。
 
 配置有非空 `api_key` 时使用保存值，否则读取其 `api_key_env`。当前供应商的编辑、切换会重建后端，下一次请求立即生效，并保留聊天历史；运行中拒绝模型管理命令。旧 `/model keys` 仅作为进入供应商编辑页的兼容入口，不再维护独立 Key 对象。
+
+## 上下文窗口
+
+供应商配置中的 `context_window` 是 Trina 的本地输入、压缩和余量预算。`0` 表示自动，显式 Token 整数表示手动覆盖；它不会扩大供应商服务端实际允许的窗口。
+
+| 自动识别 | 默认预算 | 说明 |
+|---|---:|---|
+| DeepSeek 模型或官方地址 | 500,000 | 按项目默认给 DeepSeek 保留 500K；即使具体服务宣称更大，也不自动用满 |
+| 明确识别的百万窗口 GPT、Claude、Gemini 型号 | 1,000,000 | 只匹配代码中核对过的型号家族 |
+| 未知型号、自定义别名、未确认的 mini/nano | 32,768 | 不根据供应商品牌猜窗口，可手工覆盖 |
+
+`/model` 首页显示有效值及“自动/手动”，添加和编辑供应商表单也包含该字段。设置随整条供应商记录原子保存，切换连接和重启后恢复。旧 v2 记录没有字段时等价于 `auto`。输入接受 `500K`、`1M` 或整数，范围为 1 至 16,000,000，并且必须为输出 Token 和工具 Schema 留出空间。
+
+模型依据与核对入口：[DeepSeek](https://api-docs.deepseek.com/)、[OpenAI 模型目录](https://developers.openai.com/api/docs/models)、[Claude context windows](https://platform.claude.com/docs/en/build-with-claude/context-windows)、[Gemini long context](https://ai.google.dev/gemini-api/docs/long-context)。具体自动映射由 `trina/model_context.py` 决定，测试见 `tests/test_model_context.py`。
 
 ## 思考强度（2026-11-05）
 

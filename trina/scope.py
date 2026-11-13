@@ -312,6 +312,24 @@ class ScopeGuard:
         self._control_plane_hosts = {h.lower() for h in scope.control_plane_hosts}
         self._destructive_hosts = {h.lower() for h in scope.destructive_hosts}
 
+    def check_workspace_path(self, raw: str, workspace: Any, runtime_root: Any) -> Any:
+        """二进制输入限当前项目或任务目录，拒绝其他任务产物与符号链接逃逸。"""
+        from pathlib import Path
+        ensure_execution_active()
+        base, runs = Path(workspace).resolve(), Path(runtime_root).resolve()
+        path = Path(raw).expanduser()
+        if not path.is_absolute():
+            local = base / path
+            path = local if local.is_file() else Path.cwd() / path
+        path = path.resolve()
+        within = lambda child, parent: child == parent or parent in child.parents
+        allowed = (within(path, base) or within(path, Path.cwd().resolve())) and not (within(path, runs) and not within(path, base))
+        decision = self._record(Decision(allowed, category="filesystem", target=str(path),
+                               reason="当前任务文件" if allowed else "文件不属于当前项目或任务"), "binary.file")
+        if decision.denied:
+            raise ScopeViolation(decision)
+        return path
+
     # ---------------------------------------------------------------- 内部
     def _record(self, decision: Decision, action: str) -> Decision:
         ensure_execution_active()

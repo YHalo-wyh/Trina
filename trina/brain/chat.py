@@ -113,6 +113,7 @@ class ChatAgent:
         self.last_reply_streamed = False
         self.current_request = ""
         self.ctx.extra["llm_backend"] = self.backend
+        self.ctx.extra["stop_event"] = self.stop_event
         from ..conversation import ConversationContext
         self.context = ConversationContext(self.ctx)
         self.turns = 0
@@ -261,15 +262,19 @@ class ChatAgent:
             return
         tool_block = self.registry.prompt_block()
         from .prompts import build_runtime_context
+        from .binary_prompt import role_for_registry
+        role = role_for_registry(self.registry, self.config.llm.role_profile)
 
         if self.config.llm.prompt_layers:
             from .prompts import build_prompt_layers
             layers = build_prompt_layers(self.config.scope_prompt_block(), tool_block,
                                          include_hypothesis=self.use_ledger, chat=True,
-                                         role_profile=self.config.llm.role_profile)
+                                         role_profile=role)
             system, contract = layers.system(), layers.first_user()
         else:
             system = render_chat_prompt(self.use_ledger)
+            if role:
+                system += "\n\n" + role
             contract = build_runtime_context(self.config.scope_prompt_block(), tool_block,
                                              include_hypothesis=self.use_ledger, chat=True)
         self._messages = [
@@ -336,6 +341,7 @@ class ChatAgent:
         from ..runtime_status import status_snapshot
         try:
             self.ctx.extra["background_jobs"].close()
+            self.ctx.extra["binary_sessions"].close()
             status_snapshot(self.ctx, turn=self.turns)
             self.save()
         finally:
@@ -350,6 +356,7 @@ class ChatAgent:
         self.store.save({"version": 1, "run_id": self.run_id, "project": self.store.project,
                          "title": self.title, "turns": self.turns, "in_flight": self.in_flight,
                          "history": self.history, "messages": self._messages, "state": self.state.to_dict(),
+                         "binary_sessions": self.ctx.extra["binary_sessions"].snapshot(),
                          "hypotheses": self.ledger.to_dict(), "usage": self.usage.to_dict(),
                          "usage_gaps": self.usage_gaps,
                          "controller": self._controller.coverage() if self._controller is not None else {},
@@ -371,6 +378,8 @@ class ChatAgent:
         if self.state.run_id != self.run_id:
             raise ValueError("对话运行状态与 ID 不一致")
         self.ctx.state = self.state
+        self.ctx.extra["binary_sessions"].previous = [{**row, "state": "EXPIRED", "live": False}
+                                                    for row in data.get("binary_sessions", [])]
         self.history = data["history"]
         self._messages, self._messages_ready = data["messages"], True
         self.turns, self.title = data["turns"], data["title"]

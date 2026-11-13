@@ -118,6 +118,7 @@ class CacheRuntimeTests(unittest.TestCase):
         self.assertEqual(Path(first.stats["last_archive"]).read_bytes(), original)
 
     def test_failed_requests_without_assistant_reply_can_still_compact(self):
+        self.config.llm.context_window = 32768  # 固定压力预算，不依赖模型默认窗口。
         context = ConversationContext(self.ctx)
         context.remember_user("原始目标")
         context.state_update(state_projection(self.ctx.state))

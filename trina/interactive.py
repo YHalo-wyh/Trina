@@ -243,6 +243,9 @@ class Console:
         if command == "model" and completed_args == ["add"]:
             from .providers import PRESETS
             return [ChoiceSpec(p.id, p.name) for p in PRESETS]
+        if command == "model" and completed_args == ["context"]:
+            return [ChoiceSpec("auto", "按当前模型自动选择"), ChoiceSpec("500K", "500,000 Token"),
+                    ChoiceSpec("1M", "1,000,000 Token")]
         if command == "tool" and not completed_args:
             try:
                 registry = self.registry
@@ -337,7 +340,7 @@ class Console:
             "y": lambda: self._emit("当前没有待审批的动作"),
             "n": lambda: self._emit("当前没有待审批的动作"),
             "tools": lambda: self._delegate(["tools", *args]),
-            "tool": lambda: self._delegate(["tool", *args]),
+            "tool": lambda: self._cmd_tool(args),
             "guard": lambda: self._delegate(["guard", *args]),
             "ranges": lambda: self._delegate(["ranges", *args]),
             "report": lambda: self._delegate(["report", *args]),
@@ -549,6 +552,13 @@ class Console:
             else:
                 self._emit(f"当前 {llm.profile or llm.backend} / {_display_model(llm.model, llm.reasoning_effort)} · /model add 添加供应商 · /model edit 编辑供应商 · /model list 查看预设")
             return
+        if args[0] == "context":
+            if len(args) != 2:
+                self._emit(f"当前上下文 {llm.effective_context_window:,} · /model context auto|500K|1M|Token数")
+            else:
+                self._model_manager().set_context_window(args[1])
+                self._emit(f"上下文窗口已设为 {llm.effective_context_window:,}")
+            return
         if args[0] in ("add", "edit", "remove", "test", "keys", "use"):
             manager = self._model_manager()
             if args[0] == "add":
@@ -663,6 +673,41 @@ class Console:
         self.session.state = self._last_state = None
         self.view.reset()
         self._emit("已开启新对话会话；上一次对话已保存，可用 /resume 切换。")
+
+    def _cmd_tool(self, args: list[str]) -> None:
+        """二进制手工调用与当前聊天共用生命周期，其他工具保持 CLI 入口。"""
+        tool = self.registry.get(args[0]) if args else None
+        if tool is None or tool.spec.category != "binary":
+            self._delegate(["tool", *args])
+            return
+        from .cli import build_parser, _literal
+        parsed = build_parser().parse_args(["tool", *args])
+        params = json.loads(parsed.params or "{}")
+        if not isinstance(params, dict):
+            raise ValueError("--params 必须是 JSON 对象")
+        for item in parsed.param or []:
+            key, _, value = item.partition("=")
+            params[key] = _literal(value)
+        if parsed.target and "path" in tool.spec.params:
+            params.setdefault("path", parsed.target)
+        chat = self._ensure_chat()
+        chat._initialize_messages()
+        chat.title = chat.title or f"手动工具 {tool.spec.name}"
+        instruction = {"role": "user", "content": "[手动工具] " + json.dumps({"action": tool.spec.name, "params": params}, ensure_ascii=False)}
+        action = {"action": tool.spec.name, "params": params}
+        assistant = {"role": "assistant", "content": json.dumps(action, ensure_ascii=False)}
+        chat.history.extend([instruction, assistant])
+        chat._messages.extend([instruction, assistant])
+        chat.save()
+        try:
+            observation = chat._run_action(action, 0)
+            message = {"role": "user", "content": "[工具结果] " + observation}
+            chat.history.append(message)
+            chat._messages.append(message)
+        finally:
+            chat.save()
+        self.session.state = chat.state
+        self._display(render_process(observation, label="工具结果", color=self.color))
 
     def _cmd_resume(self, args: list[str]) -> None:
         from .chat_store import ChatStore
@@ -803,6 +848,7 @@ class Console:
             profile = store.profiles[self.config.llm.profile]
             profile.model = self.config.llm.model
             profile.reasoning_effort = self.config.llm.reasoning_effort
+            profile.context_window = self.config.llm.context_window
             store.active = profile.id
             store.save()
             self._emit(f"已保存到 {store.path}：连接 {profile.id} · 模型 {profile.model}")
@@ -820,6 +866,7 @@ class Console:
             profile.reasoning_effort = llm.reasoning_effort
             profile.cache_mode, profile.cache_ttl = llm.cache_mode, llm.cache_ttl
             profile.cache_features = list(llm.cache_features)
+            profile.context_window = llm.context_window
             profile.validate()
             store.profiles[name], store.active = profile, name
             store.save()

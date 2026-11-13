@@ -32,7 +32,8 @@ class ProviderEditor:
                            password=Condition(lambda: not self.visible) if name == "api_key" else False,
                            style="class:field", name=name)
             for name, value in (("id", profile.id), ("base_url", profile.base_url),
-                                ("api_key", profile.api_key), ("model", profile.model), ("note", profile.note))
+                                ("api_key", profile.api_key), ("model", profile.model), ("note", profile.note),
+                                ("context_window", str(profile.context_window) if profile.context_window else "auto"))
         }
         preset = PRESET_BY_ID.get(profile.provider)
         self.fields["model"].buffer.completer = WordCompleter(
@@ -67,7 +68,7 @@ class ProviderEditor:
         @bindings.add("s-tab")
         def previous_field(event):
             event.app.layout.focus_previous()
-        @bindings.add("enter", filter=has_focus(self.fields["id"]) | has_focus(self.fields["base_url"]) | has_focus(self.fields["api_key"]) | has_focus(self.fields["model"]) | has_focus(self.fields["note"]))
+        @bindings.add("enter", filter=has_focus(self.fields["id"]) | has_focus(self.fields["base_url"]) | has_focus(self.fields["api_key"]) | has_focus(self.fields["model"]) | has_focus(self.fields["note"]) | has_focus(self.fields["context_window"]))
         def enter_field(event):
             buffer = event.app.current_buffer
             if buffer.complete_state and buffer.complete_state.current_completion:
@@ -96,7 +97,7 @@ class ProviderEditor:
         body = [Window(FormattedTextControl("预设 · " + (preset.name if preset else "自定义")), height=1)]
         for name, label in (("id", "供应商名称"), ("base_url", "请求地址"),
                             ("api_key", "API Key（可留空）"),
-                            ("model", "模型"), ("note", "备注（可选）")):
+                            ("model", "模型"), ("note", "备注（可选）"), ("context_window", "上下文窗口（auto / 500K / 1M）")):
             body.extend([Window(FormattedTextControl(label), height=1), self.fields[name]])
         body += [VSplit([protocol, Window()]), VSplit([reveal, probe, model, Window()], padding=1), VSplit([save, cancel, Window()], padding=1),
                  Window(FormattedTextControl(lambda: clean_text(self.message)), height=2, wrap_lines=True),
@@ -109,6 +110,8 @@ class ProviderEditor:
 
     def draft(self) -> ProviderProfile:
         values = {name: field.text.strip() for name, field in self.fields.items()}
+        from .model_context import parse_context_window
+        values["context_window"] = parse_context_window(values["context_window"])
         values["base_url"], api = normalize_endpoint(values["base_url"], self.api)
         return replace(self.original, **values, api=api)
 

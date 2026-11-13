@@ -1,0 +1,25 @@
+# CTFY-0001 v3 镜像：平台容器作为外层沙箱，Trina 仍保留路径、租约、超时和审计。
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    CTFY_WORK_DIR=/ctfy/work \
+    TRINA_BINARY_SANDBOX=none
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      python3 python3-venv python3-pip ca-certificates \
+      radare2 gdb gcc bubblewrap \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /opt/trina
+COPY pyproject.toml README.md ./
+COPY trina ./trina
+COPY configs/trina.yaml ./configs/trina.yaml
+RUN python3 -m venv /opt/venv \
+    && /opt/venv/bin/pip install --no-cache-dir . \
+    && useradd --create-home --uid 10001 trina \
+    && mkdir -p /ctfy/work \
+    && chown -R trina:trina /ctfy /opt/trina
+
+USER trina
+ENTRYPOINT ["/opt/venv/bin/python", "-m", "trina", "ctfy", "--work-dir", "/ctfy/work"]

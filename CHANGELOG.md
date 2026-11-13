@@ -2,6 +2,18 @@
 
 ## 开发中 · 2026-11-13
 
+### radare2 + GDB 原生工具链
+
+- 新增 10 个 ToolRegistry binary 工具，使用 r2 stdio JSON 与 GDB/MI3 持久会话；支持静态索引、PIE/ASLR 地址转换、断点、寄存器/内存/帧、文本 stdin、候选执行与结构化错误。
+- 会话按任务和能力租约隔离，Linux 默认经 bubblewrap；超时、租约释放、关闭和恢复时回收原生进程。完整协议写入证据，模型只接收分页摘要与引用。
+- Binary Role 同时接入 JSON/native 与两种提示词分层路径，不把通用 Worker 固定成逆向流水线。真实 ELF 回归覆盖多 Worker、异常退出、超时、ASLR、恢复失效及正确/错误候选。
+
+### CTFY v3 与模型窗口
+
+- 新增 CTFY instance/QA 运行器和 `ctfy_task` 工具；只接受平台环境中的模型网关，成功必须由提交 API 的 `correct=true` 确认。当前自动验证使用本地 HTTP 协议夹具，不冒充线上得分。
+- `context_window=0` 改为按模型自动：DeepSeek 500K，明确识别的百万窗口 GPT/Claude/Gemini 为 1M，未知型号 32K；`/model context` 和供应商表单支持手动设置并持久化。
+- 新增 ADR-0026、二进制工具、CTFY 和模型上下文文档，机器规约增加对应实现与测试引用。
+
 ### 历史对话与 /resume
 
 - `/resume` 改为搜索、查看和切换历史聊天；支持列表、最近会话、编号、完整 ID 和唯一前缀。暂停任务改用 `/unpause`，运行中仍可 `/resume list`。
@@ -28,7 +40,7 @@
 - 删除 OMP 模型后端、独立模型数据库和 `/backend` 命令；供应商地址、Key、模型及思考设置统一由 `/model` 管理。旧 `omp_model` 字段不再参与启动，下次保存时删除。
 - Agent 发送标准角色消息，保留 assistant 与工具观察；system 和初始合同固定，动态状态只追加，避免重新拼接历史导致角色边界与缓存前缀变化。
 - Chat Completions、Messages、Responses 采用各自 SSE 方言；正文卡片原位更新，终止事件、截断及错误有独立检查。JSON/DSML 和隐藏思考不作为正式答复。
-- 无 TTY 保持一次完整输出，健康检查与表单验证保持短请求。当前未实现自动 Token 压缩，缓存统计只采用供应商真实返回。
+- 无 TTY 保持一次完整输出，健康检查与表单验证保持短请求。随后已加入确定性的继承检查点；缓存统计仍只采用供应商真实返回。
 
 ### Capability Fabric
 

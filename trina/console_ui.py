@@ -152,11 +152,11 @@ COMMANDS: tuple[CommandSpec, ...] = (
         ),
     ),
     CommandSpec(
-        "model", "会话与模型", "以供应商为单位管理地址、Key 和模型", "model [add|edit|remove|test|use <供应商>|list|模型规格]",
+        "model", "会话与模型", "管理供应商、模型和上下文窗口", "model [add|edit|remove|test|use <供应商>|context auto|500K|1M|list|模型规格]",
         positional_choices=(ChoiceSpec("add", "添加供应商配置"), ChoiceSpec("edit", "编辑供应商整条配置"),
                             ChoiceSpec("remove", "删除供应商配置"), ChoiceSpec("test", "测试供应商地址连通性"),
-                            ChoiceSpec("use", "切换供应商"), ChoiceSpec("list", "列出模型与供应商")),
-        examples=("/model", "/model add", "/model edit", "/model test"),
+                            ChoiceSpec("use", "切换供应商"), ChoiceSpec("context", "上下文窗口：auto / 500K / 1M / Token 整数"), ChoiceSpec("list", "列出模型与供应商")),
+        examples=("/model", "/model add", "/model edit", "/model context 500K", "/model test"),
     ),
     CommandSpec(
         "approve", "会话与模型", "调整动作审批闸门", "approve <off|exploit|verify|all>",

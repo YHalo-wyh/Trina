@@ -165,7 +165,17 @@ class PentestAgent:
         )
 
         # 预检：目标越界直接拒绝，不进入 LLM（模型无权授权）
-        decision = guard.check_target(target, action="preflight")
+        from pathlib import Path
+        from urllib.parse import urlsplit, unquote
+        local = unquote(urlsplit(target).path) if target.startswith("file://") else target
+        if Path(local).is_file():
+            try:
+                guard.check_workspace_path(local, workspace, self.config.workspace_dir)
+                decision = guard.check_action_level("detect", reason="本地二进制任务")
+            except ScopeViolation as exc:
+                decision = exc.decision
+        else:
+            decision = guard.check_target(target, action="preflight")
         if decision.denied:
             state.status = "blocked"
             state.note("denied", f"目标 {target} 不在授权范围：{decision.reason}")
@@ -187,6 +197,7 @@ class PentestAgent:
             logger=self.logger,
         )
         self._ctx = ctx
+        ctx.extra["stop_event"] = self.stop_event
         ctx.extra["llm_backend"] = self.backend
         state.note("run", f"开始对 {target} 的自动化渗透测试", goal=goal)
 
@@ -281,13 +292,15 @@ class PentestAgent:
             )
             state.note("protocol", f"使用原生工具调用（{len(tool_payload or [])} 个 schema，含 finish）")
         # ---- 提示词分层（P0）：Core/Role 进 system，任务契约进首条 user ----
+        from .binary_prompt import role_for_registry
+        role = role_for_registry(self.registry, str(getattr(self.config.llm, "role_profile", "") or ""))
         if bool(getattr(self.config.llm, "prompt_layers", False)):
             layers = build_prompt_layers(
                 self.config.scope_prompt_block(),
                 self.registry.prompt_block(),
                 extra_rules,
                 policy_block,
-                role_profile=str(getattr(self.config.llm, "role_profile", "") or ""),
+                role_profile=role,
                 protocol="native" if native_mode else "json",
                 include_hypothesis=use_ledger,
             )
@@ -307,6 +320,8 @@ class PentestAgent:
                 extra_rules,
                 include_hypothesis=use_ledger,
             ) + ("\n\n# 已注册检查项\n" + policy_block if policy_block else "")
+            if role:
+                system_prompt += "\n\n" + role
             audit.append("prompt.layers", decision="allow", mode="legacy", native=native_mode)
         # system 与初始运行合同固定在前缀；每轮状态、观察和模型回复只向后追加。
         # 这样既保持标准 Chat Template，也让供应商缓存看到字节级稳定前缀。
@@ -808,6 +823,7 @@ class PentestAgent:
         finally:
             from ..runtime_status import status_snapshot
             ctx.extra["background_jobs"].close()
+            ctx.extra["binary_sessions"].close()
             status_snapshot(ctx, step=steps, max_steps=max_steps, observation=observation)
             ctx.extra.pop("model_response_observer", None)
             with record_lock:

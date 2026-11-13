@@ -1,0 +1,1193 @@
+{
+  "execution": "actual_native_elf",
+  "platform": "Linux-6.6.87.2-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+  "versions": {
+    "r2": "radare2 5.5.0 0 @ linux-x86-64 git.5.5.0",
+    "gdb": "GNU gdb (Ubuntu 15.1-1ubuntu1~24.04.1) 15.1",
+    "gcc": "gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0",
+    "bwrap": "bubblewrap 0.9.0"
+  },
+  "fixture_verified": true,
+  "negative_control": "incorrect input was executed and rejected",
+  "audit_ok": true,
+  "audit_detail": "哈希链完整：57 条记录，末端 80201372d363…",
+  "tool_calls": [
+    {
+      "tool": "binary_open",
+      "params": {
+        "path": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/challenge",
+        "analysis": "standard"
+      },
+      "actual_data": {
+        "evidence_ref": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/binary-b0f3a0305f74.json",
+        "session_id": "bin-76bfe5f1e35f",
+        "artifact_sha256": "76389b5327d4b5f68660c44dc928cc4b87db650565dbd30e98ca747239e31796",
+        "path": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/challenge",
+        "address_space": "static_va",
+        "file_format": "ELF64",
+        "bits": 64,
+        "endian": "little",
+        "entry": "0x1120",
+        "pie": true,
+        "machine": 62,
+        "entry_ref": {
+          "file_offset": "0x1120",
+          "static_va": "0x1120",
+          "runtime_va": null,
+          "load_bias": null,
+          "module": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/challenge",
+          "arch": "x86_64",
+          "pointer_bits": 64
+        },
+        "arch": "x86",
+        "r2_version": "5.5.0 release",
+        "probes": {
+          "iSj": true,
+          "iij": true,
+          "aflj": true,
+          "iej": true
+        },
+        "reused": false,
+        "imports_count": 12
+      },
+      "seconds": 0.4672787540000627
+    },
+    {
+      "tool": "binary_open",
+      "params": {
+        "path": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/challenge",
+        "analysis": "standard"
+      },
+      "actual_data": {
+        "evidence_ref": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/binary-ebe41bf44b47.json",
+        "session_id": "bin-76bfe5f1e35f",
+        "artifact_sha256": "76389b5327d4b5f68660c44dc928cc4b87db650565dbd30e98ca747239e31796",
+        "path": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/challenge",
+        "address_space": "static_va",
+        "file_format": "ELF64",
+        "bits": 64,
+        "endian": "little",
+        "entry": "0x1120",
+        "pie": true,
+        "machine": 62,
+        "entry_ref": {
+          "file_offset": "0x1120",
+          "static_va": "0x1120",
+          "runtime_va": null,
+          "load_bias": null,
+          "module": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/challenge",
+          "arch": "x86_64",
+          "pointer_bits": 64
+        },
+        "arch": "x86",
+        "r2_version": "5.5.0 release",
+        "probes": {
+          "iSj": true,
+          "iij": true,
+          "aflj": true,
+          "iej": true
+        },
+        "reused": true,
+        "imports_count": 12
+      },
+      "seconds": 0.10513923300004535
+    },
+    {
+      "tool": "binary_overview",
+      "params": {
+        "session_id": "bin-76bfe5f1e35f",
+        "section": "strings",
+        "query": "accepted"
+      },
+      "actual_data": {
+        "evidence_ref": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/binary-8cd881200ce8.json",
+        "session_id": "bin-76bfe5f1e35f",
+        "artifact_sha256": "76389b5327d4b5f68660c44dc928cc4b87db650565dbd30e98ca747239e31796",
+        "path": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/challenge",
+        "address_space": "static_va",
+        "file_format": "ELF",
+        "bits": 64,
+        "endian": "little",
+        "entry": "0x1120",
+        "pie": true,
+        "machine": 62,
+        "entry_ref": {
+          "file_offset": "0x1120",
+          "static_va": "0x1120",
+          "runtime_va": null,
+          "load_bias": null,
+          "module": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/challenge",
+          "arch": "x86_64",
+          "pointer_bits": 64
+        },
+        "next_cursor": null,
+        "truncated": false,
+        "total": 1,
+        "items": [
+          {
+            "vaddr": "0x2015",
+            "paddr": "0x2015",
+            "ordinal": 2,
+            "size": 9,
+            "length": 8,
+            "section": ".rodata",
+            "type": "ascii",
+            "string": "accepted"
+          }
+        ]
+      },
+      "seconds": 0.06177538099996127
+    },
+    {
+      "tool": "binary_xrefs",
+      "params": {
+        "session_id": "bin-76bfe5f1e35f",
+        "address": "0x2015"
+      },
+      "actual_data": {
+        "evidence_ref": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/binary-987736182ee8.json",
+        "session_id": "bin-76bfe5f1e35f",
+        "artifact_sha256": "76389b5327d4b5f68660c44dc928cc4b87db650565dbd30e98ca747239e31796",
+        "path": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/challenge",
+        "address_space": "static_va",
+        "file_format": "ELF",
+        "bits": 64,
+        "endian": "little",
+        "entry": "0x1120",
+        "pie": true,
+        "machine": 62,
+        "entry_ref": {
+          "file_offset": "0x1120",
+          "static_va": "0x1120",
+          "runtime_va": null,
+          "load_bias": null,
+          "module": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/challenge",
+          "arch": "x86_64",
+          "pointer_bits": 64
+        },
+        "next_cursor": null,
+        "truncated": false,
+        "total": 1,
+        "items": [
+          {
+            "from": "0x13a6",
+            "type": "DATA",
+            "opcode": "lea rax, str.accepted",
+            "fcn_addr": 4727,
+            "fcn_name": "main",
+            "refname": "str.accepted"
+          }
+        ]
+      },
+      "seconds": 0.09537822799984497
+    },
+    {
+      "tool": "binary_function",
+      "params": {
+        "session_id": "bin-76bfe5f1e35f",
+        "address": "0x13a6"
+      },
+      "actual_data": {
+        "evidence_ref": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/binary-fae23fd36653.json",
+        "session_id": "bin-76bfe5f1e35f",
+        "artifact_sha256": "76389b5327d4b5f68660c44dc928cc4b87db650565dbd30e98ca747239e31796",
+        "path": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/challenge",
+        "address_space": "static_va",
+        "file_format": "ELF",
+        "bits": 64,
+        "endian": "little",
+        "entry": "0x1120",
+        "pie": true,
+        "machine": 62,
+        "entry_ref": {
+          "file_offset": "0x1120",
+          "static_va": "0x1120",
+          "runtime_va": null,
+          "load_bias": null,
+          "module": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/challenge",
+          "arch": "x86_64",
+          "pointer_bits": 64
+        },
+        "next_cursor": "4",
+        "truncated": true,
+        "total": 81,
+        "items": [
+          {
+            "offset": "0x1277",
+            "esil": "",
+            "refptr": false,
+            "fcn_addr": 4727,
+            "fcn_last": 5085,
+            "size": 4,
+            "opcode": "endbr64",
+            "disasm": "endbr64",
+            "bytes": "f30f1efa",
+            "family": "cpu",
+            "type": "null",
+            "reloc": false,
+            "type_num": 0,
+            "type2_num": 0,
+            "flags": [
+              "main",
+              "sym.main"
+            ],
+            "xrefs": [
+              {
+                "addr": "0x1138",
+                "type": "DATA"
+              }
+            ]
+          },
+          {
+            "offset": "0x127b",
+            "esil": "rbp,8,rsp,-,=[8],8,rsp,-=",
+            "refptr": false,
+            "fcn_addr": 4727,
+            "fcn_last": 5088,
+            "size": 1,
+            "opcode": "push rbp",
+            "disasm": "push rbp",
+            "bytes": "55",
+            "family": "cpu",
+            "type": "rpush",
+            "reloc": false,
+            "type_num": 268435468,
+            "type2_num": 0
+          },
+          {
+            "offset": "0x127c",
+            "esil": "rsp,rbp,=",
+            "refptr": false,
+            "fcn_addr": 4727,
+            "fcn_last": 5086,
+            "size": 3,
+            "opcode": "mov rbp, rsp",
+            "disasm": "mov rbp, rsp",
+            "bytes": "4889e5",
+            "family": "cpu",
+            "type": "mov",
+            "reloc": false,
+            "type_num": 9,
+            "type2_num": 0
+          },
+          {
+            "offset": "0x127f",
+            "val": 176,
+            "esil": "176,rsp,-=,176,0x8000000000000000,-,!,63,$o,^,of,:=,63,$s,sf,:=,$z,zf,:=,$p,pf,:=,64,$b,cf,:=,3,$b,af,:=",
+            "refptr": false,
+            "fcn_addr": 4727,
+            "fcn_last": 5082,
+            "size": 7,
+            "opcode": "sub rsp, 0xb0",
+            "disasm": "sub rsp, 0xb0",
+            "bytes": "4881ecb0000000",
+            "family": "cpu",
+            "type": "sub",
+            "reloc": false,
+            "type_num": 18,
+            "type2_num": 0
+          }
+        ]
+      },
+      "seconds": 0.09927101499988567
+    },
+    {
+      "tool": "binary_functions",
+      "params": {
+        "session_id": "bin-76bfe5f1e35f",
+        "query": "sym.check"
+      },
+      "actual_data": {
+        "evidence_ref": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/binary-f3c63a33a9ba.json",
+        "session_id": "bin-76bfe5f1e35f",
+        "artifact_sha256": "76389b5327d4b5f68660c44dc928cc4b87db650565dbd30e98ca747239e31796",
+        "path": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/challenge",
+        "address_space": "static_va",
+        "file_format": "ELF",
+        "bits": 64,
+        "endian": "little",
+        "entry": "0x1120",
+        "pie": true,
+        "machine": 62,
+        "entry_ref": {
+          "file_offset": "0x1120",
+          "static_va": "0x1120",
+          "runtime_va": null,
+          "load_bias": null,
+          "module": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/challenge",
+          "arch": "x86_64",
+          "pointer_bits": 64
+        },
+        "next_cursor": null,
+        "truncated": false,
+        "total": 1,
+        "items": [
+          {
+            "offset": "0x1209",
+            "name": "sym.check",
+            "size": 110,
+            "is-pure": "false",
+            "realsz": 110,
+            "noreturn": false,
+            "stackframe": 40,
+            "calltype": "amd64",
+            "cost": 43,
+            "cc": 4,
+            "bits": 64,
+            "type": "sym",
+            "nbbs": 9,
+            "edges": 11,
+            "ebbs": 1,
+            "signature": "sym.check (int64_t arg1);",
+            "minbound": 4617,
+            "maxbound": 4727,
+            "callrefs": [
+              {
+                "addr": "0x10d0",
+                "type": "CALL",
+                "at": 4640
+              },
+              {
+                "addr": "0x1275",
+                "type": "CODE",
+                "at": 4656
+              },
+              {
+                "addr": "0x126a",
+                "type": "CODE",
+                "at": 4665
+              },
+              {
+                "addr": "0x1275",
+                "type": "CODE",
+                "at": 4708
+              }
+            ],
+            "datarefs": [
+              12,
+              90,
+              16400
+            ],
+            "codexrefs": [
+              {
+                "addr": "0x1392",
+                "type": "CALL",
+                "at": 4617
+              },
+              {
+                "addr": "0x1239",
+                "type": "CODE",
+                "at": 4714
+              },
+              {
+                "addr": "0x1230",
+                "type": "CODE",
+                "at": 4725
+              },
+              {
+                "addr": "0x1264",
+                "type": "CODE",
+                "at": 4725
+              }
+            ],
+            "dataxrefs": [],
+            "indegree": 4,
+            "outdegree": 1,
+            "nlocals": 2,
+            "nargs": 1,
+            "bpvars": [
+              {
+                "name": "var_18h",
+                "kind": "var",
+                "type": "int64_t",
+                "ref": {
+                  "base": "rbp",
+                  "offset": -24
+                }
+              },
+              {
+                "name": "var_4h",
+                "kind": "var",
+                "type": "int64_t",
+                "ref": {
+                  "base": "rbp",
+                  "offset": -4
+                }
+              }
+            ],
+            "spvars": [],
+            "regvars": [
+              {
+                "name": "arg1",
+                "kind": "reg",
+                "type": "int64_t",
+                "ref": "rdi"
+              }
+            ],
+            "difftype": "new"
+          }
+        ]
+      },
+      "seconds": 0.0779030049998255
+    },
+    {
+      "tool": "debug_start",
+      "params": {
+        "path": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/challenge",
+        "argv": [
+          "incorrect"
+        ]
+      },
+      "actual_data": {
+        "evidence_ref": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/binary-17fbe106b8a3.json",
+        "session_id": "dbg-bd4b02f48d60",
+        "artifact_sha256": "76389b5327d4b5f68660c44dc928cc4b87db650565dbd30e98ca747239e31796",
+        "path": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/challenge",
+        "address_space": "runtime_va",
+        "file_format": "ELF",
+        "bits": 64,
+        "endian": "little",
+        "pie": true,
+        "machine": 62,
+        "entry_ref": {
+          "file_offset": "0x1120",
+          "static_va": "0x1120",
+          "runtime_va": null,
+          "load_bias": null,
+          "module": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/challenge",
+          "arch": "x86_64",
+          "pointer_bits": 64
+        },
+        "static_entry": "0x1120",
+        "state": "STOPPED",
+        "reason": "signal-received",
+        "pc": "0x00007651a28c5540",
+        "pid": "12",
+        "thread_id": "1",
+        "inferior": "i1",
+        "event_id": 1,
+        "load_bias": null,
+        "pending": false,
+        "events": [
+          {
+            "event_id": 1,
+            "reason": "signal-received",
+            "signal-name": "0",
+            "signal-meaning": "Signal 0",
+            "frame": {
+              "addr": "0x00007651a28c5540",
+              "func": "_start",
+              "args": [],
+              "from": "/lib64/ld-linux-x86-64.so.2",
+              "arch": "i386:x86-64"
+            },
+            "thread-id": "1",
+            "stopped-threads": "all",
+            "core": "0"
+          }
+        ],
+        "pc_ref": {
+          "file_offset": null,
+          "static_va": null,
+          "runtime_va": "0x7651a28c5540",
+          "load_bias": null,
+          "module": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/challenge",
+          "arch": "x86_64",
+          "pointer_bits": 64
+        }
+      },
+      "seconds": 0.19550698799980637
+    },
+    {
+      "tool": "debug_control",
+      "params": {
+        "session_id": "dbg-bd4b02f48d60",
+        "action": "break",
+        "address": "static_va:0x1209"
+      },
+      "actual_data": {
+        "evidence_ref": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/binary-00061beeab17.json",
+        "session_id": "dbg-bd4b02f48d60",
+        "artifact_sha256": "76389b5327d4b5f68660c44dc928cc4b87db650565dbd30e98ca747239e31796",
+        "path": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/challenge",
+        "address_space": "runtime_va",
+        "file_format": "ELF",
+        "bits": 64,
+        "endian": "little",
+        "pie": true,
+        "machine": 62,
+        "entry_ref": {
+          "file_offset": "0x1120",
+          "static_va": "0x1120",
+          "runtime_va": "0x58c86d1c0120",
+          "load_bias": "0x58c86d1bf000",
+          "module": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/challenge",
+          "arch": "x86_64",
+          "pointer_bits": 64
+        },
+        "static_entry": "0x1120",
+        "state": "STOPPED",
+        "reason": "signal-received",
+        "pc": "0x00007651a28c5540",
+        "pid": "12",
+        "thread_id": "1",
+        "inferior": "i1",
+        "event_id": 1,
+        "load_bias": "0x58c86d1bf000",
+        "pending": false,
+        "events": [
+          {
+            "event_id": 1,
+            "reason": "signal-received",
+            "signal-name": "0",
+            "signal-meaning": "Signal 0",
+            "frame": {
+              "addr": "0x00007651a28c5540",
+              "func": "_start",
+              "args": [],
+              "from": "/lib64/ld-linux-x86-64.so.2",
+              "arch": "i386:x86-64"
+            },
+            "thread-id": "1",
+            "stopped-threads": "all",
+            "core": "0"
+          }
+        ],
+        "pc_ref": {
+          "file_offset": null,
+          "static_va": "0x1d8935706540",
+          "runtime_va": "0x7651a28c5540",
+          "load_bias": "0x58c86d1bf000",
+          "module": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/challenge",
+          "arch": "x86_64",
+          "pointer_bits": 64
+        },
+        "breakpoint": {
+          "number": "1",
+          "type": "breakpoint",
+          "disp": "keep",
+          "enabled": "y",
+          "addr": "0x000058c86d1c0209",
+          "func": "check",
+          "file": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/challenge.c",
+          "fullname": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/challenge.c",
+          "line": "6",
+          "thread-groups": [
+            "i1"
+          ],
+          "times": "0",
+          "original-location": "*0x58c86d1c0209"
+        }
+      },
+      "seconds": 0.099988379000024
+    },
+    {
+      "tool": "debug_control",
+      "params": {
+        "session_id": "dbg-bd4b02f48d60",
+        "action": "continue"
+      },
+      "actual_data": {
+        "evidence_ref": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/binary-30ddb42dd3fd.json",
+        "session_id": "dbg-bd4b02f48d60",
+        "artifact_sha256": "76389b5327d4b5f68660c44dc928cc4b87db650565dbd30e98ca747239e31796",
+        "path": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/challenge",
+        "address_space": "runtime_va",
+        "file_format": "ELF",
+        "bits": 64,
+        "endian": "little",
+        "pie": true,
+        "machine": 62,
+        "entry_ref": {
+          "file_offset": "0x1120",
+          "static_va": "0x1120",
+          "runtime_va": "0x58c86d1c0120",
+          "load_bias": "0x58c86d1bf000",
+          "module": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/challenge",
+          "arch": "x86_64",
+          "pointer_bits": 64
+        },
+        "static_entry": "0x1120",
+        "state": "STOPPED",
+        "reason": "breakpoint-hit",
+        "pc": "0x000058c86d1c0209",
+        "pid": "12",
+        "thread_id": "1",
+        "inferior": "i1",
+        "event_id": 2,
+        "load_bias": "0x58c86d1bf000",
+        "pending": false,
+        "events": [
+          {
+            "event_id": 2,
+            "reason": "breakpoint-hit",
+            "disp": "keep",
+            "bkptno": "1",
+            "frame": {
+              "addr": "0x000058c86d1c0209",
+              "func": "check",
+              "args": [
+                {
+                  "name": "input",
+                  "value": "0x40 <error: Cannot access memory at address 0x40>"
+                }
+              ],
+              "file": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/challenge.c",
+              "fullname": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/challenge.c",
+              "line": "6",
+              "arch": "i386:x86-64"
+            },
+            "thread-id": "1",
+            "stopped-threads": "all",
+            "core": "0"
+          }
+        ],
+        "pc_ref": {
+          "file_offset": "0x1209",
+          "static_va": "0x1209",
+          "runtime_va": "0x58c86d1c0209",
+          "load_bias": "0x58c86d1bf000",
+          "module": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/challenge",
+          "arch": "x86_64",
+          "pointer_bits": 64
+        }
+      },
+      "seconds": 0.15609382899992852
+    },
+    {
+      "tool": "debug_inspect",
+      "params": {
+        "session_id": "dbg-bd4b02f48d60",
+        "view": "registers"
+      },
+      "actual_data": {
+        "evidence_ref": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/binary-236cf7d95640.json",
+        "session_id": "dbg-bd4b02f48d60",
+        "artifact_sha256": "76389b5327d4b5f68660c44dc928cc4b87db650565dbd30e98ca747239e31796",
+        "path": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/challenge",
+        "address_space": "runtime_va",
+        "file_format": "ELF",
+        "bits": 64,
+        "endian": "little",
+        "pie": true,
+        "machine": 62,
+        "entry_ref": {
+          "file_offset": "0x1120",
+          "static_va": "0x1120",
+          "runtime_va": "0x58c86d1c0120",
+          "load_bias": "0x58c86d1bf000",
+          "module": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/challenge",
+          "arch": "x86_64",
+          "pointer_bits": 64
+        },
+        "static_entry": "0x1120",
+        "state": "STOPPED",
+        "reason": "breakpoint-hit",
+        "pc": "0x000058c86d1c0209",
+        "pid": "12",
+        "thread_id": "1",
+        "inferior": "i1",
+        "event_id": 2,
+        "load_bias": "0x58c86d1bf000",
+        "pending": false,
+        "events": [
+          {
+            "event_id": 2,
+            "reason": "breakpoint-hit",
+            "disp": "keep",
+            "bkptno": "1",
+            "frame": {
+              "addr": "0x000058c86d1c0209",
+              "func": "check",
+              "args": [
+                {
+                  "name": "input",
+                  "value": "0x40 <error: Cannot access memory at address 0x40>"
+                }
+              ],
+              "file": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/challenge.c",
+              "fullname": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/challenge.c",
+              "line": "6",
+              "arch": "i386:x86-64"
+            },
+            "thread-id": "1",
+            "stopped-threads": "all",
+            "core": "0"
+          }
+        ],
+        "pc_ref": {
+          "file_offset": "0x1209",
+          "static_va": "0x1209",
+          "runtime_va": "0x58c86d1c0209",
+          "load_bias": "0x58c86d1bf000",
+          "module": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/challenge",
+          "arch": "x86_64",
+          "pointer_bits": 64
+        },
+        "items": [
+          {
+            "register": "rax",
+            "value": "0x7ffc3f5d921c"
+          },
+          {
+            "register": "rbx",
+            "value": "0x7ffc3f5d7828"
+          },
+          {
+            "register": "rcx",
+            "value": "0x2d"
+          },
+          {
+            "register": "rdx",
+            "value": "0x58c86d1c100c"
+          },
+          {
+            "register": "rsi",
+            "value": "0x58c86d1c100c"
+          },
+          {
+            "register": "rdi",
+            "value": "0x7ffc3f5d921c"
+          },
+          {
+            "register": "rbp",
+            "value": "0x7ffc3f5d7700"
+          },
+          {
+            "register": "rsp",
+            "value": "0x7ffc3f5d7648"
+          },
+          {
+            "register": "rip",
+            "value": "0x58c86d1c0209"
+          },
+          {
+            "register": "eflags",
+            "value": "0x202"
+          }
+        ]
+      },
+      "seconds": 0.08984350200012159
+    },
+    {
+      "tool": "debug_inspect",
+      "params": {
+        "session_id": "dbg-bd4b02f48d60",
+        "view": "frames"
+      },
+      "actual_data": {
+        "evidence_ref": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/binary-2ebd447990b1.json",
+        "session_id": "dbg-bd4b02f48d60",
+        "artifact_sha256": "76389b5327d4b5f68660c44dc928cc4b87db650565dbd30e98ca747239e31796",
+        "path": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/challenge",
+        "address_space": "runtime_va",
+        "file_format": "ELF",
+        "bits": 64,
+        "endian": "little",
+        "pie": true,
+        "machine": 62,
+        "entry_ref": {
+          "file_offset": "0x1120",
+          "static_va": "0x1120",
+          "runtime_va": "0x58c86d1c0120",
+          "load_bias": "0x58c86d1bf000",
+          "module": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/challenge",
+          "arch": "x86_64",
+          "pointer_bits": 64
+        },
+        "static_entry": "0x1120",
+        "state": "STOPPED",
+        "reason": "breakpoint-hit",
+        "pc": "0x000058c86d1c0209",
+        "pid": "12",
+        "thread_id": "1",
+        "inferior": "i1",
+        "event_id": 2,
+        "load_bias": "0x58c86d1bf000",
+        "pending": false,
+        "events": [
+          {
+            "event_id": 2,
+            "reason": "breakpoint-hit",
+            "disp": "keep",
+            "bkptno": "1",
+            "frame": {
+              "addr": "0x000058c86d1c0209",
+              "func": "check",
+              "args": [
+                {
+                  "name": "input",
+                  "value": "0x40 <error: Cannot access memory at address 0x40>"
+                }
+              ],
+              "file": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/challenge.c",
+              "fullname": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/challenge.c",
+              "line": "6",
+              "arch": "i386:x86-64"
+            },
+            "thread-id": "1",
+            "stopped-threads": "all",
+            "core": "0"
+          }
+        ],
+        "pc_ref": {
+          "file_offset": "0x1209",
+          "static_va": "0x1209",
+          "runtime_va": "0x58c86d1c0209",
+          "load_bias": "0x58c86d1bf000",
+          "module": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/challenge",
+          "arch": "x86_64",
+          "pointer_bits": 64
+        },
+        "stack": [
+          {
+            "frame": {
+              "level": "0",
+              "addr": "0x000058c86d1c0209",
+              "func": "check",
+              "file": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/challenge.c",
+              "fullname": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/challenge.c",
+              "line": "6",
+              "arch": "i386:x86-64"
+            }
+          },
+          {
+            "frame": {
+              "level": "1",
+              "addr": "0x000058c86d1c0397",
+              "func": "main",
+              "file": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/challenge.c",
+              "fullname": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/challenge.c",
+              "line": "21",
+              "arch": "i386:x86-64"
+            }
+          }
+        ]
+      },
+      "seconds": 0.10902564000002712
+    },
+    {
+      "tool": "debug_inspect",
+      "params": {
+        "session_id": "dbg-bd4b02f48d60",
+        "view": "memory",
+        "address": "symbol:encoded",
+        "length": 12
+      },
+      "actual_data": {
+        "evidence_ref": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/binary-cd99ab9d0eaa.json",
+        "session_id": "dbg-bd4b02f48d60",
+        "artifact_sha256": "76389b5327d4b5f68660c44dc928cc4b87db650565dbd30e98ca747239e31796",
+        "path": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/challenge",
+        "address_space": "runtime_va",
+        "file_format": "ELF",
+        "bits": 64,
+        "endian": "little",
+        "pie": true,
+        "machine": 62,
+        "entry_ref": {
+          "file_offset": "0x1120",
+          "static_va": "0x1120",
+          "runtime_va": "0x58c86d1c0120",
+          "load_bias": "0x58c86d1bf000",
+          "module": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/challenge",
+          "arch": "x86_64",
+          "pointer_bits": 64
+        },
+        "static_entry": "0x1120",
+        "state": "STOPPED",
+        "reason": "breakpoint-hit",
+        "pc": "0x000058c86d1c0209",
+        "pid": "12",
+        "thread_id": "1",
+        "inferior": "i1",
+        "event_id": 2,
+        "load_bias": "0x58c86d1bf000",
+        "pending": false,
+        "events": [
+          {
+            "event_id": 2,
+            "reason": "breakpoint-hit",
+            "disp": "keep",
+            "bkptno": "1",
+            "frame": {
+              "addr": "0x000058c86d1c0209",
+              "func": "check",
+              "args": [
+                {
+                  "name": "input",
+                  "value": "0x40 <error: Cannot access memory at address 0x40>"
+                }
+              ],
+              "file": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/challenge.c",
+              "fullname": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/challenge.c",
+              "line": "6",
+              "arch": "i386:x86-64"
+            },
+            "thread-id": "1",
+            "stopped-threads": "all",
+            "core": "0"
+          }
+        ],
+        "pc_ref": {
+          "file_offset": "0x1209",
+          "static_va": "0x1209",
+          "runtime_va": "0x58c86d1c0209",
+          "load_bias": "0x58c86d1bf000",
+          "module": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/challenge",
+          "arch": "x86_64",
+          "pointer_bits": 64
+        },
+        "memory": [
+          {
+            "begin": "0x000058c86d1c3010",
+            "offset": "0x0000000000000000",
+            "end": "0x000058c86d1c301c",
+            "contents": "3b3b3b696f6a6a6839636263"
+          }
+        ]
+      },
+      "seconds": 0.11166141300009258
+    },
+    {
+      "tool": "debug_control",
+      "params": {
+        "session_id": "dbg-bd4b02f48d60",
+        "action": "stepi"
+      },
+      "actual_data": {
+        "evidence_ref": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/binary-7b8913264ca7.json",
+        "session_id": "dbg-bd4b02f48d60",
+        "artifact_sha256": "76389b5327d4b5f68660c44dc928cc4b87db650565dbd30e98ca747239e31796",
+        "path": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/challenge",
+        "address_space": "runtime_va",
+        "file_format": "ELF",
+        "bits": 64,
+        "endian": "little",
+        "pie": true,
+        "machine": 62,
+        "entry_ref": {
+          "file_offset": "0x1120",
+          "static_va": "0x1120",
+          "runtime_va": "0x58c86d1c0120",
+          "load_bias": "0x58c86d1bf000",
+          "module": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/challenge",
+          "arch": "x86_64",
+          "pointer_bits": 64
+        },
+        "static_entry": "0x1120",
+        "state": "STOPPED",
+        "reason": "end-stepping-range",
+        "pc": "0x000058c86d1c020d",
+        "pid": "12",
+        "thread_id": "1",
+        "inferior": "i1",
+        "event_id": 3,
+        "load_bias": "0x58c86d1bf000",
+        "pending": false,
+        "events": [
+          {
+            "event_id": 3,
+            "reason": "end-stepping-range",
+            "frame": {
+              "addr": "0x000058c86d1c020d",
+              "func": "check",
+              "args": [
+                {
+                  "name": "input",
+                  "value": "0x40 <error: Cannot access memory at address 0x40>"
+                }
+              ],
+              "file": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/challenge.c",
+              "fullname": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/challenge.c",
+              "line": "6",
+              "arch": "i386:x86-64"
+            },
+            "thread-id": "1",
+            "stopped-threads": "all",
+            "core": "0"
+          }
+        ],
+        "pc_ref": {
+          "file_offset": "0x120d",
+          "static_va": "0x120d",
+          "runtime_va": "0x58c86d1c020d",
+          "load_bias": "0x58c86d1bf000",
+          "module": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/challenge",
+          "arch": "x86_64",
+          "pointer_bits": 64
+        }
+      },
+      "seconds": 0.09474878300011369
+    },
+    {
+      "tool": "debug_control",
+      "params": {
+        "session_id": "dbg-bd4b02f48d60",
+        "action": "stop"
+      },
+      "actual_data": {
+        "evidence_ref": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/binary-ae7fa77204f5.json",
+        "session_id": "dbg-bd4b02f48d60",
+        "artifact_sha256": "76389b5327d4b5f68660c44dc928cc4b87db650565dbd30e98ca747239e31796",
+        "path": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/challenge",
+        "address_space": "runtime_va",
+        "file_format": "ELF",
+        "bits": 64,
+        "endian": "little",
+        "pie": true,
+        "machine": 62,
+        "entry_ref": {
+          "file_offset": "0x1120",
+          "static_va": "0x1120",
+          "runtime_va": "0x58c86d1c0120",
+          "load_bias": "0x58c86d1bf000",
+          "module": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/challenge",
+          "arch": "x86_64",
+          "pointer_bits": 64
+        },
+        "static_entry": "0x1120",
+        "state": "CLOSED",
+        "reason": "end-stepping-range",
+        "pc": "0x000058c86d1c020d",
+        "pid": "12",
+        "thread_id": "1",
+        "inferior": "i1",
+        "event_id": 3,
+        "load_bias": "0x58c86d1bf000",
+        "pending": false,
+        "events": [
+          {
+            "event_id": 3,
+            "reason": "end-stepping-range",
+            "frame": {
+              "addr": "0x000058c86d1c020d",
+              "func": "check",
+              "args": [
+                {
+                  "name": "input",
+                  "value": "0x40 <error: Cannot access memory at address 0x40>"
+                }
+              ],
+              "file": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/challenge.c",
+              "fullname": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/challenge.c",
+              "line": "6",
+              "arch": "i386:x86-64"
+            },
+            "thread-id": "1",
+            "stopped-threads": "all",
+            "core": "0"
+          }
+        ],
+        "pc_ref": {
+          "file_offset": "0x120d",
+          "static_va": "0x120d",
+          "runtime_va": "0x58c86d1c020d",
+          "load_bias": "0x58c86d1bf000",
+          "module": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/challenge",
+          "arch": "x86_64",
+          "pointer_bits": 64
+        }
+      },
+      "seconds": 0.08332485599999018
+    },
+    {
+      "tool": "binary_execute",
+      "params": {
+        "path": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/challenge",
+        "argv": [
+          "aaa35002c989"
+        ]
+      },
+      "actual_data": {
+        "evidence_ref": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/binary-62e527934882.json",
+        "ok": true,
+        "code": 0,
+        "command": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/challenge aaa35002c989",
+        "duration": 0.1,
+        "stdout": "accepted",
+        "stderr": "",
+        "error": "",
+        "job_id": "",
+        "running": false,
+        "artifact_sha256": "76389b5327d4b5f68660c44dc928cc4b87db650565dbd30e98ca747239e31796",
+        "verified_solve": false,
+        "state": "EXITED"
+      },
+      "seconds": 0.18642829500004154
+    }
+  ],
+  "elapsed_seconds": 3.7138395989998116,
+  "native_observation_bytes": 78866,
+  "raw_index": {
+    "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/binary-00061beeab17.json": "raw/binary-00061beeab17.json",
+    "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/binary-17fbe106b8a3.json": "raw/binary-17fbe106b8a3.json",
+    "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/binary-236cf7d95640.json": "raw/binary-236cf7d95640.json",
+    "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/binary-2ebd447990b1.json": "raw/binary-2ebd447990b1.json",
+    "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/binary-30ddb42dd3fd.json": "raw/binary-30ddb42dd3fd.json",
+    "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/binary-62e527934882.json": "raw/binary-62e527934882.json",
+    "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/binary-7b8913264ca7.json": "raw/binary-7b8913264ca7.json",
+    "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/binary-8cd881200ce8.json": "raw/binary-8cd881200ce8.json",
+    "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/binary-987736182ee8.json": "raw/binary-987736182ee8.json",
+    "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/binary-ae7fa77204f5.json": "raw/binary-ae7fa77204f5.json",
+    "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/binary-b0f3a0305f74.json": "raw/binary-b0f3a0305f74.json",
+    "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/binary-cd99ab9d0eaa.json": "raw/binary-cd99ab9d0eaa.json",
+    "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/binary-e7dbd2170246.json": "raw/binary-e7dbd2170246.json",
+    "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/binary-ebe41bf44b47.json": "raw/binary-ebe41bf44b47.json",
+    "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/binary-f3c63a33a9ba.json": "raw/binary-f3c63a33a9ba.json",
+    "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/binary-fae23fd36653.json": "raw/binary-fae23fd36653.json"
+  },
+  "closed_sessions": [
+    {
+      "session_id": "bin-76bfe5f1e35f",
+      "backend": "r2",
+      "path": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/challenge",
+      "artifact_sha256": "76389b5327d4b5f68660c44dc928cc4b87db650565dbd30e98ca747239e31796",
+      "options": {
+        "analysis": "standard",
+        "arch": "",
+        "bits": 0,
+        "base_va": ""
+      },
+      "state": "CLOSED",
+      "breakpoints": [],
+      "live": false
+    },
+    {
+      "session_id": "dbg-bd4b02f48d60",
+      "backend": "gdb",
+      "path": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/challenge",
+      "artifact_sha256": "76389b5327d4b5f68660c44dc928cc4b87db650565dbd30e98ca747239e31796",
+      "options": {
+        "argv": [
+          "incorrect"
+        ],
+        "stdin_file": "",
+        "break_at_entry": true
+      },
+      "state": "CLOSED",
+      "breakpoints": [
+        {
+          "number": "1",
+          "type": "breakpoint",
+          "disp": "keep",
+          "enabled": "y",
+          "addr": "0x000058c86d1c0209",
+          "func": "check",
+          "file": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/challenge.c",
+          "fullname": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/binary-test-m62b18_v/runs/worker-a/challenge.c",
+          "line": "6",
+          "thread-groups": [
+            "i1"
+          ],
+          "times": "0",
+          "original-location": "*0x58c86d1c0209"
+        }
+      ],
+      "live": false
+    }
+  ],
+  "model_usage": null,
+  "ctfy_online_score": null,
+  "limits": "确定性工具链测试；未运行真实模型/CTFY 线上评分或四组模型质量对照"
+}

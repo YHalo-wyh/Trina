@@ -1,0 +1,1136 @@
+[
+  {
+    "name": "binary_execute",
+    "category": "binary",
+    "action_level": "exploit",
+    "summary": "真实运行候选输入并保留退出状态；任务成功另由权威验证器裁定",
+    "external_bin": null,
+    "params": {
+      "path": {
+        "type": "str",
+        "required": true,
+        "default": null,
+        "enum": null
+      },
+      "argv": {
+        "type": "list",
+        "required": false,
+        "default": [],
+        "enum": null
+      },
+      "stdin": {
+        "type": "str",
+        "required": false,
+        "default": "",
+        "enum": null
+      },
+      "timeout": {
+        "type": "float",
+        "required": false,
+        "default": 10,
+        "enum": null
+      }
+    }
+  },
+  {
+    "name": "binary_function",
+    "category": "binary",
+    "action_level": "detect",
+    "summary": "查看指定静态地址的局部指令或基本块",
+    "external_bin": null,
+    "params": {
+      "session_id": {
+        "type": "str",
+        "required": true,
+        "default": null,
+        "enum": null
+      },
+      "query": {
+        "type": "str",
+        "required": false,
+        "default": "",
+        "enum": null
+      },
+      "limit": {
+        "type": "int",
+        "required": false,
+        "default": 10,
+        "enum": null
+      },
+      "cursor": {
+        "type": "str",
+        "required": false,
+        "default": "",
+        "enum": null
+      },
+      "address": {
+        "type": "str",
+        "required": true,
+        "default": null,
+        "enum": null
+      },
+      "view": {
+        "type": "str",
+        "required": false,
+        "default": "disasm",
+        "enum": [
+          "disasm",
+          "blocks",
+          "ops",
+          "summary"
+        ]
+      }
+    }
+  },
+  {
+    "name": "binary_functions",
+    "category": "binary",
+    "action_level": "detect",
+    "summary": "过滤并分页查看函数索引",
+    "external_bin": null,
+    "params": {
+      "session_id": {
+        "type": "str",
+        "required": true,
+        "default": null,
+        "enum": null
+      },
+      "query": {
+        "type": "str",
+        "required": false,
+        "default": "",
+        "enum": null
+      },
+      "limit": {
+        "type": "int",
+        "required": false,
+        "default": 10,
+        "enum": null
+      },
+      "cursor": {
+        "type": "str",
+        "required": false,
+        "default": "",
+        "enum": null
+      }
+    }
+  },
+  {
+    "name": "binary_open",
+    "category": "binary",
+    "action_level": "detect",
+    "summary": "只读打开二进制并复用本任务 r2 分析会话",
+    "external_bin": null,
+    "params": {
+      "path": {
+        "type": "str",
+        "required": true,
+        "default": null,
+        "enum": null
+      },
+      "analysis": {
+        "type": "str",
+        "required": false,
+        "default": "quick",
+        "enum": [
+          "quick",
+          "standard",
+          "deep"
+        ]
+      },
+      "arch": {
+        "type": "str",
+        "required": false,
+        "default": "",
+        "enum": null
+      },
+      "bits": {
+        "type": "int",
+        "required": false,
+        "default": 0,
+        "enum": null
+      },
+      "base_va": {
+        "type": "str",
+        "required": false,
+        "default": "",
+        "enum": null
+      }
+    }
+  },
+  {
+    "name": "binary_overview",
+    "category": "binary",
+    "action_level": "detect",
+    "summary": "分页查询摘要、节区、导入或字符串",
+    "external_bin": null,
+    "params": {
+      "session_id": {
+        "type": "str",
+        "required": true,
+        "default": null,
+        "enum": null
+      },
+      "query": {
+        "type": "str",
+        "required": false,
+        "default": "",
+        "enum": null
+      },
+      "limit": {
+        "type": "int",
+        "required": false,
+        "default": 10,
+        "enum": null
+      },
+      "cursor": {
+        "type": "str",
+        "required": false,
+        "default": "",
+        "enum": null
+      },
+      "section": {
+        "type": "str",
+        "required": false,
+        "default": "summary",
+        "enum": [
+          "summary",
+          "sections",
+          "imports",
+          "strings"
+        ]
+      }
+    }
+  },
+  {
+    "name": "binary_session",
+    "category": "binary",
+    "action_level": "detect",
+    "summary": "查看或关闭本任务二进制会话",
+    "external_bin": null,
+    "params": {
+      "action": {
+        "type": "str",
+        "required": false,
+        "default": "list",
+        "enum": [
+          "list",
+          "close"
+        ]
+      },
+      "session_id": {
+        "type": "str",
+        "required": false,
+        "default": "",
+        "enum": null
+      }
+    }
+  },
+  {
+    "name": "binary_xrefs",
+    "category": "binary",
+    "action_level": "detect",
+    "summary": "查询静态地址的传入或传出引用",
+    "external_bin": null,
+    "params": {
+      "session_id": {
+        "type": "str",
+        "required": true,
+        "default": null,
+        "enum": null
+      },
+      "query": {
+        "type": "str",
+        "required": false,
+        "default": "",
+        "enum": null
+      },
+      "limit": {
+        "type": "int",
+        "required": false,
+        "default": 10,
+        "enum": null
+      },
+      "cursor": {
+        "type": "str",
+        "required": false,
+        "default": "",
+        "enum": null
+      },
+      "address": {
+        "type": "str",
+        "required": true,
+        "default": null,
+        "enum": null
+      },
+      "direction": {
+        "type": "str",
+        "required": false,
+        "default": "to",
+        "enum": [
+          "to",
+          "from"
+        ]
+      }
+    }
+  },
+  {
+    "name": "cmd_inject_test",
+    "category": "exploit",
+    "action_level": "verify",
+    "summary": "验证命令注入：用唯一标记 + 无害 echo 回显载荷探测可用注入前缀",
+    "external_bin": null,
+    "params": {
+      "url": {
+        "type": "str",
+        "required": true,
+        "default": null,
+        "enum": null
+      },
+      "param": {
+        "type": "str",
+        "required": true,
+        "default": null,
+        "enum": null
+      },
+      "method": {
+        "type": "str",
+        "required": false,
+        "default": "GET",
+        "enum": null
+      },
+      "data": {
+        "type": "dict",
+        "required": false,
+        "default": null,
+        "enum": null
+      }
+    }
+  },
+  {
+    "name": "ctfy_task",
+    "category": "benchmark",
+    "action_level": "verify",
+    "summary": "读取 CTFY 当前任务、刷新解锁问题，或提交答案并取得权威 correct 判定",
+    "external_bin": null,
+    "params": {
+      "action": {
+        "type": "str",
+        "required": true,
+        "default": null,
+        "enum": [
+          "read",
+          "refresh",
+          "submit"
+        ]
+      },
+      "question_id": {
+        "type": "str",
+        "required": false,
+        "default": "",
+        "enum": null
+      },
+      "answer": {
+        "type": "str",
+        "required": false,
+        "default": "",
+        "enum": null
+      },
+      "answers": {
+        "type": "list",
+        "required": false,
+        "default": [],
+        "enum": null
+      }
+    }
+  },
+  {
+    "name": "debug_control",
+    "category": "binary",
+    "action_level": "exploit",
+    "summary": "断点、运行、单步或结束；等待真实 stopped/exited 事件",
+    "external_bin": null,
+    "params": {
+      "session_id": {
+        "type": "str",
+        "required": true,
+        "default": null,
+        "enum": null
+      },
+      "action": {
+        "type": "str",
+        "required": true,
+        "default": null,
+        "enum": [
+          "break",
+          "delete_break",
+          "run",
+          "continue",
+          "stepi",
+          "nexti",
+          "interrupt",
+          "stop"
+        ]
+      },
+      "address": {
+        "type": "str",
+        "required": false,
+        "default": "",
+        "enum": null
+      },
+      "breakpoint_id": {
+        "type": "str",
+        "required": false,
+        "default": "",
+        "enum": null
+      },
+      "count": {
+        "type": "int",
+        "required": false,
+        "default": 1,
+        "enum": null
+      }
+    }
+  },
+  {
+    "name": "debug_inspect",
+    "category": "binary",
+    "action_level": "exploit",
+    "summary": "读取停止状态下的寄存器、内存、栈、帧、汇编或模块映射",
+    "external_bin": null,
+    "params": {
+      "session_id": {
+        "type": "str",
+        "required": true,
+        "default": null,
+        "enum": null
+      },
+      "view": {
+        "type": "str",
+        "required": true,
+        "default": null,
+        "enum": [
+          "registers",
+          "memory",
+          "stack",
+          "frames",
+          "disasm",
+          "mappings"
+        ]
+      },
+      "address": {
+        "type": "str",
+        "required": false,
+        "default": "",
+        "enum": null
+      },
+      "length": {
+        "type": "int",
+        "required": false,
+        "default": 64,
+        "enum": null
+      },
+      "registers": {
+        "type": "list",
+        "required": false,
+        "default": [],
+        "enum": null
+      }
+    }
+  },
+  {
+    "name": "debug_start",
+    "category": "binary",
+    "action_level": "exploit",
+    "summary": "在受控沙箱启动本机 ELF 的 GDB/MI3 会话，默认保留 ASLR 并停在入口",
+    "external_bin": null,
+    "params": {
+      "path": {
+        "type": "str",
+        "required": true,
+        "default": null,
+        "enum": null
+      },
+      "argv": {
+        "type": "list",
+        "required": false,
+        "default": [],
+        "enum": null
+      },
+      "stdin_file": {
+        "type": "str",
+        "required": false,
+        "default": "",
+        "enum": null
+      },
+      "break_at_entry": {
+        "type": "bool",
+        "required": false,
+        "default": true,
+        "enum": null
+      }
+    }
+  },
+  {
+    "name": "dir_bruteforce",
+    "category": "web",
+    "action_level": "detect",
+    "summary": "目录/文件爆破：用字典探测常见路径与备份文件，自动过滤软 404 假阳性",
+    "external_bin": null,
+    "params": {
+      "url": {
+        "type": "str",
+        "required": true,
+        "default": null,
+        "enum": null
+      },
+      "wordlist": {
+        "type": "str",
+        "required": true,
+        "default": null,
+        "enum": null
+      },
+      "extensions": {
+        "type": "list",
+        "required": false,
+        "default": [
+          "",
+          ".php",
+          ".html",
+          ".txt",
+          ".bak",
+          ".zip",
+          ".json",
+          ".js"
+        ],
+        "enum": null
+      },
+      "match_status": {
+        "type": "list",
+        "required": false,
+        "default": [
+          200,
+          201,
+          204,
+          301,
+          302,
+          401,
+          403,
+          405,
+          500
+        ],
+        "enum": null
+      },
+      "concurrency": {
+        "type": "int",
+        "required": false,
+        "default": null,
+        "enum": null
+      },
+      "methods": {
+        "type": "list",
+        "required": false,
+        "default": [
+          "GET"
+        ],
+        "enum": null
+      }
+    }
+  },
+  {
+    "name": "file_upload_test",
+    "category": "exploit",
+    "action_level": "verify",
+    "summary": "验证文件上传：上传无害探测文件并检测危险扩展名是否被接受（绝不上传/请求 webshell）",
+    "external_bin": null,
+    "params": {
+      "url": {
+        "type": "str",
+        "required": true,
+        "default": null,
+        "enum": null
+      },
+      "field": {
+        "type": "str",
+        "required": true,
+        "default": null,
+        "enum": null
+      },
+      "filename": {
+        "type": "str",
+        "required": false,
+        "default": "trina_probe.txt",
+        "enum": null
+      },
+      "extra_fields": {
+        "type": "dict",
+        "required": false,
+        "default": null,
+        "enum": null
+      }
+    }
+  },
+  {
+    "name": "flag_hunt",
+    "category": "exploit",
+    "action_level": "verify",
+    "summary": "在内置白名单路径（Web 路径 + 可选本地文件系统）中搜索 flag 并提取",
+    "external_bin": null,
+    "params": {
+      "target": {
+        "type": "str",
+        "required": true,
+        "default": null,
+        "enum": null
+      },
+      "base_url": {
+        "type": "str",
+        "required": false,
+        "default": null,
+        "enum": null
+      },
+      "paths": {
+        "type": "list",
+        "required": false,
+        "default": null,
+        "enum": null
+      },
+      "include_local": {
+        "type": "bool",
+        "required": false,
+        "default": false,
+        "enum": null
+      }
+    }
+  },
+  {
+    "name": "http_fingerprint",
+    "category": "recon",
+    "action_level": "detect",
+    "summary": "HTTP 指纹：状态码/标题/响应头/重定向链 + 技术栈识别 + 安全响应头缺失检查 + 常见路径探测",
+    "external_bin": null,
+    "params": {
+      "url": {
+        "type": "str",
+        "required": true,
+        "default": null,
+        "enum": null
+      }
+    }
+  },
+  {
+    "name": "http_form_login",
+    "category": "exploit",
+    "action_level": "verify",
+    "summary": "向登录表单提交一次用户名/口令，验证给定凭据是否有效",
+    "external_bin": null,
+    "params": {
+      "url": {
+        "type": "str",
+        "required": true,
+        "default": null,
+        "enum": null
+      },
+      "username": {
+        "type": "str",
+        "required": true,
+        "default": null,
+        "enum": null
+      },
+      "password": {
+        "type": "str",
+        "required": true,
+        "default": null,
+        "enum": null
+      },
+      "username_field": {
+        "type": "str",
+        "required": false,
+        "default": "username",
+        "enum": null
+      },
+      "password_field": {
+        "type": "str",
+        "required": false,
+        "default": "password",
+        "enum": null
+      },
+      "extra_fields": {
+        "type": "dict",
+        "required": false,
+        "default": null,
+        "enum": null
+      },
+      "success_keyword": {
+        "type": "str",
+        "required": false,
+        "default": null,
+        "enum": null
+      }
+    }
+  },
+  {
+    "name": "lfi_test",
+    "category": "exploit",
+    "action_level": "verify",
+    "summary": "验证本地文件包含/路径穿越：../ 深度变体、php://filter、绝对路径、win.ini、/proc/self/environ",
+    "external_bin": null,
+    "params": {
+      "url": {
+        "type": "str",
+        "required": true,
+        "default": null,
+        "enum": null
+      },
+      "param": {
+        "type": "str",
+        "required": true,
+        "default": null,
+        "enum": null
+      },
+      "method": {
+        "type": "str",
+        "required": false,
+        "default": "GET",
+        "enum": null
+      },
+      "data": {
+        "type": "dict",
+        "required": false,
+        "default": null,
+        "enum": null
+      },
+      "depth": {
+        "type": "int",
+        "required": false,
+        "default": 6,
+        "enum": null
+      }
+    }
+  },
+  {
+    "name": "nuclei_scan",
+    "category": "vuln",
+    "action_level": "detect",
+    "summary": "nuclei 模板扫描（外部二进制优先）；未安装时自动降级为内置只读 PoC 扫描",
+    "external_bin": "nuclei",
+    "params": {
+      "url": {
+        "type": "str",
+        "required": true,
+        "default": null,
+        "enum": null
+      },
+      "severity": {
+        "type": "list",
+        "required": false,
+        "default": [
+          "low",
+          "medium",
+          "high",
+          "critical"
+        ],
+        "enum": null
+      },
+      "templates": {
+        "type": "list",
+        "required": false,
+        "default": null,
+        "enum": null
+      },
+      "timeout": {
+        "type": "int",
+        "required": false,
+        "default": 180,
+        "enum": null
+      }
+    }
+  },
+  {
+    "name": "param_reflect_scan",
+    "category": "web",
+    "action_level": "detect",
+    "summary": "参数反射检测：注入无害探针，判断输入是否原样回显（潜在反射型 XSS）",
+    "external_bin": null,
+    "params": {
+      "url": {
+        "type": "str",
+        "required": true,
+        "default": null,
+        "enum": null
+      },
+      "params": {
+        "type": "list",
+        "required": true,
+        "default": null,
+        "enum": null
+      },
+      "method": {
+        "type": "str",
+        "required": false,
+        "default": "GET",
+        "enum": [
+          "GET",
+          "POST"
+        ]
+      },
+      "data": {
+        "type": "dict",
+        "required": false,
+        "default": null,
+        "enum": null
+      }
+    }
+  },
+  {
+    "name": "poc_scan",
+    "category": "vuln",
+    "action_level": "detect",
+    "summary": "内置只读 PoC 扫描：覆盖 .git/.env/备份文件/Actuator/Swagger/Druid/phpinfo 等常见信息泄露与未授权",
+    "external_bin": null,
+    "params": {
+      "url": {
+        "type": "str",
+        "required": true,
+        "default": null,
+        "enum": null
+      },
+      "poc_ids": {
+        "type": "list",
+        "required": false,
+        "default": null,
+        "enum": null
+      }
+    }
+  },
+  {
+    "name": "port_scan",
+    "category": "recon",
+    "action_level": "detect",
+    "summary": "TCP 端口扫描：识别开放端口与服务（优先 nmap，缺失时内置 connect 扫描）",
+    "external_bin": "nmap",
+    "params": {
+      "target": {
+        "type": "str",
+        "required": true,
+        "default": null,
+        "enum": null
+      },
+      "ports": {
+        "type": "str",
+        "required": false,
+        "default": "quick",
+        "enum": null
+      },
+      "timeout": {
+        "type": "float",
+        "required": false,
+        "default": 1.0,
+        "enum": null
+      },
+      "max_ports": {
+        "type": "int",
+        "required": false,
+        "default": 4096,
+        "enum": null
+      }
+    }
+  },
+  {
+    "name": "rce_exec",
+    "category": "exploit",
+    "action_level": "exploit",
+    "summary": "在已确认的命令注入点上执行白名单内的无害命令（id/whoami/hostname/...）",
+    "external_bin": null,
+    "params": {
+      "url": {
+        "type": "str",
+        "required": true,
+        "default": null,
+        "enum": null
+      },
+      "param": {
+        "type": "str",
+        "required": true,
+        "default": null,
+        "enum": null
+      },
+      "command": {
+        "type": "str",
+        "required": true,
+        "default": null,
+        "enum": null
+      },
+      "method": {
+        "type": "str",
+        "required": false,
+        "default": "GET",
+        "enum": null
+      },
+      "data": {
+        "type": "dict",
+        "required": false,
+        "default": null,
+        "enum": null
+      },
+      "prefix": {
+        "type": "str",
+        "required": false,
+        "default": ";",
+        "enum": null
+      }
+    }
+  },
+  {
+    "name": "service_probe",
+    "category": "recon",
+    "action_level": "detect",
+    "summary": "服务探测：对指定端口抓取 banner 并解析服务名/版本（SSH/HTTP/MySQL/Redis/FTP/SMTP 等）",
+    "external_bin": null,
+    "params": {
+      "target": {
+        "type": "str",
+        "required": true,
+        "default": null,
+        "enum": null
+      },
+      "ports": {
+        "type": "list",
+        "required": true,
+        "default": null,
+        "enum": null
+      }
+    }
+  },
+  {
+    "name": "sqli_test",
+    "category": "exploit",
+    "action_level": "verify",
+    "summary": "验证 SQL 注入：sqlmap 优先，内置错误型/布尔型/时间型引擎兜底（只读探测）",
+    "external_bin": "sqlmap",
+    "params": {
+      "url": {
+        "type": "str",
+        "required": true,
+        "default": null,
+        "enum": null
+      },
+      "param": {
+        "type": "str",
+        "required": true,
+        "default": null,
+        "enum": null
+      },
+      "method": {
+        "type": "str",
+        "required": false,
+        "default": "GET",
+        "enum": null
+      },
+      "data": {
+        "type": "dict",
+        "required": false,
+        "default": null,
+        "enum": null
+      },
+      "technique": {
+        "type": "str",
+        "required": false,
+        "default": "auto",
+        "enum": [
+          "auto",
+          "error",
+          "boolean",
+          "time"
+        ]
+      }
+    }
+  },
+  {
+    "name": "terminal_start",
+    "category": "utility",
+    "action_level": "exploit",
+    "summary": "在当前任务工作目录启动后台终端程序，返回 job_id；启动成功不代表程序完成",
+    "external_bin": null,
+    "params": {
+      "argv": {
+        "type": "list",
+        "required": true,
+        "default": null,
+        "enum": null
+      },
+      "timeout": {
+        "type": "float",
+        "required": false,
+        "default": 120,
+        "enum": null
+      },
+      "target": {
+        "type": "str",
+        "required": false,
+        "default": "",
+        "enum": null
+      }
+    }
+  },
+  {
+    "name": "terminal_status",
+    "category": "utility",
+    "action_level": "detect",
+    "summary": "读取本会话后台作业的真实状态、退出码与输出尾部，可短暂等待",
+    "external_bin": null,
+    "params": {
+      "job_id": {
+        "type": "str",
+        "required": false,
+        "default": "",
+        "enum": null
+      },
+      "wait_seconds": {
+        "type": "float",
+        "required": false,
+        "default": 0,
+        "enum": null
+      }
+    }
+  },
+  {
+    "name": "terminal_stop",
+    "category": "utility",
+    "action_level": "detect",
+    "summary": "取消当前会话的指定后台作业",
+    "external_bin": null,
+    "params": {
+      "job_id": {
+        "type": "str",
+        "required": true,
+        "default": null,
+        "enum": null
+      }
+    }
+  },
+  {
+    "name": "tls_info",
+    "category": "recon",
+    "action_level": "detect",
+    "summary": "TLS 证书信息：subject/issuer/SAN/有效期/协议版本/弱套件；过期或自签名记 info 级 finding",
+    "external_bin": null,
+    "params": {
+      "target": {
+        "type": "str",
+        "required": true,
+        "default": null,
+        "enum": null
+      },
+      "port": {
+        "type": "int",
+        "required": false,
+        "default": 443,
+        "enum": null
+      }
+    }
+  },
+  {
+    "name": "weak_password_brute",
+    "category": "exploit",
+    "action_level": "exploit",
+    "summary": "对 ssh/ftp/mysql/redis/http_basic/http_form 做小规模弱口令验证，命中即产出凭据与漏洞",
+    "external_bin": null,
+    "params": {
+      "service": {
+        "type": "str",
+        "required": true,
+        "default": null,
+        "enum": [
+          "ssh",
+          "ftp",
+          "mysql",
+          "redis",
+          "http_basic",
+          "http_form"
+        ]
+      },
+      "target": {
+        "type": "str",
+        "required": true,
+        "default": null,
+        "enum": null
+      },
+      "port": {
+        "type": "int",
+        "required": false,
+        "default": null,
+        "enum": null
+      },
+      "users": {
+        "type": "list",
+        "required": false,
+        "default": null,
+        "enum": null
+      },
+      "passwords": {
+        "type": "list",
+        "required": false,
+        "default": null,
+        "enum": null
+      },
+      "username": {
+        "type": "str",
+        "required": false,
+        "default": null,
+        "enum": null
+      },
+      "password": {
+        "type": "str",
+        "required": false,
+        "default": null,
+        "enum": null
+      },
+      "form_path": {
+        "type": "str",
+        "required": false,
+        "default": null,
+        "enum": null
+      },
+      "username_field": {
+        "type": "str",
+        "required": false,
+        "default": "username",
+        "enum": null
+      },
+      "password_field": {
+        "type": "str",
+        "required": false,
+        "default": "password",
+        "enum": null
+      },
+      "success_keyword": {
+        "type": "str",
+        "required": false,
+        "default": null,
+        "enum": null
+      },
+      "threads": {
+        "type": "int",
+        "required": false,
+        "default": 2,
+        "enum": null
+      }
+    }
+  },
+  {
+    "name": "web_surface",
+    "category": "web",
+    "action_level": "detect",
+    "summary": "页面表面提取：表单 / 链接 / 参数名 / HTML 注释（可能含凭据与调试信息）/ JS 文件",
+    "external_bin": null,
+    "params": {
+      "url": {
+        "type": "str",
+        "required": true,
+        "default": null,
+        "enum": null
+      }
+    }
+  }
+]

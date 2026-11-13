@@ -71,7 +71,13 @@ trina run --target <目标> --set scope.trust_mode=restricted
 - 只有显式使用 `--approve exploit|verify|all` 或控制台 `/approve` 才会出现审批。
 - full 模式下显式开启审批仍然有效，因为这是使用者主动选择的人机闸门。
 
-## 6. 验证
+## 6. 原生二进制边界
+
+`full` 只放开授权判断，不允许二进制工具读取无关用户目录或接管任意进程。`ScopeGuard.check_workspace_path` 解析符号链接，只接受当前项目或当前任务工作区；另一个任务目录即使位于同一 runs 根目录也拒绝。GDB 不提供 attach PID，r2/GDB 只接受注册 Schema 和固定查询模板。
+
+Linux 默认 `binary.sandbox=bwrap`：项目目录只读、当前任务目录可写、其他任务目录被隐藏、网络和宿主 HOME 不挂载。隔离器不可用时返回 `SANDBOX_UNAVAILABLE`，不会自动裸奔。只有操作者显式配置 `binary.sandbox=none` 才依赖平台或容器的外层隔离；此模式仍保留路径所有权、参数、超时、进程树回收、能力租约和审计，但不构成 Trina 文件系统/网络沙箱。详细边界见[二进制工具链](BINARY_TOOLS.md)。
+
+## 7. 验证
 
 ```bash
 python -m trina guard check 8.8.8.8

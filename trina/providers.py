@@ -72,10 +72,12 @@ class ProviderProfile:
     cache_mode: str = "auto"
     cache_ttl: str = ""
     cache_features: list[str] = field(default_factory=list)
+    context_window: int = 0
 
     def validate(self) -> None:
         from .config import LLMConfig
-        LLMConfig(cache_mode=self.cache_mode, cache_ttl=self.cache_ttl, cache_features=self.cache_features).validate()
+        LLMConfig(model=self.model, base_url=self.base_url, context_window=self.context_window,
+                  cache_mode=self.cache_mode, cache_ttl=self.cache_ttl, cache_features=self.cache_features).validate()
         if not self.id.strip() or self.id != self.id.strip() or len(self.id) > 64 or any(ord(c) < 32 or ord(c) == 127 for c in self.id):
             raise ValueError("供应商名称不能为空、包含控制字符或超过 64 字")
         validate_address(self.base_url)
@@ -159,6 +161,7 @@ class ProfileStore:
         llm.reasoning_effort = item.reasoning_effort
         llm.cache_mode, llm.cache_ttl = item.cache_mode, item.cache_ttl
         llm.cache_features = list(item.cache_features)
+        llm.context_window = item.context_window
 
     def key(self, name: str, env: str) -> str:
         item = self.profiles.get(name)

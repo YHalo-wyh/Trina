@@ -148,9 +148,9 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     ]
     kv_table(rows, "基础")
 
-    binaries = installed("nmap", "nuclei", "sqlmap", "hydra", "ffuf", "gobuster", "nikto", "masscan", "docker")
+    binaries = installed("nmap", "nuclei", "sqlmap", "hydra", "ffuf", "gobuster", "nikto", "masscan", "docker", "r2", "gdb", "bwrap")
     kv_table(
-        [(name, path or "缺失（将使用内置引擎兜底）") for name, path in binaries.items()],
+        [(name, path or ("缺失（原生能力不可用）" if name in {"r2", "gdb", "bwrap"} else "缺失（将使用内置引擎兜底）")) for name, path in binaries.items()],
         "外部工具",
     )
 
@@ -174,6 +174,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
             ("后端", config.llm.backend),
             ("模型", display_model(config.llm.model, config.llm.reasoning_effort)),
             ("模型 ID", config.llm.model),
+            ("上下文窗口", f"{config.llm.effective_context_window:,}"),
             ("连通性", f"{_status_mark(ok)} {detail}"),
         ],
         "LLM",
@@ -515,6 +516,9 @@ def cmd_tool(args: argparse.Namespace) -> int:
     if args.name.startswith("terminal_"):
         out("后台终端作业属于持久 Agent 会话；请在 trina 对话或任务中调用，单次 tool 命令不持有作业。", "red")
         return 2
+    if registry.get(args.name).spec.category == "binary" and args.name != "binary_execute":
+        out("二进制会话需由持久 Agent 持有；请在 trina 控制台通过 /tool 或模型调用。", "red")
+        return 2
 
     params: dict[str, Any] = {}
     if args.params:
@@ -534,6 +538,8 @@ def cmd_tool(args: argparse.Namespace) -> int:
             params.setdefault("target", args.target)
         if "url" in tool_spec.params:
             params.setdefault("url", args.target)
+        if "path" in tool_spec.params:
+            params.setdefault("path", args.target)
 
     run_id = "tool-" + time.strftime("%Y%m%d-%H%M%S")
     audit = AuditLog.open(config.audit_dir, run_id=run_id, resume=False)
@@ -548,7 +554,10 @@ def cmd_tool(args: argparse.Namespace) -> int:
         workspace=config.workspace_dir / run_id,
         deadline=time.monotonic() + config.run.tool_timeout * 2,
     )
-    result = registry.execute(args.name, params, ctx)
+    try:
+        result = registry.execute(args.name, params, ctx)
+    finally:
+        ctx.extra["binary_sessions"].close()
     payload = {
         "tool": args.name,
         "ok": result.ok,
@@ -1110,6 +1119,10 @@ def build_parser() -> argparse.ArgumentParser:
     report_rebuild.add_argument("--state", required=True)
     report_rebuild.set_defaults(func=cmd_report)
 
+    ctfy = sub.add_parser("ctfy", help="运行 CTFY-0001 v3 托管任务（instance/qa）")
+    ctfy.add_argument("--work-dir", default="", help="含 task.json 的 CTFY 工作目录")
+    ctfy.set_defaults(func=cmd_ctfy)
+
     goal = sub.add_parser("goal", help="保存、查看或清除当前项目目标")
     goal.add_argument("goal_action", choices=("show", "set", "clear"), nargs="?", default="show")
     goal.add_argument("text", nargs="*")
@@ -1136,6 +1149,11 @@ def build_parser() -> argparse.ArgumentParser:
     serve.set_defaults(func=cmd_schedule)
 
     return parser
+
+
+def cmd_ctfy(args) -> int:
+    from .ctfy import run_ctfy
+    return run_ctfy(Path(args.work_dir or os.environ.get("CTFY_WORK_DIR") or Path.cwd()).resolve())
 
 
 def main(argv: list[str] | None = None) -> int:

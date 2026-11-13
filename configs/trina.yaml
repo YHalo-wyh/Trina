@@ -62,10 +62,25 @@ llm:
   cache_features: []
   cache_namespace: trina
   # 本地估算预算；应小于等于实际模型容量，输出和工具 Schema 另留空间。
-  context_window: 32768
+  context_window: 0  # 自动按模型；可显式填写 Token 整数
   compaction_threshold: 0.8
   context_keep_messages: 8
   state_checkpoint_interval: 16
+
+binary:
+  # Linux 默认以 bubblewrap 隔离原生 r2/GDB/ELF；仅在已有外层沙箱时显式改为 none。
+  enabled: true
+  sandbox: bwrap
+  analysis_timeout: 30
+  query_timeout: 10
+  debug_timeout: 20
+  idle_timeout: 600
+  max_file_bytes: 67108864
+  max_output_bytes: 8388608
+  max_query_items: 100
+  max_memory_bytes: 4096
+  max_r2_sessions: 2
+  max_gdb_sessions: 1
 
 run:
   workspace: "runs"

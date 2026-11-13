@@ -34,6 +34,7 @@ def status_snapshot(ctx: Any, *, step: int = 0, max_steps: int = 0, turn: int = 
                         "findings": len(state.findings), "evidence": len(state.evidence)},
         "last_observation": compact(observation),
         "background_jobs": rows,
+        "binary_sessions": ctx.extra["binary_sessions"].snapshot() if "binary_sessions" in ctx.extra else [],
     }
     state.runtime_status = snapshot
     return snapshot

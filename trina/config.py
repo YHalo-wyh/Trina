@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import copy
 import os
-from dataclasses import dataclass, field, replace
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -118,10 +118,15 @@ class LLMConfig:
     cache_features: list[str] = field(default_factory=list)
     cache_namespace: str = "trina"
     #: 保守的本地上下文预算，不代表供应商声明的模型容量。
-    context_window: int = 32768
+    context_window: int = 0  # 0 自动：DeepSeek 500K，已确认百万模型 1M
     compaction_threshold: float = 0.8
     context_keep_messages: int = 8
     state_checkpoint_interval: int = 16
+
+    @property
+    def effective_context_window(self) -> int:
+        from .model_context import default_context_window
+        return self.context_window or default_context_window(self.model, self.base_url)
 
     def validate(self) -> None:
         if self.backend not in ("openai", "replay"):
@@ -143,7 +148,7 @@ class LLMConfig:
             raise ConfigError("llm.cache_features 含未知缓存能力")
         if self.cache_ttl not in {"", "5m", "1h", "30m", "12h", "in_memory", "24h"}:
             raise ConfigError("llm.cache_ttl 无效")
-        if self.context_window <= self.max_tokens + 1024 or not 0.3 <= self.compaction_threshold <= 0.95:
+        if type(self.context_window) is not int or self.context_window < 0 or self.effective_context_window <= self.max_tokens + 1024 or not 0.3 <= self.compaction_threshold <= 0.95:
             raise ConfigError("上下文预算须大于输出预算加 1024，压缩阈值须在 [0.3,0.95] 内")
         if self.context_keep_messages < 1 or self.state_checkpoint_interval < 1:
             raise ConfigError("上下文保留消息数和状态检查点间隔必须为正整数")
@@ -171,6 +176,34 @@ class RunConfig:
     def validate(self) -> None:
         if not self.phases or any(not isinstance(item, str) or not item for item in self.phases):
             raise ConfigError("run.phases 必须是非空字符串列表")
+
+
+@dataclass
+class BinaryConfig:
+    """二进制工具的资源预算；操作系统隔离独立于目标信任模式。"""
+
+    enabled: bool = True
+    analysis_timeout: float = 30
+    query_timeout: float = 10
+    debug_timeout: float = 20
+    idle_timeout: float = 600
+    max_file_bytes: int = 64 * 1024 * 1024
+    max_output_bytes: int = 8 * 1024 * 1024
+    max_query_items: int = 100
+    max_memory_bytes: int = 4096
+    max_r2_sessions: int = 2
+    max_gdb_sessions: int = 1
+    sandbox: str = "bwrap"  # bwrap | none；none 是显式的无 OS 隔离选项
+
+    def validate(self) -> None:
+        if self.sandbox not in {"bwrap", "none"}:
+            raise ConfigError("binary.sandbox 必须为 bwrap|none")
+        import math
+        for name, value in asdict(self).items():
+            if name not in {"enabled", "sandbox"} and (type(value) not in (int, float) or not math.isfinite(value) or value <= 0):
+                raise ConfigError(f"binary.{name} 必须为正数")
+            if name.startswith("max_") and type(value) is not int:
+                raise ConfigError(f"binary.{name} 必须为正整数")
 
 
 @dataclass
@@ -266,6 +299,7 @@ class TrinaConfig:
     llm: LLMConfig = field(default_factory=LLMConfig)
     run: RunConfig = field(default_factory=RunConfig)
     tools: ToolsConfig = field(default_factory=ToolsConfig)
+    binary: BinaryConfig = field(default_factory=BinaryConfig)
     report: ReportConfig = field(default_factory=ReportConfig)
     audit: AuditConfig = field(default_factory=AuditConfig)
     policy: PolicyConfig = field(default_factory=PolicyConfig)
@@ -313,6 +347,7 @@ class TrinaConfig:
             "llm": LLMConfig,
             "run": RunConfig,
             "tools": ToolsConfig,
+            "binary": BinaryConfig,
             "report": ReportConfig,
             "audit": AuditConfig,
             "policy": PolicyConfig,
@@ -338,7 +373,7 @@ class TrinaConfig:
     @classmethod
     def _apply_env(cls, cfg: "TrinaConfig") -> "TrinaConfig":
         """`TRINA_SCOPE_EXPLOIT_LEVEL=detect` 形式的覆盖（只处理标量字段）。"""
-        for section in ("scope", "llm", "run", "report", "audit", "policy"):
+        for section in ("scope", "llm", "run", "binary", "report", "audit", "policy"):
             obj = getattr(cfg, section)
             for fname, fdef in obj.__dataclass_fields__.items():
                 env_key = f"TRINA_{section.upper()}_{fname.upper()}"
@@ -371,6 +406,7 @@ class TrinaConfig:
         self.scope.validate()
         self.llm.validate()
         self.run.validate()
+        self.binary.validate()
         self.policy.validate()
         if self.audit.dir == "":
             raise ConfigError("audit.dir 不能为空")

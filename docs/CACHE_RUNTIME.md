@@ -32,7 +32,7 @@
 
 ## 继承检查点
 
-本地默认窗口为 32768，输出预算、工具 Schema 和额外 1024 Token 余量先扣除；输入估算达到剩余额度的 80% 时触发。估算采用 UTF-8 字节数和消息开销，不宣称具有精确 tokenizer；窗口需依据实际模型容量配置。
+本地窗口默认按模型计算：DeepSeek 为 500,000；明确识别的百万窗口 GPT、Claude 与 Gemini 型号为 1,000,000；未知型号保守为 32,768。输出预算、工具 Schema 和额外 1024 Token 余量先扣除；输入估算达到剩余额度的 80% 时触发。估算采用 UTF-8 字节数和消息开销，不宣称具有精确 tokenizer；本地预算不会改变服务端容量。
 
 压缩保留首条 system、初始合同、全部已登记用户约束、当前结构化事实、证据索引及最近执行链。原生 assistant/tool_calls 与 tool 结果不得从中间切断。压缩后尽量降到触发线的 75%，减少连续重建缓存；保留链无法达到该目标时，只要求满足硬预算。
 
@@ -68,13 +68,13 @@ llm:
   cache_ttl: ""
   cache_features: []
   cache_namespace: trina
-  context_window: 32768
+  context_window: 0  # 自动；也可显式填写 500000、1000000 等 Token 数
   compaction_threshold: 0.8
   context_keep_messages: 8
   state_checkpoint_interval: 16
 ```
 
-使用 `/model` 的供应商连接后，`cache_mode`、`cache_ttl` 和 `cache_features` 随该连接一起保存、切换和编辑，旧 v2 记录缺少字段时采用 auto、空 TTL 和空能力列表。高级缓存项可在仓库外的 providers.json 中配置；现有表单编辑会保留这些字段。
+使用 `/model` 的供应商连接后，`context_window`、`cache_mode`、`cache_ttl` 和 `cache_features` 随该连接一起保存、切换和编辑，旧 v2 记录缺少字段时采用自动窗口、auto、空 TTL 和空能力列表。`/model context auto|500K|1M|Token数` 可随时修改当前连接。高级缓存项可在仓库外的 providers.json 中配置；现有表单编辑会保留这些字段。
 
 能力声明取值为 `openai_key`、`openai_retention`、`openai_options`、`anthropic_cache`。例如，已确认支持新版 OpenAI 缓存字段的中转连接可配置 `"cache_features":["openai_key","openai_options"]`；声明不适用于别的连接，不应因切换供应商而继承。
 

@@ -115,7 +115,7 @@ class ConversationContext:
                 temporary.unlink(missing_ok=True)
 
     def prepare(self, messages: list, tools=None, *, force: bool = False) -> None:
-        limit = self.config.context_window - self.config.max_tokens - 1024 - estimate_tokens(tools or [])
+        limit = self.config.effective_context_window - self.config.max_tokens - 1024 - estimate_tokens(tools or [])
         size = estimate_tokens(messages)
         self.stats.update(estimated_input_tokens=size, input_budget=limit)
         if not force and size < int(limit * self.config.compaction_threshold):

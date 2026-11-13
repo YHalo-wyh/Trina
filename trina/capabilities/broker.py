@@ -138,6 +138,7 @@ class CapabilityFabric:
             registry.capability_guidance = lease.guidance  # type: ignore[attr-defined]
             registry.capability_snapshot = lease.snapshot  # type: ignore[attr-defined]
             registry.capability_lease_id = lease.id  # type: ignore[attr-defined]
+            registry.capability_check = lease.check  # type: ignore[attr-defined]
             self._leases[lease.id] = lease
             self._worker_leases[key] = lease.id
             return lease
