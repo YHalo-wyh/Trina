@@ -73,7 +73,11 @@ ui:
 
 ### 子 Worker 面板
 
-`/subworker` 打开实时列表：名称、目标、状态在左，模型与思考档位在右，下一行显示实际请求数、工具数、Token、费用与执行时间。选择默认行后配置新任务；选择等待任务可单独修改。M 改模型 ID、T 选支持的思考强度、P 选择已保存供应商，D 回到默认行，N 新建，S 调整并发/预算，空格暂停或继续，X 停止，Enter 查看结果与证据，Esc 回主会话。主会话正在执行时 `/subworker` 输出只读列表，管理命令仍可用。
+`/subworker` 默认打开四宫格，实时显示四个任务的模型、状态、可读回复、动作摘要和工具输出；超过四个任务随选中项分页。Tab/左右切换任务，G 在列表与四格间切换，Z 放大，PageUp/PageDown 或滚轮浏览所选任务，End 回到最新，F 发送补充，C 取消所选任务，Esc 返回主会话。窄屏/短屏自动显示一个任务；原始 JSON/DSML 和隐藏思考增量不进入对话窗格。主会话执行中仍能打开观察面板，主输入草稿和历史保留。
+
+列表模式保留目标、费用、请求数、工具数、Token 与执行时间。M 改模型 ID、T 选支持的思考强度、P 选择已保存供应商；D 默认行、N 新建、S 并发与预算、空格暂停/继续、X 整场停止、Enter 查看结果。模型修改仅作用于等待任务。
+
+控制台底部不再显示“继续输入筛选命令 · ↑↓ 选择 · Tab 补全 · Enter 执行”这类教学行，命令候选菜单及补全按键保留。Commander 使用普通字重的淡紫文字，不再使用加粗底色标签。
 
 ```text
 /subworker model deepseek-chat
@@ -84,6 +88,9 @@ ui:
 /subworker thinking max queued-task
 /subworker run tasks.yaml
 /subworker inspect web
+/subworker grid
+/subworker message web 优先核验已经发现的接口
+/subworker cancel binary
 /subworker stop
 /subworker resume runs/<swarm-id>/swarm.json
 ```
@@ -91,6 +98,12 @@ ui:
 命令修改内存默认配置，持久值写入 `configs/trina.yaml` 的 `subworker` 段。支持 `workers/max_steps/max_seconds/model/reasoning_effort/profile`；空模型、档位或供应商继承主会话。`profile` 引用 `/model` 中保存的整条供应商连接，不另存 Key；选择子模型不会改写主会话或已保存供应商。清单单项可覆盖模型、档位和 profile，实际并发取配置值与主机并发上限的较小值。
 
 运行中的任务不能改模型；等待任务的配置由 Commander 在领取前原子更新，若修改时任务已启动则明确拒绝。收尾后新提交不会悄悄丢失。模型的实际传输能力仍由现有供应商适配器校验，不靠提示词模拟思考强度。取消在既有执行取消点生效，正在等待的模型网络请求可能要等传输超时。
+
+### Agent 自主委派
+
+控制台 Chat 和控制台 `/run` / `/play` 的 Commander 可使用注册工具 `worker_tasks`：`spawn` 创建独立分支，`list/result` 读取状态与证据，`wait` 最多等待 10 秒，`message` 将补充放进指定任务队列，`cancel` 请求取消指定任务。工具响应区分已接受与已完成，子任务事实不自动合并到主状态。最近 128 项结束结果可在同一控制台跨批次查询，名称需唯一；完整历史留在运行目录。
+
+系统提示词要求把可独立验证的分析/编码分支委派，说明目标、文件范围、依赖和验收；主 Agent 推进关键路径并核对子结果。没有委派宿主的单独 ChatAgent/CLI 入口明确报不可用，子 Worker 不递归创建 Worker。依赖只可引用本次任务图；跨批次使用已有结果作为候选情报，而非旧任务依赖。
 
 `/branch` 列出并选择本地分支，`/branch main` 切换，`/branch new feature/name` 创建并切换。`workspace_git` 是真实注册工具，使用当前项目和 `run_external`，Git 正常拒绝冲突时显示原错误，不使用强制覆盖。main 和其他分支使用同一组文件编辑工具；界面不在每帧启动 Git 子进程。
 

@@ -1,0 +1,47 @@
+{
+  "ok": false,
+  "scope": "当前产品 TR 需求、规范规则、实现路径、测试声明、六类交付物与白名单验证命令",
+  "deliverables": 6,
+  "requirements": 22,
+  "rules": 57,
+  "tests_referenced": 136,
+  "errors": [
+    "V-TESTS 执行失败，退出码 1"
+  ],
+  "commands": {
+    "V-COURSE": {
+      "argv": [
+        "D:\\python310\\python.exe",
+        "-X",
+        "utf8",
+        "-m",
+        "scripts.verify_course_pack"
+      ],
+      "exit_code": 0,
+      "output_tail": "课程工件检查：通过\n文档 31，要求 20，任务 8，场景 {'P': 11, 'N': 8, 'A': 7}\n测试引用 65（去重 65），本地链接 396\n检查范围为结构和引用；测试执行与人工验收需独立证据。"
+    },
+    "V-TESTS": {
+      "argv": [
+        "D:\\python310\\python.exe",
+        "-X",
+        "utf8",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests"
+      ],
+      "exit_code": 1,
+      "output_tail": "[用户] {\"schema_version\": 3, \"run_mode\": \"instance\", \"challenge\": {\"id\": \"local-fixture\"}, \"competition_id\": \"local\", \"questions\": [{\"id\": \"flag\"}], \"gated_questions\": 1, \"platform_url\": \"http://127.0.0.1:56953\", \"target_instance\": \"this-instance\"}\n（模型调用失败：上下文预算不足：用户约束、当前事实及最新请求无法完整保留；未删除历史，请调整 context_window）\n[eval] 已自动拉起 lab 靶机 127.0.0.1:50694\n.............................ssssssssss..................................................................................................................F..............................................F................................................................................................................................................................................................................................................................................................................................................................................................\n======================================================================\nFAIL: test_actual_gateway_chat_registry_submit_and_result_file (test_ctfy.CTFYTests)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"C:\\Users\\WYH\\AppData\\Local\\Temp\\trina-grid-check-20261114\\tests\\test_ctfy.py\", line 134, in test_actual_gateway_chat_registry_submit_and_result_file\n    self.assertEqual(result[\"solved\"], [\"flag\"])\nAssertionError: Lists differ: [] != ['flag']\n\nSecond list contains 1 additional elements.\nFirst extra element 0:\n'flag'\n\n- []\n+ ['flag']\n\n======================================================================\nFAIL: test_upload_not_reported_on_soft404 (test_eval_report_lab.TestScopeAwareToolBehaviour)\n软 404 靶机对任意路径都返回 200：没有上传成功证据就不能产出 file_upload 发现。\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"C:\\Users\\WYH\\AppData\\Local\\Temp\\trina-grid-check-20261114\\tests\\test_eval_report_lab.py\", line 314, in test_upload_not_reported_on_soft404\n    self.assertTrue(fake.ok, fake.error or fake.summary)\nAssertionError: False is not true : 目标不可达: ConnectionError: ('Connection aborted.', ConnectionAbortedError(10053, '你的主机中的软件中止了一个已建立的连接。', None, 10053, None))\n\n----------------------------------------------------------------------\nRan 585 tests in 98.080s\n\nFAILED (failures=2, skipped=10)"
+    },
+    "V-DIFF": {
+      "argv": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exit_code": 0,
+      "output_tail": ""
+    }
+  }
+}

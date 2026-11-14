@@ -36,6 +36,11 @@ def status_snapshot(ctx: Any, *, step: int = 0, max_steps: int = 0, turn: int = 
         "background_jobs": rows,
         "binary_sessions": ctx.extra["binary_sessions"].snapshot() if "binary_sessions" in ctx.extra else [],
     }
+    workers = ctx.extra.get("subworkers")
+    if workers is not None:
+        rows = workers.rows()
+        if rows:
+            snapshot["subworkers"] = [{key: row[key] for key in ("id", "status", "model")} for row in rows[-8:]]
     state.runtime_status = snapshot
     return snapshot
 

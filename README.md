@@ -55,6 +55,8 @@
 
 **V2 智能体群运行时**：[Swarm 使用说明](docs/SWARM.md) · `trina swarm --target http://127.0.0.1:9099 --goal "验证目标" --workers 2`
 
+控制台 `/subworker` 默认打开四宫格，G 列表/四格、Z 放大、F 补充、C 单项取消。Commander 可通过真实工具 `worker_tasks` 委派分支、查看结果与证据；模型、思考强度和供应商按任务独立绑定。
+
 自动化渗透测试 Agent：**大模型 ReAct 决策 + 全套工具封装 + 多靶场适配 + 默认完全信任 + 标准报告 + 评测框架**。
 
 ```bash

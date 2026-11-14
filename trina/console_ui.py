@@ -180,7 +180,7 @@ COMMANDS: tuple[CommandSpec, ...] = (
                 positional_choices=tuple(ChoiceSpec(key, value[0]) for key, value in WORKER_ROLES.items())),
     CommandSpec("subworker", "并行任务", "子 Worker 面板、模型与思考强度、并发和任务管理", "subworker [操作] [参数]",
                 positional_choices=tuple(ChoiceSpec(k, v) for k, v in (("start", "名称 目标 任务：启动"), ("run", "从 YAML 任务图启动"),
-                    ("add", "追加并行任务"), ("list", "查看任务"), ("inspect", "查看结果与证据"), ("model", "设置子模型 ID"),
+                    ("add", "追加并行任务"), ("grid", "四宫格实时对话"), ("list", "查看任务"), ("message", "给指定任务补充"), ("cancel", "取消指定任务"), ("inspect", "查看结果与证据"), ("model", "设置子模型 ID"),
                     ("thinking", "设置思考强度"), ("provider", "选择已保存供应商"), ("settings", "并发、步数、超时"),
                     ("pause", "暂停"), ("continue", "继续"), ("stop", "停止与回收"), ("resume", "恢复 Swarm 检查点"))),
                 examples=("/subworker", "/subworker start audit localhost 检查服务", "/subworker thinking high", "/subworker model deepseek-flash", "/subworker run tasks.yaml")),
@@ -583,7 +583,7 @@ class EnhancedConsoleInput:
             "border": THEME["violet"], "rail": THEME["violet"],
             "usage": THEME["muted"], "usage.value": THEME["lilac"],
             "context.model": THEME["rose"], "context.path": THEME["lilac"],
-            "context.role": "bg:" + THEME["selected"] + " " + THEME["rose"] + " bold",
+            "context.role": THEME["lilac"],
             "context.branch": THEME["muted"],
             "context.cache": "#a9d9d1", "context.tokens": THEME["lilac"],
             "context.workers": "bold " + THEME["rose"],
@@ -888,7 +888,8 @@ class EnhancedConsoleInput:
                 call = lambda: self._handler(text)
                 command = text.strip().lstrip("/").split(maxsplit=1)[0] if text.strip() else ""
                 # 模型表单暂时接管终端，结束后恢复同一内容区和未提交输入。
-                keep = await run_in_terminal(call, in_executor=True) if command in {"model", "resume", "worker", "subworker", "branch", "footer"} and not self.running() else await run_in_executor_with_context(call)
+                modal = command in {"model", "resume", "worker", "subworker", "branch", "footer"} and (not self.running() or command == "subworker")
+                keep = await run_in_terminal(call, in_executor=True) if modal else await run_in_executor_with_context(call)
                 if not keep:
                     self.app.exit()
                     return
@@ -917,7 +918,8 @@ class EnhancedConsoleInput:
         self.dismissed = False
 
     def _hint(self) -> str:
-        return command_hint(self.buffer.text)
+        # 选项菜单保留，固定的操作教学不再占据输入框和模型栏之间的一行。
+        return ""
 
     def _items(self):
         if not self.buffer.text.startswith("/"):
@@ -945,7 +947,8 @@ class EnhancedConsoleInput:
         for index, item in list(enumerate(items))[start:start + limit]:
             result.extend([("class:selected" if index == selected else "class:index",
                             f"  {index + 1:02d}  {clean_text(item.display_text):<24} {clean_text(item.display_meta_text)}"), ("", "\n")])
-        result.append(("class:hint", f"  {len(items)} 项 · ↑↓ 选择 · Tab 填入 · Enter 确认 · Esc 收起"))
+        if result:
+            result.pop()  # 去掉最后一项换行，不再附加选择/补全教学行。
         return result
 
     def read(self) -> str:

@@ -820,12 +820,13 @@ class Console:
         from .swarm import TaskSpec, load_manifest, task_llm
         from .model_ui import ModelManager
         from .console_ui import select_option
-        interactive = self._input is None and not self._custom_output and enhanced_input_available() and not self.session.running
-        if not args and interactive:
+        interactive = self._input is None and not self._custom_output and enhanced_input_available()
+        if interactive and (not args or args[0] in {"grid", "list"}):
             from .subworker_ui import show_subworkers
             notice = ""
+            view = args[0] if args else "grid"
             while True:
-                selected = show_subworkers(self.subworkers, self.config, notice=notice)
+                selected = show_subworkers(self.subworkers, self.config, notice=notice, view=view)
                 notice = ""
                 if selected is None:
                     return
@@ -838,6 +839,12 @@ class Console:
                         target = ModelManager._ask("目标或附件路径")
                         goal = ModelManager._ask("任务目标")
                         self._cmd_subworker(["add" if self.subworkers.running else "start", name, target, goal])
+                    elif action == "message" and task_id:
+                        text = ModelManager._ask("给 " + task_id + " 的补充")
+                        if text:
+                            self.subworkers.task_control(task_id, "message", text)
+                    elif action == "cancel" and task_id:
+                        self.subworkers.task_control(task_id, "cancel")
                     else:
                         self._cmd_subworker([action, task_id] if task_id and action == "inspect" else [action])
                         if action == "inspect":
@@ -847,7 +854,7 @@ class Console:
             return
         action = args[0] if args else "list"
         values = args[1:]
-        if action == "list":
+        if action in {"list", "grid"}:
             rows = self.subworkers.rows()
             self._display(render_panel("Subworkers", rows=[
                 (item["id"], f"{item['status']} · {item['model']} · {item['reasoning_effort']}\n{item['goal']}") for item in rows
@@ -888,6 +895,11 @@ class Console:
         elif action in {"stop", "pause", "continue"}:
             self.subworkers.control(action)
             self._emit({"stop": "正在停止并回收执行资源", "pause": "已请求暂停", "continue": "已继续"}[action], prefix="Subworker")
+        elif action in {"message", "cancel"}:
+            if not values or (action == "message" and len(values) < 2):
+                raise ValueError("/subworker message <名称> <补充>；/subworker cancel <名称>")
+            self.subworkers.task_control(values[0], action, " ".join(values[1:]))
+            self._emit("补充已入队" if action == "message" else "已请求取消指定任务", prefix="Subworker")
         elif action == "inspect":
             if len(values) != 1:
                 raise ValueError("/subworker inspect <任务名称>")
@@ -1303,6 +1315,8 @@ class Console:
                 on_event=self._on_runtime_event,
             )
             self.chat.worker_role = self._active_worker
+        self.chat.ctx.extra["subworkers"] = self.subworkers
+        self.chat.ctx.extra["subworker_backend_factory"] = self._backend_factory
         return self.chat
 
     def _on_chat_stream(self, text: str, final: bool) -> None:
@@ -1541,6 +1555,7 @@ class Console:
                     log=self._agent_log,
                     on_step=self._on_step,
                     on_event=self._on_runtime_event,
+                    shared_context={"subworkers": self.subworkers, "subworker_backend_factory": self._backend_factory},
                 )
                 self._last_state = state
                 self.session.state = state

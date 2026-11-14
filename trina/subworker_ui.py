@@ -44,7 +44,65 @@ def render_workers(rows: list[dict[str, Any]], width: int, selected: int, *, now
     return out
 
 
-def show_subworkers(manager, config, *, notice: str = ""):
+def render_grid(manager, width: int, height: int, selected: int, *, scroll: int = 0, zoom: bool = False):
+    """有界四宫格；每格只绘制可见物理行，小窗口自动显示所选任务。"""
+    width, height = max(1, width), max(1, height)
+    if width < 4 or height < 3:
+        return [("class:dim", _fit_cells("Worker", width))]
+    rows = manager.rows()
+    wide = width >= 96 and height >= 16 and not zoom
+    columns, per_page = (2, 4) if wide else (1, 1)
+    selected = max(0, min(selected, max(0, len(rows) - 1)))
+    start = selected // per_page * per_page
+    box_width = (width - 1) // 2 if wide else width
+    box_height = height // 2 if wide else height
+    inner = max(1, box_width - 2)
+    result = []
+    def pad(text):
+        fitted = _fit_cells(text, inner)
+        return fitted + " " * max(0, inner - _cells(fitted))
+    def panel(index):
+        focused = index == selected
+        border = "class:focusborder" if focused else "class:rail"
+        row = rows[index] if index < len(rows) else None
+        title = (f" {index + 1} {row['id']} · {STATUS.get(row['status'], ('', row['status']))[1]} " if row else " 空闲 ")
+        title = _fit_cells(title, inner)
+        lines = [[(border, "┌" + title + "─" * max(0, inner - _cells(title)) + "┐")]]
+        if row:
+            model = f"{row['model']} ◦ {row['reasoning_effort'] or 'default'}"
+            text = manager.dialog_lines(row["id"], inner)
+            available = max(1, box_height - 4)
+            offset = min(max(0, scroll), max(0, len(text) - available)) if focused else 0
+            end = max(0, len(text) - offset)
+            body = text[max(0, end - available):end]
+            if not body:
+                body = [("过程", row.get("activity") or ("等待依赖或空闲 Worker" if row["status"] == "pending" else row["goal"]))]
+            body = [("模型", model), *body]
+            stats = [f"{_number(row[key])} {label}" for key, label in (("calls", "req"), ("tools", "tools"), ("tokens", "tok")) if key in row]
+            if stats:
+                body.append(("状态", " · ".join(stats)))
+        else:
+            body = [("过程", "等待 Commander 分配任务")]
+        for kind, text in body[:max(0, box_height - 2)]:
+            tone = "class:model" if kind == "模型" else "class:name" if kind in {"回复", "输出"} else "class:dim"
+            lines.append([(border, "│"), (tone, pad(text)), (border, "│")])
+        while len(lines) < max(1, box_height - 1):
+            lines.append([(border, "│"), ("", " " * inner), (border, "│")])
+        if box_height >= 2:
+            lines.append([(border, "└" + "─" * inner + "┘")])
+        return lines
+    for band in range(2 if wide else 1):
+        panes = [panel(start + band * columns + col) for col in range(columns)]
+        for line in range(box_height):
+            for col, pane in enumerate(panes):
+                if col:
+                    result.append(("", " "))
+                result.extend(pane[line])
+            result.append(("", "\n"))
+    return result
+
+
+def show_subworkers(manager, config, *, notice: str = "", view: str = "grid"):
     from prompt_toolkit import Application
     from prompt_toolkit.key_binding import KeyBindings
     from prompt_toolkit.layout import HSplit, Layout, Window
@@ -55,6 +113,7 @@ def show_subworkers(manager, config, *, notice: str = ""):
     from .swarm import task_llm
 
     selected = [0 if manager.rows() else -1]
+    mode, zoom, scroll = [view], [False], [0]
     llm = task_llm(config)
     def width():
         return max(1, app.output.get_size().columns - 2)
@@ -68,6 +127,8 @@ def show_subworkers(manager, config, *, notice: str = ""):
     def content():
         rows = manager.rows()
         selected[0] = min(selected[0], len(rows) - 1)
+        if mode[0] == "grid":
+            return render_grid(manager, width(), max(1, app.output.get_size().rows - 7 - int(bool(notice))), selected[0], scroll=scroll[0], zoom=zoom[0])
         return render_workers(rows, width(), selected[0], count=max(1, (app.output.get_size().rows - 7) // 3))
 
     bindings = KeyBindings()
@@ -77,6 +138,39 @@ def show_subworkers(manager, config, *, notice: str = ""):
     @bindings.add("down")
     def down(event):
         selected[0] = min(len(manager.rows()) - 1, selected[0] + 1)
+        scroll[0] = 0
+    @bindings.add("tab")
+    @bindings.add("right")
+    def next_worker(event):
+        selected[0] = (selected[0] + 1) % max(1, len(manager.rows()))
+        scroll[0] = 0
+    @bindings.add("left")
+    def previous_worker(event):
+        selected[0] = max(0, selected[0] - 1)
+        scroll[0] = 0
+    @bindings.add("g")
+    def toggle(event):
+        mode[0] = "list" if mode[0] == "grid" else "grid"
+    @bindings.add("z")
+    def focus(event):
+        zoom[0] = not zoom[0]
+    @bindings.add("pageup")
+    def older(event):
+        rows = manager.rows()
+        if not rows:
+            return
+        height = max(1, app.output.get_size().rows - 7 - int(bool(notice)))
+        wide = width() >= 96 and height >= 16 and not zoom[0]
+        inner = max(1, ((width() - 1) // 2 if wide else width()) - 2)
+        available = max(1, (height // 2 if wide else height) - 4)
+        maximum = max(0, len(manager.dialog_lines(rows[max(0, selected[0])]["id"], inner)) - available)
+        scroll[0] = min(maximum, scroll[0] + 3)
+    @bindings.add("pagedown")
+    def newer(event):
+        scroll[0] = max(0, scroll[0] - 3)
+    @bindings.add("end")
+    def latest(event):
+        scroll[0] = 0
     @bindings.add("d")
     def default(event):
         selected[0] = -1
@@ -93,21 +187,32 @@ def show_subworkers(manager, config, *, notice: str = ""):
                 return
             event.app.exit(result=(name, task))
         return dispatch
-    for key, name in (("m", "model"), ("t", "thinking"), ("p", "provider"), ("enter", "inspect")):
+    for key, name in (("m", "model"), ("t", "thinking"), ("p", "provider"), ("enter", "inspect"), ("f", "message"), ("c", "cancel")):
         bindings.add(key)(action(name, with_task=True))
     for key, name in (("n", "new"), ("s", "settings"), ("x", "stop"), ("space", "continue" if manager.runtime and manager.runtime.pause_event.is_set() else "pause")):
         bindings.add(key)(action(name))
-    body = FormattedTextControl(content, focusable=True, show_cursor=False)
+    class DashboardControl(FormattedTextControl):
+        def mouse_handler(self, event):
+            from prompt_toolkit.mouse_events import MouseEventType
+            if event.event_type == MouseEventType.SCROLL_UP:
+                older(None)
+            elif event.event_type == MouseEventType.SCROLL_DOWN:
+                newer(None)
+            else:
+                return NotImplemented
+            app.invalidate()
+            return None
+    body = DashboardControl(content, focusable=True, show_cursor=False)
     app = Application(layout=Layout(HSplit([
         Window(FormattedTextControl(header), height=2, wrap_lines=False),
         Window(FormattedTextControl(defaults), height=1, wrap_lines=False),
         Window(FormattedTextControl(lambda: [("class:rail", "─" * width())]), height=1),
         Window(body, wrap_lines=False),
         Window(FormattedTextControl(lambda: [("class:title", _fit_cells(notice, width()))]), height=1 if notice else 0, wrap_lines=False),
-        Window(FormattedTextControl(lambda: [("class:dim", _fit_cells(" ↑↓ 选择 · M 模型 · T 思考 · P 供应商 · D 默认 · N 新建 · S 并发 · Space 暂停/继续 · X 停止 · Enter 详情 · Esc 返回", width()))]), height=1),
+        Window(FormattedTextControl(lambda: [("class:dim", _fit_cells(" Tab 切换 · G 列表/四格 · Z 放大 · PgUp/Dn 历史 · F 补充 · C 取消 · M 模型 · T 思考 · N 新建 · Esc 返回", width()))]), height=1),
     ]), focused_element=body), key_bindings=bindings, full_screen=True, erase_when_done=True,
         refresh_interval=.25, min_redraw_interval=1 / 60, max_render_postpone_time=.01,
-        color_depth=ColorDepth.DEPTH_24_BIT,
+        color_depth=ColorDepth.DEPTH_24_BIT, mouse_support=True,
         style=Style.from_dict({"title": "bold " + THEME["rose"], "chosen": "bold " + THEME["rose"],
-                              "name": THEME["text"], "model": THEME["lilac"], "dim": THEME["muted"], "rail": THEME["violet"]}))
+                              "name": THEME["text"], "model": THEME["lilac"], "dim": THEME["muted"], "rail": THEME["violet"], "focusborder": THEME["rose"]}))
     return _low_latency_keys(app).run()

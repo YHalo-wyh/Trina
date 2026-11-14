@@ -421,6 +421,9 @@ class LabHTTPHandler(BaseHTTPRequestHandler):
                         {"Content-Disposition": f'attachment; filename="{name}"'},
                     )
             else:
+                if self.command == "POST":
+                    # 读完未知路由的请求体，避免 Windows 在关闭连接时丢弃响应并发送 RST。
+                    self._read_body()
                 self._soft_404()
         except BrokenPipeError:
             pass

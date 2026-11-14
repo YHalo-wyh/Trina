@@ -7,6 +7,8 @@
 
 ## 1. 目标与验收
 
+2026-11-14 四格更新：去除底部教学行和加粗角色，新增 Commander `worker_tasks` 实际委派与回收、单任务消息/取消、四格对话/列表/聚焦/分页和有界历史缓存。验收 `tests/test_worker_dashboard.py`；保留活动完整会话接管、跨运行经验库和总费用硬预算为后续范围。
+
 2026-11-14 补充：`/subworker` 任务面板及后台 Swarm 已接通，支持逐任务模型/思考档位、配置优先级、等待任务修改、队列追加、取消和恢复。底栏缓存与模型/轮次同排。验收 `tests/test_subworkers.py`；真实 HTTP 流夹具与真实终端执行验证接口和资源行为，不代替在线模型收益评估。活动 Worker 的完整对话接管、自动文件冲突处理和整场硬费用预算仍未完成。
 
 2026-11-14 的 0.4.0 增加可配置单行底栏、当前角色、独立交互 Worker 切换、Git 分支工具和字符首页流光。验证入口为 `tests/test_console_v040.py`、`tests/test_console_session.py`、`tests/test_banner.py`；后续保留 Swarm 活跃 Worker 接管和真实多终端体感评测，不将交互会话角色切换计作并行任务接管。

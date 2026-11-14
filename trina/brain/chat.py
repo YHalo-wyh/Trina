@@ -324,7 +324,7 @@ class ChatAgent:
         """固定 system 与初始运行合同只写一次，后续严格追加，稳定缓存前缀。"""
         if self._messages_ready:
             return
-        tool_block = self.registry.prompt_block()
+        tool_block = self.registry.prompt_block(exclude=() if self.ctx.extra.get("subworkers") else ("worker_tasks",))
         from .prompts import build_runtime_context
         from .binary_prompt import role_for_registry
         role = role_for_registry(self.registry, self.config.llm.role_profile)
@@ -370,7 +370,7 @@ class ChatAgent:
                                                turn=self.turns, observation=last_observation))
         # 动态状态作为新的 user 消息追加；绝不重写 system 或把历史压成角色标签字符串。
         self._messages.append({"role": "user", "content": "\n\n".join(runtime_parts)})
-        tool_payload = tool_schemas(self.registry) if self._native_tools_enabled() else None
+        tool_payload = tool_schemas(self.registry, exclude=() if self.ctx.extra.get("subworkers") else ("worker_tasks",)) if self._native_tools_enabled() else None
         from ..events import ModelEventStream
         self._message_id = uuid.uuid4().hex
         self._pending_stream = _VisibleStream(self._visible_update)

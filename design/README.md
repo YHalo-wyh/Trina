@@ -15,6 +15,8 @@
 
 子 Worker 面板：[ADR-0029](adr/0029-subworker-console-and-model-binding.md) 记录后台 Swarm、逐任务模型/思考配置、跨线程提交、取消终态和同排缓存统计。
 
+Commander 委派与四格：[ADR-0030](adr/0030-commander-delegation-and-live-grid.md) 记录真实委派工具、定向补充与取消、事件对话投影和四格脏缓存。
+
 统一运行事件与工具窗口：[ADR-0027](adr/0027-unified-runtime-events.md) 记录事务事件流、实时事实调度、游标确认、重放续流及恢复边界；协议见[统一运行事件](../docs/EVENTS.md)。
 
 原生二进制与模型窗口：[ADR-0026](adr/0026-native-binary-runtime-and-model-windows.md) 记录 r2/GDB 受控会话、CTFY 权威提交和 DeepSeek 500K / 已确认模型 1M 的可配置预算。

@@ -196,6 +196,12 @@
           "level": "MUST",
           "statement": "缓存命中和 Token 必须位于模型/轮次右侧同一行，不占用下面一行；缺失用量不伪造，1–200 列不得超宽。",
           "tests": ["tests.test_subworkers.SubworkerTests.test_footer_metrics_share_one_row_and_survive_resize"]
+        },
+        {
+          "id": "TR-03-R08",
+          "level": "MUST",
+          "statement": "固定补全教学行必须隐藏且保留候选；角色普通字重。四格支持分页、聚焦和窄屏，稳定对话缓存不得因其他任务更新重排；原始模型协议不得作为可见对话。",
+          "tests": ["tests.test_worker_dashboard.WorkerDashboardTests.test_ui_hides_hint_and_normal_weight_role_and_keeps_grid_keyboard", "tests.test_worker_dashboard.WorkerDashboardTests.test_grid_layout_pages_resize_zoom_and_reuses_unchanged_dialog", "tests.test_worker_dashboard.WorkerDashboardTests.test_live_projection_ignores_raw_model_protocol_and_tracks_final_output"]
         }
       ]
     },
@@ -548,6 +554,18 @@
           "level": "MUST",
           "statement": "子 Worker 面板键盘操作必须对应选中任务；真实工具经统一执行链，停止不能标记完成，取消或超时依赖不得解锁后继任务。",
           "tests": ["tests.test_subworkers.SubworkerTests.test_subworker_panel_keyboard_targets_selected_worker", "tests.test_subworkers.SubworkerTests.test_cross_thread_submission_configure_dedup_and_cancellation", "tests.test_subworkers.SubworkerTests.test_timeout_and_backend_error_do_not_complete_or_deadlock_dependents", "tests.test_subworkers.SubworkerTests.test_real_replay_workers_execute_in_independent_directories"]
+        },
+        {
+          "id": "TR-17-R03",
+          "level": "MUST",
+          "statement": "Commander 的委派必须通过注册工具与真实执行链，区分接收和完成；子事实不自动写入主状态。历史结果可查询，显示恢复不得重新执行或累计用量；无宿主时拒绝递归委派。",
+          "tests": ["tests.test_worker_dashboard.WorkerDashboardTests.test_registered_delegation_executes_real_child_terminal_and_reads_result", "tests.test_worker_dashboard.WorkerDashboardTests.test_worker_tool_without_host_refuses_recursion_and_old_results_survive_new_run"]
+        },
+        {
+          "id": "TR-17-R04",
+          "level": "MUST",
+          "statement": "定向消息和取消必须由 Commander 处理，补充进入该任务原有 steer 队列，单任务取消不得设置整场停止信号或取消其他任务。",
+          "tests": ["tests.test_worker_dashboard.WorkerDashboardTests.test_targeted_cancel_and_message_do_not_stop_sibling"]
         }
       ]
     },

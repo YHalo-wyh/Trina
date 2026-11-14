@@ -143,6 +143,7 @@ def run_plan(
     log: Callable[[str], None] = print,
     on_step: Callable[[Any], None] | None = None,
     on_event: Callable[[Any], None] | None = None,
+    shared_context: dict[str, Any] | None = None,
 ) -> Any:
     """按计划跑一轮，返回 `RunState`（可选写报告）。"""
     from .brain import PentestAgent
@@ -165,6 +166,7 @@ def run_plan(
         stop_event=stop_event,
         pause_event=pause_event,
         controller=controller,
+        shared_context=shared_context,
     )
     state = agent.run(
         plan.target,

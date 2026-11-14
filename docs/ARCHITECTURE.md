@@ -120,6 +120,7 @@ flowchart TB
 | `trina.console_state` | `ConsoleContext`、`ConsoleState`、`TrackedBackend` | 底栏读取当前运行模型、目录、短会话名和步骤；横线展示最近一次当前输入量相对上下文窗口的占用，累计 Token 另行统计；跨模型累计、建新会话清零，未知用量不伪造，不修改提示词、动作、授权或后端账本 |
 | `trina.worker_roles` / `Console._cmd_worker` | `WORKER_ROLES`、角色会话 ID 表 | 交互 Worker 各自独立 ChatAgent，切换通过已有持久历史恢复，角色随聊天快照保存；运行中不切换，Swarm 执行调度保持独立入口 |
 | `trina.subworkers` / `trina.subworker_ui` | `Subworkers.start/add/configure/control`、`/subworker` | 后台复用 Swarm；主会话不阻塞；每任务模型/思考强度与供应商引用独立，等待任务可修改，运行任务冻结；UI 只读取事件驱动的小型投影 |
+| `WorkerTasks` / 四格对话投影 | `worker_tasks`、`render_grid`、`Subworkers.dialog_lines` | Commander 工具委派/回收/定向补充与取消，四格仅投影可见事件，按任务和宽度缓存；历史恢复无执行副作用 |
 | `SwarmRuntime.submit_task/configure_task` | 命令队列 + Future | 控制台跨线程只提交，Commander 单线程修改任务图；收尾拒绝迟到提交，取消不记成功；配置相同的闲置后端优先复用，快照固定模型身份 |
 | `trina.config.UIConfig` | `status_line_preset/status_line_separator/context_bar/motion` | 分段单行底栏；角色优先，窄屏收起次要指标；首页动画只更新等待输入的唯一字标块，提交后冻结 |
 | `trina.console_ui` | `EnhancedConsoleInput.run/write/update_stream/update_tool` | 持续全屏内容区与固定底部输入、索引和用量；正文增量与工具窗口原位更新，保留输入草稿；模型表单临时接管终端后恢复 |

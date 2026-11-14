@@ -301,7 +301,8 @@ class PentestAgent:
             )
         # ---- 协议：原生 Tool Calling 与 JSON Action 共用同一条执行链 ----
         native_mode = self._native_tools_enabled()
-        tool_payload: list[dict[str, Any]] | None = tool_schemas(self.registry) if native_mode else None
+        hidden_tools = () if ctx.extra.get("subworkers") else ("worker_tasks",)
+        tool_payload: list[dict[str, Any]] | None = tool_schemas(self.registry, exclude=hidden_tools) if native_mode else None
         if native_mode:
             audit.append(
                 "protocol.native", decision="allow", tools=len(tool_payload or []),
@@ -314,7 +315,7 @@ class PentestAgent:
         if bool(getattr(self.config.llm, "prompt_layers", False)):
             layers = build_prompt_layers(
                 self.config.scope_prompt_block(),
-                self.registry.prompt_block(),
+                self.registry.prompt_block(exclude=hidden_tools),
                 extra_rules,
                 policy_block,
                 role_profile=role,
@@ -327,13 +328,13 @@ class PentestAgent:
         else:
             system_prompt = build_system_prompt(
                 self.config.scope_prompt_block(),
-                self.registry.prompt_block(),
+                self.registry.prompt_block(exclude=hidden_tools),
                 extra_rules,
                 include_hypothesis=use_ledger,
             )
             runtime_context = build_runtime_context(
                 self.config.scope_prompt_block(),
-                self.registry.prompt_block(),
+                self.registry.prompt_block(exclude=hidden_tools),
                 extra_rules,
                 include_hypothesis=use_ledger,
             ) + ("\n\n# 已注册检查项\n" + policy_block if policy_block else "")

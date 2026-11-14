@@ -162,6 +162,24 @@ class WorkerPool:
             worker.completed += 1
 
 
+class _TaskStop:
+    """将整场停止与当前任务停止合成 Agent 已有的 Event 接口。"""
+    def __init__(self, global_event, local_event):
+        self.global_event, self.local_event = global_event, local_event
+
+    def is_set(self):
+        return self.global_event.is_set() or self.local_event.is_set()
+
+    def wait(self, timeout=None):
+        end = time.monotonic() + timeout if timeout is not None else None
+        while not self.is_set():
+            remaining = end - time.monotonic() if end is not None else .05
+            if remaining <= 0:
+                return False
+            self.local_event.wait(min(.05, remaining))
+        return True
+
+
 def validate_tasks(tasks: list[TaskSpec]) -> None:
     """拒绝非法依赖、环和等价任务；能力是否存在由运行时 Catalog 判定。"""
     ids = {task.id for task in tasks}
@@ -303,6 +321,8 @@ class SwarmRuntime:
         self.pool = WorkerPool(config, max_workers, backend_factory=backend_factory)
         self.executor = executor or self._execute_agent
         self.stop_event = threading.Event()
+        self._task_stops = {task.id: threading.Event() for task in tasks}
+        self._task_steers = {task.id: queue.Queue() for task in tasks}
         self.pause_event = threading.Event()
         self.on_update: Callable[[dict[str, Any]], None] | None = None
         self.on_progress: Callable[[Any], None] | None = None
@@ -350,6 +370,8 @@ class SwarmRuntime:
         tasks = [TaskSpec.from_dict(item) for item in data["tasks"]]
         validate_tasks(tasks)
         runtime.tasks = tasks
+        runtime._task_stops = {task.id: threading.Event() for task in tasks}
+        runtime._task_steers = {task.id: queue.Queue() for task in tasks}
         runtime._task_llms = {task.id: task_llm(config, task) for task in tasks}
         runtime.records = {task.id: TaskRecord() for task in tasks}
         runtime._commander_events.cursor = int(data.get("commander_cursor", 0))
@@ -389,6 +411,8 @@ class SwarmRuntime:
             del self.records[task.id]
             return False
         self._task_llms[task.id] = llm
+        self._task_stops[task.id] = threading.Event()
+        self._task_steers[task.id] = queue.Queue()
         self.records[task.id].model, self.records[task.id].reasoning_effort = llm.model, llm.reasoning_effort
         self.records[task.id].profile = llm.profile
         self.audit.append("swarm.task.add", task=task.id, depends_on=task.depends_on)
@@ -401,6 +425,9 @@ class SwarmRuntime:
 
     def configure_task(self, task_id: str, **overrides: str) -> Future[bool]:
         return self._submit((task_id, overrides))
+
+    def control_task(self, task_id: str, action: str, text: str = "") -> Future[bool]:
+        return self._submit((task_id, {"_control": action, "text": text}))
 
     def _submit(self, command: Any) -> Future[bool]:
         result: Future[bool] = Future()
@@ -425,6 +452,28 @@ class SwarmRuntime:
                     raise RuntimeError("Subworker 已停止接收任务")
                 if isinstance(task, tuple):
                     task_id, overrides = task
+                    if "_control" in overrides:
+                        record = self.records.get(task_id)
+                        if record is None or record.status not in {"pending", "running"}:
+                            raise ValueError("任务不存在或已结束")
+                        action, text = overrides["_control"], overrides.get("text", "")
+                        if action == "message":
+                            if not text.strip() or len(text) > 8000:
+                                raise ValueError("补充必须为 1..8000 字")
+                            self._task_steers[task_id].put(text)
+                        elif action == "cancel":
+                            self._task_stops[task_id].set()
+                            if record.status == "pending":
+                                record.status, record.error = "cancelled", "用户取消，尚未执行"
+                                self.coordination.terminate_unclaimed(task_id, record.status, record.error)
+                        else:
+                            raise ValueError("未知任务控制")
+                        self.audit.append("swarm.task." + action, task=task_id, text=text)
+                        self.event_bus.publish("task.message" if action == "message" else "task.cancel_requested",
+                                               source="commander", task_id=task_id, text=text)
+                        self._save()
+                        result.set_result(True)
+                        continue
                     if set(overrides) - {"model", "reasoning_effort", "profile"}:
                         raise ValueError("只能调整模型、思考强度和供应商")
                     if task_id not in self.records or self.records[task_id].status != "pending":
@@ -478,6 +527,8 @@ class SwarmRuntime:
         from .tools.workspace import TOOLS as WORKSPACE_TOOLS
 
         for tool in [*COORDINATION_TOOLS, *WORKSPACE_TOOLS]:
+            if tool.spec.name == "worker_tasks":
+                continue  # 委派宿主只属于 Commander，不向普通 Worker 加载递归分工 schema。
             if lease.registry.get(tool.spec.name) is None:
                 lease.registry.register(tool)
         return lease.registry
@@ -532,7 +583,8 @@ class SwarmRuntime:
             worker_config,
             backend=worker.backend,
             registry=registry,
-            stop_event=self.stop_event,
+            stop_event=_TaskStop(self.stop_event, self._task_stops[task.id]),
+            steer_queue=self._task_steers[task.id],
             pause_event=self.pause_event,
             shared_context={"coordination_runtime": self.coordination, "intent_id": task.id},
             event_bus=self.event_bus,
@@ -650,7 +702,7 @@ class SwarmRuntime:
                     self.coordination.publish_state(event.task_id, state, include_steps=False)
             elif event.kind == "tool.finished":
                 self.coordination.observe_tool(event)
-            if self.on_progress is not None and event.kind in {"tool.finished", "model.finished"}:
+            if self.on_progress is not None and event.kind in {"tool.started", "tool.output", "tool.finished", "model.started", "model.finished", "model.error", "model.retry", "assistant.message", "react.action"}:
                 try:
                     self.on_progress(event)
                 except Exception as exc:

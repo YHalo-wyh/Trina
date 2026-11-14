@@ -68,4 +68,70 @@ class SharedTraceGet(Tool):
         return ToolResult(summary=f"读取 Intent {intent_id} 的 {len(rows)} 条记录", data={"trace": rows})
 
 
-TOOLS = [SharedContext(), SharedTraceSearch(), SharedTraceGet()]
+class WorkerTasks(Tool):
+    """Commander 的异步委派工具；没有宿主会话时明确不可用。"""
+    spec = ToolSpec(
+        name="worker_tasks", category="delegation", action_level="exploit",
+        summary="向独立 Worker 委派分支；查看结果、最多等待10秒、发送补充或取消指定任务。启动不等于完成",
+        params={
+            "action": ParamSpec("str", "操作", enum=["spawn", "list", "result", "wait", "message", "cancel"]),
+            "task_id": ParamSpec("str", "唯一任务名称", required=False, default=""),
+            "target": ParamSpec("str", "目标或附件路径", required=False, default=""),
+            "goal": ParamSpec("str", "完整任务：文件范围、验收与停止条件", required=False, default=""),
+            "depends_on": ParamSpec("list", "依赖的任务名称", required=False, default=[]),
+            "model": ParamSpec("str", "空则继承子模型设置", required=False, default=""),
+            "reasoning_effort": ParamSpec("str", "空则继承；实际支持档位由模型校验", required=False, default=""),
+            "profile": ParamSpec("str", "已保存供应商名称", required=False, default=""),
+            "text": ParamSpec("str", "给指定任务的补充", required=False, default=""),
+            "wait_seconds": ParamSpec("float", "有界等待秒数，最多10", required=False, default=1),
+        },
+    )
+
+    def required_level(self, params):
+        return "detect" if params.get("action") in {"list", "result", "wait"} else "exploit"
+
+    def run(self, ctx, action, task_id="", target="", goal="", depends_on=None, model="", reasoning_effort="", profile="", text="", wait_seconds=1):
+        manager = ctx.extra.get("subworkers")
+        if manager is None:
+            return ToolResult(ok=False, error="此入口没有 Commander 委派宿主；不可递归创建子 Worker")
+        try:
+            if action == "spawn":
+                from ..swarm import TaskSpec
+                from ..llm import make_backend
+                if not task_id or not target or not goal.strip() or len(goal) > 12000:
+                    raise ValueError("spawn 必须提供 task_id、target 和不超过12000字的完整 goal")
+                budget = ctx.config.subworker
+                task = TaskSpec(task_id, target, goal, depends_on=tuple(depends_on or ()),
+                                max_steps=budget.max_steps, max_seconds=budget.max_seconds,
+                                model=model, reasoning_effort=reasoning_effort, profile=profile)
+                accepted = manager.submit(ctx.config, task, backend_factory=ctx.extra.get("subworker_backend_factory") or make_backend)
+                return ToolResult(summary="已接收委派，尚未完成" if accepted else "等价任务已存在，未重复执行",
+                                  data={"accepted": accepted, "task_id": task_id if accepted else next(
+                                      (t.id for t in manager.runtime.tasks if t.target == target and t.goal.strip().casefold() == goal.strip().casefold()), task_id),
+                                        "run_id": manager.runtime.run_id})
+            if action in {"message", "cancel"}:
+                manager.task_control(task_id, action, text)
+                return ToolResult(summary="补充已入队，下个决策点读取" if action == "message" else "已请求取消，等待真实终态")
+            if action == "wait":
+                if not 0 <= wait_seconds <= 10:
+                    raise ValueError("wait_seconds 必须在0..10之间")
+                import time
+                from ..scope import ensure_execution_active
+                deadline = time.monotonic() + wait_seconds
+                while manager.running and time.monotonic() < deadline:
+                    ensure_execution_active()
+                    item = manager.task_result(task_id) if task_id else None
+                    if item and item["status"] not in {"pending", "running"}:
+                        break
+                    manager.thread.join(timeout=min(.1, max(0, deadline - time.monotonic())))
+            if action in {"result", "wait"} and task_id:
+                item = manager.task_result(task_id)
+                if item is None:
+                    raise ValueError("未找到任务；先用 list 查看实际名称")
+                return ToolResult(summary=f"{task_id} · {item['status']}", data=item)
+            return ToolResult(summary=manager.badge or "暂无任务", data={"tasks": manager.rows(), "running": manager.running})
+        except (ValueError, RuntimeError, TimeoutError) as exc:
+            return ToolResult(ok=False, error=str(exc))
+
+
+TOOLS = [SharedContext(), SharedTraceSearch(), SharedTraceGet(), WorkerTasks()]
