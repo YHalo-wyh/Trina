@@ -110,7 +110,7 @@ scripts/dev.sh play --target 127.0.0.1
 
 在线模型使用结构化消息与 SSE 流式响应，系统和已有对话前缀保持稳定；OMP 已从模型后端移除。正文在同一张卡片中增量显示，工具协议保持隐藏。消息调用与缓存说明见 [模型文档](docs/MODELS.md#流式传输与标准消息)。
 
-0.4.0 底栏显示当前 `Commander / Code Worker / Web Worker / Binary Worker / Review Worker` 角色、模型、Git 分支与上下文用量。`/worker` 切换独立会话；`/branch` 选择本地分支，`/branch main` 切回主分支，`/branch new <名称>` 创建分支；在 main 可直接读写代码。`/footer compact|default|full` 切换信息密度。`configs/trina.yaml` 的 `ui` 段可持久设置密度、分隔符、上下文条和首页动画。
+0.4.0 底栏左侧显示当前角色、模型和轮次，右侧同一行显示缓存命中与 Token；横线显示 Git 分支、上下文和子 Worker 队列。`/worker` 切换独立聊天，`/subworker` 管理真正的并行任务及各自模型、供应商和思考强度（[使用说明](docs/CLI_UI.md#子-worker-面板)）。`/branch` 管理本地分支，在 main 可直接读写代码。`/footer compact|default|full` 切换信息密度；持久配置在 `configs/trina.yaml` 的 `ui` 与 `subworker` 段。
 
 交互终端的输入与会话用量固定在屏幕底部，持续显示 Token、输入 / 输出和缓存命中率；回复卡片只呈现正式输出。思考状态使用动态星形标记，工具过程与最终回答分开排版。`/new` 清零会话用量，切换模型继续累计；`/usage` 查看详情。布局和统计口径见 [CLI 界面说明](docs/CLI_UI.md#固定底栏与过程排版)。
 

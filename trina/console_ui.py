@@ -178,6 +178,12 @@ COMMANDS: tuple[CommandSpec, ...] = (
     CommandSpec("usage", "会话与模型", "查看模型调用、Token 和成本", "usage"),
     CommandSpec("worker", "会话与模型", "切换独立 Worker 会话和当前角色", "worker [commander|general|code|web|binary|review]",
                 positional_choices=tuple(ChoiceSpec(key, value[0]) for key, value in WORKER_ROLES.items())),
+    CommandSpec("subworker", "并行任务", "子 Worker 面板、模型与思考强度、并发和任务管理", "subworker [操作] [参数]",
+                positional_choices=tuple(ChoiceSpec(k, v) for k, v in (("start", "名称 目标 任务：启动"), ("run", "从 YAML 任务图启动"),
+                    ("add", "追加并行任务"), ("list", "查看任务"), ("inspect", "查看结果与证据"), ("model", "设置子模型 ID"),
+                    ("thinking", "设置思考强度"), ("provider", "选择已保存供应商"), ("settings", "并发、步数、超时"),
+                    ("pause", "暂停"), ("continue", "继续"), ("stop", "停止与回收"), ("resume", "恢复 Swarm 检查点"))),
+                examples=("/subworker", "/subworker start audit localhost 检查服务", "/subworker thinking high", "/subworker model deepseek-flash", "/subworker run tasks.yaml")),
     CommandSpec("branch", "工作区", "查看、切换或创建本地 Git 分支", "branch [分支名|new <名称>]",
                 positional_choices=(ChoiceSpec("new", "创建并切换分支"),)),
     CommandSpec("footer", "会话与模型", "切换底栏信息密度", "footer [default|compact|full]",
@@ -579,6 +585,8 @@ class EnhancedConsoleInput:
             "context.model": THEME["rose"], "context.path": THEME["lilac"],
             "context.role": "bg:" + THEME["selected"] + " " + THEME["rose"] + " bold",
             "context.branch": THEME["muted"],
+            "context.cache": "#a9d9d1", "context.tokens": THEME["lilac"],
+            "context.workers": "bold " + THEME["rose"],
             "context.model.icon": "bold " + THEME["rose"],
             "context.state": "bold " + THEME["lilac"],
             "context.progress": THEME["lilac"], "context.progress.icon": "bold " + THEME["violet"],
@@ -617,7 +625,7 @@ class EnhancedConsoleInput:
                 Window(FormattedTextControl(lambda: [("class:hint", self._hint())]),
                        height=lambda: 1 if self._hint() else 0),
                 Window(FormattedTextControl(self._status), height=self._status_height, wrap_lines=False),
-                self.usage_window,
+                ConditionalContainer(self.usage_window, Condition(lambda: self.context is None)),
             ]), focused_element=control),
             key_bindings=bindings, style=style, full_screen=True, refresh_interval=0.2,
             min_redraw_interval=1 / 60, max_render_postpone_time=.01,
@@ -713,6 +721,8 @@ class EnhancedConsoleInput:
 
     def _usage_height(self) -> int:
         """没有实际用量字段时不为底栏保留空白行。"""
+        if self.context is not None:
+            return 0
         size = self.app.output.get_size()
         text = self.usage(size.columns, size.rows < 16)
         return 1 if text else 0
@@ -878,7 +888,7 @@ class EnhancedConsoleInput:
                 call = lambda: self._handler(text)
                 command = text.strip().lstrip("/").split(maxsplit=1)[0] if text.strip() else ""
                 # 模型表单暂时接管终端，结束后恢复同一内容区和未提交输入。
-                keep = await run_in_terminal(call, in_executor=True) if command in {"model", "resume", "worker", "branch", "footer"} and not self.running() else await run_in_executor_with_context(call)
+                keep = await run_in_terminal(call, in_executor=True) if command in {"model", "resume", "worker", "subworker", "branch", "footer"} and not self.running() else await run_in_executor_with_context(call)
                 if not keep:
                     self.app.exit()
                     return

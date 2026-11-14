@@ -188,8 +188,14 @@
         {
           "id": "TR-03-R06",
           "level": "MUST",
-          "statement": "0.4.0 底栏必须显示当前角色、支持配置密度且状态/用量各最多一行；1–144 列不超宽。角色切换保持独立会话，恢复消息、用量与角色；首页动画只改变颜色，首次提交后冻结。",
+          "statement": "0.4.0 底栏必须显示当前角色、支持配置密度且状态和实际用量同排；窄屏不超宽。角色切换保持独立会话，恢复消息、用量与角色；首页动画只改变颜色，首次提交后冻结。",
           "tests": ["tests.test_console_v040.ConsoleV040Tests.test_footer_is_single_line_at_all_widths_and_role_never_disappears", "tests.test_console_v040.ConsoleV040Tests.test_worker_switch_restores_history_role_and_usage_without_model_call", "tests.test_console_v040.ConsoleV040Tests.test_ui_config_roundtrip_override_and_validation", "tests.test_banner.BannerTests.test_animation_changes_only_colors_and_none_has_stable_text", "tests.test_console_v040.ConsoleV040Tests.test_real_git_main_edit_and_branch_switch_preserve_files", "tests.test_console_v040.ConsoleV040Tests.test_home_animation_updates_only_welcome_and_stops_on_submit"]
+        },
+        {
+          "id": "TR-03-R07",
+          "level": "MUST",
+          "statement": "缓存命中和 Token 必须位于模型/轮次右侧同一行，不占用下面一行；缺失用量不伪造，1–200 列不得超宽。",
+          "tests": ["tests.test_subworkers.SubworkerTests.test_footer_metrics_share_one_row_and_survive_resize"]
         }
       ]
     },
@@ -426,6 +432,12 @@
           "level": "MUST",
           "statement": "Intent 必须稳定去重并记录优先级、依赖、deadline 和尝试号；没有活跃执行器的超时租约或恢复时遗留租约必须可回收到 pending。",
           "tests": ["tests.test_coordination.CoordinationTests.test_timeout_recovery_dedup_and_checkpoint_round_trip"]
+        },
+        {
+          "id": "TR-12-R03",
+          "level": "MUST",
+          "statement": "每个子任务的有效模型、供应商引用和思考强度必须独立绑定且随快照固定；不同模型后端不得混用账本；模型配置必须通过真实 API 参数生效，不修改主会话或供应商存储。",
+          "tests": ["tests.test_subworkers.SubworkerTests.test_parallel_models_and_reasoning_are_bound_to_each_task_and_restored", "tests.test_subworkers.SubworkerTests.test_actual_api_requests_use_separate_models_effort_and_usage", "tests.test_subworkers.SubworkerTests.test_task_provider_overrides_defaults_without_writing_profile_store", "tests.test_subworkers.SubworkerTests.test_console_defaults_do_not_mutate_parent_and_configuration_validates"]
         }
       ]
     },
@@ -498,15 +510,21 @@
       "title": "动态任务建议与重排",
       "priority": "P2",
       "status": "partial",
-      "implementation": ["trina/swarm.py"],
+      "implementation": ["trina/swarm.py", "trina/subworkers.py", "trina/interactive.py"],
       "verification": ["V-CONTRACT", "V-TESTS"],
-      "limitations": ["add_task 仅是 Commander 程序接口；CLI 尚不能在运行中提交任务，Worker 结果也不会自动生成分支。"],
+      "limitations": ["CLI 支持运行中追加，Worker 结果尚不会自动生成分支，暂无自动优先级重排策略。"],
       "rules": [
         {
           "id": "TR-16-R01",
           "level": "MUST",
           "statement": "Commander 接收新 TaskSpec 时必须先做等价去重和完整 DAG 校验，再写入检查点。",
           "tests": ["tests.test_swarm.SwarmTests.test_add_task_validates_and_persists"]
+        },
+        {
+          "id": "TR-16-R02",
+          "level": "MUST",
+          "statement": "运行中追加和等待任务配置必须经线程安全队列，由 Commander 串行修改；等价任务不重复执行，运行任务拒绝换配置，收尾拒绝新提交。",
+          "tests": ["tests.test_subworkers.SubworkerTests.test_cross_thread_submission_configure_dedup_and_cancellation"]
         }
       ]
     },
@@ -514,16 +532,22 @@
       "id": "TR-17",
       "title": "Swarm 运行中人工介入",
       "priority": "P2",
-      "status": "planned",
-      "implementation": ["trina/swarm.py"],
-      "verification": ["V-CONTRACT"],
-      "limitations": ["仅有内部暂停和停止事件；CLI 尚无指定 Worker 的查看、补充、预算调整与接管入口。"],
+      "status": "partial",
+      "implementation": ["trina/swarm.py", "trina/subworkers.py", "trina/subworker_ui.py", "trina/interactive.py"],
+      "verification": ["V-CONTRACT", "V-TESTS"],
+      "limitations": ["支持列表、模型/思考配置、暂停/继续/停止与恢复；暂无活动对话接管、定向补充或运行中预算调整。"],
       "rules": [
         {
           "id": "TR-17-R01",
           "level": "PLANNED",
           "statement": "未来交付必须提供可审计的 Swarm 暂停、恢复、定向补充、预算调整与接管协议。",
           "tests": []
+        },
+        {
+          "id": "TR-17-R02",
+          "level": "MUST",
+          "statement": "子 Worker 面板键盘操作必须对应选中任务；真实工具经统一执行链，停止不能标记完成，取消或超时依赖不得解锁后继任务。",
+          "tests": ["tests.test_subworkers.SubworkerTests.test_subworker_panel_keyboard_targets_selected_worker", "tests.test_subworkers.SubworkerTests.test_cross_thread_submission_configure_dedup_and_cancellation", "tests.test_subworkers.SubworkerTests.test_timeout_and_backend_error_do_not_complete_or_deadlock_dependents", "tests.test_subworkers.SubworkerTests.test_real_replay_workers_execute_in_independent_directories"]
         }
       ]
     },

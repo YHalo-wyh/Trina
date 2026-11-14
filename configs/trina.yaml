@@ -145,6 +145,16 @@ policy:
   # 注册表来源（靶场 yaml 的 targets/tests 段）
   registry_dirs: []
 
+# 子 Worker 的默认值；留空模型/供应商/思考强度时继承主会话。
+# 启动后固定配置；清单内每个任务也可单独设置 model/reasoning_effort/profile。
+subworker:
+  workers: 2
+  max_steps: 12
+  max_seconds: 600
+  model: ""
+  reasoning_effort: ""
+  profile: ""
+
 eval:
   # 场景库目录与报告输出
   scenarios_dir: "trina/eval/scenarios"

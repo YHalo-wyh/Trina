@@ -7,6 +7,8 @@
 
 ## 1. 目标与验收
 
+2026-11-14 补充：`/subworker` 任务面板及后台 Swarm 已接通，支持逐任务模型/思考档位、配置优先级、等待任务修改、队列追加、取消和恢复。底栏缓存与模型/轮次同排。验收 `tests/test_subworkers.py`；真实 HTTP 流夹具与真实终端执行验证接口和资源行为，不代替在线模型收益评估。活动 Worker 的完整对话接管、自动文件冲突处理和整场硬费用预算仍未完成。
+
 2026-11-14 的 0.4.0 增加可配置单行底栏、当前角色、独立交互 Worker 切换、Git 分支工具和字符首页流光。验证入口为 `tests/test_console_v040.py`、`tests/test_console_session.py`、`tests/test_banner.py`；后续保留 Swarm 活跃 Worker 接管和真实多终端体感评测，不将交互会话角色切换计作并行任务接管。
 
 2026-11-13 已接入统一运行事件、工具窗口、Commander 实时事实和持久游标续流。协议与任务级恢复边界见 [EVENTS.md](EVENTS.md)，决定见 [ADR-0027](../design/adr/0027-unified-runtime-events.md)，验证入口为 `tests/test_events.py` 和机器规约 TR-22。

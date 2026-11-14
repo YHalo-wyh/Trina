@@ -91,6 +91,8 @@ class Console:
         self._active_worker = "commander"
         self._worker_sessions: dict[str, str] = {}
         self._branch = self._read_branch()
+        from .subworkers import Subworkers
+        self.subworkers = Subworkers(lambda text: self._emit(text, prefix="Subworker"))
 
     # ------------------------------------------------------------------ 输出
     def _display(self, text: str) -> None:
@@ -248,7 +250,8 @@ class Console:
                               directory=str(Path.cwd()), task=self._task_title or "新对话",
                               progress=progress, context_tokens=context_tokens,
                               context_window=llm.effective_context_window, role=role, branch=self._branch,
-                              preset=ui.status_line_preset, separator=ui.status_line_separator, context_bar=ui.context_bar)
+                              preset=ui.status_line_preset, separator=ui.status_line_separator, context_bar=ui.context_bar,
+                              metrics=self.view.metrics(), workers=self.subworkers.badge)
 
     def _footer_usage(self, width: int, compact: bool = False) -> str:
         return self.view.footer(width, compact, preset=self.config.ui.status_line_preset,
@@ -282,6 +285,19 @@ class Console:
 
     def _completion_values(self, command: str, completed_args: list[str]) -> list[ChoiceSpec]:
         """补全运行时才能知道的历史会话、模型、工具、靶场和产物路径。"""
+        if command == "subworker":
+            if completed_args == ["inspect"]:
+                return [ChoiceSpec(item["id"], item["goal"]) for item in self.subworkers.rows()]
+            if completed_args == ["settings"]:
+                return [ChoiceSpec(key, label) for key, label in (("workers", "并发数"), ("max_steps", "每任务步数"), ("max_seconds", "每任务秒数"))]
+            if completed_args == ["thinking"]:
+                from .llm.reasoning import reasoning_support
+                from .swarm import task_llm
+                support = reasoning_support(task_llm(self.config))
+                return [ChoiceSpec(level, support.label(level)) for level in support.levels]
+            if completed_args == ["provider"]:
+                from .providers import ProfileStore
+                return [ChoiceSpec(profile.id, profile.model) for profile in ProfileStore().profiles.values()]
         if command == "resume" and not completed_args:
             from .chat_store import ChatStore
             try:
@@ -375,6 +391,15 @@ class Console:
             self._start_chat_turn(line)
             return True
         command, args = argv[0], argv[1:]
+
+        if command == "subworker":
+            try:
+                self._cmd_subworker(args)
+            except (KeyboardInterrupt, EOFError):
+                self._emit("已返回主会话")
+            except Exception as exc:
+                self._emit(f"Subworker: {exc}", prefix="错误")
+            return True
 
         if self.session.running:
             return self._handle_running(command, args, line, forced=forced)
@@ -790,7 +815,156 @@ class Console:
             self._enhanced_input.clear_transcript()
         self._emit(f"已切换到 {WORKER_ROLES[selected][0]} · 独立会话")
 
+    def _cmd_subworker(self, args: list[str]) -> None:
+        """交互面板和命令共用现有 Swarm，不触碰主会话或供应商的已保存配置。"""
+        from .swarm import TaskSpec, load_manifest, task_llm
+        from .model_ui import ModelManager
+        from .console_ui import select_option
+        interactive = self._input is None and not self._custom_output and enhanced_input_available() and not self.session.running
+        if not args and interactive:
+            from .subworker_ui import show_subworkers
+            notice = ""
+            while True:
+                selected = show_subworkers(self.subworkers, self.config, notice=notice)
+                notice = ""
+                if selected is None:
+                    return
+                action, task_id = selected
+                try:
+                    if action in {"model", "thinking", "provider"}:
+                        self._edit_subworker_model(action, task_id)
+                    elif action == "new":
+                        name = ModelManager._ask("Worker 名称", f"task-{len(self.subworkers.rows()) + 1}")
+                        target = ModelManager._ask("目标或附件路径")
+                        goal = ModelManager._ask("任务目标")
+                        self._cmd_subworker(["add" if self.subworkers.running else "start", name, target, goal])
+                    else:
+                        self._cmd_subworker([action, task_id] if task_id and action == "inspect" else [action])
+                        if action == "inspect":
+                            return
+                except ValueError as exc:
+                    notice = str(exc)
+            return
+        action = args[0] if args else "list"
+        values = args[1:]
+        if action == "list":
+            rows = self.subworkers.rows()
+            self._display(render_panel("Subworkers", rows=[
+                (item["id"], f"{item['status']} · {item['model']} · {item['reasoning_effort']}\n{item['goal']}") for item in rows
+            ] or [("队列", "还没有任务")], footer="/subworker start <名称> <目标> <任务> · /subworker run <清单.yaml>", color=self.color))
+        elif action in {"start", "add"}:
+            # 可选字段只从明确参数读取；目标文本不拼入命令或 system。
+            options = {}
+            words = []
+            index = 0
+            flags = {"--model": "model", "--thinking": "reasoning_effort", "--provider": "profile"}
+            while index < len(values):
+                word = values[index]
+                if word in flags:
+                    if index + 1 >= len(values):
+                        raise ValueError(f"{word} 缺少值")
+                    options[flags[word]] = values[index + 1]
+                    index += 2
+                else:
+                    words.append(word)
+                    index += 1
+            if len(words) < 3:
+                raise ValueError(f"/subworker {action} <名称> <目标> <任务> [--model ID --thinking high --provider 名称]")
+            defaults = self.config.subworker
+            task = TaskSpec(words[0], words[1], " ".join(words[2:]), max_steps=defaults.max_steps,
+                            max_seconds=defaults.max_seconds, **options)
+            from dataclasses import replace
+            llm = task_llm(self.config, task)
+            task = replace(task, model=llm.model, reasoning_effort=llm.reasoning_effort, profile=llm.profile)
+            if action == "add":
+                self.subworkers.add(task)
+            else:
+                self._launch_subworkers([task])
+        elif action in {"run", "resume"}:
+            if len(values) != 1:
+                raise ValueError(f"/subworker {action} <文件路径>")
+            self._launch_subworkers(load_manifest(values[0]) if action == "run" else None,
+                                    checkpoint=values[0] if action == "resume" else "")
+        elif action in {"stop", "pause", "continue"}:
+            self.subworkers.control(action)
+            self._emit({"stop": "正在停止并回收执行资源", "pause": "已请求暂停", "continue": "已继续"}[action], prefix="Subworker")
+        elif action == "inspect":
+            if len(values) != 1:
+                raise ValueError("/subworker inspect <任务名称>")
+            snapshot = self.subworkers.snapshot()
+            item = snapshot["tasks"].get(values[0])
+            if item is None:
+                raise ValueError("未找到任务")
+            result = item.get("result", {})
+            self._display(render_panel(values[0], rows=[("任务", item["goal"]), ("状态", item["status"]),
+                ("模型", f"{item['model']} · {item['reasoning_effort']}"), ("结论", result.get("verdict") or item.get("error") or "执行中"),
+                ("检查点", snapshot["checkpoint"])], sections=[("产物", json.dumps(result.get("artifacts", {}), ensure_ascii=False, indent=2))], color=self.color))
+        elif action == "settings":
+            if not values and interactive:
+                key = select_option("Subworker 资源", [ChoiceSpec(k, f"{label} · {getattr(self.config.subworker, k)}") for k, label in
+                    (("workers", "并发"), ("max_steps", "步数"), ("max_seconds", "秒数"))], subtitle="下次启动生效 · 当前队列保持原配置")
+                if key:
+                    values = [key, ModelManager._ask(key, str(getattr(self.config.subworker, key)))]
+            if values:
+                if len(values) != 2 or values[0] not in {"workers", "max_steps", "max_seconds"}:
+                    raise ValueError("/subworker settings <workers|max_steps|max_seconds> <整数>")
+                candidate = self.config.with_overrides(**{"subworker__" + values[0]: int(values[1])})
+                if candidate.subworker.workers > candidate.scope.max_host_concurrency:
+                    raise ValueError("并发数不能超过 scope.max_host_concurrency")
+                self.config.subworker = candidate.subworker
+            self._emit(f"并发 {self.config.subworker.workers} · 步数 {self.config.subworker.max_steps} · {self.config.subworker.max_seconds}s · 持久默认值在 YAML subworker 段", prefix="Subworker")
+        elif action in {"model", "thinking", "provider"}:
+            if not values and interactive:
+                self._edit_subworker_model(action, "")
+                return
+            if not 1 <= len(values) <= 2:
+                raise ValueError(f"/subworker {action} <值> [等待中的任务名称]")
+            key = {"model": "model", "thinking": "reasoning_effort", "provider": "profile"}[action]
+            overrides = {key: "" if values[0] == "inherit" else values[0]}
+            if action in {"model", "provider"}:
+                overrides["reasoning_effort"] = "default"
+            if action == "provider":
+                overrides["model"] = ""
+            if len(values) == 2:
+                self.subworkers.configure(values[1], **overrides)
+            else:
+                candidate = self.config.with_overrides(**{"subworker__" + k: v for k, v in overrides.items()})
+                llm = task_llm(candidate)
+                self.config.subworker = candidate.subworker
+                self._emit(f"子 Worker 默认模型 {llm.model} · {llm.reasoning_effort}；主会话保持原配置", prefix="Subworker")
+        else:
+            raise ValueError("用法：/subworker [start|run|add|list|inspect|model|thinking|provider|settings|pause|continue|stop|resume]")
+
+    def _edit_subworker_model(self, action: str, task_id: str) -> None:
+        from .console_ui import select_option
+        from .model_ui import ModelManager
+        from .swarm import task_llm
+        from .llm.reasoning import reasoning_support
+        llm = task_llm(self.config)
+        if task_id:
+            runtime = self.subworkers.runtime
+            if runtime is None or runtime.records[task_id].status != "pending":
+                raise ValueError("选中任务已启动或结束，不能中途换模型；D 调整新任务默认配置")
+            llm = runtime._task_llms[task_id]
+        if action == "thinking":
+            support = reasoning_support(llm)
+            value = select_option("思考强度", [ChoiceSpec(level, ("● " if level == llm.reasoning_effort else "  ") + support.label(level)) for level in support.levels], subtitle=llm.model)
+        elif action == "provider":
+            from .providers import ProfileStore
+            value = select_option("子 Worker 供应商", [ChoiceSpec(p.id, f"{p.id} · {p.model}") for p in ProfileStore().profiles.values()], subtitle="使用 /model 中已保存的连接")
+        else:
+            value = ModelManager._ask("子 Worker 模型 ID", llm.model)
+        if value:
+            self._cmd_subworker([action, value, *([task_id] if task_id else [])])
+
+    def _launch_subworkers(self, tasks, *, checkpoint: str = "") -> None:
+        from .llm import make_backend
+        self.subworkers.start(self.config, tasks, checkpoint=checkpoint, backend_factory=self._backend_factory or make_backend)
+        self._emit(f"{self.subworkers.runtime.run_id} 已启动 · /subworker 查看 · 主会话可继续输入", prefix="Subworker")
+
     def _cmd_branch(self, args: list[str]) -> None:
+        if args and self.subworkers.running:
+            raise ValueError("Subworker 运行中不能切换工作区分支；先 /subworker stop")
         from .console_ui import select_option
         chat = self._ensure_chat()
         action = "switch" if args else "branches"
@@ -1393,6 +1567,7 @@ class Console:
             self._emit(f"[{finding.severity}] {finding.vuln_class} {finding.url or finding.target} ({finding.status})", prefix="发现")
 
     def _cleanup(self) -> None:
+        self.subworkers.close()
         if self._scheduler is not None:
             self._scheduler.stop_event.set()
         if self.session.running:

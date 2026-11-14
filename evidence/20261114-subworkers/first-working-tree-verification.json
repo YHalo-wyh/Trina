@@ -1,0 +1,47 @@
+{
+  "ok": false,
+  "scope": "当前产品 TR 需求、规范规则、实现路径、测试声明、六类交付物与白名单验证命令",
+  "deliverables": 6,
+  "requirements": 22,
+  "rules": 50,
+  "tests_referenced": 121,
+  "errors": [
+    "V-TESTS 执行失败，退出码 1"
+  ],
+  "commands": {
+    "V-COURSE": {
+      "argv": [
+        "D:\\python310\\python.exe",
+        "-X",
+        "utf8",
+        "-m",
+        "scripts.verify_course_pack"
+      ],
+      "exit_code": 0,
+      "output_tail": "课程工件检查：通过\n文档 31，要求 20，任务 8，场景 {'P': 11, 'N': 8, 'A': 7}\n测试引用 65（去重 65），本地链接 391\n检查范围为结构和引用；测试执行与人工验收需独立证据。"
+    },
+    "V-TESTS": {
+      "argv": [
+        "D:\\python310\\python.exe",
+        "-X",
+        "utf8",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tests"
+      ],
+      "exit_code": 1,
+      "output_tail": "[用户] {\"ctfy_task\": {\"schema_version\": 3, \"run_mode\": \"instance\", \"challenge\": {\"id\": \"local-fixture\"}, \"competition_id\": \"local\", \"questions\": [{\"id\": \"flag\"}], \"gated_questions\": 1, \"platform_url\": \"http://127.0.0.1:59982\", \"target_instance\": \"this-instance\"}, \"environment\": {\"working_directory\": \"C:\\\\Users\\\\WYH\\\\AppData\\\\Local\\\\Temp\\\\tmpjxbvkbae\", \"task_file\": \"C:\\\\Users\\\\WYH\\\\AppData\\\\Local\\\\Temp\\\\tmpjxbvkbae\\\\task.json\", \"known_files\": [\"C:\\\\Users\\\\WYH\\\\AppData\\\\Local\\\\Temp\\\\tmpjxbvkbae\\\\task.json\"], \"terminal_cwd\": {\"project\": \"C:\\\\Users\\\\WYH\\\\AppData\\\\Local\\\\Temp\\\\tmpjxbvkbae\", \"run\": \"Trina 本次运行工件目录\"}, \"search_policy\": \"先用 known_files 和 task.json 中的路径；禁止 find /，只搜索具体目录\", \"tcp_policy\": \"一次性 nc 请求应发送 stdin，并使用 -q 1 -w 2；运行器会收紧更长等待\"}}\n[动作 1] ctfy_task {\"action\": \"submit\", \"question_id\": \"flag\", \"answer\": \"right\"}\n          → OK: CTFY 权威响应\n平台已确认答案正确，任务完成。\n[用户] {\"ctfy_task\": {\"schema_version\": 3, \"run_mode\": \"instance\", \"challenge\": {\"id\": \"local-fixture\"}, \"competition_id\": \"local\", \"questions\": [{\"id\": \"flag\"}], \"gated_questions\": 1, \"platform_url\": \"http://127.0.0.1:55494\", \"target_instance\": \"this-instance\"}, \"environment\": {\"working_directory\": \"C:\\\\Users\\\\WYH\\\\AppData\\\\Local\\\\Temp\\\\tmpswuwsv_e\", \"task_file\": \"C:\\\\Users\\\\WYH\\\\AppData\\\\Local\\\\Temp\\\\tmpswuwsv_e\\\\task.json\", \"known_files\": [\"C:\\\\Users\\\\WYH\\\\AppData\\\\Local\\\\Temp\\\\tmpswuwsv_e\\\\task.json\"], \"terminal_cwd\": {\"project\": \"C:\\\\Users\\\\WYH\\\\AppData\\\\Local\\\\Temp\\\\tmpswuwsv_e\", \"run\": \"Trina 本次运行工件目录\"}, \"search_policy\": \"先用 known_files 和 task.json 中的路径；禁止 find /，只搜索具体目录\", \"tcp_policy\": \"一次性 nc 请求应发送 stdin，并使用 -q 1 -w 2；运行器会收紧更长等待\"}}\n[动作 1] terminal_exec {\"argv\": [\"D:\\\\python310\\\\python.exe\", \"-c\", \"print('flag{right}')\"], \"timeout\": 5, \"cwd\": \"project\"}\n          → OK: 命令完成，退出码 0\n发现唯一候选 flag{right}，平台已确认正确，任务完成。\n[eval] 已自动拉起 lab 靶机 127.0.0.1:55519\n.............................ssssssssss.....................................................................................................................................................................................F........................................................................................................................................................................................................................................................................................................................................................................\n======================================================================\nFAIL: test_tool_success_invalid_exception_and_timeout_have_one_terminal (test_events.EventTests)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"C:\\Users\\WYH\\Desktop\\网安实训中级\\tests\\test_events.py\", line 172, in test_tool_success_invalid_exception_and_timeout_have_one_terminal\n    self.assertEqual([event.payload[\"status\"] for event in events if event.kind == \"tool.finished\"],\nAssertionError: Lists differ: ['completed', 'invalid', 'invalid', 'failed', 'failed'] != ['completed', 'invalid', 'invalid', 'failed', 'timed_out']\n\nFirst differing element 4:\n'failed'\n'timed_out'\n\n- ['completed', 'invalid', 'invalid', 'failed', 'failed']\n?                                                ^^ ^\n\n+ ['completed', 'invalid', 'invalid', 'failed', 'timed_out']\n?                                                ^ ^  ++++\n\n\n----------------------------------------------------------------------\nRan 581 tests in 128.271s\n\nFAILED (failures=1, skipped=10)"
+    },
+    "V-DIFF": {
+      "argv": [
+        "git",
+        "diff",
+        "--check"
+      ],
+      "exit_code": 0,
+      "output_tail": "warning: in the working copy of 'configs/trina.yaml', CRLF will be replaced by LF the next time Git touches it\nwarning: in the working copy of 'docs/ARCHITECTURE.md', CRLF will be replaced by LF the next time Git touches it\nwarning: in the working copy of 'tests/test_interactive.py', CRLF will be replaced by LF the next time Git touches it\nwarning: in the working copy of 'trina/brain/chat.py', CRLF will be replaced by LF the next time Git touches it\nwarning: in the working copy of 'trina/config.py', CRLF will be replaced by LF the next time Git touches it\nwarning: in the working copy of 'trina/console_state.py', CRLF will be replaced by LF the next time Git touches it\nwarning: in the working copy of 'trina/console_ui.py', CRLF will be replaced by LF the next time Git touches it\nwarning: in the working copy of 'trina/interactive.py', CRLF will be replaced by LF the next time Git touches it\nwarning: in the working copy of 'trina/swarm.py', CRLF will be replaced by LF the next time Git touches it\nwarning: in the working copy of 'trina/tools/__init__.py', CRLF will be replaced by LF the next time Git touches it\nwarning: in the working copy of 'trina/tools/http.py', CRLF will be replaced by LF the next time Git touches it\nwarning: in the working copy of 'trina/tools/registry.py', CRLF will be replaced by LF the next time Git touches it"
+    }
+  }
+}

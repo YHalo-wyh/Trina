@@ -53,7 +53,7 @@ python -m trina console --plain
 
 主控制台使用全屏内容区和固定底部输入区，回车提交后界面继续运行，输入、索引、模型状态与会话用量不会随内容滚动。输入框横线的上下文仪表贴最左，工作目录保持最右。鼠标滚轮或触控板、`PageUp` / `PageDown` 可上下浏览内容，`Ctrl+↑` / `Ctrl+↓` 逐行移动，`Ctrl+Home` 到最早记录，`Ctrl+End` 回到最新输出。手动上翻后进入历史锁定，新输出继续追加但不会强制跳回底部；界面不再常驻显示“已上翻历史”或快捷键提示。鼠标拖选后释放即可复制；F2 切换终端原生选取。`/model` 配置页仍为居中方角面板，关闭后恢复同一控制台内容和输入缓冲。主控制台与选项页的 VT 转义序列等待为 50ms，多键绑定等待为 100ms；模型正文以流式增量更新，等待动画每 0.2 秒刷新。
 
-底部使用粉紫角色徽标，始终显示当前 Commander 或 Worker；模型与思考档位、运行状态和步骤按可用宽度排列。横线左侧为上下文仪表和 `⎇` Git 分支，右侧为工作目录；65%/85% 占用分别用暖色/粉红强调。活动行左侧显示当前动作，右侧显示会话短标题。状态和实际用量各最多一行，宽度不足时先收起缓存读写等次要字段，不挤高内容区。缺失用量仍不补零；完整明细见 `/usage`。
+底部使用粉紫角色徽标：左侧为当前角色、模型和轮次，右侧同一行显示浅青缓存命中率、淡紫累计 Token，宽屏再显示输入/输出及费用。统计不再占用下面一行。横线左侧为上下文仪表、`⎇` Git 分支及 `⠿` 子 Worker 队列，右侧为工作目录；65%/85% 占用分别用暖色/粉红强调。宽度不足时收起低优先级字段，不挤高内容区。缺失用量不补零；`≥` 表示部分累计，缓存后的 `*` 表示仅部分请求报告缓存。完整明细见 `/usage`。
 
 ### 底栏配置与 Worker / Git
 
@@ -69,7 +69,28 @@ ui:
 
 `/footer compact|default|full` 当前会话立即切换；重启持久配置写在上面的 YAML。CLI 也可用 `--set ui.status_line_preset=compact`，环境变量支持 `TRINA_UI_STATUS_LINE_PRESET` 等标量字段。
 
-`/worker` 选择角色，或直接输入 `/worker code|web|binary|review|general|commander`。每个角色有独立 ChatAgent、消息、事实、用量、目录和审计；当前进程可来回切换并恢复历史，重启后用 `/resume` 恢复并显示原角色。切换会关闭旧任务后台进程，保留已保存记录，不复制聊天。运行中先停止再切换；这是一组交互 Worker 会话，Swarm 并行执行仍由 `trina swarm` 调度。
+`/worker` 选择角色，或直接输入 `/worker code|web|binary|review|general|commander`。每个角色有独立 ChatAgent、消息、事实、用量、目录和审计；当前进程可来回切换并恢复历史，重启后用 `/resume` 恢复并显示原角色。切换会关闭旧任务后台进程，保留已保存记录，不复制聊天。运行中先停止再切换。真正的并行任务由 `/subworker` 或 `trina swarm` 调度。
+
+### 子 Worker 面板
+
+`/subworker` 打开实时列表：名称、目标、状态在左，模型与思考档位在右，下一行显示实际请求数、工具数、Token、费用与执行时间。选择默认行后配置新任务；选择等待任务可单独修改。M 改模型 ID、T 选支持的思考强度、P 选择已保存供应商，D 回到默认行，N 新建，S 调整并发/预算，空格暂停或继续，X 停止，Enter 查看结果与证据，Esc 回主会话。主会话正在执行时 `/subworker` 输出只读列表，管理命令仍可用。
+
+```text
+/subworker model deepseek-chat
+/subworker thinking high
+/subworker settings workers 2
+/subworker start web localhost 检查 Web 服务
+/subworker add binary ./challenge 分析附件 --model gpt-5.2 --thinking high
+/subworker thinking max queued-task
+/subworker run tasks.yaml
+/subworker inspect web
+/subworker stop
+/subworker resume runs/<swarm-id>/swarm.json
+```
+
+命令修改内存默认配置，持久值写入 `configs/trina.yaml` 的 `subworker` 段。支持 `workers/max_steps/max_seconds/model/reasoning_effort/profile`；空模型、档位或供应商继承主会话。`profile` 引用 `/model` 中保存的整条供应商连接，不另存 Key；选择子模型不会改写主会话或已保存供应商。清单单项可覆盖模型、档位和 profile，实际并发取配置值与主机并发上限的较小值。
+
+运行中的任务不能改模型；等待任务的配置由 Commander 在领取前原子更新，若修改时任务已启动则明确拒绝。收尾后新提交不会悄悄丢失。模型的实际传输能力仍由现有供应商适配器校验，不靠提示词模拟思考强度。取消在既有执行取消点生效，正在等待的模型网络请求可能要等传输超时。
 
 `/branch` 列出并选择本地分支，`/branch main` 切换，`/branch new feature/name` 创建并切换。`workspace_git` 是真实注册工具，使用当前项目和 `run_external`，Git 正常拒绝冲突时显示原错误，不使用强制覆盖。main 和其他分支使用同一组文件编辑工具；界面不在每帧启动 Git 子进程。
 

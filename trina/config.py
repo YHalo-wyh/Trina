@@ -294,6 +294,29 @@ class EvalConfig:
 
 
 @dataclass
+class SubworkerConfig:
+    """交互并行任务默认值；执行仍沿用 Swarm 的独立上下文与能力租约。"""
+
+    workers: int = 2
+    max_steps: int = 12
+    max_seconds: int = 600
+    model: str = ""
+    reasoning_effort: str = ""
+    profile: str = ""
+
+    def validate(self) -> None:
+        from .llm.reasoning import LEVEL_LABELS
+        if any(not isinstance(value, str) for value in (self.model, self.profile, self.reasoning_effort)):
+            raise ConfigError("subworker 模型、供应商及思考强度必须是字符串")
+        if self.reasoning_effort and self.reasoning_effort not in LEVEL_LABELS:
+            raise ConfigError("subworker.reasoning_effort 档位无效")
+        for name, limit in (("workers", 16), ("max_steps", 1000), ("max_seconds", 86400)):
+            value = getattr(self, name)
+            if type(value) is not int or not 1 <= value <= limit:
+                raise ConfigError(f"subworker.{name} 必须为 1..{limit} 的整数")
+
+
+@dataclass
 class UIConfig:
     """控制台显示配置；不影响模型权限或执行策略。"""
 
@@ -323,6 +346,7 @@ class TrinaConfig:
     policy: PolicyConfig = field(default_factory=PolicyConfig)
     eval: EvalConfig = field(default_factory=EvalConfig)
     ui: UIConfig = field(default_factory=UIConfig)
+    subworker: SubworkerConfig = field(default_factory=SubworkerConfig)
     path: Path | None = None
 
     # ------------------------------------------------------------------ 载入
@@ -372,6 +396,7 @@ class TrinaConfig:
             "policy": PolicyConfig,
             "eval": EvalConfig,
             "ui": UIConfig,
+            "subworker": SubworkerConfig,
         }
         kwargs: dict[str, Any] = {}
         for name, klass in sections.items():
@@ -393,7 +418,7 @@ class TrinaConfig:
     @classmethod
     def _apply_env(cls, cfg: "TrinaConfig") -> "TrinaConfig":
         """`TRINA_SCOPE_EXPLOIT_LEVEL=detect` 形式的覆盖（只处理标量字段）。"""
-        for section in ("scope", "llm", "run", "binary", "report", "audit", "policy", "ui"):
+        for section in ("scope", "llm", "run", "binary", "report", "audit", "policy", "ui", "subworker"):
             obj = getattr(cfg, section)
             for fname, fdef in obj.__dataclass_fields__.items():
                 env_key = f"TRINA_{section.upper()}_{fname.upper()}"
@@ -429,6 +454,7 @@ class TrinaConfig:
         self.binary.validate()
         self.policy.validate()
         self.ui.validate()
+        self.subworker.validate()
         if self.audit.dir == "":
             raise ConfigError("audit.dir 不能为空")
         if not self.report.formats:

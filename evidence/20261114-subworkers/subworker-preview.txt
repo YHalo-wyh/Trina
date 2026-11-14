@@ -1,0 +1,24 @@
+◇ SUBWORKERS  2 运行 / 1 等待 · UI 演示
+会话 Token 188.0k · 缓存命中 80.0%
+默认 · deepseek-chat ◦ default · 并发 2
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+› ◉ WebSurface · 运行                                                                                                     deepseek-chat  ◦ max
+梳理测试应用入口，保留响应证据
+1m33s · 6 req · 9 tools · 58.0k tok
+◉ BinaryTrace · 运行                                                                                                           gpt-5.2  ◦ high
+分析 ELF 并验证地址偏移
+1m33s · 6 req · 9 tools · 42.0k tok
+○ ReviewEvidence · 等待                                                                                                  deepseek-chat  ◦ high
+交叉核验前序结果和失败经验
+
+✓ CodeTests · 完成                                                                                                             gpt-5.2  ◦ high
+检查修改并运行回归测试
+1m33s · 6 req · 9 tools · 88.0k tok
+
+
+
+
+
+
+
+↑↓ 选择 · M 模型 · T 思考 · P 供应商 · D 默认 · N 新建 · S 并发 · Space 暂停/继续 · X 停止 · Enter 详情 · Esc 返回

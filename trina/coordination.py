@@ -9,8 +9,8 @@ import uuid
 from typing import Any, Iterable
 
 
-TERMINAL_INTENTS = {"completed", "failed", "blocked", "skipped", "timed_out"}
-FAILED_INTENTS = {"failed", "blocked", "skipped", "timed_out"}
+TERMINAL_INTENTS = {"completed", "failed", "blocked", "skipped", "timed_out", "cancelled"}
+FAILED_INTENTS = TERMINAL_INTENTS - {"completed"}
 
 
 def _canonical(value: Any) -> str:

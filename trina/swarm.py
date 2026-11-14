@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 import json
+import copy
 import os
+import queue
 import re
 import threading
 import time
 import uuid
 from html import escape
 from concurrent.futures import Future, ThreadPoolExecutor
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urlsplit
@@ -18,7 +20,7 @@ from urllib.parse import urlsplit
 from .audit import AuditLog
 from .brain import PentestAgent
 from .capabilities import CapabilityCatalog, CapabilityFabric, CapabilityRuntime
-from .config import TrinaConfig
+from .config import LLMConfig, TrinaConfig
 from .coordination import CoordinationRuntime
 from .events import EventBus
 from .context import BRIEF_VERSION
@@ -28,7 +30,7 @@ from .tools import ToolRegistry, build_registry
 
 
 _TASK_ID = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$")
-TERMINAL = {"completed", "blocked", "failed", "skipped", "timed_out"}
+TERMINAL = {"completed", "blocked", "failed", "skipped", "timed_out", "cancelled"}
 
 
 @dataclass(frozen=True)
@@ -44,6 +46,9 @@ class TaskSpec:
     priority: int = 0
     max_steps: int = 12
     max_seconds: int = 600
+    model: str = ""
+    reasoning_effort: str = ""
+    profile: str = ""
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "TaskSpec":
@@ -70,6 +75,9 @@ class TaskRecord:
     capability_ids: list[str] = field(default_factory=list)
     capability_snapshot: list[dict[str, str]] = field(default_factory=list)
     evidence_refs: list[str] = field(default_factory=list)
+    model: str = ""
+    reasoning_effort: str = ""
+    profile: str = ""
 
 
 @dataclass
@@ -83,6 +91,30 @@ class Worker:
     completed: int = 0
     capability_lease_id: str = ""
     capabilities: tuple[str, ...] = ()
+    llm: LLMConfig | None = None
+
+
+def task_llm(config: TrinaConfig, task: TaskSpec | None = None) -> LLMConfig:
+    """任务覆盖 > 子 Worker 默认 > 主会话；供应商凭据仍由现有 ProfileStore 管理。"""
+    llm = copy.deepcopy(config.llm)
+    for source in (config.subworker, task):
+        if source is None:
+            continue
+        if source.profile and llm.backend != "replay":
+            from .providers import ProfileStore
+            store = ProfileStore()
+            if source.profile not in store.profiles:
+                raise ValueError(f"未保存的供应商: {source.profile}；先在 /model 添加")
+            store.apply(llm, source.profile)
+        if source.model and source.model != llm.model:
+            llm.model, llm.reasoning_effort, llm.context_window = source.model, "default", 0
+        if source.reasoning_effort:
+            llm.reasoning_effort = source.reasoning_effort
+    llm.validate()
+    from .llm.reasoning import reasoning_support
+    if llm.backend != "replay" and llm.reasoning_effort not in reasoning_support(llm).levels:
+        raise ValueError(f"{llm.model} 不支持思考档位 {llm.reasoning_effort}")
+    return llm
 
 
 class WorkerPool:
@@ -99,16 +131,21 @@ class WorkerPool:
         self.workers: list[Worker] = []
         self.lock = threading.Lock()
 
-    def acquire(self) -> Worker | None:
+    def acquire(self, llm: LLMConfig | None = None) -> Worker | None:
+        requested = llm or self.config.llm
         with self.lock:
-            for worker in self.workers:
+            # 同配置优先复用；闲置槽切换后端时不携带前任务的历史或账本。
+            for worker in sorted(self.workers, key=lambda item: item.llm != requested):
                 if not worker.busy:
+                    if worker.llm != requested:
+                        worker.backend = self.backend_factory(requested)
+                        worker.llm = copy.deepcopy(requested)
                     worker.busy = True
                     worker.lease_id = uuid.uuid4().hex
                     return worker
             if len(self.workers) >= self.max_workers:
                 return None
-            worker = Worker(id=f"worker-{len(self.workers) + 1}", backend=self.backend_factory(self.config.llm))
+            worker = Worker(id=f"worker-{len(self.workers) + 1}", backend=self.backend_factory(requested), llm=copy.deepcopy(requested))
             worker.busy = True
             worker.lease_id = uuid.uuid4().hex
             self.workers.append(worker)
@@ -136,6 +173,8 @@ def validate_tasks(tasks: list[TaskSpec]) -> None:
             raise ValueError(f"非法任务 ID: {task.id!r}")
         if not task.target or not task.goal or task.max_steps < 1 or task.max_seconds < 1:
             raise ValueError(f"任务 {task.id} 缺少目标或预算非法")
+        if any(not isinstance(value, str) for value in (task.model, task.reasoning_effort, task.profile)):
+            raise ValueError(f"任务 {task.id} 模型配置必须为字符串")
         if any(not isinstance(name, str) or not name.strip() for name in task.capabilities):
             raise ValueError(f"任务 {task.id} 的能力约束非法")
         if any(dep not in ids or dep == task.id for dep in task.depends_on):
@@ -242,7 +281,10 @@ class SwarmRuntime:
             raise ValueError("max_workers 必须大于 0")
         self.config = config
         self.tasks = list(tasks)
-        self.records = {task.id: TaskRecord() for task in tasks}
+        self._task_llms = {task.id: task_llm(config, task) for task in tasks}
+        self.records = {task.id: TaskRecord(model=self._task_llms[task.id].model,
+                       reasoning_effort=self._task_llms[task.id].reasoning_effort,
+                       profile=self._task_llms[task.id].profile) for task in tasks}
         self.max_workers = max_workers
         self.run_id = run_id or f"swarm-{time.strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:6]}"
         if not _TASK_ID.fullmatch(self.run_id):
@@ -262,6 +304,11 @@ class SwarmRuntime:
         self.executor = executor or self._execute_agent
         self.stop_event = threading.Event()
         self.pause_event = threading.Event()
+        self.on_update: Callable[[dict[str, Any]], None] | None = None
+        self.on_progress: Callable[[Any], None] | None = None
+        self._inbox: queue.Queue[tuple[Any, Future[bool]]] = queue.Queue()
+        self._lifecycle_lock = threading.Lock()
+        self._accepting = True
         self.events: list[dict[str, Any]] = []
         self.event_bus = EventBus(self.workspace / "events.sqlite3", self.run_id, redact_keys=config.audit.redact_keys)
         self.coordination = CoordinationRuntime(self.tasks, event_bus=None if _restoring else self.event_bus)
@@ -303,12 +350,17 @@ class SwarmRuntime:
         tasks = [TaskSpec.from_dict(item) for item in data["tasks"]]
         validate_tasks(tasks)
         runtime.tasks = tasks
+        runtime._task_llms = {task.id: task_llm(config, task) for task in tasks}
         runtime.records = {task.id: TaskRecord() for task in tasks}
         runtime._commander_events.cursor = int(data.get("commander_cursor", 0))
         for task_id, item in data["records"].items():
             if task_id not in runtime.records:
                 raise ValueError(f"检查点包含未知任务: {task_id}")
             record = TaskRecord(**item)
+            llm = runtime._task_llms[task_id]
+            record.model = record.model or llm.model
+            record.reasoning_effort = record.reasoning_effort or llm.reasoning_effort
+            record.profile = record.profile or llm.profile
             runtime.records[task_id] = record
         runtime.events = list(data.get("events", []))
         runtime.coordination = CoordinationRuntime.restore(tasks, data.get("coordination"))
@@ -329,15 +381,67 @@ class SwarmRuntime:
             if signature == (current.target, current.goal.strip().casefold(), tuple(sorted(current.capabilities))):
                 return False
         validate_tasks(self.tasks + [task])
+        llm = task_llm(self.config, task)
         self.tasks.append(task)
         self.records[task.id] = TaskRecord()
         if not self.coordination.add_intent(task):
             self.tasks.pop()
             del self.records[task.id]
             return False
+        self._task_llms[task.id] = llm
+        self.records[task.id].model, self.records[task.id].reasoning_effort = llm.model, llm.reasoning_effort
+        self.records[task.id].profile = llm.profile
         self.audit.append("swarm.task.add", task=task.id, depends_on=task.depends_on)
         self._save()
         return True
+
+    def submit_task(self, task: TaskSpec) -> Future[bool]:
+        """跨线程提交，只有 Commander 可修改 DAG；收尾时明确拒绝，避免丢任务。"""
+        return self._submit(task)
+
+    def configure_task(self, task_id: str, **overrides: str) -> Future[bool]:
+        return self._submit((task_id, overrides))
+
+    def _submit(self, command: Any) -> Future[bool]:
+        result: Future[bool] = Future()
+        with self._lifecycle_lock:
+            if not self._accepting or self.stop_event.is_set():
+                result.set_exception(RuntimeError("Subworker 已收尾；请启动新任务"))
+                return result
+            self._inbox.put((command, result))
+        self.event_bus.publish("runtime.wake", source="console")
+        return result
+
+    def _drain_submissions(self) -> None:
+        while True:
+            try:
+                task, result = self._inbox.get_nowait()
+            except queue.Empty:
+                break
+            if not result.set_running_or_notify_cancel():
+                continue
+            try:
+                if self.stop_event.is_set():
+                    raise RuntimeError("Subworker 已停止接收任务")
+                if isinstance(task, tuple):
+                    task_id, overrides = task
+                    if set(overrides) - {"model", "reasoning_effort", "profile"}:
+                        raise ValueError("只能调整模型、思考强度和供应商")
+                    if task_id not in self.records or self.records[task_id].status != "pending":
+                        raise ValueError("只可调整等待中的任务；运行中配置保持不变")
+                    index = next(i for i, item in enumerate(self.tasks) if item.id == task_id)
+                    updated = replace(self.tasks[index], **overrides)
+                    llm = task_llm(self.config, updated)
+                    self.tasks[index], self._task_llms[task_id] = updated, llm
+                    record = self.records[task_id]
+                    record.model, record.reasoning_effort, record.profile = llm.model, llm.reasoning_effort, llm.profile
+                    self.audit.append("swarm.task.configure", task=task_id, **overrides)
+                    self._save()
+                    result.set_result(True)
+                else:
+                    result.set_result(self.add_task(task))
+            except Exception as exc:
+                result.set_exception(exc)
 
     def _task_registry(self, task: TaskSpec, worker: Worker) -> ToolRegistry:
         """按意图给通用 Worker 建立有限期能力租约。"""
@@ -423,6 +527,7 @@ class SwarmRuntime:
             scope__max_qps=self.config.scope.max_qps / self.max_workers,
             scope__max_host_concurrency=max(1, self.config.scope.max_host_concurrency // self.max_workers),
         )
+        worker_config.llm = copy.deepcopy(worker.llm or self.config.llm)
         agent = PentestAgent(
             worker_config,
             backend=worker.backend,
@@ -499,7 +604,9 @@ class SwarmRuntime:
             "version": 3,
             "run_id": self.run_id,
             "max_workers": self.max_workers,
-            "tasks": [asdict(task) for task in self.tasks],
+            "tasks": [{**asdict(task), "model": self._task_llms[task.id].model,
+                       "reasoning_effort": self._task_llms[task.id].reasoning_effort,
+                       "profile": self._task_llms[task.id].profile} for task in self.tasks],
             "records": {key: asdict(value) for key, value in self.records.items()},
             "events": self.events,
             "capability_memory": self.fabric.memory_snapshot(),
@@ -512,6 +619,13 @@ class SwarmRuntime:
         temporary = self.checkpoint.with_suffix(".tmp")
         temporary.write_text(json.dumps(data, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
         temporary.replace(self.checkpoint)
+        if self.on_update is not None:
+            try:
+                self.on_update({"run_id": self.run_id, "checkpoint": str(self.checkpoint),
+                                "tasks": {task.id: {"goal": task.goal, "target": task.target,
+                                          **asdict(self.records[task.id])} for task in self.tasks}})
+            except Exception as exc:
+                self.audit.append("swarm.observer.error", error=str(exc)[:300])
 
     def _consume_events(self) -> None:
         """实时事实和工具终态在 Commander 线程消费，不由 Worker 修改任务记录。"""
@@ -536,15 +650,37 @@ class SwarmRuntime:
                     self.coordination.publish_state(event.task_id, state, include_steps=False)
             elif event.kind == "tool.finished":
                 self.coordination.observe_tool(event)
+            if self.on_progress is not None and event.kind in {"tool.finished", "model.finished"}:
+                try:
+                    self.on_progress(event)
+                except Exception as exc:
+                    self.audit.append("swarm.observer.error", error=str(exc)[:300])
 
     def run(self) -> dict[str, Any]:
+        try:
+            return self._run()
+        finally:
+            with self._lifecycle_lock:
+                self._accepting = False
+            while not self._inbox.empty():
+                _, result = self._inbox.get_nowait()
+                if not result.done():
+                    result.set_exception(RuntimeError("Subworker 已收尾，任务未被接受"))
+
+    def _run(self) -> dict[str, Any]:
         """执行所有可运行任务；异常保留在任务记录，其他分支继续。"""
         self._save()
         futures: dict[Future[RunState], tuple[TaskSpec, Worker, str, str]] = {}
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             while True:
+                self._drain_submissions()
                 self._consume_events()
                 if self.stop_event.is_set() and not futures:
+                    for task_id, record in self.records.items():
+                        if record.status == "pending":
+                            record.status, record.error = "cancelled", "用户停止，尚未执行"
+                            self.coordination.terminate_unclaimed(task_id, record.status, record.error)
+                    self._save()
                     break
                 if not self.stop_event.is_set() and not self.pause_event.is_set():
                     previous_rounds = self.coordination.planner_rounds
@@ -559,7 +695,7 @@ class SwarmRuntime:
                         if record.status != "pending":
                             continue
                         deps = [self.records[dep].status for dep in task.depends_on]
-                        if any(status in {"failed", "blocked", "skipped"} for status in deps):
+                        if any(status in TERMINAL - {"completed"} for status in deps):
                             record.status = "skipped"
                             record.error = "前序任务未完成"
                             self.coordination.terminate_unclaimed(task.id, "skipped", record.error)
@@ -570,7 +706,13 @@ class SwarmRuntime:
                             continue
                         if task.id not in ready_intents:
                             continue
-                        worker = self.pool.acquire()
+                        try:
+                            worker = self.pool.acquire(self._task_llms[task.id])
+                        except Exception as exc:
+                            record.status, record.error = "failed", f"BackendError: {exc}"
+                            self.coordination.terminate_unclaimed(task.id, record.status, record.error)
+                            self._save()
+                            continue
                         if worker is None:
                             break
                         try:
@@ -607,12 +749,16 @@ class SwarmRuntime:
                                                  self.event_bus.publish("worker.finished", source="executor", task_id=task_id))
                 if not futures:
                     if all(record.status in TERMINAL for record in self.records.values()):
-                        break
+                        with self._lifecycle_lock:
+                            if self._inbox.empty():
+                                self._accepting = False
+                                break
+                        continue
                     if self.pause_event.is_set():
                         time.sleep(0.1)
                         continue
                     if self.stop_event.is_set():
-                        break
+                        continue
                     raise RuntimeError("任务图无法继续调度")
                 # Future、Intent 和事实共用同一唤醒条件；不再只等待任务终态轮询。
                 cursor = self._commander_events.cursor
@@ -631,7 +777,8 @@ class SwarmRuntime:
                     try:
                         state = future.result()
                         record.result = self._result(state)
-                        record.status = state.status if state.status in {"blocked", "failed"} else "completed"
+                        record.status = "cancelled" if state.status == "stopped" else (
+                            state.status if state.status in TERMINAL else "completed")
                         try:
                             self.fabric.publish_task(self.fabric.get_lease(capability_lease), record.result)
                         except Exception as exc:  # noqa: BLE001 - 索引故障不能改写任务真实状态

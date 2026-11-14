@@ -67,9 +67,11 @@ class ConsoleContext:
     preset: str = "default"
     separator: str = "dot"
     context_bar: bool = True
+    metrics: tuple[tuple[str, str], ...] = ()
+    workers: str = ""
 
     def footer(self, width: int) -> list[tuple[str, str]]:
-        """单行按优先级显示角色、模型、状态和进度，不因长模型换行。"""
+        """左侧角色/模型/轮次，右侧真实用量；按列预算收起低优先级字段。"""
         width = max(1, width)
         icon = "◌"
         if "运行" in self.status:
@@ -83,17 +85,33 @@ class ConsoleContext:
         role = _fit_cells(self.role, min(18, max(4, width // 3)))
         groups = [[("class:context.role", f" {role} ")]]
         remaining = width - _cells(role) - 2
+        progress = self.progress.split(" · 工具", 1)[0]
+        progress_width = _cells(progress) + 3 if progress and width >= 56 else 0
+        right: list[tuple[str, str]] = []
+        # 给模型保留可读宽度，统计占右侧，缓存优先于累计 Token / I/O。
+        right_budget = max(0, remaining - 24 - progress_width)
+        for style, value in self.metrics:
+            candidate = right + ([("class:context.label", "  ")] if right else []) + [(style, value)]
+            if sum(_cells(text) for _, text in candidate) <= right_budget:
+                right = candidate
+            if self.preset == "compact" and right:
+                break
+        right_width = sum(_cells(text) for _, text in right)
+        remaining -= right_width + (3 if right else 0)
         if remaining >= 8:
             model_budget = remaining - 3
             extras = []
-            if width >= 64 and self.preset != "compact":
+            if width >= 160 and self.preset == "full":
                 extras.append([("class:context.state", icon + " "), ("class:status", self.status)])
-            if width >= 100 and self.progress and self.preset != "compact":
-                extras.append([("class:context.progress", self.progress)])
+            if progress_width:
+                extras.append([("class:context.progress", progress)])
             model_budget -= sum(sum(_cells(text) for _, text in group) + 3 for group in extras)
             groups.append([("class:context.model", _fit_cells("◈ " + self.model, max(4, model_budget)))])
             groups.extend(extras)
         result = _join_segments(groups, self.separator)
+        if right:
+            used = sum(_cells(text) for _, text in result)
+            result.extend([("", " " * max(2, width - used - right_width)), *right])
         if sum(_cells(text) for _, text in result) > width:
             return [("class:context.role", _fit_cells(f" {self.role} ", width))]
         return result
@@ -120,7 +138,8 @@ class ConsoleContext:
         branch = ""
         if self.branch and width >= 80:
             branch = " ⎇ " + _fit_cells(self.branch, min(20, width // 6)) + " "
-        remaining = max(0, width - _cells(path_text) - _cells(context_text) - _cells(branch))
+        workers = f" ⠿ {self.workers} " if self.workers and width >= 96 else ""
+        remaining = max(0, width - _cells(path_text) - _cells(context_text) - _cells(branch) - _cells(workers))
         fragments: list[tuple[str, str]] = []
         if context_text:
             ratio = (self.context_tokens or 0) / max(1, self.context_window)
@@ -128,6 +147,8 @@ class ConsoleContext:
             fragments.append(("class:" + tone, context_text))
         if branch:
             fragments.append(("class:context.branch", branch))
+        if workers:
+            fragments.append(("class:context.workers", workers))
         fragments.append(("class:rail", "─" * remaining))
         fragments.append(("class:context.path", path_text))
         return fragments
@@ -254,6 +275,25 @@ class ConsoleState:
             # 极窄屏先显示缓存命中，若没有缓存数据则显示已报告总量。
             chosen = [_fit_cells(next((item for item in priority if item.startswith("缓存命中")), priority[0]), width)]
         return sep.join(chosen)
+
+    def metrics(self) -> tuple[tuple[str, str], ...]:
+        """HUD 仅展示供应商实际返回的指标；部分统计保留标识。"""
+        data = self.usage_data()
+        items: list[tuple[str, str]] = []
+        if not data["calls"]:
+            return ()
+        rate = data["cache_hit_rate"]
+        if rate is not None:
+            items.append(("class:context.cache", f"缓存 {rate:.1%}" + ("*" if data["missing_cache"] else "")))
+        if data["tokens_reported"]:
+            partial = "≥" if data["missing_input"] or data["missing_output"] else ""
+            items.append(("class:context.tokens", f"Token {partial}{_number(data['total_tokens'])}"))
+        for field, label, missing in (("input_tokens", "↑", "missing_input"), ("output_tokens", "↓", "missing_output")):
+            if data[field.replace("_tokens", "_reported")]:
+                items.append(("class:usage", label + ("≥" if data[missing] else "") + _number(data[field])))
+        if data["cost_reported"]:
+            items.append(("class:usage", ("≥" if data["missing_cost"] else "") + f"${data['cost_usd']:.4f}"))
+        return tuple(items)
 
 
 class TrackedBackend:

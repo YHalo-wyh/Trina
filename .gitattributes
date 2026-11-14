@@ -25,3 +25,4 @@ evidence/20261028-cli-ui/*.log -whitespace
 evidence/20261113-console-footer/** -whitespace
 evidence/20261113-unified-events/** -whitespace
 evidence/20261114-v040-console/** -whitespace
+evidence/20261114-subworkers/** -whitespace

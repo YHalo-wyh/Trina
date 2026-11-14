@@ -1,0 +1,15 @@
+{
+  "scope": "本地 Python 布局函数耗时，不代表网络延迟或实际终端 FPS",
+  "measurements": {
+    "footer_144_columns": {
+      "median_ms": 0.04930000432068482,
+      "p99_ms": 0.14579999697161838,
+      "iterations": 1000
+    },
+    "panel_10000_tasks_visible8": {
+      "median_ms": 0.22819999867351726,
+      "p99_ms": 0.40469999657943845,
+      "iterations": 1000
+    }
+  }
+}
