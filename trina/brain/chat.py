@@ -86,6 +86,7 @@ class ChatAgent:
         self._closed = False
         self.in_flight = False
         self.title = ""
+        self.worker_role = "commander"
         try:
             # 先取得独占锁再读取，避免读取到另一实例关闭保存前的旧快照。
             resume_data = self.store.load(self.run_id) if resume_saved else None
@@ -327,6 +328,9 @@ class ChatAgent:
         from .prompts import build_runtime_context
         from .binary_prompt import role_for_registry
         role = role_for_registry(self.registry, self.config.llm.role_profile)
+        from ..worker_roles import WORKER_ROLES
+        if self.worker_role != "commander":
+            role += "\n\n# 当前 Worker\n" + WORKER_ROLES[self.worker_role][1]
         protocol = "native" if self._native_tools_enabled() else "json"
 
         if self.config.llm.prompt_layers:
@@ -478,6 +482,7 @@ class ChatAgent:
         context = self.context
         self.store.save({"version": 1, "run_id": self.run_id, "project": self.store.project,
                          "title": self.title, "turns": self.turns, "in_flight": self.in_flight,
+                         "worker_role": self.worker_role,
                          "history": self.history, "messages": self._messages, "state": self.state.to_dict(),
                          "binary_sessions": self.ctx.extra["binary_sessions"].snapshot(),
                          "hypotheses": self.ledger.to_dict(), "usage": self.usage.to_dict(),
@@ -507,6 +512,9 @@ class ChatAgent:
         self.history = data["history"]
         self._messages, self._messages_ready = data["messages"], True
         self.turns, self.title = data["turns"], data["title"]
+        from ..worker_roles import WORKER_ROLES
+        role = data.get("worker_role", "commander")
+        self.worker_role = role if role in WORKER_ROLES else "commander"
         allowed = {item.name for item in fields(Hypothesis)}
         for row in data.get("hypotheses", []):
             item = Hypothesis(**{key: value for key, value in row.items() if key in allowed})

@@ -185,4 +185,32 @@ class WorkspaceEdit(Tool):
             return ToolResult(ok=False, error=str(exc))
 
 
-TOOLS = [TerminalExec(), WorkspaceRead(), WorkspaceWrite(), WorkspaceEdit()]
+class WorkspaceGit(Tool):
+    spec = ToolSpec(
+        name="workspace_git", summary="查看项目 Git 状态、列出本地分支、切换或创建分支；支持在 main 直接编辑，不强制重置文件",
+        category="workspace", action_level="exploit",
+        params={
+            "action": ParamSpec("str", "Git 操作", enum=["status", "branches", "switch", "create"]),
+            "branch": ParamSpec("str", "本地分支名", required=False, default=""),
+        },
+    )
+
+    def required_level(self, params: dict) -> str:
+        return "detect" if params.get("action") in {"status", "branches"} else "exploit"
+
+    def run(self, ctx, action, branch=""):
+        if action in {"switch", "create"} and (not branch or branch.startswith("-") or any(c in branch for c in "\r\n\x00")):
+            return ToolResult(ok=False, error="必须提供合法的本地分支名")
+        args = {"status": ["status", "--short", "--branch"],
+                "branches": ["for-each-ref", "--format=%(refname:short)", "refs/heads/"],
+                "switch": ["switch", "--no-guess", "--", branch], "create": ["switch", "-c", branch]}[action]
+        result = run_external(["git", *args], ctx, tool=self.spec.name, required_level=ctx.effective_level,
+                              timeout=15, cwd=str(Path.cwd()))
+        output = result.stdout.strip()
+        return ToolResult(ok=result.ok, summary=output or (result.stderr.strip() if result.ok else ""),
+                          error=result.error or (result.stderr.strip() if not result.ok else ""),
+                          data={"branches": output.splitlines() if action == "branches" and result.ok else [],
+                                "output": output, "exit_code": result.code})
+
+
+TOOLS = [TerminalExec(), WorkspaceRead(), WorkspaceWrite(), WorkspaceEdit(), WorkspaceGit()]

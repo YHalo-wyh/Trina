@@ -294,6 +294,24 @@ class EvalConfig:
 
 
 @dataclass
+class UIConfig:
+    """控制台显示配置；不影响模型权限或执行策略。"""
+
+    status_line_preset: str = "default"
+    status_line_separator: str = "dot"
+    context_bar: bool = True
+    motion: str = "full"
+
+    def validate(self) -> None:
+        if self.status_line_preset not in {"default", "compact", "full"}:
+            raise ConfigError("ui.status_line_preset 必须为 default/compact/full")
+        if self.status_line_separator not in {"dot", "pipe", "slash"}:
+            raise ConfigError("ui.status_line_separator 必须为 dot/pipe/slash")
+        if type(self.context_bar) is not bool or self.motion not in {"full", "reduced", "none"}:
+            raise ConfigError("ui.context_bar 必须为布尔值，ui.motion 必须为 full/reduced/none")
+
+
+@dataclass
 class TrinaConfig:
     scope: ScopeConfig = field(default_factory=ScopeConfig)
     llm: LLMConfig = field(default_factory=LLMConfig)
@@ -304,6 +322,7 @@ class TrinaConfig:
     audit: AuditConfig = field(default_factory=AuditConfig)
     policy: PolicyConfig = field(default_factory=PolicyConfig)
     eval: EvalConfig = field(default_factory=EvalConfig)
+    ui: UIConfig = field(default_factory=UIConfig)
     path: Path | None = None
 
     # ------------------------------------------------------------------ 载入
@@ -352,6 +371,7 @@ class TrinaConfig:
             "audit": AuditConfig,
             "policy": PolicyConfig,
             "eval": EvalConfig,
+            "ui": UIConfig,
         }
         kwargs: dict[str, Any] = {}
         for name, klass in sections.items():
@@ -373,7 +393,7 @@ class TrinaConfig:
     @classmethod
     def _apply_env(cls, cfg: "TrinaConfig") -> "TrinaConfig":
         """`TRINA_SCOPE_EXPLOIT_LEVEL=detect` 形式的覆盖（只处理标量字段）。"""
-        for section in ("scope", "llm", "run", "binary", "report", "audit", "policy"):
+        for section in ("scope", "llm", "run", "binary", "report", "audit", "policy", "ui"):
             obj = getattr(cfg, section)
             for fname, fdef in obj.__dataclass_fields__.items():
                 env_key = f"TRINA_{section.upper()}_{fname.upper()}"
@@ -408,6 +428,7 @@ class TrinaConfig:
         self.run.validate()
         self.binary.validate()
         self.policy.validate()
+        self.ui.validate()
         if self.audit.dir == "":
             raise ConfigError("audit.dir 不能为空")
         if not self.report.formats:

@@ -26,7 +26,8 @@ def _fit_cells(value: str, width: int, *, tail: bool = False) -> str:
     """按终端显示宽度省略文本；路径保留末尾目录。"""
     from .terminal import clean_text
     value = clean_text(value).replace("\n", " ").strip()
-    width = max(1, width)
+    if width <= 0:
+        return ""
     if _cells(value) <= width:
         return value
     selected, used = [], 0
@@ -37,6 +38,17 @@ def _fit_cells(value: str, width: int, *, tail: bool = False) -> str:
         selected.append(char)
         used += size
     return "…" + "".join(reversed(selected)) if tail else "".join(selected) + "…"
+
+
+def _join_segments(groups: list[list[tuple[str, str]]], separator: str = "dot") -> list[tuple[str, str]]:
+    result: list[tuple[str, str]] = []
+    for group in groups:
+        if not group:
+            continue
+        if result:
+            result.append(("class:context.label", {"pipe": " │ ", "slash": " / "}.get(separator, " · ")))
+        result.extend(group)
+    return result
 
 
 @dataclass(frozen=True)
@@ -50,9 +62,15 @@ class ConsoleContext:
     progress: str = ""
     context_tokens: int | None = None
     context_window: int = 0
+    role: str = "Commander"
+    branch: str = ""
+    preset: str = "default"
+    separator: str = "dot"
+    context_bar: bool = True
 
     def footer(self, width: int) -> list[tuple[str, str]]:
-        """状态、模型和步骤按组折行；目录单独嵌在上方横线。"""
+        """单行按优先级显示角色、模型、状态和进度，不因长模型换行。"""
+        width = max(1, width)
         icon = "◌"
         if "运行" in self.status:
             icon = "●"
@@ -62,56 +80,55 @@ class ConsoleContext:
             icon = "?"
         elif "停止" in self.status:
             icon = "■"
-        groups: list[list[tuple[str, str]]] = [
-            [("class:context.state", icon + " "), ("class:status", self.status)],
-            [("class:context.model.icon", "◈ "), ("class:context.model", self.model)],
-        ]
-        if self.progress:
-            groups.append([("class:context.progress.icon", "◆ "),
-                           ("class:context.progress", self.progress)])
-        separator = [("class:context.label", "  ·  ")]
-        rows: list[list[tuple[str, str]]] = []
-        current: list[tuple[str, str]] = []
-        for group in groups:
-            prefix = separator if current else []
-            needed = sum(_cells(text) for _, text in current + prefix + group)
-            if current and needed > width:
-                rows.append(current)
-                current = []
-            available = max(1, width - sum(_cells(text) for _, text in current + (separator if current else [])))
-            fixed = sum(_cells(text) for _, text in group[:-1])
-            fitted = list(group[:-1]) + [(group[-1][0], _fit_cells(group[-1][1], max(1, available - fixed)))]
-            current += (separator if current else []) + fitted
-        if current:
-            rows.append(current)
-        return [(style, text) for index, row in enumerate(rows)
-                for style, text in ([("", "\n")] if index else []) + row]
+        role = _fit_cells(self.role, min(18, max(4, width // 3)))
+        groups = [[("class:context.role", f" {role} ")]]
+        remaining = width - _cells(role) - 2
+        if remaining >= 8:
+            model_budget = remaining - 3
+            extras = []
+            if width >= 64 and self.preset != "compact":
+                extras.append([("class:context.state", icon + " "), ("class:status", self.status)])
+            if width >= 100 and self.progress and self.preset != "compact":
+                extras.append([("class:context.progress", self.progress)])
+            model_budget -= sum(sum(_cells(text) for _, text in group) + 3 for group in extras)
+            groups.append([("class:context.model", _fit_cells("◈ " + self.model, max(4, model_budget)))])
+            groups.extend(extras)
+        result = _join_segments(groups, self.separator)
+        if sum(_cells(text) for _, text in result) > width:
+            return [("class:context.role", _fit_cells(f" {self.role} ", width))]
+        return result
 
     def rail(self, width: int) -> list[tuple[str, str]]:
-        """在输入框横线上展示上下文仪表，并把工作目录锚定到最右。"""
+        """上下文仪表贴最左，工作目录锚定到最右，中间用横线填满。"""
         width = max(1, width)
-        path_prefix = " 📁 "
+        path_prefix = " 📁 " if width >= 16 else " "
         path_limit = width if width < 28 else max(12, min(width // 2, 54))
-        path_text = path_prefix + _fit_cells(self.directory, max(1, path_limit - _cells(path_prefix)), tail=True)
+        path_text = path_prefix + _fit_cells(self.directory, path_limit - _cells(path_prefix), tail=True)
         context_text = ""
         if width >= 28 and self.context_window > 0:
             if self.context_tokens is None:
-                context_text = f" ◔ {_number(self.context_window)} "
+                context_text = f"◔ {_number(self.context_window)} "
             else:
                 ratio = max(0.0, self.context_tokens / self.context_window)
                 percent = min(999, round(ratio * 100))
-                if width < 40:
-                    context_text = f" ◔ {percent}% "
+                if width < 64 or not self.context_bar or self.preset == "compact":
+                    context_text = f"◔ {percent}% "
                 else:
                     filled = min(8, max(0, round(min(1.0, ratio) * 8)))
                     gauge = "▰" * filled + "▱" * (8 - filled)
-                    context_text = f" ◔ {percent}% {gauge} "
-        remaining = max(0, width - _cells(path_text) - _cells(context_text))
-        before = remaining if not context_text else (remaining * 2) // 3
-        after = max(0, remaining - before)
-        fragments: list[tuple[str, str]] = [("class:rail", "─" * before)]
+                    context_text = f"◔ {percent}% {gauge} "
+        branch = ""
+        if self.branch and width >= 80:
+            branch = " ⎇ " + _fit_cells(self.branch, min(20, width // 6)) + " "
+        remaining = max(0, width - _cells(path_text) - _cells(context_text) - _cells(branch))
+        fragments: list[tuple[str, str]] = []
         if context_text:
-            fragments.extend([("class:context.meter", context_text), ("class:rail", "─" * after)])
+            ratio = (self.context_tokens or 0) / max(1, self.context_window)
+            tone = "context.hot" if ratio >= .85 else "context.warn" if ratio >= .65 else "context.meter"
+            fragments.append(("class:" + tone, context_text))
+        if branch:
+            fragments.append(("class:context.branch", branch))
+        fragments.append(("class:rail", "─" * remaining))
         fragments.append(("class:context.path", path_text))
         return fragments
 
@@ -190,7 +207,7 @@ class ConsoleState:
                     "missing_cache": self.missing_cache, "missing_cache_read": self.missing_cache_read,
                     "missing_cache_write": self.missing_cache_write, "missing_cost": self.missing_cost}
 
-    def footer(self, width: int, compact: bool = False) -> str:
+    def footer(self, width: int, compact: bool = False, *, preset: str = "default", separator: str = "dot") -> str:
         data = self.usage_data()
         if not data["calls"]:
             return ""
@@ -203,7 +220,7 @@ class ConsoleState:
         if rate is not None:
             cache = f"{rate:.1%}" + ("（部分）" if data["missing_cache"] else "")
             groups.append(f"缓存命中 {cache}")
-        if not compact:
+        if not compact and preset != "compact":
             io_parts: list[str] = []
             if data["input_reported"]:
                 io_parts.append(f"入 {('≥' if data['missing_input'] else '')}{_number(data['input_tokens'])}")
@@ -222,18 +239,21 @@ class ConsoleState:
                 groups.append(f"费用 {'≥' if data['missing_cost'] else ''}${data['cost_usd']:.4f}")
         if not groups:
             return ""
-        lines, line = [], ""
-        for group in groups:
-            combined = line + " · " + group if line else group
-            if line and _cells(combined) > width:
-                lines.append(line)
-                line = group
-            else:
-                line = combined
-        if line:
-            lines.append(line)
-        from .terminal import _wrap
-        return "\n".join(_wrap(line, max(20, width)) for line in lines)
+        # 始终一行：先保留总量与命中率，宽屏再展示实际 I/O、缓存和费用。
+        sep = {"pipe": " │ ", "slash": " / "}.get(separator, " · ")
+        priority = sorted(groups, key=lambda item: 0 if item.startswith("会话") else 1 if item.startswith("缓存命中") else 2 if item.startswith("费用") else 3)
+        if width < 44:
+            priority.sort(key=lambda item: 0 if item.startswith("缓存命中") else 1)
+        chosen: list[str] = []
+        for group in priority:
+            if _cells(sep.join(chosen + [group])) <= width:
+                chosen.append(group)
+            if preset == "default" and len(chosen) >= 4:
+                break
+        if not chosen:
+            # 极窄屏先显示缓存命中，若没有缓存数据则显示已报告总量。
+            chosen = [_fit_cells(next((item for item in priority if item.startswith("缓存命中")), priority[0]), width)]
+        return sep.join(chosen)
 
 
 class TrackedBackend:

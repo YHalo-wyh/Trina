@@ -88,6 +88,9 @@ class Console:
         self._event_transcript = None
         self._task_title = ""
         self._task_max_steps = 0
+        self._active_worker = "commander"
+        self._worker_sessions: dict[str, str] = {}
+        self._branch = self._read_branch()
 
     # ------------------------------------------------------------------ 输出
     def _display(self, text: str) -> None:
@@ -126,6 +129,8 @@ class Console:
             self.view.set_activity("retry", f"等待重试 · 第 {event.payload.get('attempt')} 次")
         elif event.kind == "model.error":
             self.view.set_activity("error", "模型请求失败")
+        elif event.kind == "tool.finished" and event.payload.get("tool") in {"terminal_exec", "workspace_git"}:
+            self._branch = self._read_branch()
         self._event_transcript.consume(event)
 
     def _show_help(self, args: list[str] | None = None) -> None:
@@ -152,13 +157,13 @@ class Console:
             self._enhanced_input = EnhancedConsoleInput(
                 status=self._prompt_status, running=lambda: self.session.running,
                 dynamic_values=self._completion_values, plain=self._plain or not self.color,
-                usage=self.view.footer, activity=self._activity,
+                usage=self._footer_usage, activity=self._activity, motion=self.config.ui.motion,
                 context=self._footer_context,
             )
             original_output = self.output
             self.output = self._enhanced_input.write
             self._start_scheduler()
-            show_home(output=self._display, color=self.color)
+            self._enhanced_input.show_home()
             try:
                 self._enhanced_input.run(self.handle)
             except (EOFError, KeyboardInterrupt):
@@ -236,10 +241,34 @@ class Console:
                        (getattr(state, "counters", {}) or {}).get("steps", 0))
             if self._task_max_steps:
                 progress = f"步骤 {step}/{self._task_max_steps}"
+        from .worker_roles import WORKER_ROLES
+        ui = self.config.ui
+        role = WORKER_ROLES[self._active_worker][0] if is_chat or not self.session.running else "Task Agent"
         return ConsoleContext(status=status + queued, model=_display_model(llm.model, llm.reasoning_effort),
                               directory=str(Path.cwd()), task=self._task_title or "新对话",
                               progress=progress, context_tokens=context_tokens,
-                              context_window=llm.effective_context_window)
+                              context_window=llm.effective_context_window, role=role, branch=self._branch,
+                              preset=ui.status_line_preset, separator=ui.status_line_separator, context_bar=ui.context_bar)
+
+    def _footer_usage(self, width: int, compact: bool = False) -> str:
+        return self.view.footer(width, compact, preset=self.config.ui.status_line_preset,
+                                separator=self.config.ui.status_line_separator)
+
+    @staticmethod
+    def _read_branch() -> str:
+        """只读当前项目 Git HEAD，渲染帧不启动子进程；兼容 linked worktree。"""
+        directory = Path.cwd()
+        for parent in (directory, *directory.parents):
+            git = parent / ".git"
+            try:
+                if git.is_file():
+                    git = (parent / git.read_text(encoding="utf-8").strip().removeprefix("gitdir: ")).resolve()
+                if git.is_dir():
+                    head = (git / "HEAD").read_text(encoding="utf-8").strip()
+                    return head.removeprefix("ref: refs/heads/") if head.startswith("ref: ") else head[:8]
+            except OSError:
+                return ""
+        return ""
 
     def _prompt_status(self) -> str:
         context = self._footer_context()
@@ -381,6 +410,9 @@ class Console:
             "audit": lambda: self._delegate(["audit", *args]),
             "lab": lambda: self._delegate(["lab", *args]),
             "model": lambda: self._cmd_model(args),
+            "worker": lambda: self._cmd_worker(args),
+            "branch": lambda: self._cmd_branch(args),
+            "footer": lambda: self._cmd_footer(args),
             "history": lambda: self._cmd_history(args),
             "new": self._cmd_new,
             "clear": self._cmd_new,
@@ -706,7 +738,75 @@ class Console:
         self._task_title = ""
         self.session.state = self._last_state = None
         self.view.reset()
+        self._worker_sessions.pop(self._active_worker, None)
         self._emit("已开启新对话会话；上一次对话已保存，可用 /resume 切换。")
+
+    def _cmd_footer(self, args: list[str]) -> None:
+        if args:
+            if len(args) != 1 or args[0] not in {"default", "compact", "full"}:
+                raise ValueError("用法：/footer default|compact|full")
+            self.config.ui.status_line_preset = args[0]
+        self._emit(f"底栏 {self.config.ui.status_line_preset} · 持久配置：configs/trina.yaml 的 ui 段")
+
+    def _cmd_worker(self, args: list[str]) -> None:
+        from .worker_roles import WORKER_ROLES
+        from .console_ui import select_option
+        choices = [ChoiceSpec(key, f"{label} · {'当前' if key == self._active_worker else '独立上下文'}")
+                   for key, (label, _) in WORKER_ROLES.items()]
+        if not args:
+            if self._input is None and not self._custom_output and enhanced_input_available():
+                selected = select_option("切换 Worker", choices, subtitle="每个角色保留独立会话 · Esc 返回")
+                if selected is None:
+                    return
+                args = [selected]
+            else:
+                self._display(render_panel("Worker 会话", rows=[(item.value, item.description) for item in choices], color=self.color))
+                return
+        if len(args) != 1 or args[0] not in WORKER_ROLES:
+            raise ValueError("用法：/worker " + "|".join(WORKER_ROLES))
+        selected = args[0]
+        if selected == self._active_worker:
+            self._emit(f"当前角色：{WORKER_ROLES[selected][0]}")
+            return
+        if self.chat is not None and self.chat.history:
+            self._worker_sessions[self._active_worker] = self.chat.run_id
+        target = self._worker_sessions.get(selected)
+        if target:
+            self._cmd_resume([target])
+            return
+        if self.chat is not None:
+            self.chat.close()
+        self.chat = None
+        self._active_worker = selected
+        self._task_config = None
+        self._task_title = ""
+        self.session.reset_for_run()
+        self.session.state = self._last_state = None
+        self._live_step = None
+        self.view.reset()
+        self._tracked_backend = None
+        self._event_transcript = None
+        if self._enhanced_input is not None:
+            self._enhanced_input.clear_transcript()
+        self._emit(f"已切换到 {WORKER_ROLES[selected][0]} · 独立会话")
+
+    def _cmd_branch(self, args: list[str]) -> None:
+        from .console_ui import select_option
+        chat = self._ensure_chat()
+        action = "switch" if args else "branches"
+        if len(args) > 2 or (len(args) == 2 and args[0] != "new") or (args[:1] == ["new"] and len(args) != 2):
+            raise ValueError("用法：/branch [本地分支]；/branch new <名称>")
+        params = {"action": "create" if args[:1] == ["new"] else action,
+                  "branch": args[-1] if args else ""}
+        result = chat.registry.execute("workspace_git", params, chat.ctx)
+        if not args and result.ok:
+            branches = result.data.get("branches", [])
+            if self._input is None and not self._custom_output and enhanced_input_available():
+                selected = select_option("切换本地分支", [ChoiceSpec(name, name) for name in branches], subtitle="Enter 切换 · 不丢弃本地修改")
+                if selected:
+                    return self._cmd_branch([selected])
+        self._branch = self._read_branch()
+        self._emit(result.summary if result.ok else result.error, prefix="Git" if result.ok else "错误")
 
     def _cmd_tool(self, args: list[str]) -> None:
         """二进制手工调用与当前聊天共用生命周期，其他工具保持 CLI 入口。"""
@@ -787,11 +887,17 @@ class Console:
             pause_event=self.session.pause_event, logger=self._agent_log, on_tool=self._on_tool_result)
         try:
             if self.chat is not None:
+                if self.chat.history:
+                    self._worker_sessions[self._active_worker] = self.chat.run_id
                 self.chat.close()
         except Exception:
             restored.close()
             raise
         self.chat = restored
+        self._active_worker = restored.worker_role
+        self._worker_sessions[self._active_worker] = restored.run_id
+        self._task_config = None
+        self._live_step = None
         self._task_title = restored.title
         restored.save()
         self.session.reset_for_run()
@@ -1022,6 +1128,7 @@ class Console:
                 on_tool=self._on_tool_result,
                 on_event=self._on_runtime_event,
             )
+            self.chat.worker_role = self._active_worker
         return self.chat
 
     def _on_chat_stream(self, text: str, final: bool) -> None:

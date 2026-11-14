@@ -1,12 +1,12 @@
 # Trina · 全自动渗透测试 Agent
 
-## 项目检查入口（0.3.0）
+## 项目检查入口（0.4.0）
 
 | 文档 | 检查内容 |
 |---|---|
-| [需求](需求.md) | 使用者、场景、21 项功能需求、8 项质量要求、当前状态与验收口径 |
+| [需求](需求.md) | 使用者、场景、22 项功能需求、8 项质量要求、当前状态与验收口径 |
 | [规约](规约.md) · [机器规约](规约.json) | CLI 与 Agent 接口、状态转换、规则 ID、实现路径、测试方法与白名单验证命令 |
-| [设计决策](设计决策.md) | 原有单 Agent 决策链，以及 0.2.0—0.3.0 的更新记录、修改原因与兼容边界 |
+| [设计决策](设计决策.md) | 原有单 Agent 决策链，以及 0.2.0—0.4.0 的更新记录、修改原因与兼容边界 |
 | [更新日志](CHANGELOG.md) | 各版本面向使用者的变更摘要、兼容说明与验证状态 |
 | [缓存感知运行时](docs/CACHE_RUNTIME.md) | 状态差量、供应商缓存策略、上下文继承检查点与 `/context` 诊断 |
 | [原生二进制工具链](docs/BINARY_TOOLS.md) | radare2 stdio、GDB/MI3、地址模型、会话隔离、真实 ELF 验证与限制 |
@@ -94,7 +94,7 @@ scripts/dev.sh play --target 127.0.0.1
 
 资料检索使用 **Google / Bing**；项目搜索工具尚未接入，这两个来源已纳入浏览器接入约定。
 
-首页使用斜切填充的 TRINA 大字，带切角、深色侧边和稀疏星点，字面呈粉紫渐变与柔和高光，下方只显示版本号 `v0.3.0`。字形直接由文本绘制，窄窗口自动使用紧凑字形；`--plain` 保留相同字符布局并关闭颜色。运行中仍可输入补充，按一次 Enter 发送，多行粘贴与发送回显保持。
+首页使用斜切填充的 TRINA 大字，带切角、深色侧边和稀疏星点，字面呈粉紫流光，下方显示炫彩版本小字 `v0.4.0`。字形直接由文本绘制，窄窗口自动使用紧凑字形；`--plain` 保留相同字符布局并关闭颜色。运行中仍可输入补充，按一次 Enter 发送，多行粘贴与发送回显保持。
 
 ```text
        ·                  ✦                  ·
@@ -105,10 +105,12 @@ scripts/dev.sh play --target 127.0.0.1
     █▓     █▓ ▀█▄       █▓     █▓  ▀██▓  ███████▓
    █▓     █▓  ▀█▄      █▓     █▓   ▀█▓  █▓    █▓
   ▄█▓▄    █▓   ▀█▓   ▀███▓▀   █▓    █▓  █▓    █▓
-                      v0.3.0
+                      v0.4.0
 ```
 
 在线模型使用结构化消息与 SSE 流式响应，系统和已有对话前缀保持稳定；OMP 已从模型后端移除。正文在同一张卡片中增量显示，工具协议保持隐藏。消息调用与缓存说明见 [模型文档](docs/MODELS.md#流式传输与标准消息)。
+
+0.4.0 底栏显示当前 `Commander / Code Worker / Web Worker / Binary Worker / Review Worker` 角色、模型、Git 分支与上下文用量。`/worker` 切换独立会话；`/branch` 选择本地分支，`/branch main` 切回主分支，`/branch new <名称>` 创建分支；在 main 可直接读写代码。`/footer compact|default|full` 切换信息密度。`configs/trina.yaml` 的 `ui` 段可持久设置密度、分隔符、上下文条和首页动画。
 
 交互终端的输入与会话用量固定在屏幕底部，持续显示 Token、输入 / 输出和缓存命中率；回复卡片只呈现正式输出。思考状态使用动态星形标记，工具过程与最终回答分开排版。`/new` 清零会话用量，切换模型继续累计；`/usage` 查看详情。布局和统计口径见 [CLI 界面说明](docs/CLI_UI.md#固定底栏与过程排版)。
 
@@ -117,7 +119,7 @@ scripts/dev.sh play --target 127.0.0.1
 | 能力 | 落地位置 | 关键设计 |
 |---|---|---|
 | 1. 自动决策大脑 | `trina/brain/` | ReAct 循环 + PTES 阶段机（事实驱动推进）+ **假设台账**（按价值×置信度×信息增量排序验证）+ 失败分类与循环守卫（无新信息就打转→换参数→换工具→请人介入）+ 预算收敛；支持原生工具调用与 JSON Action，执行统一收口 |
-| 2. 工具统一封装 | `trina/tools/` | 38 个注册工具统一 `ToolSpec/ToolResult` 契约；包含前台命令、文件读写编辑、共享追踪查询及 10 个原生二进制工具；缺少依赖时明确报错，不模拟成功 |
+| 2. 工具统一封装 | `trina/tools/` | 注册工具统一 `ToolSpec/ToolResult` 契约；包含前台命令、文件读写编辑、Git 分支管理、共享追踪查询及 10 个原生二进制工具；缺少依赖时明确报错，不模拟成功 |
 | 3. 靶场适配 | `trina/adapters/` | `local` / `docker-compose` / `http-range` / `tsecbench` 四类适配器；仓库不再携带静态靶场注册表，按需从 `~/.trina/ranges` 或显式 YAML 载入 |
 | 4. 执行信任与审计 | `trina/scope.py` + `trina/audit.py` | 默认 `full` 信任并自动执行；可切换 `restricted` 恢复网段、动作和载荷边界；两种模式都保留超时、取消、限速和 SHA-256 哈希链审计 |
 | 5. 标准报告 | `trina/report/` | Markdown + 自包含 HTML（内联 CSS/SVG，无外部依赖），含执行摘要、攻击路径、漏洞详情（CVSS/CWE/证据/复现/修复）、**证据链与假设台账**（mermaid 关系图，结论可反向追溯）、凭据与 flag、工具时间线、合规声明 |
@@ -150,7 +152,7 @@ scripts/dev.sh play --target 127.0.0.1
 
 `trina swarm` 使用事件驱动 Planner、共享 Todolist、可去重且带租约的 Intent 队列，以及事实图 / 探索图双图。每个题目的 `RunState` 与聊天仍隔离；Commander 只把来源明确的观察、失败经验和事实候选定向交给相关 Worker，接收方必须在自己的目标上重新验证后才能入账。Flag、完整聊天和其他题目的 `RunState` 不会被合并。
 
-## 已封装的工具（38 项）
+## 已封装的工具
 
 | 类别 | 工具 | 动作等级 |
 |---|---|---|
@@ -160,7 +162,7 @@ scripts/dev.sh play --target 127.0.0.1
 | exploit | `sqli_test` `cmd_inject_test` `lfi_test` `file_upload_test` `rce_exec` | verify / exploit |
 | creds | `weak_password_brute`（ssh/ftp/mysql/redis/http_basic/http_form） `http_form_login` `flag_hunt` | exploit / verify |
 | utility | `terminal_exec`（前台 argv 命令）、`terminal_start` / `terminal_status` / `terminal_stop`（后台程序启动、等待、查询和取消） | exploit / detect |
-| workspace | `workspace_read` / `workspace_write` / `workspace_edit`（项目内有界读取、原子写入、精确替换） | detect / exploit |
+| workspace | `workspace_read` / `workspace_write` / `workspace_edit`（项目内有界读取、原子写入、精确替换），`workspace_git`（状态与分支管理） | detect / exploit |
 | coordination | `shared_context` / `shared_trace_search` / `shared_trace_get`（共享待办、双图摘要、其他 Worker 观察与失败留痕） | detect |
 | binary | `binary_open` `binary_overview` `binary_functions` `binary_function` `binary_xrefs` `debug_start` `debug_control` `debug_inspect` `binary_session` `binary_execute` | detect / exploit |
 | benchmark | `ctfy_task`（读取、刷新或提交当前 CTFY v3 问题） | detect |

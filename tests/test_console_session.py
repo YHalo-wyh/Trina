@@ -175,7 +175,7 @@ class ConsoleSessionTests(unittest.TestCase):
                 self.assertGreaterEqual(len(frames), 2)
                 footer_positions = []
                 for lines in frames:
-                    matches = [i for i, line in enumerate(lines) if "会话 Token" in line]
+                    matches = [i for i, line in enumerate(lines) if "会话 Token" in line or "缓存命中" in line]
                     if matches:
                         footer_positions.append(matches[0])
                         self.assertTrue(any("缓存命中" in line for line in lines[matches[0]:]))
@@ -302,6 +302,8 @@ class ConsoleSessionTests(unittest.TestCase):
                     editor = EnhancedConsoleInput(status=lambda: "running", running=lambda: True,
                         dynamic_values=lambda *_: (), activity=lambda: ("thinking", "思考中", 20),
                         context=lambda: context[0], plain=True)
+                    self.assertLessEqual(editor.app.ttimeoutlen, .05)
+                    self.assertLessEqual(editor.app.timeoutlen, .1)
                     editor.buffer.text = "保留草稿"
                     started = False
                     async def exercise():
@@ -335,12 +337,23 @@ class ConsoleSessionTests(unittest.TestCase):
                     editor.app.after_render += rendered
                     editor.run(lambda _: True)
                 visible = "\n".join(frames)
-                for expected in ("DeepSeek", "GPT-5.2 High", "📁", "网安实训中级",
+                for expected in (("DeepSeek", "GPT-5.2 High") if columns >= 40 else ("DeepSe", "GPT-5")) + ("📁", "网安实训中级",
                                  "修复会话日志" if columns >= 40 else "修复…",
                                  "检查事件流" if columns >= 40 else "检查…"):
                     self.assertIn(expected, visible)
                 self.assertNotIn("Enter 发送补充", visible)
                 self.assertNotIn("已上翻历史", visible)
+
+    def test_context_meter_is_left_aligned_and_directory_stays_right(self):
+        from trina.console_state import ConsoleContext, _cells
+
+        context = ConsoleContext("运行中", "model", "C:/workspace/project", "任务",
+                                 context_tokens=25_000, context_window=500_000)
+        rail = context.rail(88)
+        text = "".join(value for _, value in rail)
+        self.assertTrue(text.startswith("◔ 5%"), text)
+        self.assertTrue(text.endswith("C:/workspace/project"), text)
+        self.assertEqual(_cells(text), 88)
 
     def test_session_title_contract_uses_short_goal_and_safe_fallback(self):
         from trina.session_title import fallback_session_title, generate_session_title, parse_generated_title

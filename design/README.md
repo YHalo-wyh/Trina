@@ -11,6 +11,8 @@
 
 ## ADR 一览
 
+0.4.0 控制台与角色：[ADR-0028](adr/0028-console-roles-and-status-line.md) 记录 OMP 分段底栏、独立交互 Worker、Git 分支管理、字符动画及提示词精简。
+
 统一运行事件与工具窗口：[ADR-0027](adr/0027-unified-runtime-events.md) 记录事务事件流、实时事实调度、游标确认、重放续流及恢复边界；协议见[统一运行事件](../docs/EVENTS.md)。
 
 原生二进制与模型窗口：[ADR-0026](adr/0026-native-binary-runtime-and-model-windows.md) 记录 r2/GDB 受控会话、CTFY 权威提交和 DeepSeek 500K / 已确认模型 1M 的可配置预算。

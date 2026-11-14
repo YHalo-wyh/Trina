@@ -12,11 +12,24 @@ import time
 from dataclasses import dataclass
 from typing import Callable, Iterable
 
+from .worker_roles import WORKER_ROLES
+
 try:
     from prompt_toolkit.completion import Completer as _Completer
 except ImportError:  # pragma: no cover - 缺少可选输入库时仍允许普通 input 启动
     class _Completer:  # type: ignore[no-redef]
         pass
+
+
+_KEY_SEQUENCE_TIMEOUT = .05
+_KEY_BINDING_TIMEOUT = .1
+
+
+def _low_latency_keys(app):
+    """缩短 VT 转义序列与多键绑定判定等待，避免方向键/选项确认显得迟钝。"""
+    app.ttimeoutlen = _KEY_SEQUENCE_TIMEOUT
+    app.timeoutlen = _KEY_BINDING_TIMEOUT
+    return app
 
 
 @dataclass(frozen=True)
@@ -163,6 +176,12 @@ COMMANDS: tuple[CommandSpec, ...] = (
         positional_choices=APPROVAL_CHOICES,
     ),
     CommandSpec("usage", "会话与模型", "查看模型调用、Token 和成本", "usage"),
+    CommandSpec("worker", "会话与模型", "切换独立 Worker 会话和当前角色", "worker [commander|general|code|web|binary|review]",
+                positional_choices=tuple(ChoiceSpec(key, value[0]) for key, value in WORKER_ROLES.items())),
+    CommandSpec("branch", "工作区", "查看、切换或创建本地 Git 分支", "branch [分支名|new <名称>]",
+                positional_choices=(ChoiceSpec("new", "创建并切换分支"),)),
+    CommandSpec("footer", "会话与模型", "切换底栏信息密度", "footer [default|compact|full]",
+                positional_choices=(ChoiceSpec("default", "均衡"), ChoiceSpec("compact", "精简"), ChoiceSpec("full", "完整"))),
     CommandSpec("context", "会话与模型", "查看上下文预算、前缀变化和缓存诊断", "context"),
     CommandSpec("compact", "会话与模型", "创建继承检查点并保存完整历史", "compact"),
     CommandSpec(
@@ -422,7 +441,7 @@ def enhanced_input_available() -> bool:
 class EnhancedConsoleInput:
     """可滚动内容区与固定底部的活动、输入、索引和会话用量。"""
 
-    def __init__(self, *, status, running, dynamic_values, plain: bool = False, usage=None, activity=None, context=None) -> None:
+    def __init__(self, *, status, running, dynamic_values, plain: bool = False, usage=None, activity=None, context=None, motion: str = "full") -> None:
         from prompt_toolkit import Application
         from prompt_toolkit.buffer import Buffer
         from prompt_toolkit.history import InMemoryHistory
@@ -447,6 +466,9 @@ class EnhancedConsoleInput:
         self._stream_index: int | None = None
         self._tool_indices: dict[str, int] = {}
         self._plain = plain
+        self._home_animation = False
+        self._home_frame = -1
+        self._motion = motion
         self._mouse_enabled = True
         self._char_count = 0
         self._content_lock = threading.RLock()
@@ -488,6 +510,7 @@ class EnhancedConsoleInput:
 
         @bindings.add("enter")
         def submit(event):
+            self._home_animation = False
             state = self.buffer.complete_state
             text = self.buffer.text.strip()
             if text.startswith("/") and state and state.current_completion:
@@ -554,10 +577,13 @@ class EnhancedConsoleInput:
             "border": THEME["violet"], "rail": THEME["violet"],
             "usage": THEME["muted"], "usage.value": THEME["lilac"],
             "context.model": THEME["rose"], "context.path": THEME["lilac"],
+            "context.role": "bg:" + THEME["selected"] + " " + THEME["rose"] + " bold",
+            "context.branch": THEME["muted"],
             "context.model.icon": "bold " + THEME["rose"],
             "context.state": "bold " + THEME["lilac"],
             "context.progress": THEME["lilac"], "context.progress.icon": "bold " + THEME["violet"],
             "context.meter": "bold " + THEME["rose"],
+            "context.warn": "bold #e5bb86", "context.hot": "bold #fa8eae",
             "context.label": THEME["muted"], "context.task": "italic " + THEME["lilac"],
             "selection": "bg:" + THEME["selected"] + " " + THEME["text"],
         })
@@ -576,7 +602,7 @@ class EnhancedConsoleInput:
         self.activity_window = Window(FormattedTextControl(self._activity), height=1, wrap_lines=False)
         self.input_window = Window(control, wrap_lines=True, height=Dimension(min=1, max=3), dont_extend_height=True)
         self.usage_window = Window(
-            FormattedTextControl(self._usage), wrap_lines=True, dont_extend_height=True,
+            FormattedTextControl(self._usage), wrap_lines=False, dont_extend_height=True,
             height=lambda: self._usage_height(),
         )
         self.app = Application(
@@ -598,6 +624,26 @@ class EnhancedConsoleInput:
             mouse_support=Condition(lambda: self._mouse_enabled),
             color_depth=None if plain else ColorDepth.DEPTH_24_BIT,
         )
+        _low_latency_keys(self.app)
+        self.app.before_render += lambda _: self._animate_home()
+
+    def show_home(self) -> None:
+        from .terminal import render_home
+        self.write(render_home(color=not self._plain))
+        self._home_animation = not self._plain and self._motion == "full"
+
+    def _animate_home(self) -> None:
+        """只在首页等待输入时更新唯一字标块；发送后冻结，历史滚动不重排。"""
+        frame = int(time.monotonic() * 3)
+        if not self._home_animation or frame == self._home_frame or self._scrollback or len(self._chunks) != 1:
+            return
+        from .terminal import render_home
+        self._home_frame = frame
+        with self._content_lock:
+            chunk = render_home(color=True, phase=frame * .3)
+            self._chunks[0] = chunk
+            self._char_count = len(chunk)
+            self.transcript_control.invalidate_from(0)
 
     def _page_size(self) -> int:
         """按内容视口翻页；首次渲染前退回到半屏。"""
@@ -669,7 +715,7 @@ class EnhancedConsoleInput:
         """没有实际用量字段时不为底栏保留空白行。"""
         size = self.app.output.get_size()
         text = self.usage(size.columns, size.rows < 16)
-        return min(3, text.count("\n") + 1) if text else 0
+        return 1 if text else 0
 
     def _activity(self):
         from .terminal import clean_text
@@ -832,7 +878,7 @@ class EnhancedConsoleInput:
                 call = lambda: self._handler(text)
                 command = text.strip().lstrip("/").split(maxsplit=1)[0] if text.strip() else ""
                 # 模型表单暂时接管终端，结束后恢复同一内容区和未提交输入。
-                keep = await run_in_terminal(call, in_executor=True) if command in {"model", "resume"} and not self.running() else await run_in_executor_with_context(call)
+                keep = await run_in_terminal(call, in_executor=True) if command in {"model", "resume", "worker", "branch", "footer"} and not self.running() else await run_in_executor_with_context(call)
                 if not keep:
                     self.app.exit()
                     return
@@ -931,9 +977,11 @@ def select_option(title: str, choices: list[ChoiceSpec], *, subtitle: str = "") 
     @bindings.add("up")
     def up(event):
         selection[0] = max(0, selection[0] - 1)
+        event.app.invalidate()
     @bindings.add("down")
     def down(event):
         selection[0] = min(max(0, len(matches()) - 1), selection[0] + 1)
+        event.app.invalidate()
     @bindings.add("enter")
     def enter(event):
         items = matches()
@@ -971,12 +1019,14 @@ def _panel_app(body, title: str, bindings, focused, *, completion_menu: bool = F
     if completion_menu:
         floats.append(Float(xcursor=True, ycursor=True, content=CompletionsMenu(max_height=5)))
     layout = Layout(FloatContainer(Window(), floats), focused_element=focused)
-    return Application(layout=layout, key_bindings=bindings, full_screen=True, erase_when_done=True,
-                       color_depth=ColorDepth.DEPTH_24_BIT if use_color() else None,
-                       style=Style.from_dict({"panel.border": THEME["violet"], "panel.label": "bold " + THEME["rose"],
-                                              "dim": THEME["muted"], "chosen": "bg:" + THEME["selected"] + " " + THEME["text"] + " bold",
-                                              "field": "bg:" + THEME["ink"] + " " + THEME["text"],
-                                              "button.focused": "bg:" + THEME["selected"] + " " + THEME["text"] + " bold"} if use_color() else {}))
+    app = Application(layout=layout, key_bindings=bindings, full_screen=True, erase_when_done=True,
+                      min_redraw_interval=1 / 120, max_render_postpone_time=0,
+                      color_depth=ColorDepth.DEPTH_24_BIT if use_color() else None,
+                      style=Style.from_dict({"panel.border": THEME["violet"], "panel.label": "bold " + THEME["rose"],
+                                             "dim": THEME["muted"], "chosen": "bg:" + THEME["selected"] + " " + THEME["text"] + " bold",
+                                             "field": "bg:" + THEME["ink"] + " " + THEME["text"],
+                                             "button.focused": "bg:" + THEME["selected"] + " " + THEME["text"] + " bold"} if use_color() else {}))
+    return _low_latency_keys(app)
 
 
 def edit_field(title: str, default: str = "", *, secret: bool = False) -> str:

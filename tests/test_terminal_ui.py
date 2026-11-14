@@ -39,7 +39,7 @@ class TestTerminalUI(unittest.TestCase):
                         self.assertLessEqual(max(cell_len(line) for line in plain.splitlines()), width)
                         if not color:
                             self.assertNotIn("\x1b", text)
-        self.assertEqual(render_home(width=40).splitlines()[-1].strip(), "v0.3.0")
+        self.assertEqual(render_home(width=40).splitlines()[-1].strip(), "v0.4.0")
 
     def test_slash_index_filters_commands_and_lists_options(self):
         from prompt_toolkit.document import Document
@@ -171,7 +171,7 @@ class TestTerminalUI(unittest.TestCase):
         text = render_home(width=88, color=True)
         self.assertIn("███████", clean_text(text))
         self.assertIn("▓", clean_text(text))
-        self.assertEqual(text.splitlines()[-1].strip(), "v0.3.0")
+        self.assertEqual(clean_text(text).splitlines()[-1].strip(), "v0.4.0")
         self.assertNotIn("睡莲紫雾", text)
         self.assertNotIn("模型", text)
         self.assertNotIn("/play", text)
@@ -268,7 +268,7 @@ class TestTerminalUI(unittest.TestCase):
             text = render_home(width=40)
             message = render_message("很长的无依赖提示" * 12, width=20, color=True)
         self.assertGreater(len(text.splitlines()), 2)
-        self.assertIn("v0.3.0", text)
+        self.assertIn("v0.4.0", text)
         self.assertNotIn("/play", text)
         self.assertNotIn("\x1b", text)
         from rich.cells import cell_len

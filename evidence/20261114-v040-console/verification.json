@@ -1,0 +1,13 @@
+{
+  "date": "2026-11-14",
+  "version": "0.4.0",
+  "execution": "实际执行：本地 unittest、真实临时 Git、prompt_toolkit 屏幕缓冲；模型为回放",
+  "validated_snapshot": "261c822d15f28111b40eddebc8e9ca45f8d6e82a",
+  "validated_tree": "ddf59fc9e76ce023339f175efb66556367a8bfbb",
+  "isolated_contract": {"ok": true, "deliverables": 6, "requirements": 22, "rules": 50, "tests_referenced": 121},
+  "isolated_unittest": {"ran": 570, "passed": 560, "skipped": 10, "failures": 0, "seconds": 121.237},
+  "working_copy_unittest": {"ran": 574, "passed": 564, "skipped": 10},
+  "wsl_focused": {"ran": 44, "passed": 44, "skipped": 0},
+  "first_isolated_attempt": {"ok": false, "failure": "test_upload_not_reported_on_soft404: Windows ConnectionAbortedError(10053)", "focused_retry": "6 tests OK", "full_retry": "570 tests OK, skipped=10"},
+  "limits": ["未实测真实模型收益或所有终端交互延迟", "Worker 为独立交互角色会话，不是 Swarm 活跃任务接管"]
+}

@@ -1,6 +1,12 @@
 # Trina 主配置。
 # 默认 full：信任当前任务并自动执行已注册工具；需要旧边界时改为 restricted。
 
+ui:
+  status_line_preset: default  # compact / default / full
+  status_line_separator: dot  # dot / pipe / slash
+  context_bar: true
+  motion: full                # reduced / none 关闭首页动画
+
 scope:
   trust_mode: full
   # 以下边界字段只在 trust_mode=restricted 时参与拒绝裁决。

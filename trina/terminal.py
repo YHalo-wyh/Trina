@@ -231,17 +231,17 @@ def render_tool_call(tool: str, params: dict[str, Any], *, status: str = "runnin
     return _responsive(str(value), lambda new_width: str(render_tool_call(**original, width=new_width)), requested_width)
 
 
-def render_home(*, width: int | None = None, color: bool = False) -> str:
+def render_home(*, width: int | None = None, color: bool = False, phase: float = 0) -> str:
     """首页仅显示终端字符字标与版本。"""
     from . import __version__
-    from .banner import render_banner
+    from .banner import render_banner, render_version
 
     requested_width = width
     width = max(20, width if width is not None else terminal_width())
-    logo = render_banner(width, color=color, colors=(THEME["rose"], THEME["violet"]))
-    value = logo + "\n" + _center(f"v{__version__}", width) + "\n"
+    logo = render_banner(width, color=color, colors=(THEME["rose"], THEME["violet"]), phase=phase)
+    value = logo + "\n" + render_version(__version__, width, color=color, phase=phase) + "\n"
     return _responsive(value, lambda new_width: str(render_home(
-        width=new_width, color=color)), requested_width)
+        width=new_width, color=color, phase=phase)), requested_width)
 
 
 def show_home(*, output, color: bool) -> None:

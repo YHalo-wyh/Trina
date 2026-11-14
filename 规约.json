@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "contract_id": "trina-product-contract",
-  "product_version": "0.3.0",
-  "updated_at": "2026-11-13",
+  "product_version": "0.4.0",
+  "updated_at": "2026-11-14",
   "normative_document": "规约.md",
   "requirements_document": "需求.md",
   "verification_commands": {
@@ -137,7 +137,7 @@
       "title": "品牌首页与可读终端输出",
       "priority": "P1",
       "status": "implemented",
-      "implementation": ["trina/banner.py", "trina/terminal.py", "trina/console_ui.py", "trina/transcript.py", "trina/session.py", "trina/interactive.py", "trina/chat_store.py", "trina/brain/chat.py"],
+      "implementation": ["trina/banner.py", "trina/terminal.py", "trina/console_ui.py", "trina/console_state.py", "trina/config.py", "trina/worker_roles.py", "trina/transcript.py", "trina/session.py", "trina/interactive.py", "trina/chat_store.py", "trina/brain/chat.py"],
       "verification": ["V-CONTRACT", "V-TESTS"],
       "rules": [
         {
@@ -184,6 +184,12 @@
             "tests.test_chat_resume.ChatResumeTests.test_compacted_chat_resumes_revision_and_preserves_original_instructions",
             "tests.test_transcript.TranscriptTests.test_switching_chat_replaces_transcript_and_keeps_input_app"
           ]
+        },
+        {
+          "id": "TR-03-R06",
+          "level": "MUST",
+          "statement": "0.4.0 底栏必须显示当前角色、支持配置密度且状态/用量各最多一行；1–144 列不超宽。角色切换保持独立会话，恢复消息、用量与角色；首页动画只改变颜色，首次提交后冻结。",
+          "tests": ["tests.test_console_v040.ConsoleV040Tests.test_footer_is_single_line_at_all_widths_and_role_never_disappears", "tests.test_console_v040.ConsoleV040Tests.test_worker_switch_restores_history_role_and_usage_without_model_call", "tests.test_console_v040.ConsoleV040Tests.test_ui_config_roundtrip_override_and_validation", "tests.test_banner.BannerTests.test_animation_changes_only_colors_and_none_has_stable_text", "tests.test_console_v040.ConsoleV040Tests.test_real_git_main_edit_and_branch_switch_preserve_files", "tests.test_console_v040.ConsoleV040Tests.test_home_animation_updates_only_welcome_and_stops_on_submit"]
         }
       ]
     },

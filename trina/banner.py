@@ -1,6 +1,8 @@
 """终端填充字标：斜切字形、浮雕阴影与粉紫高光，无图片依赖。"""
 from __future__ import annotations
 
+import math
+
 
 #: 上部向右错开形成斜势，半格切角和深色填充构成笔画的浮雕边缘。
 _WIDE_LETTERS = (
@@ -32,7 +34,7 @@ def _rgb(value: str) -> tuple[int, int, int]:
 
 
 def render_banner(columns: int, *, color: bool = False,
-                  colors: tuple[str, str] = ("#edb2d2", "#9b7bc7")) -> str:
+                  colors: tuple[str, str] = ("#edb2d2", "#9b7bc7"), phase: float = 0) -> str:
     """按可用列数选择字形；颜色只使用 SGR 前景，不改变字符布局。"""
     columns = max(5, columns)
     lines = next((font for font in (_WIDE, _COMPACT)
@@ -56,6 +58,7 @@ def render_banner(columns: int, *, color: bool = False,
                     rgb = tuple(round(channel * .58) for channel in rgb)
                 else:
                     light += .18 if character == "▀" else (.55 if character in "✦·" else 0)
+                    light += .14 * math.sin(phase + column * .16 - row_index * .35)
                     rgb = tuple(round(channel + (255 - channel) * light) if light >= 0
                                 else round(channel * (1 + light)) for channel in rgb)
                 foreground = "\x1b[38;2;" + ";".join(map(str, rgb)) + "m"
@@ -65,3 +68,17 @@ def render_banner(columns: int, *, color: bool = False,
             row.append(character)
         result.append("".join(row).rstrip() + "\x1b[0m")
     return "\n".join(result)
+
+
+def render_version(version: str, columns: int, *, color: bool = False, phase: float = 0) -> str:
+    """小字保留可复制的版本号，逐字粉紫/青色微光，无闪屏控制序列。"""
+    text = f"v{version}"
+    inset = " " * max(0, (columns - len(text)) // 2)
+    if not color:
+        return inset + text
+    palette = ("#edb2d2", "#c7a5e8", "#9b7bc7", "#a6d7dd", "#dbc1fa")
+    result = inset
+    for index, char in enumerate(text):
+        rgb = _rgb(palette[(index + int(phase)) % len(palette)])
+        result += "\x1b[38;2;" + ";".join(map(str, rgb)) + "m" + char
+    return result + "\x1b[0m"

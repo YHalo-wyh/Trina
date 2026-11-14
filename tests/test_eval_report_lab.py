@@ -355,7 +355,7 @@ class TestScopeAwareToolBehaviour(unittest.TestCase):
                 self.assertNotIn("url", spec.params)
                 continue
             if spec.category == "workspace":
-                self.assertIn("path", spec.params, "工作区工具按项目文件路径定位")
+                self.assertTrue("path" in spec.params or name == "workspace_git", "文件工具按路径定位，Git 工具固定当前项目")
                 self.assertNotIn("target", spec.params)
                 self.assertNotIn("url", spec.params)
                 continue
