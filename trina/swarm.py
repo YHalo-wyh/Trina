@@ -774,7 +774,7 @@ class SwarmRuntime:
                     self._expand_from_facts(event.task_id, added)
             elif event.kind == "tool.finished":
                 self.coordination.observe_tool(event)
-            if self.on_progress is not None and event.kind in {"tool.started", "tool.output", "tool.finished", "model.started", "model.finished", "model.error", "model.retry", "assistant.message", "react.action"}:
+            if self.on_progress is not None and event.kind in {"tool.started", "tool.output", "tool.finished", "model.started", "model.text_delta", "model.thinking_delta", "model.finished", "model.error", "model.retry", "assistant.message", "react.action"}:
                 try:
                     self.on_progress(event)
                 except Exception as exc:

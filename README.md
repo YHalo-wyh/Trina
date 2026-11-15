@@ -59,6 +59,8 @@ Swarm 可由已验证资产/发现/凭据生成有界后继 Intent；Bench 默�
 
 本轮实测、原始日志与限制见[事实规划及续做验证](evidence/20261115-fact-intents-bench-continuation/README.md)。
 
+思考、正文和工具现在按帧流式原位更新；首块立即显示，工具排版不阻塞接收线程。原因、链路压测与回归见[流式输出验证](evidence/20261115-stream-output/README.md)。
+
 控制台 `/subworker` 默认打开四宫格，G 列表/四格、Z 放大、F 补充、C 单项取消。Commander 可通过真实工具 `worker_tasks` 委派分支、查看结果与证据；模型、思考强度和供应商按任务独立绑定。
 
 自动化渗透测试 Agent：**大模型 ReAct 决策 + 全套工具封装 + 多靶场适配 + 默认完全信任 + 标准报告 + 评测框架**。

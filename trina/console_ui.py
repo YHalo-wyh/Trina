@@ -471,6 +471,7 @@ class EnhancedConsoleInput:
         self._chunks: list[str] = []
         self._stream_index: int | None = None
         self._tool_indices: dict[str, int] = {}
+        self._thinking_indices: dict[str, int] = {}
         self._plain = plain
         self._home_animation = False
         self._home_frame = -1
@@ -781,6 +782,7 @@ class EnhancedConsoleInput:
             while len(self._chunks) > 1 and self._char_count > 250_000:
                 self._char_count -= len(self._chunks.pop(0))
                 self._tool_indices = {key: index - 1 for key, index in self._tool_indices.items() if index > 0}
+                self._thinking_indices = {key: index - 1 for key, index in self._thinking_indices.items() if index > 0}
                 if self._stream_index is not None:
                     self._stream_index = self._stream_index - 1 if self._stream_index else None
                 pruned = True
@@ -800,6 +802,7 @@ class EnhancedConsoleInput:
         with self._content_lock:
             self._chunks.clear()
             self._tool_indices.clear()
+            self._thinking_indices.clear()
             self._stream_index = None
             self._char_count = self._scrollback = 0
             self._rendered_lines = self._line_count = 1
@@ -818,6 +821,24 @@ class EnhancedConsoleInput:
                 return
             chunk = ResponsiveText(str(card).rstrip("\n") + "\n\n",
                                    lambda width: card.at_width(width).rstrip("\n") + "\n\n")
+            self._char_count += len(chunk) - len(self._chunks[index])
+            self._chunks[index] = chunk
+            self.transcript_control.invalidate_from(index)
+        self.app.invalidate()
+
+    def update_thinking(self, request_id: str, text: str, *, final: bool = False) -> None:
+        """思考和正文使用独立块，只在显示帧排版当前变化部分。"""
+        from .terminal import ResponsiveText, render_thinking
+        chunk = ResponsiveText(text, lambda width: str(render_thinking(
+            text, final=final, width=width, color=not self._plain)) + "\n\n")
+        with self._content_lock:
+            index = self._thinking_indices.get(request_id)
+            if index is None:
+                if not text:
+                    return
+                index = len(self._chunks)
+                self._thinking_indices[request_id] = index
+                self._chunks.append("")
             self._char_count += len(chunk) - len(self._chunks[index])
             self._chunks[index] = chunk
             self.transcript_control.invalidate_from(index)
@@ -847,6 +868,8 @@ class EnhancedConsoleInput:
                 self._chunks.pop(index)
                 self._tool_indices = {key: (value - 1 if value > index else value)
                                       for key, value in self._tool_indices.items() if value != index}
+                self._thinking_indices = {key: (value - 1 if value > index else value)
+                                          for key, value in self._thinking_indices.items() if value != index}
                 self._char_count -= old_length
             else:
                 self._chunks[index] = chunk

@@ -18,6 +18,9 @@ class EventTranscript:
         self.calls: OrderedDict[str, dict[str, Any]] = OrderedDict()
         self.cursor: dict[str, int] = {}
         self._model_errors: OrderedDict[tuple[str, str], None] = OrderedDict()
+        self._thinking: dict[str, str] = {}
+        self._model_text: Any = None
+        self._model_final_text = ""
         self._lock = threading.RLock()
 
     def consume(self, event: RuntimeEvent) -> None:
@@ -28,7 +31,30 @@ class EventTranscript:
         if event.seq <= self.cursor.get(event.stream_id, 0):
             return
         payload = event.payload
-        if event.kind == "model.error" or (event.kind == "model.finished" and payload.get("ok") is False):
+        request_id = str(payload.get("request_id", ""))
+        if event.kind == "model.started":
+            from .brain.chat import _VisibleStream
+            self._model_text = _VisibleStream(self._visible_text) if payload.get("visible_text") else None
+            self._model_final_text = ""
+        elif event.kind == "model.thinking_delta":
+            text = self._thinking.get(request_id, "") + str(payload.get("delta", ""))
+            self._thinking[request_id] = text
+            if self.editor is not None:
+                self.editor.update_thinking(request_id, text)
+        elif event.kind == "model.text_delta":
+            self._finish_thinking(request_id)
+            if self._model_text is not None:
+                from .llm import LLMStreamEvent
+                self._model_text.on_event(LLMStreamEvent("text_delta", delta=str(payload.get("delta", ""))))
+        elif event.kind == "model.finished" and payload.get("ok") is not False:
+            self._finish_thinking(request_id)
+            if self._model_text is not None and self._model_text.opened:
+                self._model_final_text = self._model_text.displayed.rstrip()
+                self._model_text.finish(self._model_final_text)
+            self._model_text = None
+        elif event.kind == "model.error" or (event.kind == "model.finished" and payload.get("ok") is False):
+            self._finish_thinking(request_id)
+            self._model_text = None
             identity = (event.stream_id, str(payload.get("request_id", event.seq)))
             if identity not in self._model_errors:
                 if self.editor is not None:
@@ -48,7 +74,9 @@ class EventTranscript:
             self.output(render_message(str(payload.get("text", "")), label="你", color=self.color))
         elif event.kind == "assistant.message":
             text, final = str(payload.get("text", "")), bool(payload.get("final"))
-            if self.editor is not None:
+            if final and text.rstrip() == self._model_final_text and self._model_final_text:
+                self._model_final_text = ""
+            elif self.editor is not None:
                 self.editor.update_stream(text, final=final)
             elif final and text:
                 self.output(render_answer(text, color=self.color))
@@ -80,11 +108,32 @@ class EventTranscript:
                 row.update(status=payload.get("status", "failed"), error=payload.get("error", ""),
                            duration=float(payload.get("duration") or 0), command=payload.get("command", ""),
                            exit_code=data.get("exit_code"))
-            card = render_tool_call(**row, color=self.color)
             if self.editor is not None:
+                from .terminal import ResponsiveText
+                snapshot = dict(row)
+                # 保留未排版文本的真实规模，使历史缓冲裁剪仍能计入工具输出。
+                raw = (f"{row['tool']} · {row['status']}\nInput\n{row['params']}\nOutput\n"
+                       f"{row['output']}\n{row['stderr']}\n{row.get('error', '')}")
+                card = ResponsiveText(raw, lambda width: str(render_tool_call(
+                    **snapshot, color=self.color, width=width)))
                 self.editor.update_tool(event.call_id, card)
             elif kind == "tool.finished":
-                self.output(card)
+                self.output(render_tool_call(**row, color=self.color))
             while len(self.calls) > 128:
                 self.calls.popitem(last=False)
         self.cursor[event.stream_id] = event.seq
+
+    def _visible_text(self, text: str, final: bool) -> None:
+        if self.editor is not None:
+            self.editor.update_stream(text, final=final)
+        elif final and text:
+            self.output(render_answer(text, color=self.color))
+
+    def _finish_thinking(self, request_id: str) -> None:
+        text = self._thinking.pop(request_id, "")
+        if text:
+            if self.editor is not None:
+                self.editor.update_thinking(request_id, text, final=True)
+            else:
+                from .terminal import render_thinking
+                self.output(render_thinking(text, final=True, color=self.color))

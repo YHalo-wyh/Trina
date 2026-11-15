@@ -704,6 +704,12 @@
           "level": "MUST",
           "statement": "Commander 必须在 Worker 结束前消费真实事实与观察，并从领先 JSON 的持久事件检查点恢复；失去执行器的工具标为 interrupted，执行恢复以任务为单位。",
           "tests": ["tests.test_events.EventTests.test_commander_consumes_live_facts_before_worker_terminal", "tests.test_events.EventTests.test_commander_recovers_durable_checkpoint_ahead_of_json_file", "tests.test_events.EventTests.test_recovery_marks_open_call_interrupted_without_reexecuting"]
+        },
+        {
+          "id": "TR-22-R04",
+          "level": "MUST",
+          "statement": "模型增量按帧合并必须保留文本和阶段顺序，首块、空闲尾部、终态和异常不得丢失；真实推理、正文与工具分别原位更新，工具排版不得阻塞生产线程。",
+          "tests": ["tests.test_stream_latency.StreamLatencyTests.test_burst_is_coalesced_without_losing_bytes_or_phase_order", "tests.test_stream_latency.StreamLatencyTests.test_idle_tail_and_first_chunk_arrive_before_request_finishes", "tests.test_stream_latency.StreamLatencyTests.test_exception_flushes_pending_tail_and_closes_stream", "tests.test_stream_latency.StreamLatencyTests.test_real_sse_thinking_and_reply_are_visible_before_done", "tests.test_stream_latency.StreamLatencyTests.test_code_fences_and_braces_stream_before_final", "tests.test_stream_latency.StreamLatencyTests.test_thinking_text_and_tool_output_update_independent_blocks", "tests.test_worker_dashboard.WorkerDashboardTests.test_live_thinking_and_text_are_separate_and_final_reply_is_not_duplicated"]
         }
       ]
     },

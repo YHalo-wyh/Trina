@@ -177,6 +177,18 @@ def render_answer(message: str, *, width: int | None = None, color: bool = False
         message, width=new_width, color=color)), requested_width)
 
 
+def render_thinking(message: str, *, final: bool = False, width: int | None = None, color: bool = False) -> str:
+    """供应商返回的思考单独显示，轻量排版，不走 Markdown/代码高亮。"""
+    requested_width = width
+    width = max(20, width if width is not None else terminal_width())
+    heading = "◇ 思考" if final else "◌ 思考中"
+    value = heading + "\n" + "\n".join("  " + line for line in _wrap(clean_text(message), max(1, width - 2)).splitlines())
+    if color:
+        value = "\x1b[38;2;160;143;177m" + value + "\x1b[0m"
+    return _responsive(value, lambda new_width: str(render_thinking(
+        message, final=final, width=new_width, color=color)), requested_width)
+
+
 def render_tool_call(tool: str, params: dict[str, Any], *, status: str = "running", output: str = "",
                      stderr: str = "", error: str = "", duration: float = 0, command: str = "",
                      exit_code: int | None = None, width: int | None = None, color: bool = False) -> str:

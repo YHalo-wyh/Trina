@@ -70,6 +70,7 @@ class EventBus:
             stored = dict(db.execute("SELECT key, value FROM metadata"))
             if stored.get("version") != "1" or stored.get("stream_id") != stream_id:
                 raise ValueError("事件存储版本或 stream_id 不匹配")
+        self._published_seq = self.last_seq
 
     def _connect(self) -> sqlite3.Connection:
         db = sqlite3.connect(self.path, timeout=15)
@@ -120,11 +121,13 @@ class EventBus:
                     if kind in {"state.updated", "runtime.checkpoint"}:
                         # 恢复状态与 state.json 具有相同保真度；公开事件仍按配置脱敏。
                         db.execute("INSERT INTO runtime_state VALUES (?, ?)", (seq, original))
+            self._published_seq = seq
             subscribers = tuple(self._subscribers)
             self._condition.notify_all()
+        event = RuntimeEvent(seq=seq, **json.loads(encoded))
         for subscription in subscribers:
-            subscription.drain()
-        return RuntimeEvent(seq=seq, **json.loads(encoded))
+            subscription.deliver_live(event)
+        return event
 
     def runtime_payload(self, event: RuntimeEvent) -> dict[str, Any]:
         """仅供本地调度恢复读取完整状态，避免脱敏值改变事实身份或凭据。"""
@@ -257,6 +260,29 @@ class EventSubscription:
         if not failed and not self.closed and self.bus.last_seq > self.cursor:
             self.drain()
 
+    def deliver_live(self, event: RuntimeEvent) -> None:
+        """连续已提交事件直接投递；缺口、并发积压和失败重试仍走持久重放。"""
+        if self.closed or self.callback is None or not self._delivery.acquire(blocking=False):
+            return
+        failed = False
+        try:
+            if event.seq == self.cursor + 1:
+                if (not self.kinds or any(fnmatch.fnmatchcase(event.kind, pattern) for pattern in self.kinds)) and (
+                    self.task_id is None or event.task_id == self.task_id
+                ):
+                    # 订阅者得到独立快照，不能修改 publish 的返回值或后续订阅者。
+                    self.callback(RuntimeEvent(**{**event.__dict__, "payload": json.loads(json.dumps(event.payload))}))
+                self.cursor = event.seq
+                self.ack()
+        except Exception as exc:
+            failed = True
+            self.bus.errors.append(f"{self.name or 'subscriber'} at {self.cursor}: {type(exc).__name__}: {exc}")
+            del self.bus.errors[:-20]
+        finally:
+            self._delivery.release()
+        if not failed and not self.closed and self.bus._published_seq > self.cursor:
+            self.drain()
+
     def close(self) -> None:
         self.closed = True
         with self.bus._condition:
@@ -273,9 +299,53 @@ class ModelEventStream:
         self.emit, self.visible = emit, visible
         self.request_id = uuid.uuid4().hex
         self._error_emitted = False
-        self.emit("model.started", request_id=self.request_id)
+        self._lock = threading.RLock()
+        self._pending: list[str] = []
+        self._pending_chars = 0
+        self._pending_event: Any = None
+        self._timer: threading.Timer | None = None
+        self._last_kind = ""
+        self._finished = False
+        self.emit("model.started", request_id=self.request_id, visible_text=visible is None)
 
     def on_event(self, event: Any) -> None:
+        with self._lock:
+            if self._finished:
+                return
+            if event.type in {"text_delta", "thinking_delta"} and event.delta:
+                if self._pending_event is not None and self._pending_event.type != event.type:
+                    self._flush()
+                first = event.type != self._last_kind
+                self._pending_event = event
+                self._pending.append(event.delta)
+                self._pending_chars += len(event.delta)
+                self._last_kind = event.type
+                if first or self._pending_chars >= 4096:
+                    self._flush()
+                elif self._timer is None:
+                    # 网络持续读入；一帧只持久化/投递一次，空闲尾部也须及时送达。
+                    self._timer = threading.Timer(1 / 30, self._flush)
+                    self._timer.daemon = True
+                    self._timer.start()
+                return
+            self._flush()
+            self._deliver(event)
+
+    def _flush(self) -> None:
+        with self._lock:
+            if self._timer is not None:
+                self._timer.cancel()
+                self._timer = None
+            if not self._pending:
+                return
+            from dataclasses import replace
+            event = replace(self._pending_event, delta="".join(self._pending))
+            self._pending.clear()
+            self._pending_chars = 0
+            self._pending_event = None
+            self._deliver(event)
+
+    def _deliver(self, event: Any) -> None:
         if event.type in {"text_delta", "thinking_delta"}:
             self.emit("model." + event.type, request_id=self.request_id, delta=event.delta)
         elif event.type == "start":
@@ -286,6 +356,14 @@ class ModelEventStream:
             self.visible(event)
 
     def finish(self, response: Any) -> None:
+        with self._lock:
+            if self._finished:
+                return
+            self._flush()
+            self._finished = True
+            self._finish(response)
+
+    def _finish(self, response: Any) -> None:
         if not response.ok:
             self._emit_error(response.error)
         for call in response.tool_calls:
@@ -304,6 +382,9 @@ class ModelEventStream:
             return method(*args, **kwargs)
         except Exception as exc:
             error = f"{type(exc).__name__}: {exc}"
-            self._emit_error(error)
-            self.emit("model.finished", request_id=self.request_id, ok=False, error=error)
+            with self._lock:
+                self._flush()
+                self._finished = True
+                self._emit_error(error)
+                self.emit("model.finished", request_id=self.request_id, ok=False, error=error)
             raise

@@ -284,12 +284,12 @@ class EventTests(unittest.TestCase):
             stream.finish(LLMResponse(ok=False, error="HTTP 403: forbidden"))
             self.assertEqual("".join(editor._chunks).count("HTTP 403"), 1)
             self.assertEqual(editor.buffer.text, "保留我的补充")
-            live = "".join(editor._chunks)
+            live = "".join(editor._chunk_text(chunk, 90) for chunk in editor._chunks)
             editor.clear_transcript()
             replay = EventTranscript(editor.write, editor=editor)
             for event in self.bus.replay():
                 replay.consume(event)
-            self.assertEqual("".join(editor._chunks), live)
+            self.assertEqual("".join(editor._chunk_text(chunk, 90) for chunk in editor._chunks), live)
 
     def test_cli_consumer_replays_then_resumes_without_executing_tools(self):
         from trina.cli import build_parser
@@ -348,7 +348,7 @@ class EventTests(unittest.TestCase):
             self.bus.publish("assistant.message", text="检查完成。", final=True, message_id="m2")
             self.assertEqual(len(editor._chunks), 3)
             self.assertEqual(editor.buffer.text, "尚未发送")
-            live = "".join(editor._chunks)
+            live = "".join(editor._chunk_text(chunk, 90) for chunk in editor._chunks)
             self.assertEqual(live.count("terminal_exec"), 1)
             self.assertIn("Output", live)
             self.assertIn("Python 3.11", live)
@@ -358,7 +358,7 @@ class EventTests(unittest.TestCase):
             for event in self.bus.replay():
                 replay.consume(event)
                 replay.consume(event)  # 续流重复投递按 stream/seq 去重。
-            self.assertEqual("".join(editor._chunks), live)
+            self.assertEqual("".join(editor._chunk_text(chunk, 90) for chunk in editor._chunks), live)
 
     def test_commander_consumes_live_facts_before_worker_terminal(self):
         from trina.swarm import SwarmRuntime, TaskSpec

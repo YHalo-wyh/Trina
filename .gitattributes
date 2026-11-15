@@ -28,3 +28,5 @@ evidence/20261114-v040-console/** -whitespace
 evidence/20261114-subworkers/** -whitespace
 evidence/20261114-worker-dashboard/** -whitespace
 evidence/20261115-fact-intents-bench-continuation/*.log -whitespace
+evidence/20261115-stream-output/*.log -whitespace
+evidence/20261115-stream-output/measure.json -whitespace

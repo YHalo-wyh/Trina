@@ -24,6 +24,7 @@ class Subworkers:
         self._snapshot: dict[str, Any] = {"tasks": {}}
         self._badge = ""
         self._rows: dict[str, dict[str, Any]] = {}
+        self._text_streams: dict[str, Any] = {}
         self._closed = False
         self._dialogs: dict[str, OrderedDict[str, tuple[str, str]]] = {}
         self._versions: dict[str, int] = {}
@@ -71,6 +72,26 @@ class Subworkers:
             kind, text = "", ""
             if event.kind == "assistant.message":
                 kind, text = "回复", str(payload.get("text", ""))
+                last = row.pop("streamed_reply", "")
+                if text and text.rstrip() == last:
+                    text = ""
+            elif event.kind == "model.thinking_delta":
+                kind = "思考"
+                key += ":thinking"
+                old = self._dialogs.get(event.task_id, {}).get(key, ("", ""))[1]
+                text = old + str(payload.get("delta", ""))
+                row["activity"] = "思考中"
+            elif event.kind == "model.text_delta":
+                from .brain.chat import _VisibleStream
+                from .llm import LLMStreamEvent
+                stream = self._text_streams.get(event.task_id)
+                if stream is None:
+                    stream = self._text_streams[event.task_id] = _VisibleStream(lambda value, final: None)
+                stream.on_event(LLMStreamEvent("text_delta", delta=str(payload.get("delta", ""))))
+                kind, text = "回复", stream.displayed
+                key += ":text"
+                row["streamed_reply"] = text.rstrip()
+                row["activity"] = "正在回复"
             elif event.kind == "react.action":
                 kind, text = "过程", str(payload.get("thought", ""))
             elif event.kind == "tool.started":
@@ -91,6 +112,8 @@ class Subworkers:
                 kind, text = "错误", str(payload.get("error", ""))
             elif event.kind == "model.started":
                 row["activity"] = "思考中"
+                self._text_streams.pop(event.task_id, None)
+                row.pop("streamed_reply", None)
             if event.kind == "tool.started":
                 row["activity"] = "工具 · " + str(payload.get("tool", ""))
             if text:
@@ -98,6 +121,7 @@ class Subworkers:
             if event.kind == "tool.finished":
                 row["tools"] = row.get("tools", 0) + 1
             elif event.kind == "model.finished":
+                self._text_streams.pop(event.task_id, None)
                 usage = event.payload.get("usage", {})
                 row["calls"] = row.get("calls", 0) + 1
                 if usage.get("tokens_reported"):
@@ -218,6 +242,7 @@ class Subworkers:
             runtime.on_update = self._update
             runtime.on_progress = self._progress
             self._rows = {}
+            self._text_streams.clear()
             self._dialogs, self._versions, self._line_cache, self._block_cache = {}, {}, {}, {}
             self._snapshot = {"run_id": runtime.run_id, "checkpoint": str(runtime.checkpoint), "tasks": {}}
             self._badge = "启动中"
@@ -225,7 +250,8 @@ class Subworkers:
                           **asdict(runtime.records[task.id])} for task in runtime.tasks}})
             if checkpoint:
                 cursor = 0
-                kinds = ("assistant.message", "react.action", "tool.started", "tool.output", "tool.finished")
+                kinds = ("assistant.message", "react.action", "tool.started", "tool.output", "tool.finished",
+                         "model.started", "model.text_delta", "model.thinking_delta")
                 while batch := runtime.event_bus.replay(cursor, kinds=kinds):
                     for event in batch:
                         record = runtime.records.get(event.task_id)

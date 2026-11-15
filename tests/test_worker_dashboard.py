@@ -81,6 +81,21 @@ class WorkerDashboardTests(unittest.TestCase):
         manager.dialog_lines("worker-1", 60)
         self.assertIs(stable_block, manager._block_cache[("worker-1", 60)]["21"][1])
 
+    def test_live_thinking_and_text_are_separate_and_final_reply_is_not_duplicated(self):
+        manager = self.manager(1)
+        def send(kind, seq, **payload):
+            manager._progress(RuntimeEvent(seq=seq, stream_id="test", run_id="r", task_id="worker-1", worker_id="w",
+                                          kind=kind, time=time.time(), source="test", call_id="", payload=payload))
+        send("model.started", 1, request_id="request")
+        send("model.thinking_delta", 2, request_id="request", delta="分析依赖")
+        send("model.text_delta", 3, request_id="request", delta="开始执行")
+        send("model.text_delta", 4, request_id="request", delta="测试")
+        send("model.finished", 5, request_id="request", ok=True)
+        send("assistant.message", 6, message_id="final", text="开始执行测试", final=True)
+        dialog = list(manager._dialogs["worker-1"].values())
+        self.assertEqual(dialog, [("思考", "分析依赖"), ("回复", "开始执行测试")])
+        json.dumps(manager.rows())
+
     def test_registered_delegation_executes_real_child_terminal_and_reads_result(self):
         parent = ReplayBackend(self.config.llm)
         parent.script = [{"response": json.dumps({"action": "worker_tasks", "params": {"action": "spawn", "task_id": "code", "target": "localhost", "goal": "写 proof.txt 并验证"}})},

@@ -735,16 +735,48 @@ class _VisibleStream:
                 return
             self.mode = "visible"
         if self.mode == "visible" and self.callback is not None:
-            # 模型可能先解释再输出动作。遇到 JSON/XML 起始字节先缓存后缀，
-            # 防止在完整解析前把工具协议的一半显示出来；普通代码在最终答复时补齐。
-            boundary = min((index for marker in ("{", "<", "```")
-                            if (index := self.text.find(marker)) >= 0), default=len(self.text))
+            # 模型可能先解释再输出动作；仅等待动作协议的歧义前缀，代码继续输出。
+            boundary = self._boundary()
             visible = self.text[:boundary]
             if not visible.strip() or visible == self.displayed:
                 return
             self.opened = True
             self.displayed = visible
             self.callback(visible, False)
+
+    def _boundary(self) -> int:
+        """只等待可能的动作协议前缀，普通代码围栏、字典和 HTML 可持续输出。"""
+        import re
+        fenced = False
+        for match in re.finditer(r"```[^\n]*\n?|[<{]", self.text):
+            marker, index = match.group(), match.start()
+            tail = self.text[index:]
+            if marker.startswith("```"):
+                if fenced:
+                    fenced = False
+                else:
+                    language = marker[3:].strip().lower()
+                    if language in {"json", "xml", "dsml"} or (
+                        not marker.endswith("\n") and any(name.startswith(language) for name in ("json", "xml", "dsml"))
+                    ):
+                        return index
+                    fenced = True
+            elif not fenced and marker == "<":
+                if re.match(r"<\s*\|(?:\s*\|)*\s*DSML\b", tail, re.I) or re.fullmatch(
+                    r"<\s*(?:\|(?:\s*\|)*\s*(?:D(?:S(?:M(?:L)?)?)?)?)?", tail, re.I
+                ):
+                    return index
+            elif not fenced and marker == "{":
+                rest = tail[1:].lstrip()
+                if not rest:
+                    return index
+                if rest.startswith('"'):
+                    key = rest[1:].split('"', 1)[0]
+                    if any(name.startswith(key) for name in ("action", "final", "thought", "params", "hypothesis")):
+                        return index
+        # 半个代码围栏不能先作为普通文本闪一下。
+        partial = re.search(r"(?:^|\n)(`{1,2})$", self.text)
+        return partial.start(1) if partial else len(self.text)
 
     def finish(self, text: str) -> None:
         if self.callback is not None:
