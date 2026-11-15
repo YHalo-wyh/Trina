@@ -1,0 +1,10 @@
+{
+  "name": "trina-omp-output-benchmark",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@oh-my-pi/pi-tui": "18.20.2",
+    "kitty-vt-wasm": "0.2.0",
+    "bun": "1.4.4"
+  }
+}

@@ -30,3 +30,11 @@ evidence/20261114-worker-dashboard/** -whitespace
 evidence/20261115-fact-intents-bench-continuation/*.log -whitespace
 evidence/20261115-stream-output/*.log -whitespace
 evidence/20261115-stream-output/measure.json -whitespace
+# 同机对照的原始结果和终端画面保留采集字节，供 manifest 复核。
+评测/20261115-omp-output-benchmark/results/** -text
+评测/20261115-omp-output-benchmark/results/*.json -whitespace
+评测/20261115-omp-output-benchmark/screens/** -text
+评测/20261115-omp-output-benchmark/screens/*.txt -whitespace
+评测/20261115-omp-output-benchmark/package-sources.json -text -whitespace
+评测/20261115-omp-output-benchmark/python-packages.json -text -whitespace
+评测/20261115-omp-output-benchmark/benchmark-console.log -text -whitespace

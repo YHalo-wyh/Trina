@@ -1,0 +1,26 @@
+[
+  {
+    "name": "@oh-my-pi/pi-tui",
+    "version": "18.20.2",
+    "tarball": "https://registry.npmjs.org/@oh-my-pi/pi-tui/-/pi-tui-18.20.2.tgz",
+    "integrity": "sha512-HPcR8Rw942q4do/+rPFB74wjX4utvVpad17FsVdq2aRXh7ISFFStpBhJoLr0xWmvADuImYidUbD/aJ1U6B+LDw=="
+  },
+  {
+    "name": "kitty-vt-wasm",
+    "version": "0.2.0",
+    "tarball": "https://registry.npmjs.org/kitty-vt-wasm/-/kitty-vt-wasm-0.2.0.tgz",
+    "integrity": "sha512-RJNzy9r5ql8CKkocjkg0FKC1MZoWM0R8leb2VB5hsgrP/4HHlumeODHriOw4Jk2dDsCOmPxWuwFQyqDiy0m8Kw=="
+  },
+  {
+    "name": "bun",
+    "version": "1.4.4",
+    "tarball": "https://registry.npmjs.org/bun/-/bun-1.4.4.tgz",
+    "integrity": "sha512-hj0ASdG6PNjLZGFAXktWb3Uaj/dcv/1wCsIttoEXADNIQBsGjTr+5uLKYbrDkuc7NT0Tkj4yPIqJI2jDxXdvVg=="
+  },
+  {
+    "name": "@oh-my-pi/pi-natives-win32-x64",
+    "version": "18.20.2",
+    "tarball": "https://registry.npmjs.org/@oh-my-pi/pi-natives-win32-x64/-/pi-natives-win32-x64-18.20.2.tgz",
+    "integrity": "sha512-6ovjBFxTt7wTN9NRGdCIcQeaP3yqMWWAwMdgUU9zIrDRO6zSscC6tKSzqyuO5KaxmxzMy1+2J1mD1uj9/zzSaw=="
+  }
+]

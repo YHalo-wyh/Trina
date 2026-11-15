@@ -1,0 +1,36 @@
+ value_25 = {'index': 25, 'valid': True} # code M00046
+ value_26 = {'index': 26, 'valid': True} # code M00047
+ value_27 = {'index': 27, 'valid': True} # code M00048
+ value_28 = {'index': 28, 'valid': True} # code M00049
+ value_29 = {'index': 29, 'valid': True} # code M00050
+ value_30 = {'index': 30, 'valid': True} # code M00051
+
+
+完成编码。 M00052
+
+╭─ terminal_exec · 完成 ───────────────────────────────────────────────────────────────────────────────────────────────╮
+│ $ bash -lc "fixture_tool --emit-lines 16"                                                                            │
+│ Output ───────────────────────────────────────────────────────────────────────────────────────────────────────────── │
+│ fixture_output_line_0: controlled replay T00054                                                                      │
+│ fixture_output_line_1: controlled replay T00055                                                                      │
+│ fixture_output_line_2: controlled replay T00056                                                                      │
+│ fixture_output_line_3: controlled replay T00057                                                                      │
+│ fixture_output_line_4: controlled replay T00058                                                                      │
+│ fixture_output_line_5: controlled replay T00059                                                                      │
+│ fixture_output_line_6: controlled replay T00060                                                                      │
+│ fixture_output_line_7: controlled replay T00061                                                                      │
+│ fixture_output_line_8: controlled replay T00062                                                                      │
+│ fixture_output_line_9: controlled replay T00063                                                                      │
+│ fixture_output_line_10: controlled replay T00064                                                                     │
+│ fixture_output_line_11: controlled replay T00065                                                                     │
+│ fixture_output_line_12: controlled replay T00066                                                                     │
+│ fixture_output_line_13: controlled replay T00067                                                                     │
+│ fixture_output_line_14: controlled replay T00068                                                                     │
+│ fixture_output_line_15: controlled replay T00069                                                                     │
+│                                                                                                                      │
+╰─────────────────────────────────────────────────── 1.0s · exit 0 ────────────────────────────────────────────────────╯
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+Trina  › K00018 K00027 K00036 K00045
+fixture
