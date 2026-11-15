@@ -1,12 +1,7 @@
 """对话式大脑：自然语言进来 → 大模型回答；需要动手时它自己调工具（仍走同一套护栏/控制器/审计）。
 
-与 `PentestAgent` 的区别
-------------------------
-* `PentestAgent` 是**任务执行**：给定目标与目标要求，按 PTES 阶段机跑到底，产出结论与覆盖；
-* `ChatAgent` 是**对话**：用户随口说什么就答什么，想做就调工具，做完继续对话（多轮上下文）。
-
-共用部分（这是关键）：工具执行、控制器授权、护栏、审计、审批、人工介入全部复用同一实现，
-所以"聊天里让模型干活"和"一条命令开打"的安全级别完全一致——模型依旧不能扩大范围。
+任务与对话共用 ``AgentRuntime``；本类只适配多轮消息、自然语言交付和会话保存。
+工具执行、控制器授权、护栏、审计、审批与人工介入继续使用同一条执行链。
 """
 
 from __future__ import annotations
@@ -25,7 +20,7 @@ from ..state import RunState
 from ..tools import ToolRegistry, build_registry
 from ..tools.http import HttpClient
 from ..tools.registry import ToolContext
-from ..tools.schema import FINISH_TOOL_NAME, parse_arguments, tool_schemas
+from ..tools.schema import tool_schemas
 from .failure import LoopGuard, advice_for, classify_failure
 
 def render_chat_prompt(include_hypothesis: bool = True) -> str:
@@ -200,124 +195,101 @@ class ChatAgent:
         self._messages.append({"role": "user", "content": text})
         self.save()
 
-        for step in range(1, self.MAX_TOOL_STEPS + 1):
+        from .runtime import AgentRuntime, ActionOutcome, RETRY
+        terminal_reply = ""
+        completion_reply = ""
+
+        def request(step, round_index):
+            nonlocal terminal_reply
             if self.stop_event is not None and self.stop_event.is_set():
-                return "（已按你的要求停止）"
+                terminal_reply = "（已按你的要求停止）"
+                return None
             if self.pause_event is not None:
                 while self.pause_event.is_set() and not (self.stop_event is not None and self.stop_event.is_set()):
-                    time.sleep(0.2)
+                    time.sleep(.1)
             self._accept_steer()
-
             response = self._ask_model(step)
             if self.stop_event is not None and self.stop_event.is_set():
                 self._cancel_stream()
-                return "（已按你的要求停止）"
+                terminal_reply = "（已按你的要求停止）"
+                return None
             if self._accept_steer():
                 self.audit.append("chat.response_superseded", decision="defer", reason="收到补充，重新决策")
                 self._cancel_stream()
-                continue
+                return RETRY
             if not response.ok:
                 self._cancel_stream()
-                self.last_reply_streamed = self.on_event is not None  # model.error 已经通过统一事件回显。
-                return f"（模型调用失败：{response.error}）"
-            # 标准 API 原生 tool_calls 原样进入历史；JSON/DSML 只作为兼容回退。
-            native_calls = list(response.tool_calls) if self._native_tools_enabled() else []
-            assistant_message: dict[str, Any] = {"role": "assistant", "content": response.text}
-            if native_calls:
-                assistant_message["tool_calls"] = [call.to_dict() for call in native_calls]
-            if response.reasoning:
-                assistant_message["reasoning_content"] = response.reasoning
-            self._messages.append(assistant_message)
-            native_call_id = native_calls[0].id if native_calls else ""
-            deferred_tool_messages = [
-                {"role": "tool", "tool_call_id": call.id,
-                 "content": "未执行：每一步只执行一个工具调用，请下一轮单独调用。"}
-                for call in native_calls[1:]
-            ]
-            if native_calls:
-                call = native_calls[0]
-                params, error = parse_arguments(call.arguments)
-                if error:
-                    action, note = {"error": f"{call.name} 参数解析失败：{error}"}, ""
-                elif call.name == FINISH_TOOL_NAME:
-                    action, note = {"final": params}, ""
-                else:
-                    action, note = {"action": call.name, "params": params}, ""
-            else:
-                action, note = _parse_action_lenient(response.text)
-            if action is None:
-                from .prompts import _looks_like_dsml
+                self.last_reply_streamed = self.on_event is not None
+                terminal_reply = f"（模型调用失败：{response.error}）"
+                return None
+            return response
 
-                if _looks_like_dsml(response.text):
-                    # 不把模型内部协议残片当正式答复。保留一次简短的结构化错误，
-                    # 让下一轮按 Trina JSON 合同重发；原始残片只留摘要审计。
-                    self.audit.append(
-                        "chat.protocol_recovery", decision="retry", protocol="dsml",
-                        chars=len(response.text), preview=response.text[:160],
-                    )
-                    self.history.append({"role": "assistant", "content": "[DSML 工具调用未完成，未执行]"})
-                    recovery = {
-                        "role": "user",
-                        "content": "[协议错误] 不要输出 DSML/XML。需要操作时仅按本轮合同返回一个 JSON action；请重新决定。",
-                    }
-                    self.history.append(recovery)
-                    self._messages.append(recovery)
-                    self._cancel_stream()
-                    self.logger("[协议恢复] 已拦截 DSML 工具调用残片，要求模型按 JSON 重发")
-                    continue
-                reply = response.text.strip()
-                self.history.append({"role": "assistant", "content": reply})
-                self.audit.append("chat.answer", decision="allow", chars=len(reply))
+        def say(reply, response, interim=False):
+            if interim:
                 self._finish_stream(reply)
-                return reply
-            if "error" in action:
-                error = str(action.get("error") or "工具调用协议错误")
-                if native_call_id:
-                    self._messages.append({"role": "tool", "tool_call_id": native_call_id, "content": error})
-                    self._messages.extend(deferred_tool_messages)
-                else:
-                    self._messages.append({"role": "user", "content": f"[协议错误] {error}；请重新决定。"})
-                self.history.append({"role": "assistant", "content": f"[协议错误] {error}"})
+                return ActionOutcome()
+            from .prompts import _looks_like_dsml
+            if _looks_like_dsml(reply):
+                self.audit.append("chat.protocol_recovery", decision="retry", protocol="dsml", chars=len(reply), preview=reply[:160])
+                self.history.append({"role": "assistant", "content": "[DSML 工具调用未完成，未执行]"})
+                recovery = {"role": "user", "content": "[协议错误] 不要输出 DSML/XML。需要操作时仅按本轮合同返回一个 JSON action；请重新决定。"}
+                self.history.append(recovery)
+                self._messages.append(recovery)
                 self._cancel_stream()
-                self.audit.append("chat.protocol_recovery", decision="retry", protocol="native" if native_call_id else "json", error=error[:300])
-                continue
-            if native_calls and response.text.strip():
-                # 原生工具调用前的自然语言说明保留在主内容区。
-                note = response.text.strip()
+                return ActionOutcome(ok=False)
+            self.history.append({"role": "assistant", "content": reply})
+            self.audit.append("chat.answer", decision="allow", chars=len(reply))
+            self._finish_stream(reply)
+            return ActionOutcome(answer=reply, stop=True)
 
+        def execute(action, step, response, *, llm_seconds):
+            nonlocal completion_reply
+            if "error" in action:
+                error = str(action["error"])
+                self.history.append({"role": "assistant", "content": "[协议错误] " + error})
+                self.audit.append("chat.protocol_recovery", decision="retry", error=error[:300])
+                self._cancel_stream()
+                return ActionOutcome(observation="[协议错误] " + error, ok=False)
             if "final" in action:
-                final = action.get("final")
+                final = action["final"]
                 reply = str(final.get("summary") if isinstance(final, dict) else final) or "（完成）"
                 self.history.append({"role": "assistant", "content": reply})
-                if native_call_id:
-                    self._messages.append({"role": "tool", "tool_call_id": native_call_id, "content": reply})
-                    self._messages.extend(deferred_tool_messages)
                 self._finish_stream(reply)
-                return reply
-
-            # 保留动作与观察的因果关系；工具结果不能成为孤立的用户指令。
+                return ActionOutcome(observation=reply, answer=reply, stop=True)
             self.history.append({"role": "assistant", "content": json.dumps(action, ensure_ascii=False)})
-            if note:
-                self._finish_stream(note)
-            else:
-                self._cancel_stream()
             self.save()
             observation = self._run_action(action, step)
-            tool_message = (
-                {"role": "tool", "tool_call_id": native_call_id, "content": observation[:4000]}
-                if native_call_id
-                else {"role": "user", "content": f"[工具结果] {observation}"}
-            )
-            self.history.append(tool_message)
-            self._messages.append(tool_message)
-            self._messages.extend(deferred_tool_messages)
+            completion_reply = str(self.ctx.extra.pop("_turn_completion", "") or "")
+            return ActionOutcome(observation=observation, ok=self._action_ok, data=self._action_data,
+                                 answer=completion_reply or None, stop=bool(completion_reply))
+
+        def observe(item, outcome, tool_message):
+            if not outcome.stop or item.call_id:
+                self.history.append(tool_message)
             self.save()
 
-        self.logger(f"[提示] 单条消息内已执行 {self.MAX_TOOL_STEPS} 个动作，先给你阶段性结果")
-        return (
-            f"（本次已连续执行 {self.MAX_TOOL_STEPS} 个动作，先停一下避免失控。"
-            "接着回复「继续」我就从当前进度往下做——已发现的结果我都记在会话里了。）"
-        )
+        def interrupted():
+            if self.stop_event is not None and self.stop_event.is_set():
+                return "未执行：用户已停止"
+            if self._accept_steer():
+                return "未执行：收到补充，本批剩余动作失效，重新决策"
+            return ""
+
+        runtime = AgentRuntime(max_steps=self.MAX_TOOL_STEPS, messages=self._messages,
+                               request=request, execute=execute, decode_text=_parse_action_lenient,
+                               native=self._native_tools_enabled, say=say, observe=observe, interrupted=interrupted)
+        outcome = runtime.run()
+        self.state.counters["decision_rounds"] = self.state.counters.get("decision_rounds", 0) + runtime.rounds
+        if completion_reply:
+            self._messages.append({"role": "assistant", "content": completion_reply})
+            self.history.append({"role": "assistant", "content": completion_reply})
+            self.ctx.emit("assistant.message", message_id=uuid.uuid4().hex, text=completion_reply, final=True)
+        if terminal_reply:
+            return terminal_reply
+        if outcome.answer is not None:
+            return outcome.answer
+        self.logger(f"[提示] 单条消息内已执行 {runtime.steps} 个动作，先给你阶段性结果")
+        return f"（本次已连续执行 {runtime.steps} 个动作；回复「继续」可从当前结果推进。）"
 
     # ------------------------------------------------------------------ 内部
     def _initialize_messages(self) -> None:
@@ -367,7 +339,7 @@ class ChatAgent:
         from ..runtime_status import render_agent_status
         last_observation = self.history[-1]["content"] if self.history and self.history[-1]["content"].startswith("[工具结果]") else ""
         runtime_parts.append(render_agent_status(self.ctx, step=step, max_steps=self.MAX_TOOL_STEPS,
-                                               turn=self.turns, observation=last_observation))
+                                               turn=self.turns, observation=last_observation, compact=True))
         # 动态状态作为新的 user 消息追加；绝不重写 system 或把历史压成角色标签字符串。
         self._messages.append({"role": "user", "content": "\n\n".join(runtime_parts)})
         tool_payload = tool_schemas(self.registry, exclude=() if self.ctx.extra.get("subworkers") else ("worker_tasks",)) if self._native_tools_enabled() else None
@@ -577,6 +549,7 @@ class ChatAgent:
         return True
 
     def _run_action(self, action: dict[str, Any], step: int) -> str:
+        self._action_ok, self._action_data = False, {}
         tool_name = str(action.get("action", ""))
         params = action.get("params") if isinstance(action.get("params"), dict) else {}
         params = dict(params)
@@ -634,6 +607,7 @@ class ChatAgent:
 
         before_knowledge = self.state.knowledge_digest()
         result = self.registry.execute(tool_name, params, self.ctx, call_id=call_id, request_emitted=True)
+        self._action_ok, self._action_data = result.ok, result.data
         if self.on_tool is not None:
             self.on_tool(result)
         new_information = before_knowledge != self.state.knowledge_digest()

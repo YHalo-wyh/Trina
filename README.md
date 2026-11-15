@@ -120,7 +120,7 @@ scripts/dev.sh play --target 127.0.0.1
 
 | 能力 | 落地位置 | 关键设计 |
 |---|---|---|
-| 1. 自动决策大脑 | `trina/brain/` | ReAct 循环 + PTES 阶段机（事实驱动推进）+ **假设台账**（按价值×置信度×信息增量排序验证）+ 失败分类与循环守卫（无新信息就打转→换参数→换工具→请人介入）+ 预算收敛；支持原生工具调用与 JSON Action，执行统一收口 |
+| 1. 自动决策大脑 | `trina/brain/` | 单一 Agent Runtime；原生协议一轮可提交多个有前序依赖的工具动作，JSON 兼容路径保持单动作；默认目标驱动，PTES 阶段与假设调度仅在显式配置时启用 |
 | 2. 工具统一封装 | `trina/tools/` | 注册工具统一 `ToolSpec/ToolResult` 契约；包含前台命令、文件读写编辑、Git 分支管理、共享追踪查询及 10 个原生二进制工具；缺少依赖时明确报错，不模拟成功 |
 | 3. 靶场适配 | `trina/adapters/` | `local` / `docker-compose` / `http-range` / `tsecbench` 四类适配器；仓库不再携带静态靶场注册表，按需从 `~/.trina/ranges` 或显式 YAML 载入 |
 | 4. 执行信任与审计 | `trina/scope.py` + `trina/audit.py` | 默认 `full` 信任并自动执行；可切换 `restricted` 恢复网段、动作和载荷边界；两种模式都保留超时、取消、限速和 SHA-256 哈希链审计 |
@@ -136,10 +136,10 @@ scripts/dev.sh play --target 127.0.0.1
   同工具+同参数+同结果视为无新信息，递进提示"换参数 → 换工具 → 请人介入"。
 - **证据关系图**（`trina/evidence_graph.py`）：目标→主机→端口→路径→发现→证据（+ 检查项/假设→发现、→flag），
   既是报告章节也是复核依据。
-- **确定性调度**（`trina/brain/scheduler.py`）：每步把台账里"能绑定注册检查项"的最高优先级假设派下去
+- **可选确定性调度**（`trina/brain/scheduler.py`）：显式开启时，每步把台账里"能绑定注册检查项"的最高优先级假设派下去
   （任务要求的漏洞类优先；模型没提假设时直接派该类的注册检查项），并记录**遵从率**（未遵从进审计哈希链）；
-  调度只指定方向，执行仍经控制器与护栏。关掉它：`--set run.hypothesis_scheduler=false`。
-- **工作台**：`trina/brain` 每步落盘 `state.json`，`/board`、`/hypotheses`、`/graph` 与 `trina watch` 共用一份渲染，
+  调度只指定方向，执行仍经控制器与护栏。默认关闭；需要旧实验路径时使用 `--set run.hypothesis_scheduler=true`。
+- **工作台**：新增事实立即落盘，其余默认每 5 个动作检查点一次；`/board`、`/hypotheses`、`/graph` 与 `trina watch` 共用一份渲染，
   另给四项内部指标：Cost per Success、Time to Evidence、Redundant Action Rate、Recovery Rate（口径见 `docs/EVAL.md`）。
 - **成本实话**：A/B 实测（`review/experiments/E4-insight-layer.md`，两臂各 3 次）洞察层让同任务 token **+44%**、
   Time to Evidence +3.8s，换来 3 次里 2 次 CONFIRMED（关臂 1 次）——方向性数据，样本量不足以下"提效"结论；

@@ -706,6 +706,34 @@
           "tests": ["tests.test_events.EventTests.test_commander_consumes_live_facts_before_worker_terminal", "tests.test_events.EventTests.test_commander_recovers_durable_checkpoint_ahead_of_json_file", "tests.test_events.EventTests.test_recovery_marks_open_call_interrupted_without_reexecuting"]
         }
       ]
+    },
+    {
+      "id": "TR-23",
+      "title": "统一执行内核与权威任务状态",
+      "priority": "P0",
+      "status": "implemented",
+      "implementation": ["trina/brain/runtime.py", "trina/brain/agent.py", "trina/brain/chat.py", "trina/tools/schema.py", "trina/coordination.py", "trina/swarm.py", "trina/bench/runner.py", "trina/bench/client.py"],
+      "verification": ["V-CONTRACT", "V-TESTS"],
+      "rules": [
+        {
+          "id": "TR-23-R01",
+          "level": "MUST",
+          "statement": "任务、对话和 Worker 必须共用 AgentRuntime，原生批量调用按序处理本批前序依赖，并为每个 API 调用生成对应回执。",
+          "tests": ["tests.test_agent_runtime.AgentRuntimeTests.test_batch_executes_all_calls_in_one_decision_and_pairs_every_id", "tests.test_agent_runtime.AgentRuntimeTests.test_failed_dependency_is_skipped_without_consuming_action_budget", "tests.test_agent_runtime.AgentRuntimeTests.test_stop_cancels_remaining_calls_but_keeps_protocol_complete"]
+        },
+        {
+          "id": "TR-23-R02",
+          "level": "MUST",
+          "statement": "每个动作必须继续经过独立执行边界，默认路径目标驱动且周期持久化，批内顺序执行、独立 Worker 可以并行。",
+          "tests": ["tests.test_agent_runtime.AgentRuntimeTests.test_default_path_is_goal_driven_layered_and_periodic", "tests.test_interactive.TestChatAgent.test_controller_denial_is_surfaced_to_model_and_user", "tests.test_swarm.SwarmTests.test_parallel_leases_reuse_and_handoff"]
+        },
+        {
+          "id": "TR-23-R03",
+          "level": "MUST",
+          "statement": "Intent 必须是唯一任务生命周期状态，v4 检查点不得重复保存 records；Bench 必须复用同一 Worker 调度并以平台回执裁决成功。",
+          "tests": ["tests.test_swarm.SwarmTests.test_add_task_validates_and_persists", "tests.test_swarm.SwarmTests.test_resume_retries_only_inflight", "tests.test_swarm.SwarmTests.test_v3_checkpoint_records_are_migrated_into_intents", "tests.test_bench.TestRunner.test_multiple_tasks_share_swarm_scheduler_and_run_concurrently"]
+        }
+      ]
     }
   ]
 }

@@ -10,7 +10,7 @@ Trina 通过平台的 `/openapi/v1/challenges/*` 接口接入 TSecBench：
 | 模块 | 职责 |
 |---|---|
 | `trina/bench/client.py` | 答题 API 客户端（`BENCHMARK_TOKEN` 鉴权） |
-| `trina/bench/runner.py` | 逐题编排、flag 提取/提交、容器回收 |
+| `trina/bench/runner.py` | 平台适配、flag 提取/提交；题目调度复用 SwarmRuntime |
 | `trina/cli.py` → `trina bench` | 本地/托管统一入口 |
 | `trina/scope.py` → `check_control_plane` | 控制面主机白名单（只允许答题 API） |
 
@@ -28,7 +28,7 @@ Trina 通过平台的 `/openapi/v1/challenges/*` 接口接入 TSecBench：
 
 关键约束：
 
-- 同时最多 3 个容器；本实现串行处理并在 `finally` 中关闭。
+- 同时最多 3 个容器；本实现默认 2 个 Worker、可用 `--workers 1..3` 调整，每题独立会话并在 `finally` 中关闭。
 - 每题可能有多个 flag，按 `flag_count` / `submit` 返回的 `correct_flag_count` 判断是否拿全。
 - 重复提交同一正确 flag 返回 `409 duplicate`；任务结束/超时返回 `409 invalid_state`。
 - 查看 hint 后该题得分按比例扣减；`trina bench` 默认不取提示（`TRINA_BENCH_USE_HINTS=1` 才启用）。
@@ -51,6 +51,7 @@ Trina 通过平台的 `/openapi/v1/challenges/*` 接口接入 TSecBench：
 | `TRINA_BENCH_ATTEMPTS` | 否 | 单题最多尝试轮次，默认 1 |
 | `TRINA_BENCH_USE_HINTS` | 否 | `1` 时补漏轮次前取提示（扣分） |
 | `TRINA_BENCH_LIMIT` | 否 | 只跑前 N 题（调试） |
+| `TRINA_BENCH_WORKERS` | 否 | 并行题目数，默认 2，平台上限 3 |
 
 托管模式下 `trina bench` 会自动把 `https://<厂商域名>/...` 改写成
 `http://<厂商域名>.tsecbench.gw/...`；本地模式需显式 `--gateway` 或设 `TRINA_BENCH_HOSTED=1`。
@@ -82,7 +83,7 @@ export TRINA_LLM_BASE_URL='https://api.deepseek.com/v1'
 export TRINA_LLM_API_KEY='...'
 export TRINA_LLM_MODEL='deepseek-chat'
 
-python3 -m trina bench --max-steps 18 --per-task-seconds 420
+python3 -m trina bench --max-steps 18 --per-task-seconds 420 --workers 2
 # 先只看题目：
 python3 -m trina bench --dry-run
 ```

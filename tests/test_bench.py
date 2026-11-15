@@ -100,8 +100,8 @@ class _FakeAPI(BaseHTTPRequestHandler):
 
 
 class _Server:
-    def __init__(self):
-        self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), _FakeAPI)
+    def __init__(self, handler=_FakeAPI):
+        self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)
         self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
 
     @property
@@ -216,6 +216,56 @@ class TestRunner(unittest.TestCase):
             summary = runner.run()
         self.assertEqual(summary.solved, 0)
         self.assertIn("challenge-1", _FakeAPI.closed)
+
+    def test_multiple_tasks_share_swarm_scheduler_and_run_concurrently(self):
+        class ParallelAPI(_FakeAPI):
+            submitted: list[tuple[str, str]] = []
+            started: list[str] = []
+            closed: list[str] = []
+            flags = {"challenge-1": ["flag{one}"], "challenge-2": ["flag{two}"]}
+
+            def do_GET(self):  # noqa: N802
+                if not self._auth():
+                    return
+                if self.path == "/openapi/v1/challenges":
+                    rows = [{
+                        "unique_code": code, "description": code, "difficulty": "easy", "level": index,
+                        "total_score": 100, "flag_count": 1, "correct_flag_count": 0,
+                        "is_completed": False, "container_status": "stopped", "container_addr": [],
+                    } for index, code in enumerate(("challenge-1", "challenge-2"), 1)]
+                    self._json(200, rows)
+                    return
+                self._json(404, {"code": "challenge_not_found", "message": "not found", "detail": {}})
+
+        active = maximum = 0
+        lock = threading.Lock()
+        barrier = threading.Barrier(2, timeout=5)
+
+        def fake_runner(task, target, goal, **kwargs):
+            nonlocal active, maximum
+            del goal, kwargs
+            with lock:
+                active += 1
+                maximum = max(maximum, active)
+            barrier.wait()
+            with lock:
+                active -= 1
+            state = RunState(run_id=task.unique_code, target=target, status="success")
+            value = "flag{one}" if task.unique_code == "challenge-1" else "flag{two}"
+            state.flags = [{"value": value, "source": "fake"}]
+            return state
+
+        with _Server(ParallelAPI) as server:
+            runner = BenchmarkRunner(
+                TrinaConfig(), BenchmarkClient(server.url, "test-token", _guard()),
+                options=BenchOptions(max_steps=1, per_task_seconds=30, total_seconds=120, workers=2),
+                runner=fake_runner, log=lambda message: None,
+            )
+            summary = runner.run()
+        self.assertEqual(maximum, 2)
+        self.assertEqual(summary.solved, 2)
+        self.assertEqual(set(ParallelAPI.closed), {"challenge-1", "challenge-2"})
+        self.assertEqual({item[0] for item in ParallelAPI.submitted}, {"challenge-1", "challenge-2"})
 
 
 if __name__ == "__main__":

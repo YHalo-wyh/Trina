@@ -110,8 +110,8 @@ class CoordinationRuntime:
                 self.event_bus.publish("coordination." + kind, source="commander", task_id=intent_id,
                                        revision=self.revision, **payload)
 
-    def plan(self, records: dict[str, Any]) -> list[str]:
-        """消费一批图变更事件并返回当前可领取 Intent；无新事件不新增规划轮。"""
+    def plan(self) -> list[str]:
+        """消费一批图变更事件并返回当前可领取 Intent；Intent 是任务状态唯一来源。"""
         with self.lock:
             if self.planned_revision != self.revision:
                 self.planned_revision = self.revision
@@ -119,13 +119,12 @@ class CoordinationRuntime:
                 self._trace("planner", "planner", "round", f"处理至事件修订 {self.revision}", "", True)
             ready: list[dict[str, Any]] = []
             for intent_id, intent in self.intents.items():
-                record = records.get(intent_id)
-                status = str(getattr(record, "status", intent["status"]))
-                if status != "pending" or intent["status"] != "pending":
+                status = str(intent["status"])
+                if status != "pending":
                     if intent_id in self.todo and status in TERMINAL_INTENTS | {"running"}:
                         self.todo[intent_id]["status"] = "in_progress" if status == "running" else status
                     continue
-                dependency_states = [str(getattr(records.get(dep), "status", "pending")) for dep in intent["depends_on"]]
+                dependency_states = [str(self.intents[dep]["status"]) for dep in intent["depends_on"]]
                 if any(state in FAILED_INTENTS for state in dependency_states):
                     self.todo[intent_id]["status"] = "blocked"
                     continue
@@ -202,18 +201,22 @@ class CoordinationRuntime:
                 self.emit("intent.recovered", intents=recovered)
             return recovered
 
-    def sync_records(self, records: dict[str, Any]) -> None:
-        """兼容旧检查点：以 Commander 已落盘终态补齐 Intent/Todo 状态。"""
+    def import_legacy_records(self, records: dict[str, Any]) -> None:
+        """只在恢复 v1-v3 检查点时把旧任务副本迁入权威 Intent。"""
         with self.lock:
             for intent_id, record in records.items():
                 if intent_id not in self.intents:
                     continue
-                status = str(getattr(record, "status", "pending"))
-                if status not in TERMINAL_INTENTS:
-                    continue
-                self.intents[intent_id].update({"status": status, "lease_id": "", "deadline": 0.0,
-                                                "error": str(getattr(record, "error", ""))})
-                self.todo[intent_id]["status"] = status
+                source = record if isinstance(record, dict) else vars(record)
+                for key in (
+                    "status", "attempt", "worker_id", "lease_id", "started_at", "ended_at",
+                    "result", "error", "capability_lease_id", "capability_ids",
+                    "capability_snapshot", "evidence_refs", "model", "reasoning_effort", "profile",
+                ):
+                    if key in source:
+                        self.intents[intent_id][key] = source[key]
+                status = str(self.intents[intent_id].get("status") or "pending")
+                self.todo[intent_id]["status"] = "in_progress" if status == "running" else status
                 self.exploration["nodes"][f"intent:{intent_id}"]["status"] = status
 
     def expire_leases(self, now: float | None = None) -> list[str]:

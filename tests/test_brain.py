@@ -416,7 +416,7 @@ class TestReActLoop(unittest.TestCase):
         self.assertTrue(all("# Tool Policy" in call[0]["content"] for call in calls))
         self.assertTrue(all("CTF / 攻防比赛" in call[0]["content"] for call in calls))
         self.assertEqual([item["role"] for item in calls[0][:3]], ["system", "user", "user"])
-        self.assertIn('{"action"', calls[0][1]["content"])
+        self.assertIn("# 工具协议", calls[0][1]["content"])
         self.assertIn("# 可用工具", calls[0][1]["content"])
         self.assertNotIn("[user]", "\n".join(item["content"] for item in calls[0]))
 

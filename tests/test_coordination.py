@@ -5,7 +5,6 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
-from types import SimpleNamespace
 
 from trina.coordination import CoordinationRuntime
 from trina.state import RunState
@@ -19,27 +18,20 @@ class CoordinationTests(unittest.TestCase):
             TaskSpec("verify", "host.test", "验证服务", depends_on=("discover",), max_seconds=30),
         ]
 
-    def records(self):
-        return {key: SimpleNamespace(status="pending", error="") for key in ("discover", "verify")}
-
     def test_planner_only_advances_on_events_and_todo_keeps_dependencies(self):
         runtime = CoordinationRuntime(self.tasks())
-        records = self.records()
-        self.assertEqual(runtime.plan(records), ["discover"])
+        self.assertEqual(runtime.plan(), ["discover"])
         rounds = runtime.planner_rounds
-        self.assertEqual(runtime.plan(records), ["discover"])
+        self.assertEqual(runtime.plan(), ["discover"])
         self.assertEqual(runtime.planner_rounds, rounds, "轮询本身不能让 Planner 重规划")
         lease = runtime.claim("discover", "worker-1", ttl=30)
-        records["discover"].status = "running"
         runtime.settle("discover", lease, "completed")
-        records["discover"].status = "completed"
-        self.assertEqual(runtime.plan(records), ["verify"])
+        self.assertEqual(runtime.plan(), ["verify"])
         self.assertEqual(runtime.todo["verify"]["status"], "ready")
 
     def test_fact_and_exploration_graphs_are_separate_and_anchored(self):
         runtime = CoordinationRuntime(self.tasks())
-        records = self.records()
-        runtime.plan(records)
+        runtime.plan()
         lease = runtime.claim("discover", "worker-1")
         state = RunState("run-discover", "host.test", "识别服务", status="success")
         state.host("host.test").ports[80] = {"service": "http"}

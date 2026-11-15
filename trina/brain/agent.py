@@ -29,7 +29,7 @@ from ..state import VERDICT_CN, RunState
 from ..tools import ToolRegistry, build_registry
 from ..tools.http import HttpClient
 from ..tools.registry import ToolContext
-from ..tools.schema import FINISH_TOOL_NAME, parse_arguments, schema_signature, tool_schemas
+from ..tools.schema import schema_signature, tool_schemas
 from .failure import (
     LoopGuard,
     advice_for,
@@ -39,7 +39,6 @@ from .failure import (
     decide_after_failure,
 )
 from .goal import GoalRequirements
-from .planner import Planner
 from .prompts import (
     build_prompt_layers,
     build_runtime_context,
@@ -47,7 +46,6 @@ from .prompts import (
     build_system_prompt,
     parse_action,
 )
-from .scheduler import DEFAULT_MIN_PRIORITY, HypothesisScheduler
 
 MAX_LLM_RETRIES = 4
 #: 目标未达成时最多拒绝几次「提前结束」，超过则尊重模型判断（避免死循环）
@@ -247,7 +245,12 @@ class PentestAgent:
                 )
             return render_commander_briefs(current)
 
-        planner = Planner(max_steps_per_phase=max(4, max_steps // len(("recon", "enum", "vuln", "exploit", "post", "report"))))
+        planner = None
+        if self.config.run.phases:
+            from .planner import Planner
+            planner = Planner(max_steps_per_phase=max(4, max_steps // len(self.config.run.phases)))
+        else:
+            state.phase = "execute"
         requirements = GoalRequirements.parse(goal)
         if not requirements.empty:
             state.note("goal", f"目标要求（未满足前不允许收敛）：{requirements.describe()}")
@@ -262,13 +265,10 @@ class PentestAgent:
         use_ledger = bool(getattr(self.config.run, "hypothesis_ledger", True))
         use_guard = bool(getattr(self.config.run, "loop_guard", True))
         # 确定性调度：把台账优先级翻译成"这一步验证谁"（关闭台账时无从调度）
-        scheduler = (
-            HypothesisScheduler(
-                min_priority=float(getattr(self.config.run, "scheduler_min_priority", DEFAULT_MIN_PRIORITY) or 0.0)
-            )
-            if (use_ledger and bool(getattr(self.config.run, "hypothesis_scheduler", True)))
-            else None
-        )
+        scheduler = None
+        if use_ledger and self.config.run.hypothesis_scheduler:
+            from .scheduler import HypothesisScheduler
+            scheduler = HypothesisScheduler(min_priority=self.config.run.scheduler_min_priority)
 
         # 独立控制器：授权来自注册表与预算合同，不来自模型的文字
         controller = self.controller
@@ -350,17 +350,6 @@ class PentestAgent:
         from ..conversation import ConversationContext, ContextBudgetError, state_projection
         context = ConversationContext(ctx)
         context.remember_user(goal)
-        #: 原生协议要求每个 tool_call 都有对应的 tool 消息，缺一条下一轮就会被供应商拒绝
-        pending_tool_messages: list[dict[str, Any]] = []
-        native_call_id = ""
-
-        def queue_tool_result(text: str) -> None:
-            """把观察结果排进 tool 消息队列（JSON 模式为空操作）。"""
-            if native_call_id:
-                pending_tool_messages.append(
-                    {"role": "tool", "tool_call_id": native_call_id, "content": (text or "")[:2000]}
-                )
-
         observation = ""
         last_action_key = ""
         stall = 0
@@ -426,432 +415,432 @@ class PentestAgent:
         final: dict[str, Any] | None = None
         final_rejects = 0
         denial_counts: dict[str, int] = {}
-        try:
-            for index in range(1, max_steps + 1):
-                # 人工介入：停止 / 暂停 / 实时提示
-                if self.stop_event is not None and self.stop_event.is_set():
-                    state.note("human", "收到人工停止指令")
-                    state.status = "stopped" if state.status == "running" else state.status
-                    break
-                if self.pause_event is not None:
-                    while self.pause_event.is_set() and not (self.stop_event is not None and self.stop_event.is_set()):
-                        time.sleep(0.2)
-                accept_steers()
-                if ctx.remaining() is not None and ctx.remaining() <= 0:
-                    state.note("budget", f"时长预算用尽（{max_seconds}s）")
-                    break
-                steps = index
-                missing_goal = requirements.unsatisfied(state) if not requirements.empty else []
-                phase, transition = planner.tick(state, new_facts=new_facts)
-                if transition:
-                    state.set_phase(phase, transition)
-                    hints.append(transition)
-                if planner.should_finish(state) and phase in ("post", "report"):
-                    if not missing_goal:
-                        state.note("budget", "已无更多可执行动作，提前收敛")
-                        break
-                    # 拿到 flag 不等于完成目标：任务要求的验证还没做，必须继续
-                if not missing_goal and not requirements.empty:
-                    hints.extend(item for item in requirements.soft_hints(state)[:1] if item not in hints)
+        from .runtime import AgentRuntime, ActionOutcome, RETRY
+        phase, schedule = "execute", None
 
-                # 确定性调度：挑出本步应验证的最高优先级假设（绑定注册检查项）
-                schedule = None
-                if scheduler is not None:
-                    schedule = scheduler.decide(
-                        ledger,
-                        controller.registry.tests_for(target_id) if target_id else [],
-                        executed_tests=set(controller.executed),
-                        goal_classes=requirements.classes,
-                    )
-                    state.scheduler = scheduler.to_dict()
-                    if schedule is not None:
-                        state.note(
-                            "scheduler",
-                            f"调度：验证 {schedule.hypothesis_id}（优先级 {schedule.score:.2f}）→ "
-                            + (f"检查项 {schedule.test_id}（{schedule.tool}）" if schedule.test_id else f"自由验证 {schedule.vuln_class}")
-                            + ("；强制" if schedule.required else ""),
-                        )
+        def request(index, round_index):
+            nonlocal phase, native_mode, tool_payload, hints, observation, schedule
+            # 人工介入：停止 / 暂停 / 实时提示
+            if self.stop_event is not None and self.stop_event.is_set():
+                state.note("human", "收到人工停止指令")
+                state.status = "stopped" if state.status == "running" else state.status
+                return None
+            if self.pause_event is not None:
+                while self.pause_event.is_set() and not (self.stop_event is not None and self.stop_event.is_set()):
+                    time.sleep(0.2)
+            accept_steers()
+            if ctx.remaining() is not None and ctx.remaining() <= 0:
+                state.note("budget", f"时长预算用尽（{max_seconds}s）")
+                return None
+            missing_goal = requirements.unsatisfied(state) if not requirements.empty else []
+            phase, transition = planner.tick(state, new_facts=new_facts) if planner is not None else ("execute", None)
+            if transition:
+                state.set_phase(phase, transition)
+                hints.append(transition)
+            if planner is not None and planner.should_finish(state) and phase in ("post", "report"):
+                if not missing_goal:
+                    state.note("budget", "已无更多可执行动作，提前收敛")
+                    return None
+                # 拿到 flag 不等于完成目标：任务要求的验证还没做，必须继续
+            if not missing_goal and not requirements.empty:
+                hints.extend(item for item in requirements.soft_hints(state)[:1] if item not in hints)
 
-                step_prompt = build_step_prompt(
-                    state_digest=context.state_update(state_projection(
-                        state, hypotheses=ledger.to_dict() if use_ledger else None, registered=policy_block,
-                        commander=commander_context_block() if (commander_briefs or commander_brief_provider) else "",
-                        unsatisfied_requirements=missing_goal)),
-                    last_observation="见上一条 tool 结果" if native_mode and pending_tool_messages else observation,
-                    hints=hints,
-                    runtime_context="",
-                    budget={
-                        "阶段步数": f"{planner.phase_step}/{planner.max_steps_per_phase}",
-                        "总步数": f"{index}/{max_steps}",
-                        "剩余秒": int(ctx.remaining() or 0),
-                    },
-                    # 任务硬性要求放在显眼位置：否则模型容易被"顺路发现"带偏，把预算花在目标之外
-                    extra_context=schedule.prompt_block() if schedule is not None else "",
+            # 确定性调度：挑出本步应验证的最高优先级假设（绑定注册检查项）
+            schedule = None
+            if scheduler is not None:
+                schedule = scheduler.decide(
+                    ledger,
+                    controller.registry.tests_for(target_id) if target_id else [],
+                    executed_tests=set(controller.executed),
+                    goal_classes=requirements.classes,
                 )
-                hints = []
-
-                # 原生协议：先把上一轮的 tool 结果补进历史，再追加本步提示
-                # （顺序必须是 assistant(tool_calls) → tool(...) → user，否则供应商直接 400）
-                if pending_tool_messages:
-                    messages.extend(pending_tool_messages)  # type: ignore[arg-type]
-                    pending_tool_messages.clear()
-                messages.append({"role": "user", "content": step_prompt})
-                from ..runtime_status import render_agent_status
-                messages[-1]["content"] += render_agent_status(ctx, step=index, max_steps=max_steps, observation=observation)
-                native_call_id = ""
-                try:
-                    context.prepare(messages, tool_payload)
-                except ContextBudgetError as exc:
-                    state.note("context", str(exc))
-                    state.counters["context_budget_errors"] = state.counters.get("context_budget_errors", 0) + 1
-                    state.context_stats = {**context.stats, "budget_error": str(exc)}
-                    audit.append("context.budget_error", error=str(exc))
-                    break
-                diagnostic = context.before_request(messages, tool_payload)
-                response = self._ask(messages, tool_payload)
-                context.after_response(diagnostic, response)
-                if self.stop_event is not None and self.stop_event.is_set():
-                    state.note("human", "收到人工停止指令")
-                    state.status = "stopped"
-                    break
-                if not response.ok:
-                    failure_kind = classify_llm_response(response)
-                    state.counters[f"llm_{failure_kind}"] = state.counters.get(f"llm_{failure_kind}", 0) + 1
-                    state.counters["errors"] = state.counters.get("errors", 0) + 1
-                    state.note("llm_error", f"[{failure_kind}] {response.error}")
-                    self.logger(f"[{index}] LLM 失败({failure_kind}): {response.error}")
-                    audit.append(
-                        "llm.error", model=self.backend.config.model, error=response.error[:300],
-                        step=index, kind=failure_kind,
+                state.scheduler = scheduler.to_dict()
+                if schedule is not None:
+                    state.note(
+                        "scheduler",
+                        f"调度：验证 {schedule.hypothesis_id}（优先级 {schedule.score:.2f}）→ "
+                        + (f"检查项 {schedule.test_id}（{schedule.tool}）" if schedule.test_id else f"自由验证 {schedule.vuln_class}")
+                        + ("；强制" if schedule.required else ""),
                     )
-                    # 协议不支持：降级一次，之后不再发原生请求（重试不会改变供应商结论）
-                    if (
-                        failure_kind == "protocol_unsupported"
-                        and native_mode
-                        and bool(getattr(self.config.llm, "tool_protocol_fallback", True))
-                    ):
-                        native_mode, tool_payload = False, None
-                        state.note("protocol", "供应商不支持原生工具调用，已降级为 JSON Action")
-                        audit.append("protocol.downgrade", step=index, decision="allow", reason=response.error[:200])
-                        hints.append("协议已降级为 JSON 动作")
-                        observation = (
-                            "供应商不支持原生工具调用，已切换到 JSON 动作协议。"
-                            '请只返回一个 JSON 对象：{"action": "工具名", "params": {...}} 或 {"final": {...}}。'
-                        )
-                        continue
-                    decision = decide_after_failure(failure_kind, attempt=state.counters["errors"])
-                    if decision == "stop" or state.counters["errors"] >= MAX_LLM_FAILURES:
-                        state.status = "failed"
-                        break
-                    hints.append("上一步推理失败，请直接给出一个工具动作")
-                    observation = f"LLM 调用失败（{failure_kind}）：{response.error}"
-                    time.sleep(min(2.0 * state.counters["errors"], 8.0))
-                    continue
-                state.counters["llm_calls"] = state.counters.get("llm_calls", 0) + 1
-                if accept_steers():
-                    audit.append("llm.response_superseded", decision="defer", reason="收到补充，重新决策", step=index)
-                    continue
-                # assistant 消息必须原样带回 tool_calls 与 reasoning_content：
-                # DeepSeek 思考模式要求上一轮思维链出现在同一条消息里，否则下一轮 400。
-                assistant_message: dict[str, Any] = {"role": "assistant", "content": response.text}
-                native_calls = list(response.tool_calls) if native_mode else []
-                if native_calls:
-                    assistant_message["tool_calls"] = [call.to_dict() for call in native_calls]
-                    native_call_id = native_calls[0].id
-                    # 本步只执行一个动作；其余调用也必须回一条 tool 消息，保持协议完整
-                    for extra in native_calls[1:]:
-                        pending_tool_messages.append({
-                            "role": "tool", "tool_call_id": extra.id,
-                            "content": "未执行：每步只允许一个动作，请在下一步单独调用。",
-                        })
-                if response.reasoning:
-                    assistant_message["reasoning_content"] = response.reasoning
-                messages.append(assistant_message)  # type: ignore[arg-type]
-                record_response(response.text, response.tool_calls, response.reasoning)
 
-                action = self._decode_action(response, native_calls)
-                if native_calls:
-                    state.counters["native_calls"] = state.counters.get("native_calls", 0) + 1
-                if "error" in action:
-                    state.counters["errors"] = state.counters.get("errors", 0) + 1
-                    state.counters["protocol_error"] = state.counters.get("protocol_error", 0) + 1
-                    hints.append("输出必须是单个 JSON 对象：{\"thought\":..., \"action\":..., \"params\":{...}}")
-                    observation = f"动作解析失败：{action.get('error')}；原始输出片段：{str(action.get('raw', ''))[:200]}"
-                    state.log_step(
-                        StepRecord(index, phase, summary="解析失败", error=action.get("error", ""), llm_seconds=response.duration).to_dict()
-                    )
-                    queue_tool_result(observation)
-                    continue
+            step_prompt = build_step_prompt(
+                state_digest=context.state_update(state_projection(
+                    state, hypotheses=ledger.to_dict() if use_ledger else None, registered=policy_block,
+                    commander=commander_context_block() if (commander_briefs or commander_brief_provider) else "",
+                    unsatisfied_requirements=missing_goal)),
+                last_observation="见前面的工具结果" if native_mode and state.steps else observation,
+                hints=hints,
+                runtime_context="",
+                budget={
+                    "进度": f"{planner.phase_step}/{planner.max_steps_per_phase}" if planner is not None else "目标驱动",
+                    "总步数": f"{index}/{max_steps}",
+                    "剩余秒": int(ctx.remaining() or 0),
+                },
+                # 任务硬性要求放在显眼位置：否则模型容易被"顺路发现"带偏，把预算花在目标之外
+                extra_context=schedule.prompt_block() if schedule is not None else "",
+            )
+            hints = []
 
-                if native_calls and response.text.strip():
-                    ctx.emit("assistant.message", message_id=f"{run_id}-{index}-note",
-                             text=response.text.strip(), final=True)
-
-                if "final" in action:
-                    missing = requirements.unsatisfied(state) if not requirements.empty else []
-                    if missing and final_rejects < MAX_FINAL_REJECTS:
-                        final_rejects += 1
-                        hints.extend(missing[:3])
-                        hints.append("系统拒绝了你的结束请求：先完成上述目标要求（要有工具产出的证据）")
-                        observation = (
-                            "结束请求被拒绝（目标尚未达成）："
-                            + "；".join(missing)
-                            + "。请继续调用工具完成验证，然后再给出 final。"
-                        )
-                        state.note("goal", "拒绝提前结束：" + "；".join(missing))
-                        state.log_step(
-                            StepRecord(index, phase, thought=str(action.get("thought", "")), action="final_rejected",
-                                       summary="目标未达成，拒绝结束").to_dict()
-                        )
-                        queue_tool_result(observation)
-                        continue
-                    final = action.get("final") if isinstance(action.get("final"), dict) else {"summary": str(action.get("final"))}
-                    ctx.emit("assistant.message", message_id=f"{run_id}-{index}-final",
-                             text=str(final.get("summary", "")), final=True)
-                    state.note("final", str(final.get("summary", ""))[:400])
-                    state.log_step(
-                        StepRecord(index, phase, thought=str(action.get("thought", "")), action="final", summary=str(final.get("summary", ""))[:200], ok=True).to_dict()
-                    )
-                    break
-
-                tool_name = str(action.get("action", ""))
-                params = action.get("params") if isinstance(action.get("params"), dict) else {}
-                params = dict(params)
-                thought = str(action.get("thought", ""))
-                # 模型常把 test_id 写进 params（两种写法都接受，执行前必须摘掉，
-                # 否则会被参数校验判成"未知参数"而白白浪费一步）
-                inline_test_id = params.pop("test_id", "") if isinstance(params.get("test_id"), str) else ""
-                test_id = str(action.get("test_id", "") or inline_test_id or "")
-                action_target = str(params.get("target") or params.get("url") or target)
-                level = self._effective_level(tool_name, params)
-                hypothesis = ledger.from_action(action) if use_ledger else None
-                import uuid
-                call_id = uuid.uuid4().hex
-                ctx.emit("tool.requested", call_id=call_id, tool=tool_name, params=params)
-                if use_ledger and action.get("hypothesis_id") and hypothesis is None:
-                    hints.append("hypothesis_id 不存在：请引用台账中的编号或提出新假设")
-
-                # 独立控制器：在执行层逐动作批准（不认模型的自我声明）
-                policy_decision = controller.check(
-                    {
-                        "index": index,
-                        "tool": tool_name,
-                        "params": params,
-                        "level": level,
-                        "target": action_target,
-                        "test_id": test_id,
-                    }
+            messages.append({"role": "user", "content": step_prompt})
+            from ..runtime_status import render_agent_status
+            messages[-1]["content"] += render_agent_status(ctx, step=index, max_steps=max_steps, compact=True)
+            native_call_id = ""
+            try:
+                context.prepare(messages, tool_payload)
+            except ContextBudgetError as exc:
+                state.note("context", str(exc))
+                state.counters["context_budget_errors"] = state.counters.get("context_budget_errors", 0) + 1
+                state.context_stats = {**context.stats, "budget_error": str(exc)}
+                audit.append("context.budget_error", error=str(exc))
+                return None
+            diagnostic = context.before_request(messages, tool_payload)
+            response = self._ask(messages, tool_payload)
+            context.after_response(diagnostic, response)
+            if self.stop_event is not None and self.stop_event.is_set():
+                state.note("human", "收到人工停止指令")
+                state.status = "stopped"
+                return None
+            if not response.ok:
+                failure_kind = classify_llm_response(response)
+                state.counters[f"llm_{failure_kind}"] = state.counters.get(f"llm_{failure_kind}", 0) + 1
+                state.counters["errors"] = state.counters.get("errors", 0) + 1
+                state.note("llm_error", f"[{failure_kind}] {response.error}")
+                self.logger(f"[{index}] LLM 失败({failure_kind}): {response.error}")
+                audit.append(
+                    "llm.error", model=self.backend.config.model, error=response.error[:300],
+                    step=index, kind=failure_kind,
                 )
-                if not policy_decision.allowed:
+                # 协议不支持：降级一次，之后不再发原生请求（重试不会改变供应商结论）
+                if (
+                    failure_kind == "protocol_unsupported"
+                    and native_mode
+                    and bool(getattr(self.config.llm, "tool_protocol_fallback", True))
+                ):
+                    native_mode, tool_payload = False, None
+                    state.note("protocol", "供应商不支持原生工具调用，已降级为 JSON Action")
+                    audit.append("protocol.downgrade", step=index, decision="allow", reason=response.error[:200])
+                    hints.append("协议已降级为 JSON 动作")
+                    observation = (
+                        "供应商不支持原生工具调用，已切换到 JSON 动作协议。"
+                        '请只返回一个 JSON 对象：{"action": "工具名", "params": {...}} 或 {"final": {...}}。'
+                    )
+                    return RETRY
+                decision = decide_after_failure(failure_kind, attempt=state.counters["errors"])
+                if decision == "stop" or state.counters["errors"] >= MAX_LLM_FAILURES:
+                    state.status = "failed"
+                    return None
+                hints.append("上一步推理失败，请直接给出可执行工具动作")
+                observation = f"LLM 调用失败（{failure_kind}）：{response.error}"
+                time.sleep(min(2.0 * state.counters["errors"], 8.0))
+                return RETRY
+            state.counters["llm_calls"] = state.counters.get("llm_calls", 0) + 1
+            if accept_steers():
+                audit.append("llm.response_superseded", decision="defer", reason="收到补充，重新决策", step=index)
+                return RETRY
+
+            return response
+
+        def execute(action, index, response, *, llm_seconds):
+            nonlocal steps, observation, new_facts, final, final_rejects, stall, last_action_key, hints
+            steps = index
+            if "error" in action:
+                state.counters["errors"] = state.counters.get("errors", 0) + 1
+                state.counters["protocol_error"] = state.counters.get("protocol_error", 0) + 1
+                hints.append("输出必须是单个 JSON 对象：{\"thought\":..., \"action\":..., \"params\":{...}}")
+                observation = f"动作解析失败：{action.get('error')}；原始输出片段：{str(action.get('raw', ''))[:200]}"
+                state.log_step(
+                    StepRecord(index, phase, summary="解析失败", error=action.get("error", ""), llm_seconds=llm_seconds).to_dict()
+                )
+                return ActionOutcome(observation=observation, ok=False)
+
+            if "final" in action:
+                missing = requirements.unsatisfied(state) if not requirements.empty else []
+                if missing and final_rejects < MAX_FINAL_REJECTS:
+                    final_rejects += 1
+                    hints.extend(missing[:3])
+                    hints.append("系统拒绝了你的结束请求：先完成上述目标要求（要有工具产出的证据）")
+                    observation = (
+                        "结束请求被拒绝（目标尚未达成）："
+                        + "；".join(missing)
+                        + "。请继续调用工具完成验证，然后再给出 final。"
+                    )
+                    state.note("goal", "拒绝提前结束：" + "；".join(missing))
+                    state.log_step(
+                        StepRecord(index, phase, thought=str(action.get("thought", "")), action="final_rejected",
+                                   summary="目标未达成，拒绝结束").to_dict()
+                    )
+                    return ActionOutcome(observation=observation, ok=False)
+                final = action.get("final") if isinstance(action.get("final"), dict) else {"summary": str(action.get("final"))}
+                ctx.emit("assistant.message", message_id=f"{run_id}-{index}-final",
+                         text=str(final.get("summary", "")), final=True)
+                state.note("final", str(final.get("summary", ""))[:400])
+                state.log_step(
+                    StepRecord(index, phase, thought=str(action.get("thought", "")), action="final", summary=str(final.get("summary", ""))[:200], ok=True).to_dict()
+                )
+                return ActionOutcome(observation=str(final.get("summary", "")), answer=str(final.get("summary", "")), stop=True)
+
+            tool_name = str(action.get("action", ""))
+            params = action.get("params") if isinstance(action.get("params"), dict) else {}
+            params = dict(params)
+            thought = str(action.get("thought", ""))
+            # 模型常把 test_id 写进 params（两种写法都接受，执行前必须摘掉，
+            # 否则会被参数校验判成"未知参数"而白白浪费一步）
+            inline_test_id = params.pop("test_id", "") if isinstance(params.get("test_id"), str) else ""
+            test_id = str(action.get("test_id", "") or inline_test_id or "")
+            action_target = str(params.get("target") or params.get("url") or target)
+            level = self._effective_level(tool_name, params)
+            hypothesis = ledger.from_action(action) if use_ledger else None
+            import uuid
+            call_id = uuid.uuid4().hex
+            ctx.emit("tool.requested", call_id=call_id, tool=tool_name, params=params)
+            if use_ledger and action.get("hypothesis_id") and hypothesis is None:
+                hints.append("hypothesis_id 不存在：请引用台账中的编号或提出新假设")
+
+            # 独立控制器：在执行层逐动作批准（不认模型的自我声明）
+            policy_decision = controller.check(
+                {
+                    "index": index,
+                    "tool": tool_name,
+                    "params": params,
+                    "level": level,
+                    "target": action_target,
+                    "test_id": test_id,
+                }
+            )
+            if not policy_decision.allowed:
+                ctx.emit("tool.finished", call_id=call_id, tool=tool_name, status="denied", ok=False,
+                         error=policy_decision.reason, duration=0)
+                if hypothesis is not None:
+                    ledger.record_outcome(hypothesis.id, new_information=False, blocked=True,
+                                          note=policy_decision.reason)
+                state.counters["denied"] = state.counters.get("denied", 0) + 1
+                state.note("policy", f"控制器拒绝：{policy_decision.reason}")
+                state.note_boundary(
+                    tool=tool_name,
+                    reason=policy_decision.reason,
+                    kind=policy_decision.kind,
+                    target=action_target,
+                    test_id=test_id,
+                )
+                hints.append(
+                    policy_decision.hint
+                    or f"控制器未批准该动作（{policy_decision.kind}）：{policy_decision.reason}"
+                )
+                observation = (
+                    f"独立授权控制器拒绝了该动作（{policy_decision.kind}）：{policy_decision.reason}。"
+                    "请改用已注册的检查项，或停止并把未覆盖项写进报告。"
+                )
+                state.log_step(
+                    StepRecord(index, phase, thought=thought, action=tool_name, denied=True,
+                               summary=f"控制器拒绝（{policy_decision.kind}）").to_dict()
+                )
+                return ActionOutcome(observation=observation, ok=False)
+
+            # guided 模式可能由控制器反查出检查项，审批与调度统计使用同一解析结果。
+            test_id = policy_decision.test_id or test_id
+            if self.approval is not None:
+                ctx.emit("tool.approval_requested", call_id=call_id, tool=tool_name, level=level)
+                request = {
+                    "index": index,
+                    "phase": phase,
+                    "tool": tool_name,
+                    "level": level,
+                    "params": params,
+                    "thought": thought,
+                    "target": action_target,
+                    "test_id": test_id,
+                }
+                if not self.approval(request):
                     ctx.emit("tool.finished", call_id=call_id, tool=tool_name, status="denied", ok=False,
-                             error=policy_decision.reason, duration=0)
+                             error="人工审批未通过", duration=0)
                     if hypothesis is not None:
                         ledger.record_outcome(hypothesis.id, new_information=False, blocked=True,
-                                              note=policy_decision.reason)
-                    state.counters["denied"] = state.counters.get("denied", 0) + 1
-                    state.note("policy", f"控制器拒绝：{policy_decision.reason}")
-                    state.note_boundary(
-                        tool=tool_name,
-                        reason=policy_decision.reason,
-                        kind=policy_decision.kind,
-                        target=action_target,
-                        test_id=test_id,
-                    )
-                    hints.append(
-                        policy_decision.hint
-                        or f"控制器未批准该动作（{policy_decision.kind}）：{policy_decision.reason}"
-                    )
-                    observation = (
-                        f"独立授权控制器拒绝了该动作（{policy_decision.kind}）：{policy_decision.reason}。"
-                        "请改用已注册的检查项，或停止并把未覆盖项写进报告。"
-                    )
+                                              note="人工审批未通过")
+                    state.note("human", f"人工拒绝动作：{tool_name}（{level}）")
+                    audit.append("human.reject", step=index, tool=tool_name, level=level, decision="deny")
+                    state.note_boundary(tool=tool_name, reason="人工审批未通过", kind="human", target=action_target)
+                    hints.append(f"人工拒绝了 {tool_name}：换一个更保守的动作，或先解释为什么需要它")
+                    observation = f"人工审批未通过：动作 {tool_name} 被操作者拒绝，请改用其他方式推进。"
                     state.log_step(
                         StepRecord(index, phase, thought=thought, action=tool_name, denied=True,
-                                   summary=f"控制器拒绝（{policy_decision.kind}）").to_dict()
+                                   summary="人工拒绝（未执行）").to_dict()
                     )
-                    queue_tool_result(observation)
-                    continue
+                    return ActionOutcome(observation=observation, ok=False)
 
-                # guided 模式可能由控制器反查出检查项，审批与调度统计使用同一解析结果。
-                test_id = policy_decision.test_id or test_id
-                if self.approval is not None:
-                    ctx.emit("tool.approval_requested", call_id=call_id, tool=tool_name, level=level)
-                    request = {
-                        "index": index,
-                        "phase": phase,
-                        "tool": tool_name,
-                        "level": level,
-                        "params": params,
-                        "thought": thought,
-                        "target": action_target,
-                        "test_id": test_id,
+            self.logger(f"[{index}/{max_steps}] {phase} · {tool_name} {_brief_params(params)}")
+            audit.append(
+                "react.action", step=index, phase=phase, thought=thought[:300], tool=tool_name, params=params,
+                # 假设进哈希链：state.json 可改，审计链不可改——"为什么做这步"必须可追溯
+                hypothesis=(
+                    {
+                        "id": hypothesis.id,
+                        "statement": hypothesis.statement[:200],
+                        "confidence": hypothesis.confidence,
+                        "priority": round(hypothesis.priority(), 4),
                     }
-                    if not self.approval(request):
-                        ctx.emit("tool.finished", call_id=call_id, tool=tool_name, status="denied", ok=False,
-                                 error="人工审批未通过", duration=0)
-                        if hypothesis is not None:
-                            ledger.record_outcome(hypothesis.id, new_information=False, blocked=True,
-                                                  note="人工审批未通过")
-                        state.note("human", f"人工拒绝动作：{tool_name}（{level}）")
-                        audit.append("human.reject", step=index, tool=tool_name, level=level, decision="deny")
-                        state.note_boundary(tool=tool_name, reason="人工审批未通过", kind="human", target=action_target)
-                        hints.append(f"人工拒绝了 {tool_name}：换一个更保守的动作，或先解释为什么需要它")
-                        observation = f"人工审批未通过：动作 {tool_name} 被操作者拒绝，请改用其他方式推进。"
-                        state.log_step(
-                            StepRecord(index, phase, thought=thought, action=tool_name, denied=True,
-                                       summary="人工拒绝（未执行）").to_dict()
-                        )
-                        queue_tool_result(observation)
-                        continue
+                    if hypothesis is not None
+                    else None
+                ),
+                reasoning_on_existing=str(action.get("hypothesis_id") or "") or None,
+            )
+            before_knowledge = state.knowledge_digest()
 
-                self.logger(f"[{index}/{max_steps}] {phase} · {tool_name} {_brief_params(params)}")
+            result = self.registry.execute(tool_name, params, ctx, call_id=call_id, request_emitted=True)
+            state.coverage = controller.coverage()
+            observation = result.to_observation()
+            new_facts = before_knowledge != state.knowledge_digest()
+
+            # 假设台账：模型可在动作里带 hypothesis；无论成败都用结果更新（确定性规则，不看自我宣告）
+            if hypothesis is not None:
+                updated = ledger.record_tool_outcome(
+                    hypothesis.id, result=result, state=state, tool=tool_name, new_information=new_facts,
+                )
+                if updated is not None:
+                    state.note("hypothesis", f"{updated.id} → {updated.status}：{updated.statement[:80]}")
+
+            # 循环识别（结果指纹）与失败分类：把"重试"变成有依据的升级阶梯
+            advice = loop_guard.observe(tool_name, params, result, new_information=new_facts)
+            if advice and use_guard:
+                hints.append(advice)
+                state.note("loop", advice)
+            elif advice:
+                state.loop["last_advice"] = advice  # 对照臂：照样记录，但不影响模型
+            failure_kind = classify_failure(result, new_information=new_facts)
+            if failure_kind != "ok":
+                state.counters[f"fail_{failure_kind}"] = state.counters.get(f"fail_{failure_kind}", 0) + 1
+                fallback = advice_for(
+                    failure_kind,
+                    alternatives=alternatives_for(self.registry, tool_name, tried=loop_guard.tried_tools()),
+                    attempt=loop_guard.escalation_step,
+                )
+                if fallback and use_guard:
+                    hints.append(fallback)
+            if use_guard and loop_guard.needs_human():
+                state.note("human_request", "循环守卫：连续多次无新信息，建议人工介入调整方向")
+
+            step = StepRecord(
+                index=index,
+                phase=phase,
+                thought=thought,
+                action=tool_name,
+                params=params,
+                ok=result.ok,
+                denied=result.denied,
+                summary=result.summary or result.error,
+                duration=result.duration,
+                llm_seconds=llm_seconds,
+                error=result.error,
+            )
+            state.log_step(step.to_dict())
+            if self.on_step:
+                self.on_step(step)
+
+            # 调度遵从性：模型是否按"这一步该验证谁"执行（未遵从只升级提示，不阻断、不代编证据）
+            if schedule is not None:
+                followed = scheduler.observe(schedule, test_id=test_id, tool=tool_name)
+                state.scheduler = scheduler.to_dict()
+                if followed is False:
+                    state.counters["scheduler_miss"] = state.counters.get("scheduler_miss", 0) + 1
+                    state.note(
+                        "scheduler",
+                        f"未按调度执行：应验证 {schedule.hypothesis_id}"
+                        f"（{schedule.test_id or schedule.tool or schedule.vuln_class}），实际 {tool_name}",
+                    )
+                    hints.append(
+                        f"上步检查项：期望 {schedule.test_id or schedule.tool or schedule.vuln_class}，实际 {test_id or tool_name}"
+                    )
+                elif followed is True:
+                    state.note("scheduler", f"按调度执行：{schedule.hypothesis_id} ← {test_id or tool_name}")
                 audit.append(
-                    "react.action", step=index, phase=phase, thought=thought[:300], tool=tool_name, params=params,
-                    # 假设进哈希链：state.json 可改，审计链不可改——"为什么做这步"必须可追溯
-                    hypothesis=(
-                        {
-                            "id": hypothesis.id,
-                            "statement": hypothesis.statement[:200],
-                            "confidence": hypothesis.confidence,
-                            "priority": round(hypothesis.priority(), 4),
-                        }
-                        if hypothesis is not None
-                        else None
-                    ),
-                    reasoning_on_existing=str(action.get("hypothesis_id") or "") or None,
+                    "react.schedule",
+                    step=index,
+                    hypothesis_id=schedule.hypothesis_id,
+                    expected=schedule.test_id or schedule.tool,
+                    actual=test_id or tool_name,
+                    followed=followed,
                 )
-                before_knowledge = state.knowledge_digest()
 
-                result = self.registry.execute(tool_name, params, ctx, call_id=call_id, request_emitted=True)
-                state.coverage = controller.coverage()
-                observation = result.to_observation()
-                queue_tool_result(observation)
-                new_facts = before_knowledge != state.knowledge_digest()
-
-                # 假设台账：模型可在动作里带 hypothesis；无论成败都用结果更新（确定性规则，不看自我宣告）
-                if hypothesis is not None:
-                    updated = ledger.record_tool_outcome(
-                        hypothesis.id, result=result, state=state, tool=tool_name, new_information=new_facts,
-                    )
-                    if updated is not None:
-                        state.note("hypothesis", f"{updated.id} → {updated.status}：{updated.statement[:80]}")
-
-                # 循环识别（结果指纹）与失败分类：把"重试"变成有依据的升级阶梯
-                advice = loop_guard.observe(tool_name, params, result, new_information=new_facts)
-                if advice and use_guard:
-                    hints.append(advice)
-                    state.note("loop", advice)
-                elif advice:
-                    state.loop["last_advice"] = advice  # 对照臂：照样记录，但不影响模型
-                failure_kind = classify_failure(result, new_information=new_facts)
-                if failure_kind != "ok":
-                    state.counters[f"fail_{failure_kind}"] = state.counters.get(f"fail_{failure_kind}", 0) + 1
-                    fallback = advice_for(
-                        failure_kind,
-                        alternatives=alternatives_for(self.registry, tool_name, tried=loop_guard.tried_tools()),
-                        attempt=loop_guard.escalation_step,
-                    )
-                    if fallback and use_guard:
-                        hints.append(fallback)
-                if use_guard and loop_guard.needs_human():
-                    state.note("human_request", "循环守卫：连续多次无新信息，建议人工介入调整方向")
-
-                step = StepRecord(
-                    index=index,
-                    phase=phase,
-                    thought=thought,
-                    action=tool_name,
-                    params=params,
-                    ok=result.ok,
-                    denied=result.denied,
-                    summary=result.summary or result.error,
-                    duration=result.duration,
-                    llm_seconds=response.duration,
-                    error=result.error,
+            if result.denied:
+                state.note_boundary(
+                    tool=tool_name,
+                    reason=result.error or result.summary,
+                    kind=result.category or "guard",
+                    target=action_target,
+                    test_id=test_id,
                 )
-                state.log_step(step.to_dict())
-                if self.on_step:
-                    self.on_step(step)
+                denial_key = f"{tool_name}|{result.category}"
+                denial_counts[denial_key] = denial_counts.get(denial_key, 0) + 1
+                if denial_counts[denial_key] >= 2:
+                    hints.append(
+                        f"{tool_name} 已因「{result.category}」被拒绝 {denial_counts[denial_key]} 次："
+                        "禁止再用同样的参数/等级调用它，必须换成更低等级的等价工具或改成合规参数"
+                    )
+                    planner.force_advance() if planner is not None else None
+            elif not result.ok:
+                # 普通失败（目标不可达、工具报错）单独计数：
+                # 结论判定里它意味着"没形成判断"，而不是"范围内未确认"
+                state.counters["failures"] = state.counters.get("failures", 0) + 1
+                hints.append(f"工具失败（{result.error[:80]}），换工具或换参数，不要重试同一动作")
+            elif requirements.credentials and not state.credentials:
+                hints.extend(requirements.credential_hints()[:1])
 
-                # 调度遵从性：模型是否按"这一步该验证谁"执行（未遵从只升级提示，不阻断、不代编证据）
-                if schedule is not None:
-                    followed = scheduler.observe(schedule, test_id=test_id, tool=tool_name)
+            # 停滞检测：同一动作重复 / 连续无新增事实
+            key = f"{tool_name}:{json.dumps(params, sort_keys=True, ensure_ascii=False)}"
+            stall = stall + 1 if key == last_action_key else 0
+            last_action_key = key
+            if stall >= self.config.llm.stall_limit:
+                hints.append(f"同一动作已连续执行 {stall + 1} 次，必须改变策略（换工具/换参数/换切入点）")
+                planner.force_advance() if planner is not None else None
+                stall = 0
+            if not result.ok and not result.denied and key in observation:
+                planner.force_advance() if planner is not None else None
+            for hint in hints:
+                state.note("hint", hint)
+
+            # 预算与停止合同：连续无新增证据 / 检查数 / 逻辑预算到点就停，并留下覆盖说明
+            background_running = any(job["status"] == "running" for job in ctx.extra["background_jobs"].snapshot())
+            if not background_running and controller.note_evidence(new_facts):
+                state.note("budget", f"按停止合同收尾：{controller.stop_reason()}")
+                return ActionOutcome(observation=observation, ok=result.ok, stop=True, data=result.data)
+            stop_reason = controller.stop_reason()
+            if stop_reason:
+                state.note("budget", f"按停止合同收尾：{stop_reason}")
+                return ActionOutcome(observation=observation, ok=result.ok, stop=True, data=result.data)
+            # 周期落盘：让外部（trina watch / 编辑器 / 另一个终端）能实时看到进展
+            every = int(getattr(self.config.run, "flush_state_every", 5) or 0)
+            if new_facts or (every and index % every == 0):
+                state.hypotheses = ledger.to_dict()
+                state.loop = loop_guard.to_dict()
+                if scheduler is not None:
                     state.scheduler = scheduler.to_dict()
-                    if followed is False:
-                        state.counters["scheduler_miss"] = state.counters.get("scheduler_miss", 0) + 1
-                        state.note(
-                            "scheduler",
-                            f"未按调度执行：应验证 {schedule.hypothesis_id}"
-                            f"（{schedule.test_id or schedule.tool or schedule.vuln_class}），实际 {tool_name}",
-                        )
-                        hints.append(
-                            f"上步检查项：期望 {schedule.test_id or schedule.tool or schedule.vuln_class}，实际 {test_id or tool_name}"
-                        )
-                    elif followed is True:
-                        state.note("scheduler", f"按调度执行：{schedule.hypothesis_id} ← {test_id or tool_name}")
-                    audit.append(
-                        "react.schedule",
-                        step=index,
-                        hypothesis_id=schedule.hypothesis_id,
-                        expected=schedule.test_id or schedule.tool,
-                        actual=test_id or tool_name,
-                        followed=followed,
-                    )
+                self._save_state(state, workspace)
 
-                if result.denied:
-                    state.note_boundary(
-                        tool=tool_name,
-                        reason=result.error or result.summary,
-                        kind=result.category or "guard",
-                        target=action_target,
-                        test_id=test_id,
-                    )
-                    denial_key = f"{tool_name}|{result.category}"
-                    denial_counts[denial_key] = denial_counts.get(denial_key, 0) + 1
-                    if denial_counts[denial_key] >= 2:
-                        hints.append(
-                            f"{tool_name} 已因「{result.category}」被拒绝 {denial_counts[denial_key]} 次："
-                            "禁止再用同样的参数/等级调用它，必须换成更低等级的等价工具或改成合规参数"
-                        )
-                        planner.force_advance()
-                elif not result.ok:
-                    # 普通失败（目标不可达、工具报错）单独计数：
-                    # 结论判定里它意味着"没形成判断"，而不是"范围内未确认"
-                    state.counters["failures"] = state.counters.get("failures", 0) + 1
-                    hints.append(f"工具失败（{result.error[:80]}），换工具或换参数，不要重试同一动作")
-                elif requirements.credentials and not state.credentials:
-                    hints.extend(requirements.credential_hints()[:1])
+            return ActionOutcome(observation=observation, ok=result.ok, data=result.data)
 
-                # 停滞检测：同一动作重复 / 连续无新增事实
-                key = f"{tool_name}:{json.dumps(params, sort_keys=True, ensure_ascii=False)}"
-                stall = stall + 1 if key == last_action_key else 0
-                last_action_key = key
-                if stall >= self.config.llm.stall_limit:
-                    hints.append(f"同一动作已连续执行 {stall + 1} 次，必须改变策略（换工具/换参数/换切入点）")
-                    planner.force_advance()
-                    stall = 0
-                if not result.ok and not result.denied and key in observation:
-                    planner.force_advance()
-                for hint in hints:
-                    state.note("hint", hint)
+        def recorded(response):
+            record_response(response.text, response.tool_calls, response.reasoning)
+            state.counters["native_calls"] = state.counters.get("native_calls", 0) + len(response.tool_calls)
 
-                # 预算与停止合同：连续无新增证据 / 检查数 / 逻辑预算到点就停，并留下覆盖说明
-                background_running = any(job["status"] == "running" for job in ctx.extra["background_jobs"].snapshot())
-                if not background_running and controller.note_evidence(new_facts):
-                    state.note("budget", f"按停止合同收尾：{controller.stop_reason()}")
-                    break
-                stop_reason = controller.stop_reason()
-                if stop_reason:
-                    state.note("budget", f"按停止合同收尾：{stop_reason}")
-                    break
-                # 周期落盘：让外部（trina watch / 编辑器 / 另一个终端）能实时看到进展
-                every = int(getattr(self.config.run, "flush_state_every", 1) or 0)
-                if every and index % every == 0:
-                    state.hypotheses = ledger.to_dict()
-                    state.loop = loop_guard.to_dict()
-                    if scheduler is not None:
-                        state.scheduler = scheduler.to_dict()
-                    self._save_state(state, workspace)
+        def say(text, response, interim=False):
+            if text:
+                ctx.emit("assistant.message", message_id=f"{run_id}-note-{runtime.rounds}", text=text, final=True)
+            return ActionOutcome(answer=text, stop=not interim)
+
+        def interrupted():
+            if self.stop_event is not None and self.stop_event.is_set():
+                state.status = "stopped"
+                return "未执行：用户已停止"
+            if accept_steers():
+                return "未执行：收到补充，本批次剩余动作失效，重新决策"
+            return ""
+
+        runtime = AgentRuntime(max_steps=max_steps, messages=messages, request=request, execute=execute,
+                               decode_text=parse_action, native=lambda: native_mode,
+                               record_response=recorded, say=say, interrupted=interrupted)
+        try:
+            runtime.run()
+            steps = runtime.steps
+            state.counters["decision_rounds"] = runtime.rounds
         finally:
             from ..runtime_status import status_snapshot
             ctx.extra["background_jobs"].close()
@@ -930,15 +919,7 @@ class PentestAgent:
             f"未测 {len(coverage.get('untested') or [])} 项，停止原因：{coverage.get('stop_reason') or '正常收敛'}",
         )
 
-        # 证据关系图：让"结论 → 证据 → 检查项/假设"可反向追溯
-        try:
-            from ..evidence_graph import build as build_graph
-
-            graph = build_graph(state, registry=controller.registry, hypotheses=state.hypotheses)
-            state.graph = graph.to_dict()
-            state.note("graph", graph.summary())
-        except Exception as exc:  # noqa: BLE001 - 绘图失败不影响结论
-            state.graph = {"error": f"{type(exc).__name__}: {exc}"}
+        # 证据图只在报告/graph 视图中按需派生，不写回事实状态。
 
         ledger_summary = ledger.summary()
         state.note(
@@ -992,22 +973,6 @@ class PentestAgent:
         if protocol == "json":
             return False
         return bool(getattr(self.backend, "supports_native_tools", False))
-
-    @staticmethod
-    def _decode_action(response: Any, native_calls: list[Any]) -> dict[str, Any]:
-        """把模型响应解码成统一 action 字典；原生与 JSON 两种输出共用下游逻辑。
-
-        ``finish`` 是控制面：它只产生 ``{"final": ...}``，**不会**进入 ToolRegistry。
-        """
-        if native_calls:
-            call = native_calls[0]
-            params, error = parse_arguments(call.arguments)
-            if error:
-                return {"error": f"{call.name} 参数解析失败：{error}"}
-            if call.name == FINISH_TOOL_NAME:
-                return {"final": params}
-            return {"action": call.name, "params": params}
-        return parse_action(response.text)
 
     def _effective_level(self, tool_name: str, params: dict[str, Any]) -> str:
         """取工具在本次参数下的实际动作等级（动态等级优先，异常时回退静态声明）。"""

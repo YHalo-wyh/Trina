@@ -231,7 +231,7 @@ class ScriptedModel(LLMBackend):
         if behaviour == "multi_call":
             if turn == 0:
                 return {"calls": [(t.tool, params), (t.tool, {"target": t.target, "port": 2222})]}
-            return {"finish": ("partial", "只执行了第一个调用")}
+            return {"finish": ("success", "同轮调用均已执行")}
         if behaviour == "protocol_error_then_finish":
             if turn == 0:
                 return {"raw_arguments": "not json at all"}
@@ -294,9 +294,9 @@ def acceptance(task: MatrixTask, state: Any, *, native: bool) -> tuple[bool, str
     if task.behaviour == "multi_call":
         if not native:
             return True, "JSON 模式不支持多调用，跳过"
-        if executed != 1:
-            return False, f"每步只应执行 1 个动作，实际 {executed}"
-        return True, "多调用只执行第一个，其余回执并说明"
+        if executed != 2:
+            return False, f"原生同轮应执行 2 个动作，实际 {executed}"
+        return True, "原生同轮两个调用均执行并保留回执"
     return False, f"未知行为 {task.behaviour}"
 
 

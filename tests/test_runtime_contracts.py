@@ -80,6 +80,7 @@ class RuntimeContractTests(unittest.TestCase):
         self.assertIn("先确认目标服务/权限/网络是否可用", json.dumps(backend.inputs[-1], ensure_ascii=False))
 
     def test_scheduler_consumes_live_controller_coverage(self):
+        self.cfg.run.hypothesis_scheduler = True  # 显式验证旧调度兼容入口；默认由目标驱动。
         policy = PolicyRegistry()
         policy.targets = {"target": RegisteredTarget("target", (TARGET,))}
         policy.tests = {key: RegisteredTest(key, "target", "safe_probe", expect_finding="sqli") for key in ("first", "second")}

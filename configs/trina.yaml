@@ -59,7 +59,7 @@ llm:
   # 原生协议被供应商拒绝时只在本次运行内降级一次（不无限重试）
   tool_protocol_fallback: true
   # 提示词分层：true=Core/Role 进 system、任务契约进首条 user、状态逐轮追加
-  prompt_layers: false
+  prompt_layers: true
   # 可选附加角色描述；默认沿用共用安全工程师 Core
   role_profile: ""
   # auto 只向已知官方接口发送适用的缓存字段；兼容中转需显式声明能力。
@@ -95,7 +95,7 @@ run:
   # 每个目标最多保留的证据条数
   max_evidence: 200
   # 每 N 步把 state.json 落盘一次（trina watch / 控制台 /board 靠它读实时进展；0 = 只在结束时落盘）
-  flush_state_every: 1
+  flush_state_every: 5
   # 假设排序里的风险厌恶系数 λ：优先级 = 置信度×价值×信息增量 / (成本 + λ·风险 + ε)
   hypothesis_risk_aversion: 1.0
   # 洞察层开关（对照实验用，平时保持 true）
@@ -103,11 +103,11 @@ run:
   hypothesis_ledger: true
   # loop_guard=false：循环守卫/失败分类的建议不回灌给模型（redundant_action_rate 与 fail_* 照常统计）
   loop_guard: true
-  # 确定性假设调度：把台账优先级变成"这一步该验证谁"（绑定注册检查项）；关闭则只作为提示词里的排序建议
-  hypothesis_scheduler: true
+  # 兼容性假设调度：显式开启才把台账优先级变成逐步指令；默认由 Agent 目标驱动
+  hypothesis_scheduler: false
   # 参与调度的最低优先级
   scheduler_min_priority: 0.15
-  phases: ["recon", "enum", "vuln", "exploit", "post", "report"]
+  phases: [] # 目标驱动；显式填 PTES 阶段可启用旧阶段流程
 
 tools:
   # 外部二进制优先；缺失时自动降级到内置 Python 引擎
@@ -141,7 +141,7 @@ policy:
   max_checks: 40
   logic_seconds: 900
   # 连续多少步没有新增证据就按停止合同收尾
-  stop_on_no_new_evidence: 4
+  stop_on_no_new_evidence: 0 # 0 不按“无漏洞事实”提前停止文件、编码与逆向任务
   # 注册表来源（靶场 yaml 的 targets/tests 段）
   registry_dirs: []
 

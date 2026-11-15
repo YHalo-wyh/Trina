@@ -52,7 +52,9 @@ class SwarmTests(unittest.TestCase):
         self.assertTrue(runtime.add_task(TaskSpec("verify", "127.0.0.1", "验证服务", depends_on=("base",))))
         checkpoint = json.loads(runtime.checkpoint.read_text(encoding="utf-8"))
         self.assertEqual([item["id"] for item in checkpoint["tasks"]], ["base", "verify"])
-        self.assertEqual(checkpoint["records"]["verify"]["status"], "pending")
+        self.assertNotIn("records", checkpoint, "v4 检查点不能再保存第二份任务状态")
+        self.assertEqual(checkpoint["coordination"]["intents"]["verify"]["status"], "pending")
+        self.assertIs(runtime.records["verify"].__dict__, runtime.coordination.intents["verify"])
 
     def test_parallel_leases_reuse_and_handoff(self) -> None:
         active = 0
@@ -173,6 +175,26 @@ class SwarmTests(unittest.TestCase):
         self.assertEqual(calls, ["b"])
         self.assertEqual(summary["tasks"]["b"]["attempt"], 2)
         self.assertEqual(summary["tasks"]["a"]["attempt"], 1)
+
+    def test_v3_checkpoint_records_are_migrated_into_intents(self) -> None:
+        tasks = [TaskSpec("a", "127.0.0.1", "A"), TaskSpec("b", "127.0.0.1", "B", depends_on=("a",))]
+        runtime = SwarmRuntime(self.config, tasks, max_workers=1, executor=lambda *args: None)
+        runtime.records["a"].status, runtime.records["a"].attempt = "completed", 1
+        runtime.records["b"].status, runtime.records["b"].attempt = "running", 1
+        runtime._save()
+        data = json.loads(runtime.checkpoint.read_text(encoding="utf-8"))
+        data["version"] = 3
+        data["records"] = {
+            key: {name: getattr(record, name) for name in record.__dataclass_fields__}
+            for key, record in runtime.records.items()
+        }
+        runtime.checkpoint.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        runtime.event_bus.path.unlink(missing_ok=True)
+        resumed = SwarmRuntime.resume(self.config, runtime.checkpoint, executor=lambda *args: None)
+        self.assertEqual(resumed.records["a"].status, "completed")
+        self.assertEqual(resumed.records["b"].status, "pending")
+        self.assertEqual(resumed.records["b"].attempt, 1)
+        self.assertIs(resumed.records["a"].__dict__, resumed.coordination.intents["a"])
 
     def test_scope_preflight_preserved_in_real_agent(self) -> None:
         script = Path(self.temp.name) / "replay.json"

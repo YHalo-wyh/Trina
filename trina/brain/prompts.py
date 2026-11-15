@@ -69,20 +69,20 @@ def render_system_prompt(include_hypothesis: bool = True) -> str:
 #: 稳定的机器协议（跨任务、跨模型不变的部分）
 CORE_PROTOCOL = """# 输出协议
 你通过工具行动，不通过文字宣告。每一次响应只能是以下两者之一：
-1. 一个工具调用；
+1. 一个或多个工具调用；只有已知参数的动作可以同批提交，有依赖时声明 _depends_on；
 2. 结束调用（finish）：只有目标已由工具结果支撑，或确认无法继续时才允许。
 不要复述状态、不要输出装饰性说明、不要在未调用工具时声称"已完成"。
 """
 
 NATIVE_TOOL_CONTRACT = """# 工具协议（原生 tool calling）
-- 需要操作时调用本轮提供的工具函数，每次只调用一个；参数必须满足函数 schema。
+- 一轮可调用多个工具；已知参数的动作可批量提交，依赖用 _depends_on 指定前序调用编号，需读取结果才能决定的动作留到下一轮；参数满足 schema。
 - 工具结果以 tool 消息返回，读完再决定下一步。
 - 收尾时调用 finish(status, summary)；status=success 必须有工具证据支撑。
 """
 
 NATIVE_CHAT_CONTRACT = """# 对话与工具协议（原生 tool calling）
 - 可以直接用自然语言回答；普通问候和解释不需要工具调用。
-- 需要操作时调用本轮提供的工具函数，每次只调用一个，参数满足 schema；读取真实 tool 结果后再决定下一步。
+- 一轮可调用多个工具，_depends_on 指定前序依赖；未知参数先读结果再决策，不猜测工具输出。参数满足 schema。
 - 完成后用自然语言交付实际结果；也可以调用 finish，但执行成功必须有对应证据。
 """
 
@@ -110,6 +110,20 @@ class PromptLayers:
         return self.contract.strip()
 
 
+def _tool_contract(tool_block: str, protocol: str) -> str:
+    """原生协议只保留名称索引；完整说明与参数由 API ``tools`` Schema 承载。"""
+    if not tool_block:
+        return ""
+    if protocol != "native":
+        return "# 可用工具\n" + tool_block
+    names = [
+        line[4:].split(" [", 1)[0].strip()
+        for line in tool_block.splitlines()
+        if line.startswith("### ")
+    ]
+    return "# 可用工具（参数以本次 API tools Schema 为准）\n" + "、".join(names)
+
+
 def build_prompt_layers(
     scope_block: str = "",
     tool_block: str = "",
@@ -133,8 +147,9 @@ def build_prompt_layers(
         contract_parts.append("# 本次任务附加约束\n" + extra_rules)
     if policy_block:
         contract_parts.append("# 已注册检查项\n" + policy_block)
-    if tool_block:
-        contract_parts.append("# 可用工具\n" + tool_block)
+    tool_contract = _tool_contract(tool_block, protocol)
+    if tool_contract:
+        contract_parts.append(tool_contract)
     return PromptLayers(
         core=core,
         role=(role_profile or "").strip(),
@@ -182,8 +197,9 @@ def build_runtime_context(
         parts.append("# 运行边界\n" + scope_block)
     if extra_rules:
         parts.append("# 本次任务附加约束\n" + extra_rules)
-    if tool_block:
-        parts.append("# 可用工具\n" + tool_block)
+    tool_contract = _tool_contract(tool_block, protocol)
+    if tool_contract:
+        parts.append(tool_contract)
     return "\n\n".join(parts)
 
 

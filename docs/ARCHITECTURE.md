@@ -2,9 +2,11 @@
 
 决策流程及每一步的设计理由详见[《设计决策》](../设计决策.md)。该文按实际执行顺序展开输入输出、规则、替代方案、失败分支和验证依据；本页保留总体模块契约。系统提示词与 Commander 情报部分于 2026-11-11 对照实现核对。
 
-## V2：事件驱动 Swarm 运行层
+## V2：统一 Agent Runtime 与事件驱动任务层
 
-`trina swarm` 在现有单 Agent 执行链外增加 `SwarmRuntime` 与 `CoordinationRuntime`。Commander 验证 DAG；事件驱动 Planner 只在 Intent、事实或终态发生变化时推进，不因 Worker 的每个 ReAct 步骤重新规划。共享 Todolist 持久保存目标和依赖；Intent 队列负责优先级、等价去重、领取租约、超时回收与终态。事实图只存实际验证结果，探索图存尚未完成的 Intent、依赖和事实锚点。Worker 的完整 ReAct 上下文、`RunState`、工作目录、审计和报告仍按题隔离，但可查询其他 Worker 有来源的观察与失败留痕。网络目标和工具动作仍由 `ScopeGuard` 与注册表执行链处理；默认 full 信任，restricted 才做边界拒绝。详见 [Swarm 使用说明](SWARM.md)。
+任务、对话与 Worker 共用 `AgentRuntime`：一次模型决策可以提交多个原生工具调用，执行器按顺序处理，并用 `_depends_on` 表达本批次前序依赖；每个动作仍独立经过控制器、`ToolRegistry`、护栏、审计和超时。JSON 兼容模式保持单动作。默认 CTF 路径按目标与证据推进，不启用固定 PTES 阶段或额外假设调度；两者只作为显式兼容配置保留。
+
+`SwarmRuntime` 是统一 Task Scheduler 和 Worker Pool。`CoordinationRuntime.intents` 是任务状态唯一来源，`TaskRecord` 只是同一字典的兼容字段视图；Todo 与探索图是派生视图，事实索引只收工具验证结果。检查点 v4 不再保存第二份 `records`，恢复旧 v1–v3 时一次迁入 Intent。Bench 只负责平台启停、提交与计分，题目同样交给 Swarm 调度。Worker 的模型上下文、`RunState`、工作目录与事实按题隔离，Commander 只转发有来源的相关情报。详见 [Swarm 使用说明](SWARM.md)。
 
 ## 1. 总览
 
@@ -12,8 +14,8 @@
 flowchart TB
     CLI["trina.cli<br/>run/tool/guard/eval/report/lab/audit"]
     OMPEXT[".omp/extensions/trina.ts<br/>omp 工具桥接"]
-    AGENT["trina.brain.agent.PentestAgent<br/>ReAct 循环"]
-    PLANNER["trina.brain.planner.Planner<br/>PTES 阶段机（事实驱动）"]
+    AGENT["trina.brain.runtime.AgentRuntime<br/>统一批量动作循环"]
+    SCHED["SwarmRuntime / CoordinationRuntime<br/>任务队列、租约、Worker Pool"]
     PROMPTS["trina.brain.prompts<br/>安全工程师 system + 运行协议 + 容错解析"]
     POLICY["AuthorizationController<br/>注册、预算、撤权"]
     APPROVAL["可选人工审批<br/>批准 / 拒绝"]
@@ -32,9 +34,9 @@ flowchart TB
     REPORT["trina.report<br/>Markdown + 自包含 HTML"]
 
     CLI --> AGENT
-    CLI --> COORD
+    CLI --> SCHED --> COORD
     OMPEXT --> CLI
-    AGENT --> PLANNER --> PROMPTS
+    SCHED --> AGENT --> PROMPTS
     AGENT --> LLM
     COORD --> AGENT
     AGENT --> POLICY --> APPROVAL --> REG
@@ -55,12 +57,12 @@ flowchart TB
 
 ```
 人工信号与任务剩余时间
-    → GoalRequirements 缺口 + Planner 阶段 + 台账与方向调度
+    → GoalRequirements 缺口 + 状态差量（显式兼容配置才加入阶段/假设调度）
     → RunState 摘要 + 上一步观察 + 提示 + 预算
-    → LLM 返回文本 → parse_action()
+    → LLM 返回标准 tool_calls → AgentRuntime.decode_batch()
         ├─ 非法协议：记录错误并反馈下一轮
-        ├─ final：检查目标缺口，最多拒绝两次提前结束，再按事实收尾
-        └─ action：提取 test_id / target，计算候选动作等级，登记或引用假设
+        ├─ finish：不得与工具调用混用；检查目标缺口后按事实收尾
+        └─ actions：逐项检查本批前序依赖，提取 test_id / target，登记或引用假设
              → AuthorizationController.check（注册 / 预算 / 撤权）
              → 可选人工审批
              → ToolRegistry.execute(name, params, ctx)
@@ -71,10 +73,10 @@ flowchart TB
                  └─ facts / evidence 吸收 → tool.end
              → 知识摘要变化、假设更新、失败分类、重复检测、调度遵从
              → 预算停止合同与周期快照
-             → 下一步观察，或统一收尾
+             → 为每个 API call_id 写对应 tool 回执 → 下一轮或统一收尾
 ```
 
-该顺序对应任务模式。控制器允许发生在完整工具参数校验和实际完成之前，故 `executed` 不能直接用作成功覆盖证明。对话模式共用执行组件，但没有相同的阶段机、方向调度和任务收尾流程。
+批内动作当前顺序执行，目的是避免同一 `RunState` 上的数据竞争；不同 Worker 仍可并行。控制器允许发生在完整工具参数校验和实际完成之前，故 `executed` 不能直接用作成功覆盖证明。对话与任务共用同一模型—动作循环，只保留各自的展示与收尾适配。
 
 ## 3. 模块契约
 
@@ -88,18 +90,19 @@ flowchart TB
 | `trina.state` | `RunState.absorb(facts)`、`add_finding`、`knowledge_digest`、`summary_for_prompt`、`to_dict/from_dict` | 工具声明 facts，状态集中合并；`knowledge_digest` 排除时间、重复条目与笔记，用事实变化计算进展；`from_dict` 供工作台/复核读历史运行 |
 | `trina.tools.registry` | `ToolSpec`/`ParamSpec`/`ToolResult`/`ToolContext`/`Tool`/`ToolRegistry.execute` | 执行链是**唯一**入口；工具实现 `run(ctx, **params)`，返回 `ToolResult` |
 | `trina.tools.workspace` | `terminal_exec`、`workspace_read/write/edit` | 前台 argv 命令和项目文件编码工具；命令经 `run_external`，路径经 `ScopeGuard.check_workspace_path`，写入原子替换，编辑要求精确匹配数 |
-| `trina.coordination` / `trina.tools.coordination` | `CoordinationRuntime.plan/claim/settle/publish_state/search_traces`、`shared_context/shared_trace_*` | 事件驱动规划、共享 Todo、Intent 租约/去重/恢复、事实图与探索图、跨 Worker 可追踪观察和失败；不共享完整对话或直接合并当前题事实 |
+| `trina.coordination` / `trina.tools.coordination` | `CoordinationRuntime.plan/claim/settle/publish_state/search_traces`、`shared_context/shared_trace_*` | Intent 是唯一任务状态；事件驱动规划、共享 Todo 派生视图、租约/去重/恢复、事实索引与探索视图、跨 Worker 可追踪观察和失败；不共享完整对话或直接合并当前题事实 |
 | `trina.binary` / `trina.tools.binary` | `BinarySessions`、`R2Backend`、`GDBBackend`、`AddressRef`、10 个语义化工具 | r2 stdio JSON 与 GDB/MI3 持久会话；按任务和能力租约隔离，地址空间显式，完整协议写证据；见 [二进制工具链](BINARY_TOOLS.md) |
 | `trina.ctfy` / `trina.tools.ctfy` | `CTFYTask`、`run_ctfy`、`ctfy_task` | CTFY v3 instance/QA 任务读取、门控刷新和平台权威提交；不读取个人模型配置；见 [CTFY 接入](CTFY.md) |
 | `trina.tools.http` | `HttpClient.request/get/post`、`HttpResult.as_evidence()` | 出网唯一出口：护栏 → 限速 → 请求 → 证据化；护栏拒绝时返回带 `error` 的结果而不是抛异常 |
 | `trina.tools.external` | `run_external(argv, ctx, …)`、`which/have` | `shell=False`、先护栏后执行、命令与输出摘要进审计 |
-| `trina.brain.agent` | `PentestAgent(config, registry=, backend=, on_step=, shared_context=).run(target, goal=, max_steps=, max_seconds=, record_path=) -> RunState` | 评测框架与 CLI 继续使用原签名；Swarm 可额外注入只读协作上下文，不改变单 Agent 路径 |
-| `trina.brain.planner` | `Planner.tick/objective_met/force_advance/should_finish` | 阶段推进只看**事实**；每阶段有步数预算，停滞可推进；不向模型注入阶段作业攻略 |
+| `trina.brain.runtime` / `trina.brain.agent` / `trina.brain.chat` | `AgentRuntime.run/decode_batch`、`PentestAgent.run`、`ChatAgent.ask` | 同一核心循环执行原生批量调用并完整配对 tool 回执；依赖只引用本批前序编号；任务/聊天只适配状态、显示与收尾 |
+| `trina.brain.planner` | `Planner.tick/objective_met/force_advance/should_finish` | 旧 PTES 兼容模块；默认 `run.phases=[]` 不进入核心路径，显式配置阶段后才启用 |
 | `trina.brain.goal` | `GoalRequirements.parse(goal)`、`unsatisfied(state)/soft_hints/satisfied` | 漏洞类与端口形成硬条件；路径在没有类要求时为硬条件，否则为提示；凭据形成验证提示。最终成功依据已表达的条件，不读取 ground truth；关键词解析不能表达全部自然语言语义 |
-| `trina.hypotheses` | `HypothesisLedger.add/from_action/record_tool_outcome/record_outcome/prompt_block/finalize/summary` | 假设的排序/状态机与证据判定；模型仍选择动作，但确定性选取由 `trina.brain.scheduler` 每步派发；任务/对话共用验证对象匹配；`hypothesis_id` 复用台账；无新信息只降优先级，明确反证才能否定 |
+| `trina.hypotheses` | `HypothesisLedger.add/from_action/record_tool_outcome/record_outcome/prompt_block/finalize/summary` | 假设的排序/状态机与证据判定；任务/对话共用验证对象匹配；`hypothesis_id` 复用台账；无新信息只降优先级，明确反证才能否定；默认不额外接管动作调度 |
 | `trina.brain.failure` | `classify_failure`、`LoopGuard.observe`、`advice_for`、`alternatives_for` | 失败归因（boundary/tool/environment/budget/hypothesis）+ 无新信息重复识别，给出递进建议（换参数→换工具→人工） |
-| `trina.brain.scheduler` | `HypothesisScheduler.decide(ledger, tests, executed_tests=, goal_classes=)`、`observe(decision, test_id=, tool=)` | **确定性假设调度**：只调度能绑定注册检查项的假设；任务要求的漏洞类优先（无假设时直接派该类检查项）；未遵从进审计链与 `state.scheduler` |
-| `trina.evidence_graph` | `build(state, registry=, hypotheses=)`、`EvidenceGraph.to_mermaid/to_dict` | 结论可反向追溯：目标→主机→端口→路径→发现→证据，另有检查项/假设→发现；构建失败不影响报告 |
+| `trina.brain.scheduler` | `HypothesisScheduler.decide(...)` | 显式兼容模块；默认 `run.hypothesis_scheduler=false`，假设台账记录证据但不再成为第二个逐步调度中心 |
+| `trina.evidence_graph` | `build(state, registry=, hypotheses=)`、`EvidenceGraph.to_mermaid/to_dict` | 由权威 `RunState` 按需生成的报告视图，不在执行期维护第二份事实状态 |
+| `trina.bench` | `BenchmarkRunner.run`、`BenchmarkClient.fork` | 平台适配层；每题映射为 Task，由 Swarm Worker Pool 并发执行（默认 2、上限 3）；独立控制面会话，submit 的 `correct` 是唯一成功判据 |
 | `trina.board` | `render_board(state, hypotheses=)`、`summarise`、`latest_state_file`、`load_run_state` | 工作台视图的**唯一**渲染实现（控制台 `/board` 与 `trina watch` 共用）；`load_run_state` 把 state.json 还原成 `RunState` |
 | `trina.brain.prompts` | `action_example`、`render_system_prompt`、`build_system_prompt`、`build_runtime_context`、`build_step_prompt`、`parse_action` | 任务、对话与通用 Worker 共用七模块比赛 Agent system，覆盖多类 CTF；聊天允许直接回答，二进制说明按需适用；动作协议、范围、工具与任务事实仍由运行数据提供，详见 [提示词说明](PROMPTS.md) |
 | `trina.context` | `normalize_briefs`、`render_commander_briefs`、`brief_digest` | 只处理 Commander 定向情报；不合并其他题目的事实、证据、Flag、假设或历史；接收方重新验证后才可写入本题状态 |
@@ -107,12 +110,11 @@ flowchart TB
 | `trina.llm.cache` | `CachePolicy.for_request/apply` | 供应商缓存字段在请求边界适配；内部前缀标识、明确能力及一次有界降级；不推测服务端 KV 命中 |
 | `trina.chat_store` | `ChatStore.save/list/load/acquire` | 按项目保存 SQLite 事务快照，列表只查元数据；对话独占锁先于读取；不导出供应商配置、不执行历史动作 |
 | `trina.session_title` | `generate_session_title`、`fallback_session_title`、`parse_generated_title` | 首条有效请求用隔离的小型标题协议生成目标级短标题；标题请求不进入主对话上下文，失败时确定性降级，低信息输入保持“新对话” |
-| `trina.brain.chat` | `ChatAgent.ask/save/close`、`ChatAgent.resume(config, run_id, **kwargs)` | **对话式大脑**：使用标准 API 的原生 `tools` / `tool_calls` 并维护 assistant-tool 配对；JSON/DSML 仅为兼容回退且不会显示成正文；共用护栏、控制器、审计和审批；自动保存及跨实例恢复，但不恢复旧进程或重放工具 |
+| `trina.brain.chat` | `ChatAgent.ask/save/close`、`ChatAgent.resume(config, run_id, **kwargs)` | **对话式大脑**：使用标准 API 的原生 `tools` / `tool_calls` 并维护 assistant-tool 配对；同一原生响应的多个调用按顺序执行后一次回灌，避免共享状态并发写；JSON/DSML 仅为兼容回退且不会显示成正文；共用护栏、控制器、审计和审批；自动保存及跨实例恢复，但不恢复旧进程或重放工具 |
 | `trina.llm` | `complete_messages(messages, on_event=, tools=)`、`LLMStreamEvent`、`LLMUsage` | 标准结构化消息与三个 API 方言的 SSE 解析；稳定前缀、终止事件校验与真实用量汇总；OMP 后端已删除 |
 | `trina.providers` / `trina.model_ui` | `ProviderPreset`、`ProviderProfile`、`ProfileStore`、`ModelManager` | 以供应商整条配置管理地址、单个 Key、模型、备注、思考档位与上下文窗口；只接受仓库外的 v2 文件，旧格式明确拒绝；编辑、切换与删除由同一管理层原子保存 |
 | `trina.provider_form` | `ProviderEditor` | 单页草稿表单；测试通过回调复用 LLM 后端，字段修改使旧结果失效，保存前校验，取消和测试不写入配置，不切换当前供应商 |
 | `trina.adapters` | `load_adapter/list_adapters`、`RangeAdapter.prepare/status/ground_truth/check_flag`、`score_tsecbench` | 靶场自描述（目标 + ground truth + flag 模式），评测框架据此自动判分 |
-| `trina.bench` | `BenchmarkClient`、`BenchmarkRunner`、`run_benchmark`、`submission_candidates` | 平台答题 API：控制面鉴权只认 `control_plane_hosts`；逐题串行 start→agent→submit→close，flag 提取优先 state.flags |
 | `trina.policy` | `PolicyRegistry.load()`、`AuthorizationController.check/note_evidence/revoke/coverage`、`Budget` | **计划器提出、控制器批准**：注册目标/检查项 + 预算 + 撤权，逐动作裁决；模型无写权限 |
 | `trina.session` | `Session.request_approval/answer/steer/toggle_pause/request_stop`、`level_needs_approval` | 人机协同原语；审批**超时即拒绝**（fail-closed） |
 | `trina.play` | `build_plan(config, target=, range_name=)`、`run_plan(config, plan, approval=, steer_queue=, …)` | 一条命令开打的准备与执行；谁拉起靶机谁负责回收 |

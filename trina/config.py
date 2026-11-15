@@ -109,7 +109,7 @@ class LLMConfig:
     #: 原生协议被供应商拒绝时是否自动降级到 JSON Action（只降级一次，不无限重试）
     tool_protocol_fallback: bool = True
     #: 提示词分层：true 使用 Core/Role/Contract/Dynamic 四层；false 保持旧拼装（对照实验用）
-    prompt_layers: bool = False
+    prompt_layers: bool = True
     #: 可选附加角色描述；默认使用共用安全工程师 Core。
     role_profile: str = ""
     #: 缓存扩展只发给已知官方接口或显式声明能力的连接。
@@ -160,7 +160,7 @@ class RunConfig:
     tool_timeout: int = 300
     max_evidence: int = 200
     #: 每 N 步把 state.json 落盘一次(供 trina watch / 外部工具实时读取;0 = 只在结束时落盘)
-    flush_state_every: int = 1
+    flush_state_every: int = 5
     #: 假设排序里的风险厌恶系数 λ:优先级 = 置信度×价值×信息增量 / (成本 + λ·风险 + ε)
     hypothesis_risk_aversion: float = 1.0
     #: 洞察层开关(对照实验用):台账是否向模型展示并登记假设(关闭后仍可手工引用,但不进提示词/不记录)
@@ -168,14 +168,16 @@ class RunConfig:
     #: 循环守卫/失败分类的建议是否回灌给模型(关闭后仍照常统计 redundant_action_rate 与 fail_* 计数)
     loop_guard: bool = True
     #: 确定性假设调度:把台账优先级翻译成"这一步该验证谁"(绑定注册检查项);关闭后只作为提示词里的排序建议
-    hypothesis_scheduler: bool = True
+    hypothesis_scheduler: bool = False
     #: 参与调度的最低优先级(低于它不占用一次调度)
     scheduler_min_priority: float = 0.15
-    phases: list[str] = field(default_factory=lambda: ["recon", "enum", "vuln", "exploit", "post", "report"])
+    phases: list[str] = field(default_factory=list)
 
     def validate(self) -> None:
-        if not self.phases or any(not isinstance(item, str) or not item for item in self.phases):
-            raise ConfigError("run.phases 必须是非空字符串列表")
+        if not isinstance(self.phases, list) or any(not isinstance(item, str) or not item for item in self.phases):
+            raise ConfigError("run.phases 必须是字符串列表；空列表使用目标驱动执行")
+        if type(self.flush_state_every) is not int or self.flush_state_every < 0:
+            raise ConfigError("run.flush_state_every 必须为非负整数")
 
 
 @dataclass
@@ -262,7 +264,7 @@ class PolicyConfig:
     mode: str = "free"
     max_checks: int = 40
     logic_seconds: int = 900
-    stop_on_no_new_evidence: int = 4
+    stop_on_no_new_evidence: int = 0
     registry_dirs: list[str] = field(default_factory=list)
 
     def validate(self) -> None:
@@ -274,6 +276,8 @@ class PolicyConfig:
             raise ConfigError("policy.max_checks 必须为正整数")
         if self.logic_seconds <= 0:
             raise ConfigError("policy.logic_seconds 必须为正整数")
+        if type(self.stop_on_no_new_evidence) is not int or self.stop_on_no_new_evidence < 0:
+            raise ConfigError("policy.stop_on_no_new_evidence 必须为非负整数，0 关闭启发式停止")
 
 
 @dataclass

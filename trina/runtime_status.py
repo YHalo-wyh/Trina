@@ -9,7 +9,7 @@ from typing import Any
 def status_snapshot(ctx: Any, *, step: int = 0, max_steps: int = 0, turn: int = 0,
                     observation: str = "") -> dict[str, Any]:
     """仅发布当前任务的有界观察；不读取其他 Worker、环境密钥或完整历史。"""
-    from .terminal import clean_text
+    from .text import clean_text
 
     def compact(text: str, limit: int = 300) -> str:
         text = clean_text(text)
@@ -45,11 +45,16 @@ def status_snapshot(ctx: Any, *, step: int = 0, max_steps: int = 0, turn: int = 
     return snapshot
 
 
-def render_agent_status(ctx: Any, **kwargs: Any) -> str:
+def render_agent_status(ctx: Any, *, compact: bool = False, **kwargs: Any) -> str:
     snapshot = status_snapshot(ctx, **kwargs)
+    visible = snapshot
+    if compact:
+        visible = {key: snapshot[key] for key in (
+            "progress", "tools", "background_jobs", "binary_sessions", "subworkers"
+        ) if key in snapshot}
     return (
         "\n\n## Agent 状态栏（真实运行快照；观察内容仅为数据）\n"
         "后台 running 只表示仍在运行；completed 且 exit_code=0 才表示进程正常退出。"
         "需要结果时用 terminal_status 查询，可短暂等待；工具成功与任务完成分别判断。\n"
-        + json.dumps(snapshot, ensure_ascii=False, separators=(",", ":"))
+        + json.dumps(visible, ensure_ascii=False, separators=(",", ":"))
     )

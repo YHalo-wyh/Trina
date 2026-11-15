@@ -119,7 +119,7 @@ trina                          # 直接进控制台（恢复已保存供应商�
 
 ### 2.3 实时监视（`watch`）
 
-Agent 每步会把 `runs/<run_id>/state.json` 落盘一次（`run.flush_state_every` 控制），因此可以在**另一个终端**盯进展、不干预它：
+Agent 在新增事实时立即写 `runs/<run_id>/state.json`，其余默认每 5 个动作写检查点（`run.flush_state_every` 控制），因此可以在**另一个终端**盯进展、不干预它：
 
 ```bash
 trina watch                 # 监视最近一次运行（每 2s 刷新，Ctrl+C 退出）
@@ -147,7 +147,7 @@ python3 scripts/experiments/e4_insight_ab.py --runs 3 --max-steps 8 --goal "拿�
 
 ### 2.5 确定性假设调度（谁决定"这一步验证什么"）
 
-打开时（默认），Agent 每步会先做一次**确定性调度**：从台账里挑一条能绑定注册检查项的
+显式打开后，Agent 每步会做一次**确定性调度**：从台账里挑一条能绑定注册检查项的
 最高优先级假设（任务要求的漏洞类优先；若模型还没为任务类提出假设，直接派该类的注册检查项），
 把指令写进这一步的提示词，并记录模型是否遵从：
 

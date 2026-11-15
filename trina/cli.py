@@ -736,6 +736,7 @@ def cmd_bench(args: argparse.Namespace) -> int:
         attempts=int(getattr(args, "attempts", None) or _bench_int("TRINA_BENCH_ATTEMPTS", 1)),
         use_hints=bool(getattr(args, "use_hints", False) or _bench_bool("TRINA_BENCH_USE_HINTS", False)),
         limit=int(getattr(args, "limit", None) or _bench_int("TRINA_BENCH_LIMIT", 0)),
+        workers=int(getattr(args, "workers", None) or _bench_int("TRINA_BENCH_WORKERS", 2)),
     )
     print(
         render_panel(
@@ -746,6 +747,7 @@ def cmd_bench(args: argparse.Namespace) -> int:
                 ("模型地址", config.llm.base_url or "(后端默认)"),
                 ("单题预算", f"{options.per_task_seconds}s × {options.max_steps} 步"),
                 ("总时限", f"{options.total_seconds}s"),
+                ("并行 Worker", str(options.workers)),
             ],
             color=use_color(),
         )
@@ -1030,6 +1032,7 @@ def build_parser() -> argparse.ArgumentParser:
     bench.add_argument("--attempts", type=int, help="单题最多尝试轮次（默认 1）")
     bench.add_argument("--use-hints", action="store_true", help="补漏轮次前获取平台提示（会扣分）")
     bench.add_argument("--limit", type=int, help="只跑前 N 题（调试用）")
+    bench.add_argument("--workers", type=int, choices=range(1, 4), help="并行题目数（默认 2，上限 3）")
     bench.add_argument("--dry-run", action="store_true", help="只列出题目，不启动容器")
     bench.add_argument("--gateway", action="store_true", help="强制把模型地址改写成 .tsecbench.gw 网关")
     bench.add_argument("--model", help="覆盖模型名")

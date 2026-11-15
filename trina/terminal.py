@@ -12,7 +12,7 @@ from typing import Any, Callable
 PHASES = {"recon": "侦察", "enum": "枚举", "vuln": "验证", "exploit": "利用", "post": "后续", "report": "报告"}
 STATUSES = {"running": "运行中", "chat": "对话", "success": "完成", "partial": "部分完成", "failed": "失败", "blocked": "已阻止", "stopped": "已停止"}
 VERDICTS = {"CONFIRMED": "已确认", "NOT_CONFIRMED": "本轮未确认", "INCONCLUSIVE": "证据不足"}
-_ANSI = re.compile(r"\x1b(?:\][^\x07\x1b]*(?:\x07|\x1b\\)|\[[0-?]*[ -/]*[@-~]|[@-_])")
+from .text import clean_text
 THEME = {"rose": "#edb2d2", "lilac": "#c7a5e8", "violet": "#9b7bc7", "muted": "#a595b3",
          "ink": "#1c1625", "selected": "#50355f", "text": "#ede5f2"}
 
@@ -32,12 +32,6 @@ class ResponsiveText(str):
 def _responsive(value: str, renderer: Callable[[int], str], width: int | None) -> str:
     """显式指定宽度时保持普通字符串；自动宽度渲染时附带可重排函数。"""
     return value if width is not None else ResponsiveText(value, renderer)
-
-def clean_text(value: Any) -> str:
-    """目标、模型文本和工具输出按字面量显示，移除终端控制序列。"""
-    text = _ANSI.sub("", str(value)).replace("\t", "    ")
-    return "".join(ch for ch in text if ch == "\n" or unicodedata.category(ch) not in ("Cc", "Cf", "Cs"))
-
 
 def terminal_width() -> int:
     return max(20, min(110, shutil.get_terminal_size(fallback=(88, 24)).columns))

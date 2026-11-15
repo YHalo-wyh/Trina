@@ -271,14 +271,14 @@ class AuthorizationController:
     def note_evidence(self, new_evidence: bool) -> bool:
         """返回是否应触发「无新增证据」停止。"""
         self.stale_steps = 0 if new_evidence else self.stale_steps + 1
-        return self.stale_steps >= self.budget.stop_on_no_new_evidence
+        return self.budget.stop_on_no_new_evidence > 0 and self.stale_steps >= self.budget.stop_on_no_new_evidence
 
     def stop_reason(self) -> str:
         if self.elapsed >= self.budget.logic_seconds:
             return f"逻辑预算用尽（{self.budget.logic_seconds}s）"
         if self.checks_used >= self.budget.max_checks:
             return f"检查数达到上限（{self.budget.max_checks}）"
-        if self.stale_steps >= self.budget.stop_on_no_new_evidence:
+        if self.budget.stop_on_no_new_evidence > 0 and self.stale_steps >= self.budget.stop_on_no_new_evidence:
             return f"连续 {self.stale_steps} 步无新增证据"
         return ""
 
@@ -432,7 +432,7 @@ class AuthorizationController:
             return "预算用尽"
         if self.elapsed >= self.budget.logic_seconds:
             return "逻辑预算用尽"
-        if self.stale_steps >= self.budget.stop_on_no_new_evidence:
+        if self.budget.stop_on_no_new_evidence > 0 and self.stale_steps >= self.budget.stop_on_no_new_evidence:
             return "连续无新增证据，按停止合同提前结束"
         return "未调度（步数/优先级不足）"
 

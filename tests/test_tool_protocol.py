@@ -326,8 +326,10 @@ class PromptLayerTest(unittest.TestCase):
         self.assertIn("角色：安全工程师", layers.system())
         self.assertNotIn("授权网段", layers.system())
         contract = layers.first_user()
-        for token in ("工具协议（原生 tool calling）", "授权网段", "只验证 labs", "T-1 scan_port", "### scan_port"):
+        for token in ("工具协议（原生 tool calling）", "授权网段", "只验证 labs", "T-1 scan_port", "scan_port"):
             self.assertIn(token, contract)
+        self.assertNotIn("### scan_port", contract)
+        self.assertIn("API tools Schema", contract)
         self.assertNotIn("finish(status", layers.system())
 
     def test_json_protocol_contract_mentions_action_json(self) -> None:

@@ -54,6 +54,10 @@ class BenchmarkClient:
             actor="trina-bench",
         )
 
+    def fork(self) -> "BenchmarkClient":
+        """为并行题目创建独立 HTTP 会话，共享同一护栏与审计边界。"""
+        return type(self)(self.base_url, self.token, self.guard, self.timeout, self.verify_tls)
+
     # ------------------------------------------------------------------ 传输
     def _request(
         self,

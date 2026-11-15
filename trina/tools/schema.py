@@ -85,6 +85,10 @@ def param_schema(spec: ParamSpec) -> dict[str, Any]:
 def function_schema(spec: ToolSpec) -> dict[str, Any]:
     """一个 ``ToolSpec`` → OpenAI function 定义。"""
     properties = {name: param_schema(param) for name, param in spec.params.items()}
+    properties["_depends_on"] = {
+        "type": "array", "items": {"type": "integer", "minimum": 1},
+        "description": "可选：依赖本轮前序工具调用的1基编号；依赖失败则不执行，执行器消费该字段",
+    }
     required = [name for name, param in spec.params.items() if param.required]
     parameters: dict[str, Any] = {
         "type": "object",

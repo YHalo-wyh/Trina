@@ -8,22 +8,29 @@
     POST /openapi/v1/challenges/submit   逐個提交候选 flag
     POST /openapi/v1/challenges/close    释放容器
 
-平台同一时间最多允许 3 个容器，本模块串行处理并在 ``finally`` 中关闭，避免耗尽资源。
+平台同一时间最多允许 3 个容器；题目作为 Task 交给统一 SwarmRuntime 调度，
+每个任务使用独立控制面会话并在 ``finally`` 中关闭容器。
 """
 
 from __future__ import annotations
 
 import json
 import re
+import copy
+import threading
 import time
+import uuid
 from dataclasses import dataclass, field
 from typing import Any, Callable
 from urllib.parse import urlsplit
 
 from ..audit import AuditLog
 from ..config import TrinaConfig
+from ..llm import make_backend
 from ..scope import ScopeGuard
 from ..state import RunState
+from ..swarm import SwarmRuntime, TaskSpec, Worker
+from ..tools import ToolRegistry
 from .client import BenchmarkClient, BenchmarkError
 
 #: 候选 flag 的提取模式（平台样例均形如 flag{...}；兼顾其他赛事前缀）。
@@ -83,6 +90,7 @@ class BenchOptions:
     use_hints: bool = False
     limit: int = 0
     max_candidates: int = 30
+    workers: int = 2
 
     def validate(self) -> None:
         if self.max_steps <= 0:
@@ -93,6 +101,8 @@ class BenchOptions:
             raise ValueError("total_seconds 必须为正整数")
         if self.attempts <= 0:
             raise ValueError("attempts 必须为正整数")
+        if not 1 <= self.workers <= 3:
+            raise ValueError("workers 必须在 1..3 之间（平台并发容器上限为 3）")
 
 
 @dataclass
@@ -256,24 +266,26 @@ def _agent_runner(
     extra_rules: str,
     attempt: int,
     log: Callable[[str], None],
+    backend: Any,
+    registry: ToolRegistry,
+    run_id: str,
 ) -> RunState:
-    """默认执行器：复用 `trina.play.run_plan`，不生成报告（容器内只需解题）。"""
-    from ..play import PlayPlan, run_plan
+    """默认执行器直接复用核心 Agent Loop，不加载 Play/UI/报告适配层。"""
+    from ..brain import PentestAgent
 
-    plan = PlayPlan(target=target, goal=goal, label=f"TSecBench {task.unique_code}")
-    return run_plan(
-        config,
-        plan,
+    agent = PentestAgent(config, backend=backend, registry=registry, logger=log)
+    return agent.run(
+        target,
+        goal=goal,
         max_steps=max_steps,
         max_seconds=max_seconds,
         extra_rules=extra_rules,
-        write_report=False,
-        log=log,
+        run_id=run_id,
     )
 
 
 class BenchmarkRunner:
-    """逐题启动容器 → 跑 Trina → 提交 flag → 关闭容器。"""
+    """平台适配器：题目调度、Worker 与核心循环全部复用 SwarmRuntime。"""
 
     def __init__(
         self,
@@ -288,15 +300,17 @@ class BenchmarkRunner:
         self.client = client
         self.options = options or BenchOptions()
         self.options.validate()
-        self.runner = runner or (
-            lambda task, target, goal, **kwargs: _agent_runner(config, task, target, goal, **kwargs)
-        )
+        self._custom_runner = runner is not None
+        self.runner = runner
         self.log = log or (lambda message: print(message, flush=True))
-        self._current: str = ""
+        self._outcomes: dict[str, TaskOutcome] = {}
+        self._outcome_lock = threading.Lock()
 
     # ------------------------------------------------------------------ 入口
     def run(self) -> BenchSummary:
         summary = BenchSummary(started_at=time.time())
+        with self._outcome_lock:
+            self._outcomes.clear()
         deadline = time.monotonic() + self.options.total_seconds
         try:
             raw_tasks = self.client.list_challenges()
@@ -313,17 +327,58 @@ class BenchmarkRunner:
             tasks = tasks[: self.options.limit]
         self.log(
             f"[bench] 待解 {len(tasks)} 题（已完成/跳过的题不计），"
-            f"总时限 {self.options.total_seconds}s，单题 {self.options.per_task_seconds}s"
+            f"总时限 {self.options.total_seconds}s，单题 {self.options.per_task_seconds}s，"
+            f"Worker {self.options.workers}"
         )
+        if tasks:
+            by_id: dict[str, BenchmarkTask] = {}
+            specs: list[TaskSpec] = []
+            for index, task in enumerate(tasks, 1):
+                task_id = f"bench-{index:03d}"
+                by_id[task_id] = task
+                specs.append(TaskSpec(
+                    task_id,
+                    f"benchmark://{task.unique_code}",
+                    self._goal(task),
+                    priority=max(0, 100 - _DIFFICULTY_RANK.get(task.difficulty.lower(), 1) * 10 - index),
+                    max_steps=self.options.max_steps,
+                    max_seconds=self.options.per_task_seconds,
+                ))
 
-        for index, task in enumerate(tasks, 1):
-            remaining = deadline - time.monotonic()
-            if remaining < 60:
-                self.log("[bench] 剩余时间不足 60s，停止领取新题")
-                break
-            self.log(f"[bench] ({index}/{len(tasks)}) {task.unique_code} | {task.difficulty} | {task.total_score} 分")
-            outcome = self._run_task(task, deadline)
-            summary.tasks.append(outcome)
+            def execute(worker: Worker, spec: TaskSpec, run_id: str, hints: list[str], registry: ToolRegistry) -> RunState:
+                del hints
+                task = by_id[spec.id]
+                worker_config = self.config.with_overrides(
+                    scope__max_qps=self.config.scope.max_qps / max(1, workers),
+                    scope__max_host_concurrency=max(1, self.config.scope.max_host_concurrency // max(1, workers)),
+                )
+                worker_config.llm = copy.deepcopy(worker.llm or self.config.llm)
+                outcome = self._run_task(task, deadline, worker=worker, registry=registry,
+                                         run_id=run_id, config=worker_config)
+                with self._outcome_lock:
+                    self._outcomes[task.unique_code] = outcome
+                state = RunState(run_id=run_id, target=spec.target, goal=spec.goal,
+                                 status="success" if outcome.ok else "failed")
+                state.flags = [{"value": flag, "source": "benchmark.submit"} for flag in outcome.flags]
+                state.counters.update({"correct_flags": outcome.correct_flags, "total_flags": outcome.total_flags})
+                state.note("benchmark", outcome.error or f"平台判定正确 {outcome.correct_flags}/{outcome.total_flags}")
+                state.ended_at = time.time()
+                return state
+
+            workers = min(self.options.workers, self.config.scope.max_host_concurrency, len(specs))
+            runtime = SwarmRuntime(
+                self.config,
+                specs,
+                max_workers=max(1, workers),
+                run_id=f"bench-scheduler-{int(time.time())}-{uuid.uuid4().hex[:6]}",
+                executor=execute,
+                backend_factory=(lambda _config: object()) if self._custom_runner else make_backend,
+                write_report=False,
+            )
+            runtime.run()
+            summary.tasks = [self._outcomes.get(task.unique_code, TaskOutcome(
+                unique_code=task.unique_code, total_flags=task.flag_count, error="调度器未返回题目结果"
+            )) for task in tasks]
 
         summary.ended_at = time.time()
         self.log(
@@ -336,21 +391,24 @@ class BenchmarkRunner:
     def _remaining_seconds(self, deadline: float) -> float:
         return deadline - time.monotonic()
 
-    def _run_task(self, task: BenchmarkTask, deadline: float) -> TaskOutcome:
+    def _run_task(self, task: BenchmarkTask, deadline: float, *, worker: Worker,
+                  registry: ToolRegistry, run_id: str, config: TrinaConfig) -> TaskOutcome:
         outcome = TaskOutcome(unique_code=task.unique_code, total_flags=task.flag_count)
-        self._current = task.unique_code
+        client = self.client.fork()
+        started = False
         try:
             try:
-                started = self.client.start(task.unique_code)
+                start_data = client.start(task.unique_code)
+                started = True
             except BenchmarkError as exc:
                 outcome.error = f"start 失败: {exc}"
                 self.log(f"[bench] {outcome.error}")
                 return outcome
-            addresses = [str(item) for item in (started.get("container_addr") or []) if item]
+            addresses = [str(item) for item in (start_data.get("container_addr") or []) if item]
             if not addresses:
                 outcome.error = "start 成功但未返回 container_addr"
                 self.log(f"[bench] {outcome.error}")
-                return self._finish(outcome, task)
+                return outcome
             target = choose_target(addresses)
             outcome.total_flags = int(task.flag_count or 0)
             self.log(f"[bench] 容器地址: {', '.join(addresses)} → 首选 {target}")
@@ -363,7 +421,7 @@ class BenchmarkRunner:
                 hint_text = ""
                 if attempt > 1 and self.options.use_hints:
                     try:
-                        hint_data = self.client.hint(task.unique_code)
+                        hint_data = client.hint(task.unique_code)
                         hint_text = str(hint_data.get("hint") or "")
                         if hint_text:
                             self.log(f"[bench] 已获取提示（会按比例扣分）: {hint_text[:120]}")
@@ -374,15 +432,11 @@ class BenchmarkRunner:
                 self.log(f"[bench] 第 {attempt}/{self.options.attempts} 轮，预算 {budget}s，步数上限 {self.options.max_steps}")
                 outcome.attempts = attempt
                 try:
-                    state = self.runner(
-                        task,
-                        target,
-                        goal,
-                        max_steps=self.options.max_steps,
-                        max_seconds=budget,
-                        extra_rules=extra_rules,
-                        attempt=attempt,
-                        log=self.log,
+                    kwargs = dict(max_steps=self.options.max_steps, max_seconds=budget,
+                                  extra_rules=extra_rules, attempt=attempt, log=self.log)
+                    state = self.runner(task, target, goal, **kwargs) if self.runner is not None else _agent_runner(
+                        config, task, target, goal, **kwargs,
+                        backend=worker.backend, registry=registry, run_id=f"{run_id}-attempt-{attempt}",
                     )
                 except Exception as exc:  # noqa: BLE001 - 单题失败不应终止整场
                     outcome.error = f"解题轮次异常: {type(exc).__name__}: {exc}"
@@ -401,7 +455,7 @@ class BenchmarkRunner:
                     if outcome.correct_flags >= outcome.total_flags > 0:
                         break
                     try:
-                        result = self.client.submit(task.unique_code, flag)
+                        result = client.submit(task.unique_code, flag)
                     except BenchmarkError as exc:
                         if exc.code == "duplicate":
                             self.log(f"[bench] flag 已提交过（duplicate），跳过: {flag[:60]}")
@@ -409,7 +463,7 @@ class BenchmarkRunner:
                         outcome.error = f"submit 失败: {exc.code or exc.status} {exc}"
                         self.log(f"[bench] {outcome.error}")
                         if exc.code == "invalid_state":
-                            return self._finish(outcome, task)
+                            return outcome
                         continue
                     correct = bool(result.get("correct"))
                     outcome.correct_flags = int(result.get("correct_flag_count") or outcome.correct_flags)
@@ -431,18 +485,15 @@ class BenchmarkRunner:
             outcome.ok = outcome.correct_flags >= outcome.total_flags > 0
             if not outcome.ok and not outcome.error:
                 outcome.error = f"未拿全 flag（{outcome.correct_flags}/{outcome.total_flags}）"
-            return self._finish(outcome, task)
+            return outcome
         finally:
-            self._current = ""
-
-    def _finish(self, outcome: TaskOutcome, task: BenchmarkTask) -> TaskOutcome:
-        outcome.ok = outcome.correct_flags >= outcome.total_flags > 0
-        try:
-            self.client.close(task.unique_code)
-            self.log(f"[bench] 已关闭容器 {task.unique_code}")
-        except BenchmarkError as exc:
-            self.log(f"[bench] 关闭容器失败（忽略）: {exc}")
-        return outcome
+            outcome.ok = outcome.correct_flags >= outcome.total_flags > 0
+            if started:
+                try:
+                    client.close(task.unique_code)
+                    self.log(f"[bench] 已关闭容器 {task.unique_code}")
+                except BenchmarkError as exc:
+                    self.log(f"[bench] 关闭容器失败（忽略）: {exc}")
 
     # ------------------------------------------------------------------ 提示词
     @staticmethod
@@ -458,13 +509,10 @@ class BenchmarkRunner:
     @staticmethod
     def _extra_rules(task: BenchmarkTask, addresses: list[str], attempt: int, hint: str) -> str:
         lines = [
-            "这是 TSecBench 评测题，所有目标均已由平台授权，仅限本题容器。",
+            "这是 TSecBench 评测题，仅处理本题容器与题目附件。",
             f"题目编号: {task.unique_code}；容器入口: {', '.join(addresses)}。",
-            "先做服务识别再选择攻击面；Web 题优先访问 HTTP 端口；HTTP 无响应时按 IP:端口 做 service_probe，不要只试 HTTP。",
-            "找到 flag 后调用 flag_hunt 或 rce_exec 读取原文，确保响应体里有 flag 字符串；"
-            "状态里出现 flag 即视为战果，但不要用取巧路径跳过题目要求的验证。",
-            "至少尝试两种不同攻击面（目录/参数/登录/上传/文件读取/弱口令）后再考虑 final；"
-            "前几步没发现不等于题目无解，不要因为一次 404 或空响应就结束。",
+            "根据题面、附件和实时观察自主选择工具；保留候选 flag 的来源与可复现证据。",
+            "平台 submit 的 correct 回执是成功的唯一权威判据，候选格式或进程退出码不能代替。",
             "同一时间只处理本题，不要扫描平台答题 API 或其它题目容器。",
         ]
         if attempt > 1:

@@ -12,7 +12,7 @@ import time
 import uuid
 from html import escape
 from concurrent.futures import Future, ThreadPoolExecutor
-from dataclasses import asdict, dataclass, field, replace
+from dataclasses import asdict, dataclass, field, fields, replace
 from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urlsplit
@@ -61,7 +61,7 @@ class TaskSpec:
 
 @dataclass
 class TaskRecord:
-    """任务状态仅由 Commander 写入检查点。"""
+    """协调中心 Intent 的字段视图；本身不保存第二份任务状态。"""
 
     status: str = "pending"
     attempt: int = 0
@@ -78,6 +78,14 @@ class TaskRecord:
     model: str = ""
     reasoning_effort: str = ""
     profile: str = ""
+
+    def bind(self, row: dict[str, Any]) -> "TaskRecord":
+        """把属性直接绑定到权威 Intent 行，兼容原有 ``record.status`` 调用。"""
+        defaults = {item.name: getattr(self, item.name) for item in fields(self)}
+        for key, value in defaults.items():
+            row.setdefault(key, value)
+        self.__dict__ = row
+        return self
 
 
 @dataclass
@@ -292,6 +300,7 @@ class SwarmRuntime:
         backend_factory: Callable[..., Any] = make_backend,
         fabric: CapabilityFabric | None = None,
         capability_dirs: list[str | Path] | None = None,
+        write_report: bool = True,
         _restoring: bool = False,
     ):
         validate_tasks(tasks)
@@ -320,6 +329,7 @@ class SwarmRuntime:
         self.fabric = fabric
         self.pool = WorkerPool(config, max_workers, backend_factory=backend_factory)
         self.executor = executor or self._execute_agent
+        self.write_report = bool(write_report)
         self.stop_event = threading.Event()
         self._task_stops = {task.id: threading.Event() for task in tasks}
         self._task_steers = {task.id: queue.Queue() for task in tasks}
@@ -332,7 +342,13 @@ class SwarmRuntime:
         self.events: list[dict[str, Any]] = []
         self.event_bus = EventBus(self.workspace / "events.sqlite3", self.run_id, redact_keys=config.audit.redact_keys)
         self.coordination = CoordinationRuntime(self.tasks, event_bus=None if _restoring else self.event_bus)
+        self._bind_records()
         self._commander_events = self.event_bus.subscribe(name="commander", after=0)
+
+    def _bind_records(self) -> None:
+        """所有 TaskRecord 绑定同一 Intent 字典；Todo/图仅是只读投影视图。"""
+        for task_id, record in self.records.items():
+            record.bind(self.coordination.intents[task_id])
 
     @classmethod
     def resume(
@@ -346,7 +362,8 @@ class SwarmRuntime:
         capability_dirs: list[str | Path] | None = None,
     ) -> "SwarmRuntime":
         data = json.loads(Path(checkpoint).read_text(encoding="utf-8"))
-        if data.get("version") not in (1, 2, 3):
+        version = int(data.get("version", 0))
+        if version not in (1, 2, 3, 4):
             raise ValueError("不支持的 swarm 检查点版本")
         tasks = [TaskSpec.from_dict(item) for item in data["tasks"]]
         runtime = cls(
@@ -358,6 +375,7 @@ class SwarmRuntime:
             backend_factory=backend_factory,
             fabric=fabric,
             capability_dirs=capability_dirs,
+            write_report=bool(data.get("write_report", True)),
             _restoring=True,
         )
         if Path(checkpoint).resolve() != runtime.checkpoint.resolve():
@@ -373,27 +391,29 @@ class SwarmRuntime:
         runtime._task_stops = {task.id: threading.Event() for task in tasks}
         runtime._task_steers = {task.id: queue.Queue() for task in tasks}
         runtime._task_llms = {task.id: task_llm(config, task) for task in tasks}
-        runtime.records = {task.id: TaskRecord() for task in tasks}
         runtime._commander_events.cursor = int(data.get("commander_cursor", 0))
-        for task_id, item in data["records"].items():
-            if task_id not in runtime.records:
-                raise ValueError(f"检查点包含未知任务: {task_id}")
-            record = TaskRecord(**item)
+        runtime.events = list(data.get("events", []))
+        runtime.coordination = CoordinationRuntime.restore(tasks, data.get("coordination"))
+        runtime.coordination.event_bus = runtime.event_bus
+        if version < 4:
+            legacy = data.get("records") or {}
+            unknown = set(legacy) - {task.id for task in tasks}
+            if unknown:
+                raise ValueError(f"检查点包含未知任务: {sorted(unknown)[0]}")
+            runtime.coordination.import_legacy_records(legacy)
+        runtime.records = {task.id: TaskRecord() for task in tasks}
+        runtime._bind_records()
+        for task_id, record in runtime.records.items():
             llm = runtime._task_llms[task_id]
             record.model = record.model or llm.model
             record.reasoning_effort = record.reasoning_effort or llm.reasoning_effort
             record.profile = record.profile or llm.profile
-            runtime.records[task_id] = record
-        runtime.events = list(data.get("events", []))
-        runtime.coordination = CoordinationRuntime.restore(tasks, data.get("coordination"))
-        runtime.coordination.event_bus = runtime.event_bus
         runtime._consume_events()
         runtime.event_bus.interrupt_open_calls()
-        for record in runtime.records.values():
-            if record.status == "running":
-                record.status, record.worker_id, record.lease_id, record.capability_lease_id = "pending", "", "", ""
         runtime.coordination.recover_inflight()
-        runtime.coordination.sync_records(runtime.records)
+        for record in runtime.records.values():
+            if record.status == "pending":
+                record.worker_id = record.lease_id = record.capability_lease_id = ""
         return runtime
 
     def add_task(self, task: TaskSpec) -> bool:
@@ -405,11 +425,10 @@ class SwarmRuntime:
         validate_tasks(self.tasks + [task])
         llm = task_llm(self.config, task)
         self.tasks.append(task)
-        self.records[task.id] = TaskRecord()
         if not self.coordination.add_intent(task):
             self.tasks.pop()
-            del self.records[task.id]
             return False
+        self.records[task.id] = TaskRecord().bind(self.coordination.intents[task.id])
         self._task_llms[task.id] = llm
         self._task_stops[task.id] = threading.Event()
         self._task_steers[task.id] = queue.Queue()
@@ -464,8 +483,7 @@ class SwarmRuntime:
                         elif action == "cancel":
                             self._task_stops[task_id].set()
                             if record.status == "pending":
-                                record.status, record.error = "cancelled", "用户取消，尚未执行"
-                                self.coordination.terminate_unclaimed(task_id, record.status, record.error)
+                                self.coordination.terminate_unclaimed(task_id, "cancelled", "用户取消，尚未执行")
                         else:
                             raise ValueError("未知任务控制")
                         self.audit.append("swarm.task." + action, task=task_id, text=text)
@@ -653,18 +671,18 @@ class SwarmRuntime:
     def _save(self) -> None:
         self.workspace.mkdir(parents=True, exist_ok=True)
         data = {
-            "version": 3,
+            "version": 4,
             "run_id": self.run_id,
             "max_workers": self.max_workers,
             "tasks": [{**asdict(task), "model": self._task_llms[task.id].model,
                        "reasoning_effort": self._task_llms[task.id].reasoning_effort,
                        "profile": self._task_llms[task.id].profile} for task in self.tasks],
-            "records": {key: asdict(value) for key, value in self.records.items()},
             "events": self.events,
             "capability_memory": self.fabric.memory_snapshot(),
             "coordination": self.coordination.snapshot(),
             "commander_cursor": self._commander_events.cursor,
             "events_path": str(self.event_bus.path),
+            "write_report": self.write_report,
         }
         event = self.event_bus.publish("runtime.checkpoint", source="commander", snapshot=data)
         data["checkpoint_seq"] = event.seq
@@ -730,13 +748,12 @@ class SwarmRuntime:
                 if self.stop_event.is_set() and not futures:
                     for task_id, record in self.records.items():
                         if record.status == "pending":
-                            record.status, record.error = "cancelled", "用户停止，尚未执行"
-                            self.coordination.terminate_unclaimed(task_id, record.status, record.error)
+                            self.coordination.terminate_unclaimed(task_id, "cancelled", "用户停止，尚未执行")
                     self._save()
                     break
                 if not self.stop_event.is_set() and not self.pause_event.is_set():
                     previous_rounds = self.coordination.planner_rounds
-                    ready_intents = set(self.coordination.plan(self.records))
+                    ready_intents = set(self.coordination.plan())
                     if self.coordination.planner_rounds != previous_rounds:
                         self.audit.append(
                             "planner.round", round=self.coordination.planner_rounds,
@@ -748,9 +765,7 @@ class SwarmRuntime:
                             continue
                         deps = [self.records[dep].status for dep in task.depends_on]
                         if any(status in TERMINAL - {"completed"} for status in deps):
-                            record.status = "skipped"
-                            record.error = "前序任务未完成"
-                            self.coordination.terminate_unclaimed(task.id, "skipped", record.error)
+                            self.coordination.terminate_unclaimed(task.id, "skipped", "前序任务未完成")
                             self.audit.append("swarm.task.skip", task=task.id, reason=record.error)
                             self._save()
                             continue
@@ -761,8 +776,7 @@ class SwarmRuntime:
                         try:
                             worker = self.pool.acquire(self._task_llms[task.id])
                         except Exception as exc:
-                            record.status, record.error = "failed", f"BackendError: {exc}"
-                            self.coordination.terminate_unclaimed(task.id, record.status, record.error)
+                            self.coordination.terminate_unclaimed(task.id, "failed", f"BackendError: {exc}")
                             self._save()
                             continue
                         if worker is None:
@@ -770,25 +784,18 @@ class SwarmRuntime:
                         try:
                             task_registry = self._task_registry(task, worker)
                         except Exception as exc:  # noqa: BLE001 - 单任务能力解析失败不拖垮其余任务
-                            record.status = "failed"
-                            record.error = f"CapabilityError: {exc}"
-                            self.coordination.terminate_unclaimed(task.id, "failed", record.error)
+                            self.coordination.terminate_unclaimed(task.id, "failed", f"CapabilityError: {exc}")
                             self.audit.append("capability.lease.error", task=task.id, worker=worker.id, error=record.error)
                             worker.capability_lease_id = ""
                             worker.capabilities = ()
                             self.pool.release(worker, worker.lease_id)
                             self._save()
                             continue
-                        record.status = "running"
-                        record.error = ""
-                        record.attempt += 1
-                        record.worker_id = worker.id
-                        record.lease_id = worker.lease_id
-                        record.started_at = time.time()
                         self.coordination.claim(
                             task.id, worker.id, lease_id=worker.lease_id,
                             ttl=task.max_seconds + 30,
                         )
+                        record.started_at = time.time()
                         task_run_id = f"{self.run_id}-{task.id}-{record.attempt}"
                         self.events.append({"event": "task.start", "task": task.id, "worker": worker.id, "lease": worker.lease_id, "time": record.started_at})
                         self.event_bus.publish("task.started", source="commander", task_id=task.id,
@@ -829,7 +836,7 @@ class SwarmRuntime:
                     try:
                         state = future.result()
                         record.result = self._result(state)
-                        record.status = "cancelled" if state.status == "stopped" else (
+                        final_status = "cancelled" if state.status == "stopped" else (
                             state.status if state.status in TERMINAL else "completed")
                         try:
                             self.fabric.publish_task(self.fabric.get_lease(capability_lease), record.result)
@@ -845,11 +852,11 @@ class SwarmRuntime:
                         record.result["capabilities"] = list(record.capability_snapshot)
                         self.coordination.publish_state(task.id, state, evidence_refs=record.evidence_refs)
                     except Exception as exc:  # noqa: BLE001 - 单任务失败不影响其余分支
-                        record.status = "failed"
                         record.error = f"{type(exc).__name__}: {exc}"
+                        final_status = "failed"
                     finally:
                         record.ended_at = time.time()
-                        self.coordination.settle(task.id, lease, record.status, error=record.error)
+                        self.coordination.settle(task.id, lease, final_status, error=record.error)
                         self.events.append({"event": "task.end", "task": task.id, "worker": worker.id, "status": record.status, "time": record.ended_at})
                         self.event_bus.publish("task.finished", source="commander", task_id=task.id,
                                                worker_id=worker.id, status=record.status, error=record.error)
@@ -866,7 +873,8 @@ class SwarmRuntime:
         self.audit.append("swarm.run.end", statuses={key: value.status for key, value in self.records.items()})
         self.event_bus.publish("runtime.finished", source="commander",
                                statuses={key: value.status for key, value in self.records.items()})
-        self._write_report()
+        if self.write_report:
+            self._write_report()
         return self.summary()
 
     def _write_report(self) -> None:
