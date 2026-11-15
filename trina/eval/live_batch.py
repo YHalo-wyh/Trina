@@ -31,11 +31,22 @@ from ..tools import build_registry
 DEFAULT_SUITE = PROJECT_ROOT / "trina" / "eval" / "suites" / "live.yaml"
 LAB_URL = "http://127.0.0.1:9099/"
 
-CONFIGS: dict[str, tuple[str, bool]] = {
-    "legacy-json": ("json", False),
-    "layered-json": ("json", True),
-    "legacy-native": ("native", False),
-    "layered-native": ("native", True),
+@dataclass(frozen=True)
+class LiveConfig:
+    protocol: str
+    layers: bool
+    hypothesis_ledger: bool = True
+    loop_guard: bool = True
+
+
+CONFIGS: dict[str, LiveConfig] = {
+    "legacy-json": LiveConfig("json", False),
+    "layered-json": LiveConfig("json", True),
+    "legacy-native": LiveConfig("native", False),
+    "layered-native": LiveConfig("native", True),
+    "layered-native-no-ledger": LiveConfig("native", True, hypothesis_ledger=False),
+    "layered-native-no-guard": LiveConfig("native", True, loop_guard=False),
+    "layered-native-minimal": LiveConfig("native", True, hypothesis_ledger=False, loop_guard=False),
 }
 
 
@@ -135,7 +146,8 @@ def judge(task: LiveTask, steps: list[dict[str, Any]], flags: list[Any]) -> dict
 
 
 def run_task(config: TrinaConfig, task: LiveTask, config_name: str) -> dict[str, Any]:
-    protocol, layers = CONFIGS[config_name]
+    variant = CONFIGS[config_name]
+    protocol, layers = variant.protocol, variant.layers
     with __import__("tempfile").TemporaryDirectory() as tmp:
         cfg = TrinaConfig.load(path=config.path)
         cfg.run.workspace = str(Path(tmp) / "runs")
@@ -144,6 +156,8 @@ def run_task(config: TrinaConfig, task: LiveTask, config_name: str) -> dict[str,
         cfg.llm.max_seconds = 240
         cfg.llm.tool_protocol = protocol
         cfg.llm.prompt_layers = layers
+        cfg.run.hypothesis_ledger = variant.hypothesis_ledger
+        cfg.run.loop_guard = variant.loop_guard
         backend = RecordingBackend(make_backend(cfg.llm))
         agent = PentestAgent(cfg, registry=build_registry(), backend=backend)
         started = time.monotonic()
@@ -160,6 +174,8 @@ def run_task(config: TrinaConfig, task: LiveTask, config_name: str) -> dict[str,
             "config": config_name,
             "protocol": protocol,
             "layers": layers,
+            "hypothesis_ledger": variant.hypothesis_ledger,
+            "loop_guard": variant.loop_guard,
             "goal": task.goal,
             "target": task.target,
             "expect_tool": task.expect_tool,
@@ -179,6 +195,9 @@ def run_task(config: TrinaConfig, task: LiveTask, config_name: str) -> dict[str,
             "denied": state.counters.get("denied", 0),
             "native_calls": state.counters.get("native_calls", 0),
             "llm_calls": state.counters.get("llm_calls", ledger.get("calls", 0)),
+            "decision_rounds": state.counters.get("decision_rounds", 0),
+            "redundant_action_rate": float((state.loop or {}).get("redundant_action_rate", 0.0) or 0.0),
+            "model_seconds": round(float(state.counters.get("model_milliseconds", 0)) / 1000, 3),
             "tokens_in": ledger.get("input_tokens", 0),
             "tokens_out": ledger.get("output_tokens", 0),
             "duration": duration,
@@ -190,7 +209,7 @@ def run_batch(
     config: TrinaConfig | None = None,
     *,
     tasks: list[LiveTask] | None = None,
-    configs: tuple[str, ...] = ("legacy-json", "legacy-native"),
+    configs: tuple[str, ...] = ("layered-native", "layered-native-no-ledger", "layered-native-minimal"),
     out_dir: str | Path | None = None,
     limit: int | None = None,
 ) -> dict[str, Any]:
@@ -247,6 +266,12 @@ def summarise(results: list[dict[str, Any]], tasks: list[LiveTask], configs: tup
             "tokens_in": sum(int(row.get("tokens_in", 0) or 0) for row in rows),
             "tokens_out": sum(int(row.get("tokens_out", 0) or 0) for row in rows),
             "duration": round(sum(float(row.get("duration", 0) or 0) for row in rows), 1),
+            "model_seconds": round(sum(float(row.get("model_seconds", 0) or 0) for row in rows), 1),
+            "llm_calls": sum(int(row.get("llm_calls", 0) or 0) for row in rows),
+            "decision_rounds": sum(int(row.get("decision_rounds", 0) or 0) for row in rows),
+            "redundant_action_rate": round(
+                sum(float(row.get("redundant_action_rate", 0) or 0) for row in rows) / max(1, len(rows)), 4
+            ),
         }
     summary["results"] = results
     return summary
@@ -259,14 +284,15 @@ def render_markdown(summary: dict[str, Any]) -> str:
         f"- 生成时间：{summary['generated_at']}",
         f"- 任务数：{summary['tasks']}",
         "",
-        "| 配置 | 验收通过 | 选对工具 | 执行成功 | 拿到 flag | 协议错误 | 总步数 | Token 入/出 | 耗时(s) |",
-        "|---|---|---|---|---|---|---|---|---|",
+        "| 配置 | 验收通过 | 选对工具 | 执行成功 | flag | LLM轮次 | 决策轮次 | 重复率 | Token 入/出 | 模型/总耗时(s) |",
+        "|---|---|---|---|---|---|---|---|---|---|",
     ]
     for name, row in summary["by_config"].items():
         lines.append(
             f"| {name} | {row['accepted']}/{row['total']} | {row['chosen']}/{row['total']} | "
-            f"{row['tool_ok']}/{row['total']} | {row['flag']} | {row['protocol_error']} | {row['steps']} | "
-            f"{row['tokens_in']}/{row['tokens_out']} | {row['duration']} |"
+            f"{row['tool_ok']}/{row['total']} | {row['flag']} | {row['llm_calls']} | {row['decision_rounds']} | "
+            f"{row['redundant_action_rate']:.1%} | {row['tokens_in']}/{row['tokens_out']} | "
+            f"{row['model_seconds']}/{row['duration']} |"
         )
     return "\n".join(lines) + "\n"
 
@@ -275,6 +301,7 @@ __all__ = [
     "CONFIGS",
     "DEFAULT_SUITE",
     "LiveTask",
+    "LiveConfig",
     "RecordingBackend",
     "ensure_lab",
     "load_tasks",

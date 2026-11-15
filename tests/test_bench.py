@@ -217,6 +217,68 @@ class TestRunner(unittest.TestCase):
         self.assertEqual(summary.solved, 0)
         self.assertIn("challenge-1", _FakeAPI.closed)
 
+    def test_retry_inherits_state_and_reports_efficiency_metrics(self):
+        _FakeAPI.submitted = []
+        calls: list[tuple[int, int]] = []
+
+        def continuing(task, target, goal, *, attempt, resume_state=None, **kwargs):
+            del task, goal, kwargs
+            if attempt == 1:
+                state = RunState(run_id="first", target=target, status="partial")
+                state.host(target).ports[80] = {"service": "http"}
+                state.counters.update({"decision_rounds": 2, "llm_calls": 2, "tool_calls": 1})
+            else:
+                self.assertIsNotNone(resume_state)
+                self.assertIn(80, resume_state.hosts[target].ports)
+                state = RunState.from_dict(resume_state.to_dict())
+                state.run_id, state.status = "second", "success"
+                state.flags.append({"value": "flag{one}", "source": "continued"})
+                state.counters.update({"decision_rounds": 3, "llm_calls": 3, "tool_calls": 2})
+            calls.append((attempt, int(state.counters["decision_rounds"])))
+            return state
+
+        with _Server() as server:
+            runner = BenchmarkRunner(
+                TrinaConfig(), BenchmarkClient(server.url, "test-token", _guard()),
+                options=BenchOptions(max_steps=4, per_task_seconds=30, total_seconds=120, attempts=2),
+                runner=continuing, log=lambda message: None,
+            )
+            summary = runner.run()
+        self.assertEqual(calls, [(1, 2), (2, 3)])
+        self.assertEqual(summary.solved, 1)
+        outcome = summary.tasks[0]
+        self.assertEqual(outcome.attempts, 2)
+        self.assertEqual(outcome.metrics["decision_rounds"], 3)
+        self.assertEqual(outcome.metrics["tool_calls"], 2)
+        self.assertLess(outcome.attempt_metrics[0]["budget_seconds"], 30, "首轮必须给续做保留时间")
+        self.assertLessEqual(outcome.duration, 30)
+
+    def test_no_new_fact_stops_retry_early(self):
+        calls = 0
+
+        def stalled(task, target, goal, **kwargs):
+            nonlocal calls
+            del task, goal, kwargs
+            calls += 1
+            return RunState(run_id=f"stalled-{calls}", target=target, status="failed")
+
+        with _Server() as server:
+            summary = BenchmarkRunner(
+                TrinaConfig(), BenchmarkClient(server.url, "test-token", _guard()),
+                options=BenchOptions(max_steps=1, per_task_seconds=30, total_seconds=120, attempts=3),
+                runner=stalled, log=lambda message: None,
+            ).run()
+        self.assertEqual(calls, 1)
+        self.assertEqual(summary.tasks[0].attempts, 1)
+
+    def test_partial_score_does_not_override_stop_or_block(self):
+        from trina.bench.runner import TaskOutcome
+
+        outcome = TaskOutcome("partial", correct_flags=1, total_flags=2)
+        for status in ("blocked", "stopped"):
+            state = RunState("run", "host.test", status=status)
+            self.assertFalse(BenchmarkRunner._retry_worthwhile(state, outcome, True))
+
     def test_multiple_tasks_share_swarm_scheduler_and_run_concurrently(self):
         class ParallelAPI(_FakeAPI):
             submitted: list[tuple[str, str]] = []

@@ -320,6 +320,8 @@ def cmd_swarm(args: argparse.Namespace) -> int:
     try:
         if args.resume:
             runtime = SwarmRuntime.resume(config, args.resume)
+            if args.no_auto_expand:
+                runtime.auto_expand = False
         else:
             if args.manifest:
                 tasks = load_manifest(args.manifest)
@@ -328,7 +330,8 @@ def cmd_swarm(args: argparse.Namespace) -> int:
                     out("请提供 --target、--manifest 或 --resume", "red")
                     return 2
                 tasks = default_tasks(args.target, args.goal, max_steps=args.max_steps, max_seconds=args.max_seconds)
-            runtime = SwarmRuntime(config, tasks, max_workers=args.workers)
+            runtime = SwarmRuntime(config, tasks, max_workers=args.workers,
+                                   auto_expand=not args.no_auto_expand)
         summary = runtime.run()
     except (ValueError, KeyError, OSError) as exc:
         out(f"Swarm 配置错误: {exc}", "red")
@@ -733,7 +736,7 @@ def cmd_bench(args: argparse.Namespace) -> int:
             getattr(args, "per_task_seconds", None) or _bench_int("TRINA_BENCH_PER_TASK_SECONDS", 420)
         ),
         total_seconds=int(getattr(args, "total_seconds", None) or _bench_int("TRINA_BENCH_TOTAL_SECONDS", 6 * 3600)),
-        attempts=int(getattr(args, "attempts", None) or _bench_int("TRINA_BENCH_ATTEMPTS", 1)),
+        attempts=int(getattr(args, "attempts", None) or _bench_int("TRINA_BENCH_ATTEMPTS", 2)),
         use_hints=bool(getattr(args, "use_hints", False) or _bench_bool("TRINA_BENCH_USE_HINTS", False)),
         limit=int(getattr(args, "limit", None) or _bench_int("TRINA_BENCH_LIMIT", 0)),
         workers=int(getattr(args, "workers", None) or _bench_int("TRINA_BENCH_WORKERS", 2)),
@@ -1029,7 +1032,7 @@ def build_parser() -> argparse.ArgumentParser:
     bench.add_argument("--max-steps", type=int, help="单轮决策步数上限（默认 36）")
     bench.add_argument("--per-task-seconds", type=int, help="单题时间预算（默认 420）")
     bench.add_argument("--total-seconds", type=int, help="整场时间预算（默认 21600）")
-    bench.add_argument("--attempts", type=int, help="单题最多尝试轮次（默认 1）")
+    bench.add_argument("--attempts", type=int, help="单题最多续做轮次（默认 2；无新增事实时提前释放）")
     bench.add_argument("--use-hints", action="store_true", help="补漏轮次前获取平台提示（会扣分）")
     bench.add_argument("--limit", type=int, help="只跑前 N 题（调试用）")
     bench.add_argument("--workers", type=int, choices=range(1, 4), help="并行题目数（默认 2，上限 3）")
@@ -1076,6 +1079,7 @@ def build_parser() -> argparse.ArgumentParser:
     swarm.add_argument("--manifest", help="YAML/JSON 任务图文件")
     swarm.add_argument("--resume", help="从 runs/<id>/swarm.json 继续")
     swarm.add_argument("--workers", type=int, default=2, help="最大并行 Worker 数（默认 2）")
+    swarm.add_argument("--no-auto-expand", action="store_true", help="关闭事实变化驱动的有界后继 Intent 生成")
     swarm.add_argument("--max-steps", type=int, default=12, help="默认图每任务步数上限")
     swarm.add_argument("--max-seconds", type=int, default=600, help="默认图每任务秒数上限")
     swarm.add_argument("--model", help="覆盖模型名")
@@ -1136,8 +1140,8 @@ def build_parser() -> argparse.ArgumentParser:
     eval_matrix.add_argument("--json", action="store_true")
     eval_matrix.set_defaults(func=cmd_eval)
     eval_live = eval_sub.add_parser("live-batch", help="真模型 × 真靶机的 30 条任务跑批")
-    eval_live.add_argument("--configs", default="legacy-json,legacy-native",
-                           help="逗号分隔：legacy-json,layered-json,legacy-native,layered-native")
+    eval_live.add_argument("--configs", default="layered-native,layered-native-no-ledger,layered-native-minimal",
+                           help="逗号分隔的配置名；默认执行 Ledger/Loop Guard 消融")
     eval_live.add_argument("--out", default="", help="输出目录")
     eval_live.add_argument("--limit", type=int, default=0, help="只跑前 N 条任务（冒烟用）")
     eval_live.add_argument("--json", action="store_true")

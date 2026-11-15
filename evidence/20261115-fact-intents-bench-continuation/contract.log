@@ -1,0 +1,10 @@
+{
+  "ok": true,
+  "scope": "当前产品 TR 需求、规范规则、实现路径、测试声明、六类交付物与白名单验证命令",
+  "deliverables": 6,
+  "requirements": 24,
+  "rules": 63,
+  "tests_referenced": 154,
+  "errors": [],
+  "commands": {}
+}

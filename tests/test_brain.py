@@ -399,6 +399,45 @@ class TestReActLoop(unittest.TestCase):
         ok, detail = log.verify()
         self.assertTrue(ok, detail)
 
+    def test_resume_state_inherits_facts_but_starts_a_fresh_model_chain(self):
+        first = self._agent([
+            {"response": '{"action": "fake_scan", "params": {"target": "127.0.0.1"}, "hypothesis": {"statement": "发现服务"}}'},
+            {"response": '{"final": {"status": "partial", "summary": "继续"}}'},
+        ]).run("127.0.0.1", goal="拿 flag", run_id="attempt-one", max_steps=2)
+        second_agent = self._agent([
+            {"response": '{"action": "fake_leak", "params": {"target": "127.0.0.1"}}'},
+            {"response": '{"final": {"status": "success", "summary": "完成"}}'},
+        ])
+        captured: list[list[dict[str, str]]] = []
+        original = second_agent.backend.complete_messages
+
+        def capture(messages, **kwargs):
+            captured.append([dict(item) for item in messages])
+            return original(messages, **kwargs)
+
+        second_agent.backend.complete_messages = capture  # type: ignore[method-assign]
+        first_snapshot = json.loads(json.dumps(first.to_dict()))
+        second = second_agent.run(
+            "127.0.0.1", goal="拿 flag", run_id="attempt-two", max_steps=2,
+            resume_state=first,
+        )
+        self.assertEqual(second.status, "success")
+        self.assertIn(80, second.hosts["127.0.0.1"].ports)
+        self.assertEqual(len(second.flags), 1)
+        self.assertEqual(second.counters["decision_rounds"], 4)
+        self.assertEqual(second.ledger["calls"], 4)
+        self.assertEqual([item["index"] for item in second.steps if "index" in item], [1, 2, 3, 4])
+        self.assertEqual([item["index"] for item in first.steps if "index" in item], [1, 2], "续轮不得修改原检查点")
+        self.assertEqual(second.hypotheses[0]["statement"], "发现服务")
+        self.assertEqual([item["role"] for item in captured[0][:3]], ["system", "user", "user"])
+        prompt = "\n".join(item["content"] for item in captured[0])
+        self.assertIn('"80"', prompt, "续轮首个状态检查点必须包含上一轮事实")
+        self.assertIn("fake_scan", prompt, "续轮应继承近期执行经验，避免盲目重复")
+        self.assertNotIn("attempt-one", captured[0][0]["content"], "旧对话不得拼入新 system")
+        self.assertEqual(first.to_dict(), first_snapshot, "续轮不得改写原始证据或假设")
+        with self.assertRaisesRegex(ValueError, "目标"):
+            second_agent.run("other.test", resume_state=first)
+
     def test_agent_sends_security_system_and_runtime_contract_as_user_data(self):
         agent = self._agent([
             {"response": '{"final": {"status": "partial", "summary": "done"}}'},

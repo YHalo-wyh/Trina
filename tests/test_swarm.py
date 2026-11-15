@@ -154,6 +154,47 @@ class SwarmTests(unittest.TestCase):
         self.assertGreaterEqual(summary["coordination"]["planner_rounds"], 2)
         self.assertIn("exploration", summary["graphs"])
 
+    def test_new_asset_fact_generates_one_bounded_followup_intent(self) -> None:
+        calls: list[str] = []
+
+        def execute(worker, task, run_id, hints, registry):
+            del worker, hints, registry
+            calls.append(task.id)
+            state = RunState(run_id=run_id, target=task.target, goal=task.goal, status="success")
+            state.host(task.target).ports[80] = {"service": "http"}
+            state.ended_at = time.time()
+            return state
+
+        runtime = SwarmRuntime(
+            self.config,
+            [TaskSpec("seed", "host.test", "识别服务", max_steps=4, max_seconds=30)],
+            max_workers=1, executor=execute, auto_expand=True, max_generated_tasks=2,
+        )
+        summary = runtime.run()
+        generated = [task for task in runtime.tasks if task.id.startswith("auto-")]
+        self.assertEqual(len(generated), 1)
+        self.assertEqual(generated[0].depends_on, ("seed",))
+        self.assertIn("端口 80", generated[0].goal)
+        self.assertEqual(calls, ["seed", generated[0].id])
+        self.assertEqual(summary["generated_tasks"], 1)
+        self.assertTrue(all(item["status"] == "completed" for item in summary["tasks"].values()))
+
+    def test_generated_intents_obey_global_task_limit(self) -> None:
+        def execute(worker, task, run_id, hints, registry):
+            state = RunState(run_id=run_id, target=task.target, status="success")
+            state.host(task.target).ports[80] = {"service": "http"}
+            state.ended_at = time.time()
+            return state
+
+        runtime = SwarmRuntime(
+            self.config,
+            [TaskSpec("a", "one.test", "识别服务"), TaskSpec("b", "two.test", "识别服务")],
+            max_workers=1, executor=execute, auto_expand=True, max_generated_tasks=1,
+        )
+        summary = runtime.run()
+        self.assertEqual(summary["generated_tasks"], 1)
+        self.assertEqual(len(runtime.tasks), 3)
+
     def test_resume_retries_only_inflight(self) -> None:
         calls: list[str] = []
 

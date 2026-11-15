@@ -46,9 +46,9 @@ Trina 通过平台的 `/openapi/v1/challenges/*` 接口接入 TSecBench：
 | `TRINA_LLM_API_KEY` | 托管 | 模型密钥（也可用 `DEEPSEEK_API_KEY`） |
 | `TRINA_SCOPE_EXPLOIT_LEVEL` | 托管 | 固定 `exploit`（镜像已内置，答题需要命令执行） |
 | `TRINA_BENCH_MAX_STEPS` | 否 | 单轮决策步数，默认 36 |
-| `TRINA_BENCH_PER_TASK_SECONDS` | 否 | 单题预算，默认 420s |
+| `TRINA_BENCH_PER_TASK_SECONDS` | 否 | 单题全部续轮共享的墙钟预算，默认 420s |
 | `TRINA_BENCH_TOTAL_SECONDS` | 否 | 整场预算，默认 21600s（平台时限 360min） |
-| `TRINA_BENCH_ATTEMPTS` | 否 | 单题最多尝试轮次，默认 1 |
+| `TRINA_BENCH_ATTEMPTS` | 否 | 单题最多续做轮次，默认 2；无新增事实时提前停止 |
 | `TRINA_BENCH_USE_HINTS` | 否 | `1` 时补漏轮次前取提示（扣分） |
 | `TRINA_BENCH_LIMIT` | 否 | 只跑前 N 题（调试） |
 | `TRINA_BENCH_WORKERS` | 否 | 并行题目数，默认 2，平台上限 3 |
@@ -117,3 +117,5 @@ docker save trina-tsecbench:latest | gzip > trina-tsecbench.tar.gz
 - 答题 API 控制面只认 `scope.control_plane_hosts`（由 `BENCHMARK_BASE_URL` 写入并审计），避免模型把提交接口改到任意地址。
 - 靶场目标默认使用 `scope.trust_mode=full`，不需要 `--allow-exploit`；需要复现旧边界时显式切换 `restricted`。
 - 所有工具调用、控制面请求、每题容器启停都写入 `logs/<run_id>.jsonl` 审计哈希链。
+- 首轮为后续恢复保留一部分单题时间。续轮继承上一轮 `RunState` 的资产、发现、凭据、Flag、证据索引和计数，但重新建立标准 API 消息链，不拼接旧对话；模型会先收到继承事实检查点。
+- 停止或阻断时直接释放 Worker；其他状态只有出现新增事实且重复率低于 80%，或已得到部分正确 Flag 时才续做。结果 JSON 逐题记录 `decision_rounds`、`llm_calls`、`tool_calls`、`model_seconds`、重复探索率、每轮预算及实际耗时；`ok` 区分正确完成和未完成样本。

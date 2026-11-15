@@ -734,6 +734,34 @@
           "tests": ["tests.test_swarm.SwarmTests.test_add_task_validates_and_persists", "tests.test_swarm.SwarmTests.test_resume_retries_only_inflight", "tests.test_swarm.SwarmTests.test_v3_checkpoint_records_are_migrated_into_intents", "tests.test_bench.TestRunner.test_multiple_tasks_share_swarm_scheduler_and_run_concurrently"]
         }
       ]
+    },
+    {
+      "id": "TR-24",
+      "title": "事实驱动探索、Bench 续做与效率度量",
+      "priority": "P1",
+      "status": "implemented",
+      "implementation": ["trina/intent_planner.py", "trina/coordination.py", "trina/swarm.py", "trina/brain/agent.py", "trina/bench/runner.py", "trina/eval/live_batch.py"],
+      "verification": ["V-CONTRACT", "V-TESTS"],
+      "rules": [
+        {
+          "id": "TR-24-R01",
+          "level": "MUST",
+          "statement": "已验证事实生成的后继 Intent 必须有来源依赖、稳定去重和总量上限，已规划事实必须随检查点恢复。",
+          "tests": ["tests.test_swarm.SwarmTests.test_new_asset_fact_generates_one_bounded_followup_intent", "tests.test_swarm.SwarmTests.test_generated_intents_obey_global_task_limit", "tests.test_intent_planner.FactIntentPlannerTests.test_only_supported_verified_facts_generate_proposals", "tests.test_intent_planner.FactIntentPlannerTests.test_child_inherits_scope_and_never_increases_source_limits", "tests.test_intent_planner.FactIntentPlannerTests.test_updated_observation_in_same_lineage_reuses_planning_key", "tests.test_coordination.CoordinationTests.test_fact_planning_marks_are_idempotent_and_persisted"]
+        },
+        {
+          "id": "TR-24-R02",
+          "level": "MUST",
+          "statement": "Bench 续轮必须继承结构化状态但重新建立消息与执行上下文，无新增事实时停止重试并保留效率指标。",
+          "tests": ["tests.test_brain.TestReActLoop.test_resume_state_inherits_facts_but_starts_a_fresh_model_chain", "tests.test_bench.TestRunner.test_retry_inherits_state_and_reports_efficiency_metrics", "tests.test_bench.TestRunner.test_no_new_fact_stops_retry_early", "tests.test_bench.TestRunner.test_partial_score_does_not_override_stop_or_block"]
+        },
+        {
+          "id": "TR-24-R03",
+          "level": "MUST",
+          "statement": "真模型跑批必须提供 Ledger 与 Loop Guard 消融组合，并记录模型轮数、决策轮数、Token、耗时与重复探索率。",
+          "tests": ["tests.test_live_batch.LiveSuiteTest.test_protocol_and_insight_ablation_configs_are_declared"]
+        }
+      ]
     }
   ]
 }

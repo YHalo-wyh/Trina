@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import re
 import copy
+import inspect
 import threading
 import time
 import uuid
@@ -86,7 +87,7 @@ class BenchOptions:
     max_steps: int = 36
     per_task_seconds: int = 420
     total_seconds: int = 6 * 3600
-    attempts: int = 1
+    attempts: int = 2
     use_hints: bool = False
     limit: int = 0
     max_candidates: int = 30
@@ -115,6 +116,9 @@ class TaskOutcome:
     attempts: int = 0
     flags: list[str] = field(default_factory=list)
     error: str = ""
+    duration: float = 0.0
+    metrics: dict[str, Any] = field(default_factory=dict)
+    attempt_metrics: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -126,6 +130,9 @@ class TaskOutcome:
             "attempts": self.attempts,
             "flags": self.flags,
             "error": self.error,
+            "duration": round(self.duration, 3),
+            "metrics": self.metrics,
+            "attempt_metrics": self.attempt_metrics,
         }
 
 
@@ -144,6 +151,23 @@ class BenchSummary:
     def score(self) -> int:
         return sum(item.score for item in self.tasks)
 
+    @property
+    def efficiency(self) -> dict[str, Any]:
+        tool_calls = sum(int(item.metrics.get("tool_calls", 0)) for item in self.tasks)
+        repeated = sum(
+            float(item.metrics.get("repeated_exploration_rate", 0.0))
+            * int(item.metrics.get("tool_calls", 0))
+            for item in self.tasks
+        )
+        return {
+            "decision_rounds": sum(int(item.metrics.get("decision_rounds", 0)) for item in self.tasks),
+            "llm_calls": sum(int(item.metrics.get("llm_calls", 0)) for item in self.tasks),
+            "tool_calls": tool_calls,
+            "model_seconds": round(sum(float(item.metrics.get("model_seconds", 0)) for item in self.tasks), 3),
+            "repeated_exploration_rate": round(repeated / max(1, tool_calls), 4),
+            "avg_task_seconds": round(sum(item.duration for item in self.tasks) / max(1, len(self.tasks)), 3),
+        }
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "solved": self.solved,
@@ -151,6 +175,7 @@ class BenchSummary:
             "score": self.score,
             "duration": round(self.ended_at - self.started_at, 1) if self.started_at else 0,
             "error": self.error,
+            "efficiency": self.efficiency,
             "tasks": [item.to_dict() for item in self.tasks],
         }
 
@@ -269,6 +294,7 @@ def _agent_runner(
     backend: Any,
     registry: ToolRegistry,
     run_id: str,
+    resume_state: RunState | None = None,
 ) -> RunState:
     """默认执行器直接复用核心 Agent Loop，不加载 Play/UI/报告适配层。"""
     from ..brain import PentestAgent
@@ -281,6 +307,9 @@ def _agent_runner(
         max_seconds=max_seconds,
         extra_rules=extra_rules,
         run_id=run_id,
+        resume_state=resume_state,
+        seed_hints=(["这是续做轮次：已继承上一轮结构化事实；优先覆盖未验证方向，不要重复相同调用。"]
+                    if resume_state is not None else None),
     )
 
 
@@ -305,6 +334,7 @@ class BenchmarkRunner:
         self.log = log or (lambda message: print(message, flush=True))
         self._outcomes: dict[str, TaskOutcome] = {}
         self._outcome_lock = threading.Lock()
+        self._task_count = 0
 
     # ------------------------------------------------------------------ 入口
     def run(self) -> BenchSummary:
@@ -325,6 +355,7 @@ class BenchmarkRunner:
         tasks.sort(key=lambda task: (_DIFFICULTY_RANK.get(task.difficulty.lower(), 1), task.level))
         if self.options.limit > 0:
             tasks = tasks[: self.options.limit]
+        self._task_count = len(tasks)
         self.log(
             f"[bench] 待解 {len(tasks)} 题（已完成/跳过的题不计），"
             f"总时限 {self.options.total_seconds}s，单题 {self.options.per_task_seconds}s，"
@@ -383,7 +414,9 @@ class BenchmarkRunner:
         summary.ended_at = time.time()
         self.log(
             f"[bench] 结束：完成 {summary.solved}/{len(summary.tasks)} 题，"
-            f"累计得分 {summary.score}，耗时 {summary.ended_at - summary.started_at:.0f}s"
+            f"累计得分 {summary.score}，耗时 {summary.ended_at - summary.started_at:.0f}s；"
+            f"模型轮次 {summary.efficiency['llm_calls']}，重复探索率 "
+            f"{summary.efficiency['repeated_exploration_rate']:.1%}"
         )
         return summary
 
@@ -391,11 +424,50 @@ class BenchmarkRunner:
     def _remaining_seconds(self, deadline: float) -> float:
         return deadline - time.monotonic()
 
+    def _attempt_budget(self, deadline: float, task_deadline: float, attempts_left: int) -> int:
+        """在整场、单题与续轮三层预算内留出恢复空间。"""
+        remaining = min(self._remaining_seconds(deadline) - 5, task_deadline - time.monotonic())
+        if remaining <= 0:
+            return 0
+        minimum = min(60, max(5, self.options.per_task_seconds // 4))
+        with self._outcome_lock:
+            unfinished = max(1, self._task_count - len(self._outcomes))
+        fair_share = max(minimum, int(max(0, self._remaining_seconds(deadline) - 5) / unfinished))
+        reserve = minimum if attempts_left > 1 and remaining > minimum * 2 else 0
+        return max(1, int(min(remaining - reserve if reserve else remaining, fair_share)))
+
+    @staticmethod
+    def _progressed(previous: RunState | None, current: RunState) -> bool:
+        if previous is None:
+            return bool(current.hosts or current.findings or current.credentials or current.flags)
+        return previous.knowledge_digest() != current.knowledge_digest()
+
+    @staticmethod
+    def _retry_worthwhile(state: RunState, outcome: TaskOutcome, progressed: bool) -> bool:
+        if state.status in {"blocked", "stopped"}:
+            return False
+        if 0 < outcome.correct_flags < outcome.total_flags:
+            return True
+        redundant = float((state.loop or {}).get("redundant_action_rate", 0.0) or 0.0)
+        return progressed and redundant < 0.8
+
+    @staticmethod
+    def _runner_accepts_resume(runner: Callable[..., RunState]) -> bool:
+        try:
+            parameters = inspect.signature(runner).parameters.values()
+        except (TypeError, ValueError):
+            return False
+        return any(item.kind == inspect.Parameter.VAR_KEYWORD or item.name == "resume_state"
+                   for item in parameters)
+
     def _run_task(self, task: BenchmarkTask, deadline: float, *, worker: Worker,
                   registry: ToolRegistry, run_id: str, config: TrinaConfig) -> TaskOutcome:
         outcome = TaskOutcome(unique_code=task.unique_code, total_flags=task.flag_count)
         client = self.client.fork()
         started = False
+        task_started = time.monotonic()
+        task_deadline = min(deadline - 5, task_started + self.options.per_task_seconds)
+        resume_state: RunState | None = None
         try:
             try:
                 start_data = client.start(task.unique_code)
@@ -414,10 +486,9 @@ class BenchmarkRunner:
             self.log(f"[bench] 容器地址: {', '.join(addresses)} → 首选 {target}")
 
             for attempt in range(1, self.options.attempts + 1):
-                remaining = self._remaining_seconds(deadline) - 20
-                if remaining < 60:
+                budget = self._attempt_budget(deadline, task_deadline, self.options.attempts - attempt + 1)
+                if budget <= 0:
                     break
-                budget = int(min(self.options.per_task_seconds, remaining))
                 hint_text = ""
                 if attempt > 1 and self.options.use_hints:
                     try:
@@ -431,17 +502,41 @@ class BenchmarkRunner:
                 goal = self._goal(task)
                 self.log(f"[bench] 第 {attempt}/{self.options.attempts} 轮，预算 {budget}s，步数上限 {self.options.max_steps}")
                 outcome.attempts = attempt
+                attempt_started = time.monotonic()
+                before_counters = dict(resume_state.counters) if resume_state is not None else {}
                 try:
                     kwargs = dict(max_steps=self.options.max_steps, max_seconds=budget,
                                   extra_rules=extra_rules, attempt=attempt, log=self.log)
-                    state = self.runner(task, target, goal, **kwargs) if self.runner is not None else _agent_runner(
-                        config, task, target, goal, **kwargs,
-                        backend=worker.backend, registry=registry, run_id=f"{run_id}-attempt-{attempt}",
-                    )
+                    if self.runner is not None:
+                        if self._runner_accepts_resume(self.runner):
+                            kwargs["resume_state"] = resume_state
+                        state = self.runner(task, target, goal, **kwargs)
+                    else:
+                        state = _agent_runner(
+                            config, task, target, goal, **kwargs,
+                            backend=worker.backend, registry=registry, run_id=f"{run_id}-attempt-{attempt}",
+                            resume_state=resume_state,
+                        )
                 except Exception as exc:  # noqa: BLE001 - 单题失败不应终止整场
                     outcome.error = f"解题轮次异常: {type(exc).__name__}: {exc}"
                     self.log(f"[bench] {outcome.error}")
                     break
+
+                progressed = self._progressed(resume_state, state)
+                counters = state.counters or {}
+                attempt_row = {
+                    "attempt": attempt,
+                    "budget_seconds": budget,
+                    "duration": round(time.monotonic() - attempt_started, 3),
+                    "status": state.status,
+                    "progressed": progressed,
+                    "decision_rounds": max(0, int(counters.get("decision_rounds", 0)) - int(before_counters.get("decision_rounds", 0))),
+                    "llm_calls": max(0, int(counters.get("llm_calls", 0)) - int(before_counters.get("llm_calls", 0))),
+                    "tool_calls": max(0, int(counters.get("tool_calls", 0)) - int(before_counters.get("tool_calls", 0))),
+                    "model_seconds": round(max(0, int(counters.get("model_milliseconds", 0)) - int(before_counters.get("model_milliseconds", 0))) / 1000, 3),
+                    "redundant_action_rate": float((state.loop or {}).get("redundant_action_rate", 0.0) or 0.0),
+                }
+                outcome.attempt_metrics.append(attempt_row)
 
                 candidates = submission_candidates(
                     state,
@@ -479,14 +574,32 @@ class BenchmarkRunner:
                     else:
                         self.log(f"[bench] 提交未命中: {flag[:80]}")
                 if outcome.correct_flags >= outcome.total_flags > 0:
+                    outcome.error = ""
                     break
-                if self._remaining_seconds(deadline) < 90:
+                resume_state = state
+                if attempt >= self.options.attempts or not self._retry_worthwhile(state, outcome, progressed):
+                    if not progressed:
+                        self.log("[bench] 本轮没有新增事实，释放 Worker，不做无依据重试")
+                    break
+                if self._attempt_budget(deadline, task_deadline, self.options.attempts - attempt) <= 0:
                     break
             outcome.ok = outcome.correct_flags >= outcome.total_flags > 0
             if not outcome.ok and not outcome.error:
                 outcome.error = f"未拿全 flag（{outcome.correct_flags}/{outcome.total_flags}）"
             return outcome
         finally:
+            outcome.duration = time.monotonic() - task_started
+            total_tools = sum(int(item.get("tool_calls", 0)) for item in outcome.attempt_metrics)
+            outcome.metrics = {
+                "decision_rounds": sum(int(item.get("decision_rounds", 0)) for item in outcome.attempt_metrics),
+                "llm_calls": sum(int(item.get("llm_calls", 0)) for item in outcome.attempt_metrics),
+                "tool_calls": total_tools,
+                "model_seconds": round(sum(float(item.get("model_seconds", 0)) for item in outcome.attempt_metrics), 3),
+                "repeated_exploration_rate": round(
+                    sum(float(item.get("redundant_action_rate", 0.0)) * int(item.get("tool_calls", 0))
+                        for item in outcome.attempt_metrics) / max(1, total_tools), 4),
+                "progressing_attempts": sum(bool(item.get("progressed")) for item in outcome.attempt_metrics),
+            }
             outcome.ok = outcome.correct_flags >= outcome.total_flags > 0
             if started:
                 try:

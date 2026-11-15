@@ -24,6 +24,7 @@ from .config import LLMConfig, TrinaConfig
 from .coordination import CoordinationRuntime
 from .events import EventBus
 from .context import BRIEF_VERSION
+from .intent_planner import FactIntentPlanner
 from .llm import make_backend
 from .state import RunState
 from .tools import ToolRegistry, build_registry
@@ -301,6 +302,8 @@ class SwarmRuntime:
         fabric: CapabilityFabric | None = None,
         capability_dirs: list[str | Path] | None = None,
         write_report: bool = True,
+        auto_expand: bool = False,
+        max_generated_tasks: int = 8,
         _restoring: bool = False,
     ):
         validate_tasks(tasks)
@@ -330,6 +333,9 @@ class SwarmRuntime:
         self.pool = WorkerPool(config, max_workers, backend_factory=backend_factory)
         self.executor = executor or self._execute_agent
         self.write_report = bool(write_report)
+        self.auto_expand = bool(auto_expand)
+        self.max_generated_tasks = max(0, int(max_generated_tasks))
+        self.intent_planner = FactIntentPlanner()
         self.stop_event = threading.Event()
         self._task_stops = {task.id: threading.Event() for task in tasks}
         self._task_steers = {task.id: queue.Queue() for task in tasks}
@@ -376,6 +382,8 @@ class SwarmRuntime:
             fabric=fabric,
             capability_dirs=capability_dirs,
             write_report=bool(data.get("write_report", True)),
+            auto_expand=bool(data.get("auto_expand", False)),
+            max_generated_tasks=int(data.get("max_generated_tasks", 8)),
             _restoring=True,
         )
         if Path(checkpoint).resolve() != runtime.checkpoint.resolve():
@@ -437,6 +445,49 @@ class SwarmRuntime:
         self.audit.append("swarm.task.add", task=task.id, depends_on=task.depends_on)
         self._save()
         return True
+
+    def _expand_from_facts(self, source_id: str, fact_ids: list[str]) -> list[str]:
+        """Commander 根据新事实生成有界后继任务；Worker 不直接修改任务图。"""
+        if not self.auto_expand or not fact_ids or self.max_generated_tasks <= 0:
+            return []
+        facts = self.coordination.unplanned_facts(fact_ids)
+        if not facts:
+            return []
+        source = next((item for item in self.tasks if item.id == source_id), None)
+        if source is None:
+            return []
+        existing_generated = sum(item.id.startswith("auto-") for item in self.tasks)
+        remaining = max(0, self.max_generated_tasks - existing_generated)
+        accepted: list[str] = []
+        # 自动后继共用显式任务的规划键，重观测同一资产不能递归生成新任务。
+        by_id = {task.id: task for task in self.tasks}
+        origin = source
+        seen: set[str] = set()
+        while origin.id.startswith("auto-") and origin.depends_on and origin.id not in seen:
+            seen.add(origin.id)
+            parent = by_id.get(origin.depends_on[0])
+            if parent is None:
+                break
+            origin = parent
+        try:
+            for proposal in self.intent_planner.propose(source, facts, planning_scope=origin.id):
+                if len(accepted) >= remaining:
+                    break
+                task = TaskSpec(
+                    proposal.id, proposal.target, proposal.goal,
+                    capabilities=proposal.capabilities, depends_on=proposal.depends_on,
+                    priority=proposal.priority, max_steps=proposal.max_steps,
+                    max_seconds=proposal.max_seconds, model=source.model,
+                    reasoning_effort=source.reasoning_effort, profile=source.profile,
+                )
+                if self.add_task(task):
+                    accepted.append(task.id)
+                    self.audit.append("planner.intent.generated", source=source_id, task=task.id,
+                                      facts=list(proposal.fact_ids), goal=task.goal)
+        finally:
+            # 无适用提案和已被等价任务去重都属于已处理，避免每个事件重复规划。
+            self.coordination.mark_facts_planned(str(item["id"]) for item in facts)
+        return accepted
 
     def submit_task(self, task: TaskSpec) -> Future[bool]:
         """跨线程提交，只有 Commander 可修改 DAG；收尾时明确拒绝，避免丢任务。"""
@@ -683,6 +734,8 @@ class SwarmRuntime:
             "commander_cursor": self._commander_events.cursor,
             "events_path": str(self.event_bus.path),
             "write_report": self.write_report,
+            "auto_expand": self.auto_expand,
+            "max_generated_tasks": self.max_generated_tasks,
         }
         event = self.event_bus.publish("runtime.checkpoint", source="commander", snapshot=data)
         data["checkpoint_seq"] = event.seq
@@ -717,7 +770,8 @@ class SwarmRuntime:
             if event.kind == "state.updated":
                 state = RunState.from_dict(self.event_bus.runtime_payload(event)["state"])
                 if state.run_id == expected_run:
-                    self.coordination.publish_state(event.task_id, state, include_steps=False)
+                    added = self.coordination.publish_state(event.task_id, state, include_steps=False)
+                    self._expand_from_facts(event.task_id, added)
             elif event.kind == "tool.finished":
                 self.coordination.observe_tool(event)
             if self.on_progress is not None and event.kind in {"tool.started", "tool.output", "tool.finished", "model.started", "model.finished", "model.error", "model.retry", "assistant.message", "react.action"}:
@@ -850,7 +904,8 @@ class SwarmRuntime:
                         record.evidence_refs = self.fabric.refs_for_task(task.id)
                         record.result["evidence_refs"] = list(record.evidence_refs)
                         record.result["capabilities"] = list(record.capability_snapshot)
-                        self.coordination.publish_state(task.id, state, evidence_refs=record.evidence_refs)
+                        added = self.coordination.publish_state(task.id, state, evidence_refs=record.evidence_refs)
+                        self._expand_from_facts(task.id, added)
                     except Exception as exc:  # noqa: BLE001 - 单任务失败不影响其余分支
                         record.error = f"{type(exc).__name__}: {exc}"
                         final_status = "failed"
@@ -939,6 +994,7 @@ class SwarmRuntime:
             },
             "workers_created": len(self.pool.workers),
             "worker_reuses": sum(max(0, worker.completed - 1) for worker in self.pool.workers),
+            "generated_tasks": sum(task.id.startswith("auto-") for task in self.tasks),
             "capability_memory": self.fabric.memory_snapshot(),
             "coordination": self.coordination.overview(),
             "graphs": {

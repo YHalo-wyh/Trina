@@ -213,7 +213,7 @@ class Subworkers:
                 runtime = SwarmRuntime.resume(cfg, checkpoint, backend_factory=factory, executor=executor)
             else:
                 runtime = SwarmRuntime(cfg, tasks or [], max_workers=min(cfg.subworker.workers, cfg.scope.max_host_concurrency),
-                                       backend_factory=factory, executor=executor)
+                                       backend_factory=factory, executor=executor, auto_expand=True)
             self.runtime = runtime
             runtime.on_update = self._update
             runtime.on_progress = self._progress

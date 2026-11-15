@@ -141,9 +141,14 @@ python3 -m trina play --target http://127.0.0.1:9099 --goal "拿到 flag" --max-
 
 # 一键跑两臂交替对照（逐次落数 + 汇总）
 python3 scripts/experiments/e4_insight_ab.py --runs 3 --max-steps 8 --goal "拿到 flag"
+
+# 同一真模型任务集：完整洞察 / 关闭 Ledger / 同时关闭 Ledger 与 Loop Guard
+python3 -m trina eval live-batch \
+  --configs layered-native,layered-native-no-ledger,layered-native-minimal \
+  --limit 3 --out reports/eval/insight-ablation
 ```
 
-实验结果与结论边界见 `review/experiments/E4-insight-layer.md`（当前只有机制验证，**没有**充分样本支持"提效"）。
+`live-batch` 同时记录模型调用轮数、决策轮数、输入/输出 Token、模型耗时、总耗时和重复动作率。实验结果与结论边界见 `review/experiments/E4-insight-layer.md`（当前只有机制验证，**没有**充分样本支持"提效"）。
 
 ### 2.5 确定性假设调度（谁决定"这一步验证什么"）
 

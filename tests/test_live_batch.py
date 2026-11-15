@@ -21,11 +21,11 @@ class LiveSuiteTest(unittest.TestCase):
                 self.assertTrue(task.target.startswith(("http://127.0.0.1", "127.0.0.1")), "只允许本地授权目标")
                 self.assertLessEqual(task.max_steps, 4)
 
-    def test_four_configs_are_declared(self) -> None:
-        self.assertEqual(
-            set(CONFIGS),
-            {"legacy-json", "layered-json", "legacy-native", "layered-native"},
-        )
+    def test_protocol_and_insight_ablation_configs_are_declared(self) -> None:
+        self.assertTrue({"legacy-json", "layered-json", "legacy-native", "layered-native"} <= set(CONFIGS))
+        self.assertTrue({"layered-native-no-ledger", "layered-native-no-guard", "layered-native-minimal"} <= set(CONFIGS))
+        self.assertFalse(CONFIGS["layered-native-no-ledger"].hypothesis_ledger)
+        self.assertFalse(CONFIGS["layered-native-minimal"].loop_guard)
 
 
 class JudgeTest(unittest.TestCase):

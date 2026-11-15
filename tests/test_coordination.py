@@ -69,6 +69,19 @@ class CoordinationTests(unittest.TestCase):
         self.assertGreater(restored.traces[-1]["id"], previous_trace)
         restored.settle("discover", lease, "completed")
 
+    def test_fact_planning_marks_are_idempotent_and_persisted(self):
+        runtime = CoordinationRuntime(self.tasks())
+        lease = runtime.claim("discover", "worker-1")
+        state = RunState("run", "host.test", status="success")
+        state.host("host.test").ports[80] = {"service": "http"}
+        facts = runtime.publish_state("discover", state)
+        self.assertEqual(len(runtime.unplanned_facts(facts)), 1)
+        runtime.mark_facts_planned(facts)
+        self.assertEqual(runtime.unplanned_facts(facts), [])
+        runtime.settle("discover", lease, "completed")
+        restored = CoordinationRuntime.restore(self.tasks(), runtime.snapshot())
+        self.assertEqual(restored.unplanned_facts(facts), [])
+
 
 if __name__ == "__main__":
     unittest.main()

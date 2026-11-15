@@ -55,6 +55,10 @@
 
 **V2 智能体群运行时**：[Swarm 使用说明](docs/SWARM.md) · `trina swarm --target http://127.0.0.1:9099 --goal "验证目标" --workers 2`
 
+Swarm 可由已验证资产/发现/凭据生成有界后继 Intent；Bench 默认最多两轮续做，继承结构化事实并在无新增信息时提前释放 Worker。Bench 与真模型跑批输出模型轮数、工具调用、重复探索率和实际耗时，Bench 成功采用平台回执。
+
+本轮实测、原始日志与限制见[事实规划及续做验证](evidence/20261115-fact-intents-bench-continuation/README.md)。
+
 控制台 `/subworker` 默认打开四宫格，G 列表/四格、Z 放大、F 补充、C 单项取消。Commander 可通过真实工具 `worker_tasks` 委派分支、查看结果与证据；模型、思考强度和供应商按任务独立绑定。
 
 自动化渗透测试 Agent：**大模型 ReAct 决策 + 全套工具封装 + 多靶场适配 + 默认完全信任 + 标准报告 + 评测框架**。

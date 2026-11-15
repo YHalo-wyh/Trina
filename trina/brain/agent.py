@@ -13,11 +13,12 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import tempfile
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields as dataclass_fields
 from pathlib import Path
 from typing import Any, Callable
 
@@ -52,6 +53,18 @@ MAX_LLM_RETRIES = 4
 MAX_FINAL_REJECTS = 2
 #: 连续多少次 LLM 失败后放弃本次任务（后端抖动不应立刻毁掉一个场景）
 MAX_LLM_FAILURES = 6
+
+
+def _usage_from_dict(data: dict[str, Any]):
+    """把已保存的用量还原为可合并对象；忽略 ``total_tokens`` 等派生字段。"""
+    from ..llm.base import LLMUsage
+
+    payload: dict[str, Any] = {}
+    for item in dataclass_fields(LLMUsage):
+        key = "cost_usd" if item.name == "cost" else item.name
+        if key in data:
+            payload[item.name] = data[key]
+    return LLMUsage(**payload)
 
 
 @dataclass
@@ -138,11 +151,34 @@ class PentestAgent:
         commander_brief_provider: Callable[[], list[dict[str, Any]]] | None = None,
         record_path: str | Path | None = None,
         run_id: str | None = None,
+        resume_state: RunState | None = None,
     ) -> RunState:
-        """对单目标执行一次全自动渗透，返回最终状态。"""
+        """对单目标执行一次全自动渗透；续轮只继承结构化事实，不复用旧对话。"""
         run_id = run_id or time.strftime("%Y%m%d-%H%M%S") + "-" + _short_hash(target)
         max_steps = max_steps or self.config.llm.max_steps
         max_seconds = max_seconds or self.config.llm.max_seconds
+
+        previous_run_id = ""
+        previous_decision_rounds = 0
+        previous_ledger: dict[str, Any] = {}
+        if resume_state is not None:
+            if resume_state.target != target:
+                raise ValueError("续轮状态目标与当前目标不一致")
+            state = RunState.from_dict(copy.deepcopy(resume_state.to_dict()))
+            previous_run_id = state.run_id
+            previous_decision_rounds = int(state.counters.get("decision_rounds", 0) or 0)
+            previous_ledger = dict(state.ledger or {})
+            state.run_id = run_id
+            state.goal = goal or state.goal
+            state.status = "running"
+            state.started_at = time.time()
+            state.ended_at = None
+            state.artifacts = {}
+            state.note("resume", f"从 {previous_run_id} 继承事实检查点；模型消息重新开始")
+        else:
+            state = RunState(run_id=run_id, target=target, goal=goal, max_evidence=self.config.run.max_evidence)
+
+        previous_steps = max((int(item.get("index", 0)) for item in state.steps), default=0)
 
         audit = self._audit or AuditLog.open(
             self.config.audit_dir,
@@ -153,7 +189,6 @@ class PentestAgent:
         )
         guard = ScopeGuard(self.config.scope, audit=audit)
         usage_before = self.backend.ledger.to_dict()
-        state = RunState(run_id=run_id, target=target, goal=goal, max_evidence=self.config.run.max_evidence)
         workspace = self.config.workspace_dir / run_id
         workspace.mkdir(parents=True, exist_ok=True)
         from ..events import EventBus
@@ -170,6 +205,7 @@ class PentestAgent:
             backend=self.config.llm.backend,
             max_steps=max_steps,
             max_seconds=max_seconds,
+            resumed_from=previous_run_id,
             scope=guard.summary(),
         )
 
@@ -259,7 +295,18 @@ class PentestAgent:
         # 假设台账 + 循环守卫（文档建议：把"待验证的问题"结构化，并识别无新信息的重复）
         from ..hypotheses import HypothesisLedger
 
-        ledger = HypothesisLedger(risk_aversion=float(getattr(self.config.run, "hypothesis_risk_aversion", 1.0) or 1.0))
+        ledger = HypothesisLedger.from_dict(
+            state.hypotheses,
+            risk_aversion=float(getattr(self.config.run, "hypothesis_risk_aversion", 1.0) or 1.0),
+        )
+        continuation = ({
+            "source_run": previous_run_id,
+            "recent_actions": [
+                {key: (str(item[key])[:600] if key in {"summary", "error", "params"} else item[key])
+                 for key in ("index", "action", "params", "ok", "summary", "error") if key in item}
+                for item in state.steps if item.get("action") not in {None, "final", "final_rejected"}
+            ][-8:],
+        } if previous_run_id else {})
         loop_guard = LoopGuard()
         # 洞察层开关（对照实验用）：关闭只影响"模型看到什么"，统计口径不变（redundant_action_rate / fail_* 照记）
         use_ledger = bool(getattr(self.config.run, "hypothesis_ledger", True))
@@ -467,6 +514,7 @@ class PentestAgent:
                 state_digest=context.state_update(state_projection(
                     state, hypotheses=ledger.to_dict() if use_ledger else None, registered=policy_block,
                     commander=commander_context_block() if (commander_briefs or commander_brief_provider) else "",
+                    **({"continuation": continuation} if continuation else {}),
                     unsatisfied_requirements=missing_goal)),
                 last_observation="见前面的工具结果" if native_mode and state.steps else observation,
                 hints=hints,
@@ -494,7 +542,12 @@ class PentestAgent:
                 audit.append("context.budget_error", error=str(exc))
                 return None
             diagnostic = context.before_request(messages, tool_payload)
-            response = self._ask(messages, tool_payload)
+            model_started = time.monotonic()
+            try:
+                response = self._ask(messages, tool_payload)
+            finally:
+                state.counters["model_milliseconds"] = state.counters.get("model_milliseconds", 0) + round(
+                    (time.monotonic() - model_started) * 1000)
             context.after_response(diagnostic, response)
             if self.stop_event is not None and self.stop_event.is_set():
                 state.note("human", "收到人工停止指令")
@@ -543,13 +596,14 @@ class PentestAgent:
         def execute(action, index, response, *, llm_seconds):
             nonlocal steps, observation, new_facts, final, final_rejects, stall, last_action_key, hints
             steps = index
+            history_index = previous_steps + index
             if "error" in action:
                 state.counters["errors"] = state.counters.get("errors", 0) + 1
                 state.counters["protocol_error"] = state.counters.get("protocol_error", 0) + 1
                 hints.append("输出必须是单个 JSON 对象：{\"thought\":..., \"action\":..., \"params\":{...}}")
                 observation = f"动作解析失败：{action.get('error')}；原始输出片段：{str(action.get('raw', ''))[:200]}"
                 state.log_step(
-                    StepRecord(index, phase, summary="解析失败", error=action.get("error", ""), llm_seconds=llm_seconds).to_dict()
+                    StepRecord(history_index, phase, summary="解析失败", error=action.get("error", ""), llm_seconds=llm_seconds).to_dict()
                 )
                 return ActionOutcome(observation=observation, ok=False)
 
@@ -566,7 +620,7 @@ class PentestAgent:
                     )
                     state.note("goal", "拒绝提前结束：" + "；".join(missing))
                     state.log_step(
-                        StepRecord(index, phase, thought=str(action.get("thought", "")), action="final_rejected",
+                        StepRecord(history_index, phase, thought=str(action.get("thought", "")), action="final_rejected",
                                    summary="目标未达成，拒绝结束").to_dict()
                     )
                     return ActionOutcome(observation=observation, ok=False)
@@ -575,7 +629,7 @@ class PentestAgent:
                          text=str(final.get("summary", "")), final=True)
                 state.note("final", str(final.get("summary", ""))[:400])
                 state.log_step(
-                    StepRecord(index, phase, thought=str(action.get("thought", "")), action="final", summary=str(final.get("summary", ""))[:200], ok=True).to_dict()
+                    StepRecord(history_index, phase, thought=str(action.get("thought", "")), action="final", summary=str(final.get("summary", ""))[:200], ok=True).to_dict()
                 )
                 return ActionOutcome(observation=str(final.get("summary", "")), answer=str(final.get("summary", "")), stop=True)
 
@@ -631,7 +685,7 @@ class PentestAgent:
                     "请改用已注册的检查项，或停止并把未覆盖项写进报告。"
                 )
                 state.log_step(
-                    StepRecord(index, phase, thought=thought, action=tool_name, denied=True,
+                    StepRecord(history_index, phase, thought=thought, action=tool_name, denied=True,
                                summary=f"控制器拒绝（{policy_decision.kind}）").to_dict()
                 )
                 return ActionOutcome(observation=observation, ok=False)
@@ -662,7 +716,7 @@ class PentestAgent:
                     hints.append(f"人工拒绝了 {tool_name}：换一个更保守的动作，或先解释为什么需要它")
                     observation = f"人工审批未通过：动作 {tool_name} 被操作者拒绝，请改用其他方式推进。"
                     state.log_step(
-                        StepRecord(index, phase, thought=thought, action=tool_name, denied=True,
+                        StepRecord(history_index, phase, thought=thought, action=tool_name, denied=True,
                                    summary="人工拒绝（未执行）").to_dict()
                     )
                     return ActionOutcome(observation=observation, ok=False)
@@ -719,7 +773,7 @@ class PentestAgent:
                 state.note("human_request", "循环守卫：连续多次无新信息，建议人工介入调整方向")
 
             step = StepRecord(
-                index=index,
+                index=history_index,
                 phase=phase,
                 thought=thought,
                 action=tool_name,
@@ -840,7 +894,7 @@ class PentestAgent:
         try:
             runtime.run()
             steps = runtime.steps
-            state.counters["decision_rounds"] = runtime.rounds
+            state.counters["decision_rounds"] = previous_decision_rounds + runtime.rounds
         finally:
             from ..runtime_status import status_snapshot
             ctx.extra["background_jobs"].close()
@@ -874,7 +928,9 @@ class PentestAgent:
                 state.status = "partial"
             else:
                 state.status = "failed"
-        state.ledger = self.backend.ledger.delta(usage_before).to_dict()
+        current_usage = self.backend.ledger.delta(usage_before)
+        state.ledger = (_usage_from_dict(previous_ledger).merge(current_usage).to_dict()
+                        if previous_ledger else current_usage.to_dict())
         unfinished = ledger.finalize()
         if unfinished:
             state.note(

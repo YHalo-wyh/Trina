@@ -20,7 +20,7 @@
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from typing import Any, Iterable
 from urllib.parse import urlsplit
 
@@ -150,6 +150,18 @@ class HypothesisLedger:
         self.risk_aversion = risk_aversion
         self.max_items = max_items
         self._seq = 0
+
+    @classmethod
+    def from_dict(cls, rows: Iterable[dict[str, Any]], **kwargs: Any) -> HypothesisLedger:
+        """从真实检查点还原台账，过滤展示字段并延续编号。"""
+        ledger = cls(**kwargs)
+        allowed = {item.name for item in fields(Hypothesis)}
+        for row in rows:
+            item = Hypothesis(**{key: value for key, value in row.items() if key in allowed})
+            ledger.items[item.id] = item
+        ledger._seq = max((int(key[2:]) for key in ledger.items
+                           if key.startswith("H-") and key[2:].isdigit()), default=0)
+        return ledger
 
     # ------------------------------------------------------------------ 增
     def next_id(self) -> str:

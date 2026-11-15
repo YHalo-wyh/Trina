@@ -41,7 +41,7 @@ class CoordinationRuntime:
     完成的 Intent、依赖和结果血缘，两者通过 anchors 连接。
     """
 
-    VERSION = 1
+    VERSION = 2
 
     def __init__(self, tasks: Iterable[Any], *, event_bus: Any = None):
         self.event_bus = event_bus
@@ -52,6 +52,7 @@ class CoordinationRuntime:
         self.exploration: dict[str, Any] = {"nodes": {}, "edges": [], "anchors": []}
         self.traces: list[dict[str, Any]] = []
         self.events: list[dict[str, Any]] = []
+        self.planned_facts: set[str] = set()
         self.trace_seq = 0
         self.revision = 0
         self.planned_revision = -1
@@ -298,6 +299,21 @@ class CoordinationRuntime:
             self._trace(event.task_id, event.worker_id, "tool", str(payload.get("summary") or payload.get("error") or payload.get("tool", "")),
                         _canonical({"call_id": event.call_id, **payload}), bool(payload.get("ok")))
 
+    def unplanned_facts(self, fact_ids: Iterable[str]) -> list[dict[str, Any]]:
+        """返回尚未驱动过规划的事实；调用方成功处理后再显式确认。"""
+        with self.lock:
+            return [dict(self.facts[fact_id]) for fact_id in fact_ids
+                    if fact_id in self.facts and fact_id not in self.planned_facts]
+
+    def mark_facts_planned(self, fact_ids: Iterable[str]) -> None:
+        with self.lock:
+            selected = {str(item) for item in fact_ids if str(item) in self.facts}
+            new = selected - self.planned_facts
+            if not new:
+                return
+            self.planned_facts.update(new)
+            self.emit("facts.planned", facts=sorted(new))
+
     def _trace(self, intent_id: str, worker_id: str, kind: str, summary: str, detail: str,
                ok: bool, *, step_id: int | None = None) -> None:
         self.trace_seq += 1
@@ -370,7 +386,7 @@ class CoordinationRuntime:
                 "facts": self.facts, "exploration": self.exploration, "traces": self.traces,
                 "events": self.events, "revision": self.revision,
                 "planned_revision": self.planned_revision, "planner_rounds": self.planner_rounds,
-                "trace_seq": self.trace_seq,
+                "trace_seq": self.trace_seq, "planned_facts": sorted(self.planned_facts),
             }))
 
     @classmethod
@@ -378,7 +394,7 @@ class CoordinationRuntime:
         runtime = cls(tasks)
         if not data:
             return runtime
-        if int(data.get("version", 0)) != cls.VERSION:
+        if int(data.get("version", 0)) not in (1, cls.VERSION):
             raise ValueError("不支持的 coordination 检查点版本")
         with runtime.lock:
             for name in ("todo", "intents", "facts", "exploration", "traces", "events"):
@@ -390,6 +406,7 @@ class CoordinationRuntime:
                 "trace_seq",
                 max((int(item.get("id", 0)) for item in runtime.traces), default=0),
             ))
+            runtime.planned_facts = {str(item) for item in data.get("planned_facts", [])}
         return runtime
 
 
