@@ -33,3 +33,7 @@ scripts/env.local.sh
 # ---- 临时录制（保留 trina/eval/scenarios 下的回放样张）----
 *.replay.local.yaml
 /tmp/
+
+# 同机性能开发剖析留在本机，只提交最终三轮证据及报告。
+/评测/20261115-omp-output-benchmark/optimization/*/
+!/评测/20261115-omp-output-benchmark/optimization/final/

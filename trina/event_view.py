@@ -114,8 +114,10 @@ class EventTranscript:
                 # 保留未排版文本的真实规模，使历史缓冲裁剪仍能计入工具输出。
                 raw = (f"{row['tool']} · {row['status']}\nInput\n{row['params']}\nOutput\n"
                        f"{row['output']}\n{row['stderr']}\n{row.get('error', '')}")
+                from .terminal import render_tool_call_fragments
                 card = ResponsiveText(raw, lambda width: str(render_tool_call(
-                    **snapshot, color=self.color, width=width)))
+                    **snapshot, color=self.color, width=width)),
+                    lambda width: render_tool_call_fragments(**snapshot, color=self.color, width=width))
                 self.editor.update_tool(event.call_id, card)
             elif kind == "tool.finished":
                 self.output(render_tool_call(**row, color=self.color))

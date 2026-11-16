@@ -13,6 +13,17 @@ from trina.llm.base import LLMResponse, LLMStreamEvent, LLMUsage
 
 
 class ConsoleSessionTests(unittest.TestCase):
+    def test_suspended_main_input_does_not_consume_modal_keys(self):
+        from trina.console_ui import _ModalInput
+        source = SimpleNamespace(read_keys=lambda: ["enter"], flush_keys=lambda: ["escape"])
+        app = SimpleNamespace(_running_in_terminal=True)
+        proxy = _ModalInput(source, app)
+        self.assertEqual(proxy.read_keys(), [])
+        self.assertEqual(proxy.flush_keys(), [])
+        app._running_in_terminal = False
+        self.assertEqual(proxy.read_keys(), ["enter"])
+        self.assertEqual(proxy.flush_keys(), ["escape"])
+
     def test_session_accumulates_across_backends_and_resets_without_reusing_their_ledgers(self):
         view = ConsoleState()
         for incoming, outgoing, cached in ((1000, 200, 600), (500, 100, 300)):
@@ -202,8 +213,20 @@ class ConsoleSessionTests(unittest.TestCase):
             release.wait(3)
             return LLMResponse(text="正式回答", usage=LLMUsage(input_tokens=100, output_tokens=20, cache_read_tokens=60))
         def model_dialog():
-            model_opened.set()
-            self.assertEqual(select_option("Model", [ChoiceSpec("back", "返回")]), "back")
+            from trina import console_ui
+            from prompt_toolkit.application.current import get_app
+            parent_loop = get_app().loop
+            factory = console_ui._panel_app
+            def panel(*args, **kwargs):
+                app = factory(*args, **kwargs)
+                def ready(_):
+                    self.assertIs(app.loop, parent_loop, "嵌套面板必须复用主 UI 事件循环")
+                    model_opened.set()
+                app.after_render += ready
+                return app
+            # 第一帧才表示嵌套应用已接管输入，避免回车发给正在挂起的主界面。
+            with patch("trina.console_ui._panel_app", side_effect=panel):
+                self.assertEqual(select_option("Model", [ChoiceSpec("back", "返回")]), "back")
             model_closed.set()
         stream = io.StringIO()
         output = Vt100_Output(stream, lambda: Size(rows=26, columns=88), enable_cpr=False)

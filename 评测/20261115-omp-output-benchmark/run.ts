@@ -69,6 +69,8 @@ async function one(engine: string, name: string, trial: number) {
   const data = fixtures[name];
   const term = KittyTerminal.createSync({ columns, rows, scrollback: 20000, wasm, onEvent: () => {}, onOutput: () => {} });
   const command = engine === "omp" ? [process.execPath, join(directory, "omp_child.ts")] : ["python", "-X", "utf8", join(directory, "trina_child.py")];
+  if (engine === "trina" && process.env.TRINA_BENCH_PROFILE === "1")
+    command.splice(3, 0, "-m", "cProfile", "-o", join(outputDir, `profile-${name}-${trial}.pstats`));
   const child = Bun.spawn(command, { cwd: root, stdin: "pipe", stdout: "pipe", stderr: "pipe",
     env: { ...process.env, TERM: "xterm-256color", COLORTERM: "truecolor", TRINA_BENCH_DEPS: deps, NO_COLOR: undefined } });
   const stderr = new Response(child.stderr).text();
@@ -160,7 +162,7 @@ async function one(engine: string, name: string, trial: number) {
 }
 const results: any[] = [];
 for (let trial = 1; trial <= trials; trial++) for (const name of selected)
-  for (const engine of (trial % 2 ? ["trina", "omp"] : ["omp", "trina"])) results.push(await one(engine, name, trial));
+  for (const engine of (process.env.TRINA_BENCH_ENGINES?.split(",") || (trial % 2 ? ["trina", "omp"] : ["omp", "trina"]))) results.push(await one(engine, name, trial));
 writeFileSync(join(outputDir, "summary.json"), JSON.stringify({ generated_at: new Date().toISOString(),
   machine: { platform: process.platform, release: os.release(), cpu: os.cpus()[0]?.model, logical_cpus: os.cpus().length, memory_gb: os.totalmem() / 1073741824 },
   terminal: { engine: "kitty-vt-wasm", version: "0.2.0", columns, rows, scrollback: 20000, color: "truecolor" },

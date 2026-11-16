@@ -20,13 +20,18 @@ THEME = {"rose": "#edb2d2", "lilac": "#c7a5e8", "violet": "#9b7bc7", "muted": "#
 class ResponsiveText(str):
     """保留渲染参数，让全屏终端改变宽度后能重新排版历史内容。"""
 
-    def __new__(cls, value: str, renderer: Callable[[int], str] | None = None):
+    def __new__(cls, value: str, renderer: Callable[[int], str] | None = None,
+                fragments_renderer: Callable[[int], list[tuple[str, str]]] | None = None):
         instance = super().__new__(cls, value)
         instance._renderer = renderer
+        instance._fragments_renderer = fragments_renderer
         return instance
 
     def at_width(self, width: int) -> str:
         return self._renderer(width) if self._renderer is not None else str(self)
+
+    def fragments_at_width(self, width: int):
+        return self._fragments_renderer(width) if self._fragments_renderer is not None else None
 
 
 def _responsive(value: str, renderer: Callable[[int], str], width: int | None) -> str:
@@ -158,23 +163,30 @@ def render_process(message: str, *, label: str = "过程", width: int | None = N
 
 
 def render_answer(message: str, *, width: int | None = None, color: bool = False) -> str:
-    """正式输出渲染 Markdown，清除终端控制字符，不附会话统计。"""
+    """正式输出使用流式 Markdown 排版，清除控制字符，不附会话统计。"""
     requested_width = width
     width = max(20, width if width is not None else terminal_width())
     try:
-        from rich.console import Console
-        from rich.markdown import Markdown
+        from .markdown_view import fragments_to_ansi, render_markdown_fragments, wrap_fragments
     except ImportError:
         value = _wrap(message, width)
         return _responsive(value, lambda new_width: str(render_answer(
             message, width=new_width, color=color)), requested_width)
-    stream = io.StringIO()
-    console = Console(file=stream, width=width, force_terminal=color, no_color=not color,
-                      color_system="truecolor" if color else None, legacy_windows=False)
-    console.print(Markdown(clean_text(message), hyperlinks=False))
-    value = stream.getvalue().rstrip("\n")
-    return _responsive(value, lambda new_width: str(render_answer(
-        message, width=new_width, color=color)), requested_width)
+    fragments = render_markdown_fragments(message, color=color)
+    wrapped = wrap_fragments(fragments, width)
+    value = fragments_to_ansi(wrapped) if color else "".join(text for _, text in wrapped)
+    if requested_width is not None:
+        return value
+    return ResponsiveText(value,
+                          lambda new_width: str(render_answer(message, width=new_width, color=color)),
+                          lambda _new_width: render_markdown_fragments(message, color=color))
+
+
+def streaming_answer(message: str, *, color: bool = False) -> ResponsiveText:
+    """流式正文的延迟排版对象；未绘制的 delta 不产生 ANSI 或语法高亮。"""
+    from .markdown_view import render_markdown_fragments
+    return ResponsiveText(message, lambda width: str(render_answer(message or " ", width=width, color=color)),
+                          lambda _width: render_markdown_fragments(message or " ", color=color))
 
 
 def render_thinking(message: str, *, final: bool = False, width: int | None = None, color: bool = False) -> str:
@@ -193,15 +205,33 @@ def render_tool_call(tool: str, params: dict[str, Any], *, status: str = "runnin
                      stderr: str = "", error: str = "", duration: float = 0, command: str = "",
                      exit_code: int | None = None, width: int | None = None, color: bool = False) -> str:
     """工具输入、输出和状态共用一个窗口，脚本与 JSON 按字面量高亮。"""
-    import json
-    import shlex
-    import subprocess
     requested_width = width
     width = max(20, width if width is not None else terminal_width())
     original = dict(tool=tool, params=params, status=status, output=output, stderr=stderr, error=error,
                     duration=duration, command=command, exit_code=exit_code, color=color)
-    label = {"requested": "准备", "awaiting_approval": "待审批", "running": "运行中", "completed": "完成", "failed": "失败",
-             "denied": "已拒绝", "invalid": "参数错误", "unavailable": "不可用",
+    fragments = render_tool_call_fragments(**original, width=width)
+    if color:
+        from .markdown_view import fragments_to_ansi
+        value = fragments_to_ansi(fragments)
+    else:
+        value = "".join(text for _, text in fragments)
+    if requested_width is not None:
+        return value
+    return ResponsiveText(value, lambda new_width: str(render_tool_call(**original, width=new_width)),
+                          lambda new_width: render_tool_call_fragments(**original, width=new_width))
+
+
+def render_tool_call_fragments(tool: str, params: dict[str, Any], *, status: str = "running", output: str = "",
+                               stderr: str = "", error: str = "", duration: float = 0, command: str = "",
+                               exit_code: int | None = None, width: int = 88,
+                               color: bool = False) -> list[tuple[str, str]]:
+    """工具流的延迟排版入口，供全屏 transcript 直接消费。"""
+    import json
+    import shlex
+    import subprocess
+    width = max(20, width)
+    label = {"requested": "准备", "awaiting_approval": "待审批", "running": "运行中", "completed": "完成",
+             "failed": "失败", "denied": "已拒绝", "invalid": "参数错误", "unavailable": "不可用",
              "timed_out": "超时", "interrupted": "已中断", "cancelled": "已取消"}.get(status, status)
     argv = params.get("argv")
     script = ("$ " + (subprocess.list2cmdline([str(item) for item in argv]) if os.name == "nt" else
@@ -209,32 +239,96 @@ def render_tool_call(tool: str, params: dict[str, Any], *, status: str = "runnin
     script = script or command or json.dumps(params, ensure_ascii=False, indent=2)
     title = f"{clean_text(tool)} · {label}"
     footer = f"{duration:.1f}s" + (f" · exit {exit_code}" if exit_code is not None else "")
-    try:
-        from rich import box
-        from rich.console import Console, Group
-        from rich.panel import Panel
-        from rich.rule import Rule
-        from rich.syntax import Syntax
-        from rich.text import Text
-    except ImportError:
-        value = render_panel(title, sections=[("Input", script), ("Output", output or "（暂无输出）"),
-                             *([("stderr", stderr)] if stderr else []), *([("错误", error)] if error else [])],
-                             footer=footer, width=width, color=False)
-    else:
-        parts = [Syntax(clean_text(script), "bash" if script.startswith("$ ") or command else "json",
-                        theme="monokai", background_color="default", word_wrap=True),
-                 Rule("Output", style="dim", align="left"), Text(clean_text(output or "（暂无输出）"))]
-        if stderr:
-            parts.extend([Text("stderr", style="yellow"), Text(clean_text(stderr))])
-        if error:
-            parts.append(Text(clean_text(error), style="red"))
-        stream = io.StringIO()
-        Console(file=stream, width=width, force_terminal=color, no_color=not color,
-                color_system="truecolor" if color else None, legacy_windows=False).print(
-                    Panel(Group(*parts), title=Text(title), title_align="left", subtitle=Text(footer),
-                          border_style="red" if error else THEME["muted"], box=box.ROUNDED, padding=(0, 1)))
-        value = stream.getvalue().rstrip("\n")
-    return _responsive(str(value), lambda new_width: str(render_tool_call(**original, width=new_width)), requested_width)
+    return _render_tool_box_fragments(title, script, output or "（暂无输出）", stderr, error, footer,
+                                      width=width, color=color)
+
+
+def _cells(text: str) -> int:
+    """统计终端显示单元，工具边框不依赖 Rich 的逐帧布局。"""
+    if text.isascii():
+        return len(text)
+    return sum(0 if unicodedata.combining(ch) else (2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1)
+               for ch in text)
+
+
+def _wrap_clean_line(text: str, width: int) -> list[str]:
+    """对已清洗的单行做硬折行；ASCII 工具日志直接切片。"""
+    if not text:
+        return [""]
+    if text.isascii():
+        return [text[index:index + width] for index in range(0, len(text), width)]
+    lines, current, used = [], "", 0
+    for char in text:
+        size = 0 if unicodedata.combining(char) else (2 if unicodedata.east_asian_width(char) in ("W", "F") else 1)
+        if used + size > width and current:
+            lines.append(current)
+            current, used = "", 0
+        current += char
+        used += size
+    lines.append(current)
+    return lines
+
+
+def _render_tool_box_fragments(title: str, script: str, output: str, stderr: str, error: str, footer: str, *,
+                               width: int, color: bool) -> list[tuple[str, str]]:
+    """线性绘制工具窗口；输出增量只进行文本折行和补齐。"""
+    inner = max(1, width - 4)
+    border_style = ("#dc6478" if error else "#a595b3") if color else ""
+    input_style = "#c7a5e8" if color else ""
+    stderr_style = "#ebbe5a" if color else ""
+    error_style = "#f06478" if color else ""
+    lines: list[list[tuple[str, str]]] = []
+
+    def row(text: str, style: str = "") -> list[tuple[str, str]]:
+        pad = " " * max(0, inner - _cells(text))
+        return [(border_style, "│"), ("", " "), (style, text), ("", pad + " "), (border_style, "│")]
+
+    def ruled(label: str) -> list[tuple[str, str]]:
+        lead = f" {label} "
+        return row(lead + "─" * max(0, inner - _cells(lead)))
+
+    safe_title, safe_script = clean_text(title), clean_text(script)
+    safe_output, safe_stderr, safe_error = clean_text(output), clean_text(stderr), clean_text(error)
+    title_lines = _wrap_clean_line(safe_title, max(1, width - 5))
+    top_lead = f"╭─ {title_lines[0]} "
+    lines.append([(border_style, top_lead + "─" * max(0, width - _cells(top_lead) - 1) + "╮")])
+    for title_tail in title_lines[1:]:
+        for wrapped in _wrap_clean_line(title_tail, inner):
+            lines.append(row(wrapped, border_style))
+    for source_line in safe_script.splitlines() or [""]:
+        for wrapped in _wrap_clean_line(source_line, inner):
+            lines.append(row(wrapped, input_style))
+    lines.append(ruled("Output"))
+    for source_line in safe_output.splitlines() or [""]:
+        for wrapped in _wrap_clean_line(source_line, inner):
+            lines.append(row(wrapped))
+    if stderr:
+        lines.append(ruled("stderr"))
+        for source_line in safe_stderr.splitlines():
+            for wrapped in _wrap_clean_line(source_line, inner):
+                lines.append(row(wrapped, stderr_style))
+    if error:
+        for source_line in safe_error.splitlines():
+            for wrapped in _wrap_clean_line(source_line, inner):
+                lines.append(row(wrapped, error_style))
+    safe_footer = clean_text(footer)
+    if _cells(safe_footer) > width - 4:
+        for wrapped in _wrap_clean_line(safe_footer, inner):
+            lines.append(row(wrapped, border_style))
+        safe_footer = ""
+    bottom_lead = "╰" + "─" * max(0, width - _cells(safe_footer) - (4 if safe_footer else 2))
+    lines.append([(border_style, bottom_lead + (f" {safe_footer} " if safe_footer else "") + "╯")])
+    fragments: list[tuple[str, str]] = []
+    for index, line in enumerate(lines):
+        for style, text in line:
+            if text:
+                if fragments and fragments[-1][0] == style:
+                    fragments[-1] = style, fragments[-1][1] + text
+                else:
+                    fragments.append((style, text))
+        if index < len(lines) - 1:
+            fragments.append(("", "\n"))
+    return fragments
 
 
 def render_home(*, width: int | None = None, color: bool = False, phase: float = 0) -> str:

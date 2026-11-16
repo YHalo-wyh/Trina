@@ -109,7 +109,7 @@ def show_subworkers(manager, config, *, notice: str = "", view: str = "grid"):
     from prompt_toolkit.layout.controls import FormattedTextControl
     from prompt_toolkit.styles import Style
     from prompt_toolkit.output import ColorDepth
-    from .console_ui import _low_latency_keys
+    from .console_ui import _low_latency_keys, run_panel
     from .swarm import task_llm
 
     selected = [0 if manager.rows() else -1]
@@ -211,8 +211,8 @@ def show_subworkers(manager, config, *, notice: str = "", view: str = "grid"):
         Window(FormattedTextControl(lambda: [("class:title", _fit_cells(notice, width()))]), height=1 if notice else 0, wrap_lines=False),
         Window(FormattedTextControl(lambda: [("class:dim", _fit_cells(" Tab 切换 · G 列表/四格 · Z 放大 · PgUp/Dn 历史 · F 补充 · C 取消 · M 模型 · T 思考 · N 新建 · Esc 返回", width()))]), height=1),
     ]), focused_element=body), key_bindings=bindings, full_screen=True, erase_when_done=True,
-        refresh_interval=.25, min_redraw_interval=1 / 60, max_render_postpone_time=.01,
+        refresh_interval=.25, min_redraw_interval=1 / 120, max_render_postpone_time=0,
         color_depth=ColorDepth.DEPTH_24_BIT, mouse_support=True,
         style=Style.from_dict({"title": "bold " + THEME["rose"], "chosen": "bold " + THEME["rose"],
                               "name": THEME["text"], "model": THEME["lilac"], "dim": THEME["muted"], "rail": THEME["violet"], "focusborder": THEME["rose"]}))
-    return _low_latency_keys(app).run()
+    return run_panel(_low_latency_keys(app))

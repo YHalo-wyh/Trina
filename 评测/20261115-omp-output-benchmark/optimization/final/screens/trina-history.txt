@@ -1,0 +1,36 @@
+  result_33 = {'worker': 'main', 'value': 33, 'checked': True} # analysis M00037
+  result_34 = {'worker': 'main', 'value': 34, 'checked': True} # analysis M00038
+  result_35 = {'worker': 'main', 'value': 35, 'checked': True} # analysis M00039
+  result_36 = {'worker': 'main', 'value': 36, 'checked': True} # analysis M00040
+  result_37 = {'worker': 'main', 'value': 37, 'checked': True} # analysis M00042
+  result_38 = {'worker': 'main', 'value': 38, 'checked': True} # analysis M00043
+  result_39 = {'worker': 'main', 'value': 39, 'checked': True} # analysis M00044
+  result_40 = {'worker': 'main', 'value': 40, 'checked': True} # analysis M00045
+  result_41 = {'worker': 'main', 'value': 41, 'checked': True} # analysis M00046
+  result_42 = {'worker': 'main', 'value': 42, 'checked': True} # analysis M00047
+  result_43 = {'worker': 'main', 'value': 43, 'checked': True} # analysis M00048
+  result_44 = {'worker': 'main', 'value': 44, 'checked': True} # analysis M00049
+  result_45 = {'worker': 'main', 'value': 45, 'checked': True} # analysis M00050
+  result_46 = {'worker': 'main', 'value': 46, 'checked': True} # analysis M00051
+  result_47 = {'worker': 'main', 'value': 47, 'checked': True} # analysis M00052
+  result_48 = {'worker': 'main', 'value': 48, 'checked': True} # analysis M00053
+  result_49 = {'worker': 'main', 'value': 49, 'checked': True} # analysis M00055
+  result_50 = {'worker': 'main', 'value': 50, 'checked': True} # analysis M00056
+  result_51 = {'worker': 'main', 'value': 51, 'checked': True} # analysis M00057
+  result_52 = {'worker': 'main', 'value': 52, 'checked': True} # analysis M00058
+  result_53 = {'worker': 'main', 'value': 53, 'checked': True} # analysis M00059
+  result_54 = {'worker': 'main', 'value': 54, 'checked': True} # analysis M00060
+  result_55 = {'worker': 'main', 'value': 55, 'checked': True} # analysis M00061
+  result_56 = {'worker': 'main', 'value': 56, 'checked': True} # analysis M00062
+  result_57 = {'worker': 'main', 'value': 57, 'checked': True} # analysis M00063
+  result_58 = {'worker': 'main', 'value': 58, 'checked': True} # analysis M00064
+  result_59 = {'worker': 'main', 'value': 59, 'checked': True} # analysis M00065
+  result_60 = {'worker': 'main', 'value': 60, 'checked': True} # analysis M00066
+  result_61 = {'worker': 'main', 'value': 61, 'checked': True} # analysis M00068
+  result_62 = {'worker': 'main', 'value': 62, 'checked': True} # analysis M00069
+  result_63 = {'worker': 'main', 'value': 63, 'checked': True} # analysis M00070
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+Trina  › K00002 K00015 K00028 K00041 K00054 K00067
+fixture

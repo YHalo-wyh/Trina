@@ -1,0 +1,24 @@
+......................................ssssssssss.................................................................................................................................................................................................................................................................................................................................................................Exception in callback _Win32Handles.add_win32_handle.<locals>.ready() at D:\python310\lib\site-packages\prompt_toolkit\input\win32.py:728
+handle: <Handle _Win32Handles.add_win32_handle.<locals>.ready() at D:\python310\lib\site-packages\prompt_toolkit\input\win32.py:728>
+Traceback (most recent call last):
+  File "D:\python310\lib\asyncio\events.py", line 80, in _run
+    self._context.run(self._callback, *self._args)
+  File "D:\python310\lib\site-packages\prompt_toolkit\input\win32.py", line 733, in ready
+    run_in_executor_with_context(wait, loop=loop)
+  File "D:\python310\lib\site-packages\prompt_toolkit\eventloop\utils.py", line 34, in run_in_executor_with_context
+    return loop.run_in_executor(None, ctx.run, func, *args)
+  File "D:\python310\lib\asyncio\base_events.py", line 814, in run_in_executor
+    self._check_default_executor()
+  File "D:\python310\lib\asyncio\base_events.py", line 519, in _check_default_executor
+    raise RuntimeError('Executor shutdown has been called')
+RuntimeError: Executor shutdown has been called
+............................................................................................................................................................................................................................
+----------------------------------------------------------------------
+Ran 621 tests in 146.843s
+
+OK (skipped=10)
+[用户] {"schema_version": 3, "run_mode": "instance", "challenge": {"id": "local-fixture"}, "competition_id": "local", "questions": [{"id": "flag"}], "gated_questions": 1, "platform_url": "http://127.0.0.1:63377", "target_instance": "this-instance"}
+[动作 1] ctfy_task {"action": "submit", "question_id": "flag", "answer": "right"}
+          → OK: CTFY 权威响应
+本地协议夹具结束
+[eval] 已自动拉起 lab 靶机 127.0.0.1:63430

@@ -4,13 +4,15 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 import statistics
 import unicodedata
 from decimal import Decimal, ROUND_HALF_UP
 
 ROOT = Path(__file__).resolve().parent
-RESULTS = ROOT / "results"
+RESULTS = ROOT / os.environ.get("TRINA_BENCH_ANALYZE", "results")
+ARTIFACT_ROOT = ROOT if RESULTS.name == "results" else RESULTS
 
 
 def quantile(values, fraction):
@@ -68,7 +70,7 @@ def aggregate():
 
 def screenshots():
     from PIL import Image, ImageDraw, ImageFont
-    image_dir = ROOT / "screens"
+    image_dir = ARTIFACT_ROOT / "screens"
     image_dir.mkdir(exist_ok=True)
     mono = ImageFont.truetype("C:/Windows/Fonts/consola.ttf", 15)
     chinese = ImageFont.truetype("C:/Windows/Fonts/msyh.ttc", 14)
@@ -111,20 +113,31 @@ def chart(rows):
         ax.set_ylim(0, ax.get_ylim()[1] * 1.13)
     figure.suptitle("Same Windows machine / Kitty VT 120x36 / fixed 40ms replay / 3 trials")
     figure.text(.02, -.04, "* Four-stream visibility is partial; see coverage counts. No model/network/GPU latency is measured.", fontsize=10)
-    figure.savefig(ROOT / "latency-comparison.png", dpi=160, bbox_inches="tight")
+    figure.savefig(ARTIFACT_ROOT / "latency-comparison.png", dpi=160, bbox_inches="tight")
     plt.close(figure)
 
 
 def provenance():
     project = ROOT.parents[1]
-    patterns = ("*.py", "*.ts", "*.ps1", "*.json", "*.lock", "*.log", "*.png", "results/*.json", "screens/*")
-    paths = {path for pattern in patterns for path in ROOT.glob(pattern) if path.is_file()}
+    if ARTIFACT_ROOT == ROOT:
+        patterns = ("*.py", "*.ts", "*.ps1", "*.json", "*.lock", "*.log", "*.png", "results/*.json", "screens/*")
+        paths = {path for pattern in patterns for path in ROOT.glob(pattern) if path.is_file()}
+    else:
+        paths = {path for path in ARTIFACT_ROOT.rglob("*") if path.is_file()}
+        paths.update(path for path in ROOT.iterdir() if path.is_file() and path.suffix in {".py", ".ts", ".ps1", ".json", ".lock"})
+    paths.discard(ARTIFACT_ROOT / "manifest.json")
     paths.discard(ROOT / "manifest.json")
     paths.update(project / name for name in ("trina/console_ui.py", "trina/transcript.py", "trina/terminal.py",
-                                             "trina/event_view.py", "trina/events.py"))
-    manifest = {str(path.relative_to(project)).replace("\\", "/"): hashlib.sha256(path.read_bytes()).hexdigest()
-                for path in sorted(paths)}
-    (ROOT / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+                                             "trina/markdown_view.py", "trina/event_view.py", "trina/events.py",
+                                             "trina/provider_form.py", "trina/subworker_ui.py"))
+    manifest = {}
+    for path in sorted(paths):
+        value = path.read_bytes()
+        # 新评测的源码按仓库 LF 规范取指纹；运行原件保持采集字节。
+        if ARTIFACT_ROOT != ROOT and path.suffix in {".py", ".ts", ".ps1"} and not path.is_relative_to(ARTIFACT_ROOT):
+            value = value.replace(b"\r\n", b"\n")
+        manifest[str(path.relative_to(project)).replace("\\", "/")] = hashlib.sha256(value).hexdigest()
+    (ARTIFACT_ROOT / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
 if __name__ == "__main__":

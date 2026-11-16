@@ -52,6 +52,33 @@ class TranscriptTests(unittest.TestCase):
         self.assertEqual(rows[:3], ["123456", "7890中", "中"])
         self.assertFalse(self.editor.output_window.wrap_lines())
 
+    def test_updating_early_block_does_not_rerender_unchanged_following_blocks(self):
+        rendered = []
+        for index in range(4):
+            self.editor.write(ResponsiveText(str(index), lambda width, index=index:
+                              rendered.append(index) or f"block {index}\n"))
+        control = self.editor.transcript_control
+        control.create_content(80, 20)
+        self.editor._chunks[0] = "changed first\n"
+        control.invalidate_from(0)
+        control.create_content(80, 20)
+        self.assertEqual(rendered, [0, 1, 2, 3])
+        self.assertIn("changed first", control.selected_text() or self.editor._chunk_text(self.editor._chunks[0], 80))
+        control.create_content(40, 20)
+        self.assertEqual(rendered, [0, 1, 2, 3, 1, 2, 3], "改变宽度必须重新排版")
+
+    def test_fast_sgr_matches_original_styles_unicode_and_control_fallback(self):
+        from prompt_toolkit.formatted_text import ANSI, to_formatted_text
+        from prompt_toolkit.layout.utils import explode_text_fragments
+        from trina.transcript import _ansi_fragments
+        samples = ["plain 中文 e\u0301", "\x1b[31mred\x1b[0m plain", "\x1b[1;3;4;38;2;120;80;240m中文\x1b[22;23;24mtext",
+                   "\x1b[48;5;120mbackground\x1b[m", "\x9b32mgreen\x9b0m", "\x1b[3Cnext",
+                   "\x01raw escape\x02normal", "\x1b[7;8;9mreverse\x1b[27;28;29mnormal"]
+        for text in samples:
+            with self.subTest(text=text):
+                self.assertEqual(list(explode_text_fragments(_ansi_fragments(text))),
+                                 list(explode_text_fragments(to_formatted_text(ANSI(text)))))
+
     def test_oldest_position_has_no_dead_scroll_range(self):
         self.editor.write("\n".join(f"line {index}" for index in range(20)))
         control = self.editor.transcript_control
@@ -83,7 +110,8 @@ class TranscriptTests(unittest.TestCase):
 
     def test_deltas_are_coalesced_until_a_frame_needs_them(self):
         control = self.editor.transcript_control
-        with patch("trina.terminal.render_answer", wraps=__import__("trina.terminal", fromlist=["render_answer"]).render_answer) as render:
+        from trina.markdown_view import render_markdown_fragments
+        with patch("trina.markdown_view.render_markdown_fragments", wraps=render_markdown_fragments) as render:
             for index in range(100):
                 self.editor.update_stream("answer " * (index + 1))
             self.assertEqual(render.call_count, 0)
@@ -92,6 +120,20 @@ class TranscriptTests(unittest.TestCase):
             for _ in range(30):
                 control.create_content(80, 20)
             self.assertEqual(render.call_count, 1)
+
+    def test_following_append_only_scrolls_identical_overlap(self):
+        self.editor.write("\n".join(f"line {index}" for index in range(12)))
+        control = self.editor.transcript_control
+        control.create_content(80, 5)
+        self.editor.write("new line")
+        with patch.object(control, "precondition_scroll", return_value=False) as shift:
+            control.create_content(80, 5)
+            shift.assert_called_once()
+        self.editor._chunks[-1] = "changed\nnew line\nnext line\n"
+        control.invalidate_from(len(self.editor._chunks) - 1)
+        with patch.object(control, "precondition_scroll", return_value=False) as shift:
+            control.create_content(80, 5)
+            shift.assert_not_called()
 
     def test_drag_selection_copies_chinese_lines_and_keeps_input_draft(self):
         self.editor.write("第一行 abc\n第二行 xyz")

@@ -1,5 +1,7 @@
 # Trina 与 Oh My Pi 同机同流终端输出评测
 
+后续渲染优化及三轮复测见[优化报告](optimization/README.md)。本页及 `results/` 保留改动前的基线结果。
+
 日期：2026-11-15，Asia/Shanghai。正式运行完成时间：19:58:49。
 
 ## 评测结论

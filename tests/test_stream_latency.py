@@ -152,7 +152,8 @@ class StreamLatencyTests(unittest.TestCase):
             bus.publish("assistant.message", text="开始验证。", final=True)
             self.assertEqual(len(editor._chunks), 2, "最终正文不能再复制一份流式输出")
             bus.publish("tool.started", call_id="call", tool="terminal_exec", params={"argv": ["python", "-V"]})
-            with patch("trina.event_view.render_tool_call", wraps=__import__("trina.terminal", fromlist=["render_tool_call"]).render_tool_call) as render:
+            from trina.terminal import render_tool_call_fragments
+            with patch("trina.terminal.render_tool_call_fragments", wraps=render_tool_call_fragments) as render:
                 for _ in range(50):
                     bus.publish("tool.output", call_id="call", delta="line\n", stream="stdout")
                 self.assertEqual(render.call_count, 0, "网络/工具线程不应执行卡片排版")

@@ -5,7 +5,7 @@ import asyncio
 from dataclasses import replace
 from typing import Callable
 
-from .console_ui import _panel_app
+from .console_ui import _panel_app, run_panel
 from .providers import PRESET_BY_ID, ProviderProfile, normalize_endpoint
 from .terminal import clean_text
 
@@ -151,4 +151,4 @@ class ProviderEditor:
         self.app.create_background_task(perform())
 
     def run(self) -> ProviderProfile | None:
-        return self.app.run()
+        return run_panel(self.app)

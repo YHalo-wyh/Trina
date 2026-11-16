@@ -1,0 +1,36 @@
+  result_82 = {'worker': 'worker-2', 'value': 82, 'checked': True} # analysis M00090
+  result_86 = {'worker': 'worker-2', 'value': 86, 'checked': True} # analysis M00095
+  result_90 = {'worker': 'worker-2', 'value': 90, 'checked': True} # analysis M00099
+  result_94 = {'worker': 'worker-2', 'value': 94, 'checked': True} # analysis M00103
+
+Code review
+
+  # initial M00005
+  result_7 = {'worker': 'worker-3', 'value': 7, 'checked': True} # analysis M00009
+  result_11 = {'worker': 'worker-3', 'value': 11, 'checked': True} # analysis M00013
+  result_15 = {'worker': 'worker-3', 'value': 15, 'checked': True} # analysis M00018
+  result_19 = {'worker': 'worker-3', 'value': 19, 'checked': True} # analysis M00022
+  result_23 = {'worker': 'worker-3', 'value': 23, 'checked': True} # analysis M00026
+  result_27 = {'worker': 'worker-3', 'value': 27, 'checked': True} # analysis M00031
+  result_31 = {'worker': 'worker-3', 'value': 31, 'checked': True} # analysis M00035
+  result_35 = {'worker': 'worker-3', 'value': 35, 'checked': True} # analysis M00039
+  result_39 = {'worker': 'worker-3', 'value': 39, 'checked': True} # analysis M00044
+  result_43 = {'worker': 'worker-3', 'value': 43, 'checked': True} # analysis M00048
+  result_47 = {'worker': 'worker-3', 'value': 47, 'checked': True} # analysis M00052
+  result_51 = {'worker': 'worker-3', 'value': 51, 'checked': True} # analysis M00057
+  result_55 = {'worker': 'worker-3', 'value': 55, 'checked': True} # analysis M00061
+  result_59 = {'worker': 'worker-3', 'value': 59, 'checked': True} # analysis M00065
+  result_63 = {'worker': 'worker-3', 'value': 63, 'checked': True} # analysis M00070
+  result_67 = {'worker': 'worker-3', 'value': 67, 'checked': True} # analysis M00074
+  result_71 = {'worker': 'worker-3', 'value': 71, 'checked': True} # analysis M00078
+  result_75 = {'worker': 'worker-3', 'value': 75, 'checked': True} # analysis M00083
+  result_79 = {'worker': 'worker-3', 'value': 79, 'checked': True} # analysis M00087
+  result_83 = {'worker': 'worker-3', 'value': 83, 'checked': True} # analysis M00091
+  result_87 = {'worker': 'worker-3', 'value': 87, 'checked': True} # analysis M00096
+  result_91 = {'worker': 'worker-3', 'value': 91, 'checked': True} # analysis M00100
+  result_95 = {'worker': 'worker-3', 'value': 95, 'checked': True} # analysis M00104
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+Trina  › K00002 K00015 K00028 K00041 K00054 K00067 K00080 K00093
+fixture

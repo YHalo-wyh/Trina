@@ -38,3 +38,4 @@ evidence/20261115-stream-output/measure.json -whitespace
 评测/20261115-omp-output-benchmark/package-sources.json -text -whitespace
 评测/20261115-omp-output-benchmark/python-packages.json -text -whitespace
 评测/20261115-omp-output-benchmark/benchmark-console.log -text -whitespace
+评测/20261115-omp-output-benchmark/optimization/final/** -text -whitespace

@@ -18,7 +18,7 @@ from prompt_toolkit.data_structures import Size
 from prompt_toolkit.input import create_pipe_input
 from prompt_toolkit.output.vt100 import Vt100_Output
 from trina.console_ui import EnhancedConsoleInput
-from trina.terminal import render_answer, ResponsiveText
+from trina.terminal import render_answer, streaming_answer
 
 
 def send(value: dict) -> None:
@@ -80,7 +80,7 @@ async def main() -> None:
                 else:
                     # 多路活动正文使用同一生产渲染器，独立索引；不模拟任务调度。
                     value = messages[key]
-                    card = ResponsiveText(value, lambda width, text=value: str(render_answer(text, width=width, color=True)))
+                    card = streaming_answer(value, color=True)
                     editor.update_tool(key, card)
             elif row["type"] == "tool_start":
                 if "main:text" in messages:

@@ -32,6 +32,33 @@ def _low_latency_keys(app):
     return app
 
 
+class _ModalInput:
+    """主界面挂起后拒绝迟到的输入回调，由弹窗独占同一终端输入。"""
+
+    def __init__(self, source, app):
+        self.source, self.app = source, app
+
+    def __getattr__(self, name):
+        return getattr(self.source, name)
+
+    def read_keys(self):
+        return [] if self.app._running_in_terminal else self.source.read_keys()
+
+    def flush_keys(self):
+        return [] if self.app._running_in_terminal else self.source.flush_keys()
+
+
+def run_panel(app):
+    """嵌套面板复用主 UI 事件循环，避免每次弹窗销毁 Windows 输入执行器。"""
+    from prompt_toolkit.application.current import get_app
+    parent = get_app()
+    loop = getattr(parent, "loop", None)
+    if (loop is not None and parent._running_in_terminal
+            and threading.current_thread() is not getattr(parent, "_loop_thread", None)):
+        return asyncio.run_coroutine_threadsafe(app.run_async(handle_sigint=False), loop).result()
+    return app.run()
+
+
 @dataclass(frozen=True)
 class ChoiceSpec:
     """一个可补全的参数值。"""
@@ -628,12 +655,16 @@ class EnhancedConsoleInput:
                 Window(FormattedTextControl(self._status), height=self._status_height, wrap_lines=False),
                 ConditionalContainer(self.usage_window, Condition(lambda: self.context is None)),
             ]), focused_element=control),
-            key_bindings=bindings, style=style, full_screen=True, refresh_interval=0.2,
-            min_redraw_interval=1 / 60, max_render_postpone_time=.01,
+            key_bindings=bindings, style=style, full_screen=True,
+            refresh_interval=0.2 if motion == "full" else None,
+            min_redraw_interval=1 / 120, max_render_postpone_time=0,
             mouse_support=Condition(lambda: self._mouse_enabled),
             color_depth=None if plain else ColorDepth.DEPTH_24_BIT,
         )
         _low_latency_keys(self.app)
+        # Windows 的句柄通知可能已排队，detach 之后才送达旧应用。
+        # 包装仅属于主界面；嵌套表单继续使用 AppSession 的原始输入。
+        self.app.input = _ModalInput(self.app.input, self.app)
         self.app.before_render += lambda _: self._animate_home()
 
     def show_home(self) -> None:
@@ -772,7 +803,10 @@ class EnhancedConsoleInput:
         initial = str(source).rstrip("\n") + "\n\n"
         if hasattr(source, "at_width"):
             chunk = ResponsiveText(initial, lambda width, item=source:
-                                  item.at_width(width).rstrip("\n") + "\n\n")
+                                  item.at_width(width).rstrip("\n") + "\n\n",
+                                  lambda width, item=source: (fragments + [("", "\n\n")]
+                                  if hasattr(item, "fragments_at_width") and
+                                  (fragments := item.fragments_at_width(width)) is not None else None))
         else:
             chunk = initial
         with self._content_lock:
@@ -820,7 +854,10 @@ class EnhancedConsoleInput:
                 self._tool_indices[call_id] = len(self._chunks) - 1
                 return
             chunk = ResponsiveText(str(card).rstrip("\n") + "\n\n",
-                                   lambda width: card.at_width(width).rstrip("\n") + "\n\n")
+                                   lambda width: card.at_width(width).rstrip("\n") + "\n\n",
+                                   lambda width: (fragments + [("", "\n\n")]
+                                   if hasattr(card, "fragments_at_width") and
+                                   (fragments := card.fragments_at_width(width)) is not None else None))
             self._char_count += len(chunk) - len(self._chunks[index])
             self._chunks[index] = chunk
             self.transcript_control.invalidate_from(index)
@@ -846,16 +883,19 @@ class EnhancedConsoleInput:
 
     def update_stream(self, text: str, *, final: bool = False) -> None:
         """合并尚未绘制的增量；只在实际绘制或最终确认时渲染 Markdown。"""
+        from .markdown_view import render_markdown_fragments
         from .terminal import ResponsiveText, render_answer
 
         if final:
             source = render_answer(text or " ", color=not self._plain)
             chunk = ResponsiveText(str(source).rstrip("\n") + "\n\n",
-                                   lambda width: source.at_width(width).rstrip("\n") + "\n\n")
+                                   lambda width: source.at_width(width).rstrip("\n") + "\n\n",
+                                   lambda width: (source.fragments_at_width(width) or []) + [("", "\n\n")])
         else:
             # 快速到来的 delta 只替换文本，渲染频率由 Application 的帧率统一控制。
             chunk = ResponsiveText(text, lambda width:
-                                   str(render_answer(text or " ", width=width, color=not self._plain)) + "\n\n")
+                                   str(render_answer(text or " ", width=width, color=not self._plain)) + "\n\n",
+                                   lambda _width: render_markdown_fragments(text or " ", color=not self._plain) + [("", "\n\n")])
         with self._content_lock:
             if self._stream_index is None:
                 if final and not text:
@@ -1034,7 +1074,7 @@ def select_option(title: str, choices: list[ChoiceSpec], *, subtitle: str = "") 
         Window(control, height=1),
         Window(FormattedTextControl(rows), dont_extend_height=True),
     ])
-    return _panel_app(body, title, bindings, control).run()
+    return run_panel(_panel_app(body, title, bindings, control))
 
 
 def _panel_app(body, title: str, bindings, focused, *, completion_menu: bool = False):
@@ -1088,8 +1128,8 @@ def edit_field(title: str, default: str = "", *, secret: bool = False) -> str:
     @bindings.add("c-d")
     def cancel(event):
         event.app.exit(exception=KeyboardInterrupt())
-    return _panel_app(HSplit([Window(control, height=1), Window(FormattedTextControl(
-        "Enter 保存 · Esc 取消"), height=1)]), title, bindings, control).run()
+    return run_panel(_panel_app(HSplit([Window(control, height=1), Window(FormattedTextControl(
+        "Enter 保存 · Esc 取消"), height=1)]), title, bindings, control))
 
 
 __all__ = [

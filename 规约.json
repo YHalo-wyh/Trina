@@ -2,7 +2,7 @@
   "schema_version": 1,
   "contract_id": "trina-product-contract",
   "product_version": "0.4.0",
-  "updated_at": "2026-11-14",
+  "updated_at": "2026-11-16",
   "normative_document": "规约.md",
   "requirements_document": "需求.md",
   "verification_commands": {
@@ -684,7 +684,7 @@
       "title": "统一运行事件与游标续流",
       "priority": "P0",
       "status": "implemented",
-      "implementation": ["trina/events.py", "trina/event_view.py", "trina/tools/registry.py", "trina/scope.py", "trina/tools/external.py", "trina/brain/agent.py", "trina/brain/chat.py", "trina/swarm.py", "trina/coordination.py", "trina/console_ui.py", "trina/cli.py"],
+      "implementation": ["trina/events.py", "trina/event_view.py", "trina/tools/registry.py", "trina/scope.py", "trina/tools/external.py", "trina/brain/agent.py", "trina/brain/chat.py", "trina/swarm.py", "trina/coordination.py", "trina/console_ui.py", "trina/terminal.py", "trina/markdown_view.py", "trina/transcript.py", "trina/cli.py"],
       "verification": ["V-CONTRACT", "V-TESTS"],
       "rules": [
         {
@@ -710,6 +710,12 @@
           "level": "MUST",
           "statement": "模型增量按帧合并必须保留文本和阶段顺序，首块、空闲尾部、终态和异常不得丢失；真实推理、正文与工具分别原位更新，工具排版不得阻塞生产线程。",
           "tests": ["tests.test_stream_latency.StreamLatencyTests.test_burst_is_coalesced_without_losing_bytes_or_phase_order", "tests.test_stream_latency.StreamLatencyTests.test_idle_tail_and_first_chunk_arrive_before_request_finishes", "tests.test_stream_latency.StreamLatencyTests.test_exception_flushes_pending_tail_and_closes_stream", "tests.test_stream_latency.StreamLatencyTests.test_real_sse_thinking_and_reply_are_visible_before_done", "tests.test_stream_latency.StreamLatencyTests.test_code_fences_and_braces_stream_before_final", "tests.test_stream_latency.StreamLatencyTests.test_thinking_text_and_tool_output_update_independent_blocks", "tests.test_worker_dashboard.WorkerDashboardTests.test_live_thinking_and_text_are_separate_and_final_reply_is_not_duplicated"]
+        },
+        {
+          "id": "TR-22-R05",
+          "level": "MUST",
+          "statement": "终端更新必须复用稳定块，正文和工具使用直接样式片段及延迟排版；Markdown 内容、代码高亮、Unicode 折行、草稿与弹窗输入独占必须保持，性能结论必须依据同机同流原始样本。",
+          "tests": ["tests.test_transcript.TranscriptTests.test_updating_early_block_does_not_rerender_unchanged_following_blocks", "tests.test_transcript.TranscriptTests.test_deltas_are_coalesced_until_a_frame_needs_them", "tests.test_markdown_view.MarkdownViewTests.test_append_only_code_reuses_completed_line_highlights", "tests.test_markdown_view.MarkdownViewTests.test_commonmark_nested_markup_links_and_tables", "tests.test_markdown_view.MarkdownViewTests.test_multiline_strings_and_fence_delimiters_keep_source_and_style", "tests.test_markdown_view.MarkdownViewTests.test_nonfullscreen_wraps_unicode_without_exposing_style_sequences", "tests.test_console_session.ConsoleSessionTests.test_suspended_main_input_does_not_consume_modal_keys", "tests.test_console_session.ConsoleSessionTests.test_real_console_keeps_draft_usage_and_footer_when_model_dialog_returns"]
         }
       ]
     },

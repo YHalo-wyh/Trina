@@ -1,0 +1,14 @@
+......................................ssssssssss.................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................
+----------------------------------------------------------------------
+Ran 625 tests in 124.785s
+
+OK (skipped=10)
+[用户] {"ctfy_task": {"schema_version": 3, "run_mode": "instance", "challenge": {"id": "local-fixture"}, "competition_id": "local", "questions": [{"id": "flag"}], "gated_questions": 1, "platform_url": "http://127.0.0.1:55439", "target_instance": "this-instance"}, "environment": {"working_directory": "C:\\Users\\WYH\\AppData\\Local\\Temp\\tmp4ukfxikf", "task_file": "C:\\Users\\WYH\\AppData\\Local\\Temp\\tmp4ukfxikf\\task.json", "known_files": ["C:\\Users\\WYH\\AppData\\Local\\Temp\\tmp4ukfxikf\\task.json"], "terminal_cwd": {"project": "C:\\Users\\WYH\\AppData\\Local\\Temp\\tmp4ukfxikf", "run": "Trina 本次运行工件目录"}, "search_policy": "先用 known_files 和 task.json 中的路径；禁止 find /，只搜索具体目录", "tcp_policy": "一次性 nc 请求应发送 stdin，并使用 -q 1 -w 2；运行器会收紧更长等待"}}
+[动作 1] ctfy_task {"action": "submit", "question_id": "flag", "answer": "right"}
+          → OK: CTFY 权威响应
+平台已确认答案正确，任务完成。
+[用户] {"ctfy_task": {"schema_version": 3, "run_mode": "instance", "challenge": {"id": "local-fixture"}, "competition_id": "local", "questions": [{"id": "flag"}], "gated_questions": 1, "platform_url": "http://127.0.0.1:55453", "target_instance": "this-instance"}, "environment": {"working_directory": "C:\\Users\\WYH\\AppData\\Local\\Temp\\tmpg25bjezc", "task_file": "C:\\Users\\WYH\\AppData\\Local\\Temp\\tmpg25bjezc\\task.json", "known_files": ["C:\\Users\\WYH\\AppData\\Local\\Temp\\tmpg25bjezc\\task.json"], "terminal_cwd": {"project": "C:\\Users\\WYH\\AppData\\Local\\Temp\\tmpg25bjezc", "run": "Trina 本次运行工件目录"}, "search_policy": "先用 known_files 和 task.json 中的路径；禁止 find /，只搜索具体目录", "tcp_policy": "一次性 nc 请求应发送 stdin，并使用 -q 1 -w 2；运行器会收紧更长等待"}}
+[动作 1] terminal_exec {"argv": ["D:\\python310\\python.exe", "-c", "print('flag{right}')"], "timeout": 5, "cwd": "project"}
+          → OK: 命令完成，退出码 0
+发现唯一候选 flag{right}，平台已确认正确，任务完成。
+[eval] 已自动拉起 lab 靶机 127.0.0.1:55477

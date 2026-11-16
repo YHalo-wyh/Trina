@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import base64
 import os
+import re
 from typing import Any
 
 from prompt_toolkit.data_structures import Point
@@ -23,42 +24,71 @@ class TranscriptControl(UIControl):
         self.starts: list[int] = []
         self.width = 0
         self.viewport_height = 1
+        self._last_height = 1
         self.dirty = 0
+        self._blocks: dict[int, tuple[Any, list]] = {}
+        self._changed: set[int] = set()
         self.anchor: tuple[int, int] | None = None
         self.head: tuple[int, int] | None = None
         self.dragging = False
 
     def invalidate_from(self, index: int) -> None:
         self.dirty = min(self.dirty, index)
+        self._changed.add(index)
         self.owner._fragments = None
 
     def sync(self, width: int) -> None:
         owner = self.owner
         with owner._content_lock:
+            can_shift = self.width == width and self._last_height == self.viewport_height
+            self._last_height = self.viewport_height
             if self.width != width:
                 self.width, self.dirty = width, 0
+                self._blocks.clear()
                 self.clear_selection()
             index = min(self.dirty, len(owner._chunks))
             if index == len(owner._chunks) and len(self.starts) == index:
                 return
             owner._fragments = None
             previous = owner._rendered_lines
+            old_start = self.viewport_start()
+            old_visible = self.rows[old_start:old_start + self.viewport_height]
             offset = self.starts[index] if index < len(self.starts) else len(self.rows)
             del self.rows[offset:]
             del self.starts[index:]
-            for chunk in owner._chunks[index:]:
+            active_blocks = {id(chunk) for chunk in owner._chunks}
+            self._blocks = {key: value for key, value in self._blocks.items() if key in active_blocks}
+            for position, chunk in enumerate(owner._chunks[index:], index):
                 self.starts.append(len(self.rows))
-                rendered = owner._chunk_text(chunk, width)
-                lines = list(split_lines(to_formatted_text(ANSI(rendered))))
-                if rendered.endswith("\n"):
+                cached = self._blocks.get(id(chunk))
+                if cached is not None and cached[0] is chunk and position not in self._changed:
+                    self.rows.extend(cached[1])
+                    continue
+                fragments = chunk.fragments_at_width(width) if hasattr(chunk, "fragments_at_width") else None
+                rendered = None if fragments is not None else owner._chunk_text(chunk, width)
+                lines = list(split_lines(fragments if fragments is not None else _ansi_fragments(rendered or "")))
+                tail = fragments[-1][1] if fragments else (rendered or "")
+                if tail.endswith("\n"):
                     lines.pop()
+                block_rows = []
                 for line in lines:
-                    self.rows.extend(_wrap_physical_line(line, width))
+                    block_rows.extend(_wrap_physical_line(line, width))
+                self._blocks[id(chunk)] = (chunk, block_rows)
+                self.rows.extend(block_rows)
+            self._changed.clear()
             self.dirty = len(owner._chunks)
             owner._rendered_lines = owner._line_count = max(1, len(self.rows))
             if owner._scrollback or self.anchor is not None:
                 owner._scrollback = max(0, owner._scrollback + owner._rendered_lines - previous)
             owner._scrollback = min(owner._scrollback, self.max_scrollback())
+            new_start = self.viewport_start()
+            delta = new_start - old_start
+            # 尾随新增行时先搬运稳定视口，差分只写新露出的行。
+            # 宽度/高度变化或旧行改写时由普通屏幕差分处理。
+            if (can_shift and not owner._scrollback and self.anchor is None and 0 < delta < self.viewport_height
+                    and len(old_visible) == self.viewport_height
+                    and old_visible[delta:] == self.rows[new_start:new_start + self.viewport_height - delta]):
+                self.precondition_scroll(old_start, new_start)
 
     def create_content(self, width: int, height: int) -> UIContent:
         self.viewport_height = max(1, height)
@@ -174,6 +204,34 @@ class TranscriptControl(UIControl):
             self.owner.app.invalidate()
             return None
         return NotImplemented
+
+
+_SGR = re.compile(r"(?:\x1b\[|\x9b)([0-9;]*)m")
+
+
+def _ansi_fragments(value: str):
+    """按样式段转换 Rich 的 SGR；其他控制序列仍使用原解析器。"""
+    if not any(char in value for char in ("\x1b", "\x9b", "\x01", "\x02")):
+        return [("", value)]
+    state = ANSI("")
+    if not hasattr(state, "_select_graphic_rendition") or not hasattr(state, "_create_style_string"):
+        return to_formatted_text(ANSI(value))
+    result, position, style = [], 0, ""
+    for match in _SGR.finditer(value):
+        text = value[position:match.start()]
+        if any(char in text for char in ("\x1b", "\x9b", "\x01", "\x02")):
+            return to_formatted_text(ANSI(value))
+        if text:
+            result.append((style, text))
+        state._select_graphic_rendition([min(int(item or 0), 9999) for item in match.group(1).split(";")])
+        style = state._create_style_string()
+        position = match.end()
+    tail = value[position:]
+    if any(char in tail for char in ("\x1b", "\x9b", "\x01", "\x02")):
+        return to_formatted_text(ANSI(value))
+    if tail:
+        result.append((style, tail))
+    return result
 
 
 def _wrap_physical_line(line, width: int):
