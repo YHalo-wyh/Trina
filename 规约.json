@@ -137,7 +137,7 @@
       "title": "品牌首页与可读终端输出",
       "priority": "P1",
       "status": "implemented",
-      "implementation": ["trina/banner.py", "trina/terminal.py", "trina/console_ui.py", "trina/console_state.py", "trina/config.py", "trina/worker_roles.py", "trina/transcript.py", "trina/session.py", "trina/interactive.py", "trina/chat_store.py", "trina/brain/chat.py"],
+      "implementation": ["trina/banner.py", "trina/terminal.py", "trina/console_ui.py", "trina/console_state.py", "trina/config.py", "trina/output_styles.py", "trina/notifications.py", "trina/worker_roles.py", "trina/transcript.py", "trina/session.py", "trina/interactive.py", "trina/chat_store.py", "trina/brain/chat.py"],
       "verification": ["V-CONTRACT", "V-TESTS"],
       "rules": [
         {
@@ -202,6 +202,12 @@
           "level": "MUST",
           "statement": "固定补全教学行必须隐藏且保留候选；角色普通字重。四格支持分页、聚焦和窄屏，稳定对话缓存不得因其他任务更新重排；原始模型协议不得作为可见对话。",
           "tests": ["tests.test_worker_dashboard.WorkerDashboardTests.test_ui_hides_hint_and_normal_weight_role_and_keeps_grid_keyboard", "tests.test_worker_dashboard.WorkerDashboardTests.test_grid_layout_pages_resize_zoom_and_reuses_unchanged_dialog", "tests.test_worker_dashboard.WorkerDashboardTests.test_live_projection_ignores_raw_model_protocol_and_tracks_final_output"]
+        },
+        {
+          "id": "TR-03-R09",
+          "level": "MUST",
+          "statement": "输出主题必须按真实运行、成功、警告、失败和 Diff 语义着色且单色保持文字；完成提醒在增强终端显示短时通知条，按终端能力使用 OSC 9/99 或 BEL，重定向输出不得含控制序列。",
+          "tests": ["tests.test_output_colors.OutputColorTests.test_tool_state_colors_and_diff_have_distinct_semantics", "tests.test_output_colors.OutputColorTests.test_markdown_patch_colors_and_palette_change_keep_text", "tests.test_notifications.NotificationTests.test_known_terminals_use_notification_protocol_and_unknown_uses_bell", "tests.test_notifications.NotificationTests.test_payload_removes_control_sequence_injection", "tests.test_notifications.NotificationTests.test_redirected_output_does_not_receive_terminal_control_codes", "tests.test_notifications.NotificationTests.test_notification_configuration_round_trip_and_validation"]
         }
       ]
     },
@@ -262,7 +268,7 @@
       "title": "统一工具契约",
       "priority": "P0",
       "status": "implemented",
-      "implementation": ["trina/tools/registry.py", "trina/tools/__init__.py", "trina/tools/terminal.py", "trina/tools/workspace.py", "trina/tools/external.py", "trina/tools/binary.py", "trina/binary/models.py", "trina/binary/backends.py", "trina/binary/sessions.py"],
+      "implementation": ["trina/tools/registry.py", "trina/tools/__init__.py", "trina/tools/terminal.py", "trina/tools/workspace.py", "trina/tools/search.py", "trina/tools/git.py", "trina/tools/external.py", "trina/repo_ui.py", "trina/tools/binary.py", "trina/binary/models.py", "trina/binary/backends.py", "trina/binary/sessions.py"],
       "verification": ["V-CONTRACT", "V-TESTS"],
       "rules": [
         {
@@ -288,6 +294,18 @@
           "level": "MUST",
           "statement": "通用 Agent 必须有真实前台 argv 命令和项目文件读写编辑能力；命令经 run_external，路径经工作区护栏，写入原子替换，编辑匹配失败时不破坏原文件。",
           "tests": ["tests.test_workspace_tools.WorkspaceToolTests.test_registered_coding_toolchain_writes_edits_reads_and_executes", "tests.test_workspace_tools.WorkspaceToolTests.test_edit_mismatch_is_non_destructive"]
+        },
+        {
+          "id": "TR-05-R05",
+          "level": "MUST",
+          "statement": "仓库状态、Diff、历史、暂存、提交、分支、远端和 worktree 必须通过注册的 workspace_git 与 run_external 执行；写操作保留本地改动，pull 仅快进、push 不强制、worktree 移除不强制。",
+          "tests": ["tests.test_repository.RepositoryTests.test_status_stage_diff_commit_log_and_literal_paths", "tests.test_repository.RepositoryTests.test_conflicting_branch_switch_and_unmerged_delete_preserve_work", "tests.test_repository.RepositoryTests.test_worktree_isolation_commit_and_clean_removal", "tests.test_repository.RepositoryTests.test_local_bare_remote_push_fetch_and_fast_forward_pull"]
+        },
+        {
+          "id": "TR-05-R06",
+          "level": "MUST",
+          "statement": "workspace_search 必须返回有界结构化位置并优先使用 ripgrep，缺失时在相同工作区边界内降级；Bash 必须通过 terminal_exec argv 执行并保留真实退出状态。",
+          "tests": ["tests.test_workspace_search.WorkspaceSearchTests.test_search_is_registered_and_returns_structured_locations", "tests.test_workspace_search.WorkspaceSearchTests.test_search_rejects_escape_and_bounds_results", "tests.test_workspace_search.WorkspaceSearchTests.test_terminal_exec_runs_basic_bash"]
         }
       ]
     },

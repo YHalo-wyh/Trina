@@ -163,7 +163,7 @@ class ChatAgent:
     def ask(self, message: str) -> str:
         if self._closed:
             raise ValueError("对话已关闭，请使用 /resume 恢复")
-        should_name = not self.title
+        should_name = not self.title and not self.ctx.extra.get("disable_title_generation")
         self.in_flight = True
         try:
             reply = self._ask_turn(message)
@@ -641,6 +641,16 @@ class ChatAgent:
         self.state.hypotheses = self.ledger.to_dict()
         self.state.loop = self.loop_guard.to_dict()
         observation = result.to_observation(max_chars=1800)
+        hook = self.ctx.extra.get("tool_result_hook")
+        if callable(hook):
+            try:
+                hook_note = str(hook(self.ctx, tool_name, result) or "")
+            except Exception as exc:  # noqa: BLE001 - 自动后处理失败不能覆盖原工具结果
+                hook_note = ""
+                self.audit.append("chat.tool_result_hook", decision="error",
+                                  error=f"{type(exc).__name__}: {exc}"[:300])
+            if hook_note:
+                observation += "\n[自动动作] " + hook_note
         if feedback:
             observation += "\n[控制器反馈] " + "；".join(feedback)
         self.audit.append(

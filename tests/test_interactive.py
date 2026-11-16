@@ -283,6 +283,23 @@ class TestChatAgent(unittest.TestCase):
         self.assertEqual({item["tool_call_id"] for item in tool_results}, {"call_probe", "call_finish"})
         self.assertIn(80, chat.state.hosts["127.0.0.1"].ports)
 
+    def test_native_batch_executes_all_tools_before_next_model_call(self):
+        chat = self._chat([
+            {"native_only": True, "tool_calls": [
+                {"id": "call_one", "name": "echo_probe", "arguments": {"target": "127.0.0.1"}},
+                {"id": "call_two", "name": "echo_probe", "arguments": {"target": "127.0.0.2"}},
+            ]},
+            {"native_only": True, "tool_calls": [
+                {"id": "call_finish", "name": "finish", "arguments": {"status": "success", "summary": "批量完成"}},
+            ]},
+        ])
+        self.assertEqual(chat.ask("一次检查两个目标"), "批量完成")
+        self.assertEqual(chat.state.counters.get("tool_calls"), 2)
+        tool_results = [item for item in chat._messages if item.get("role") == "tool"]
+        self.assertEqual({item["tool_call_id"] for item in tool_results},
+                         {"call_one", "call_two", "call_finish"})
+        self.assertEqual(chat.usage.calls, 2)
+
     def test_prose_plus_action_is_executed(self):
         """模型常写「一句解释 + JSON 动作」：必须识别动作并执行，而不是当成纯文本回答。"""
         chat = self._chat(

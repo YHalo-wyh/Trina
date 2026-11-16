@@ -1,0 +1,54 @@
+{
+  "generated_at": "2026-11-16T08:26:01.242Z",
+  "machine": {
+    "platform": "win32",
+    "release": "10.0.26300",
+    "cpu": "Intel(R) Core(TM) i9-14900HX",
+    "logical_cpus": 32,
+    "memory_gb": 31.79674530029297
+  },
+  "terminal": {
+    "engine": "kitty-vt-wasm",
+    "version": "0.2.0",
+    "columns": 120,
+    "rows": 36,
+    "scrollback": 20000,
+    "color": "truecolor"
+  },
+  "runtimes": {
+    "bun": "1.4.4",
+    "omp": "18.20.2"
+  },
+  "fixture_sha256": "b6816c325e3abccec01df4151618d00498e904cc08ae8a143d882f5d7dc3b19d",
+  "trials": 1,
+  "results": [
+    {
+      "engine": "trina",
+      "scenario": "short",
+      "trial": 1,
+      "runtime": "3.10.11",
+      "startup_ms": 1304.584,
+      "duration_ms": 3633.5545999999995,
+      "output_observed": 64,
+      "output_expected": 64,
+      "output_p50_ms": 7.99,
+      "output_p95_ms": 15.166,
+      "text_p95_ms": 13.683,
+      "thinking_p95_ms": 4.144,
+      "tool_output_p95_ms": 31.584,
+      "first_output_ms": 3.991999999999962,
+      "key_p95_ms": 12.883,
+      "keys_observed": 4,
+      "scroll_p95_ms": null,
+      "scrolls_observed": 0,
+      "frame_p50_ms": 5.402,
+      "frame_p95_ms": 12.75,
+      "terminal_p95_ms": 0.248,
+      "frames": 74,
+      "total_ansi_bytes": 112590,
+      "cpu_ms": 531.25,
+      "peak_rss_mb": 42.828125,
+      "stderr": ""
+    }
+  ]
+}

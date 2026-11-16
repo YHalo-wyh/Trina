@@ -6,6 +6,9 @@ ui:
   status_line_separator: dot  # dot / pipe / slash
   context_bar: true
   motion: full                # reduced / none 关闭首页动画
+  output_palette: trina       # trina / contrast / mono，/theme 切换当前会话
+  completion_notify: true     # Agent 一轮或后台任务完成时显示终端提醒
+  error_notify: false         # 异常提醒默认关闭，可按需开启
 
 scope:
   trust_mode: full

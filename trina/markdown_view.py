@@ -5,6 +5,7 @@ import re
 from functools import lru_cache
 
 from .text import clean_text
+from .output_styles import Palette, diff_style, output_style, palette_name
 
 
 RESET = "\x1b[0m"
@@ -75,14 +76,15 @@ def _highlight_stateful_fragments(language: str, code: str) -> tuple[tuple[tuple
     return tuple(tuple(row) for row in rows)
 
 
-def _inline_fragments(tokens, color: bool, base: str = "") -> list[tuple[str, str]]:
+def _inline_fragments(tokens, color: bool, base: str = "", palette: str = "trina") -> list[tuple[str, str]]:
     """沿 CommonMark 的真实 token 栈合成样式，支持嵌套、转义与引用链接。"""
     result: list[tuple[str, str]] = []
     styles, links = [base], []
     for token in tokens or []:
         kind = token.type
         if token.nesting == 1:
-            extra = {"strong_open": "bold", "em_open": "italic", "s_open": "strike", "link_open": "underline #c7a5e8"}.get(kind, "")
+            extra = {"strong_open": "bold", "em_open": "italic", "s_open": "strike",
+                     "link_open": "underline " + output_style("code", palette)}.get(kind, "")
             styles.append(" ".join(part for part in (styles[-1], extra if color else "") if part))
             if kind == "link_open":
                 links.append(token.attrGet("href") or "")
@@ -92,7 +94,7 @@ def _inline_fragments(tokens, color: bool, base: str = "") -> list[tuple[str, st
             if kind == "link_close" and links:
                 _merge(result, styles[-1], " (" + links.pop() + ")")
         elif kind == "code_inline":
-            _merge(result, (styles[-1] + " #c7a5e8").strip() if color else "", token.content)
+            _merge(result, (styles[-1] + " " + output_style("code", palette)).strip() if color else "", token.content)
         elif kind in {"softbreak", "hardbreak"}:
             _merge(result, styles[-1], "\n")
         elif kind == "image":
@@ -102,9 +104,13 @@ def _inline_fragments(tokens, color: bool, base: str = "") -> list[tuple[str, st
     return result
 
 
-def render_markdown_fragments(message: str, *, color: bool = False) -> list[tuple[str, str]]:
+def render_markdown_fragments(message: str, *, color: bool = False, palette: Palette = "trina") -> list[tuple[str, str]]:
     """直接生成 prompt_toolkit 样式片段，避免 ANSI 逐 token 反解析。"""
     source = clean_text(message.replace("\r\n", "\n").replace("\r", "\n"))
+    palette = palette_name(palette)
+    color = color and palette != "mono"
+    text_style = output_style("text", palette, color=color)
+    quote_style = output_style("quote", palette, color=color)
     rows: list[list[tuple[str, str]]] = []
     lists: list[dict] = []
     quote, heading, item_pending = 0, False, False
@@ -115,12 +121,12 @@ def render_markdown_fragments(message: str, *, color: bool = False) -> list[tupl
 
     def prefix() -> list[tuple[str, str]]:
         nonlocal item_pending
-        out = [("#9b7bc7" if color else "", "│ " * quote)] if quote else []
+        out = [(quote_style, "│ " * quote)] if quote else []
         if lists:
             if item_pending:
                 current = lists[-1]
                 marker = f"{current['index']}. " if current["ordered"] else "• "
-                out.extend([("", "  " * (len(lists) - 1)), ("#9b7bc7" if color else "", marker)])
+                out.extend([("", "  " * (len(lists) - 1)), (quote_style, marker)])
                 item_pending = False
             else:
                 out.append(("", "  " * len(lists)))
@@ -132,7 +138,9 @@ def render_markdown_fragments(message: str, *, color: bool = False) -> list[tupl
         if not value:
             add([("", "  ")])
             return
-        if color and (language.lower() not in {"python", "py", "python3", "json", "text", "txt"} or _STATEFUL_CODE.search(value)):
+        if language.lower() in {"diff", "patch"}:
+            highlighted = tuple(((diff_style(line, palette, color=color), line),) for line in value.split("\n"))
+        elif color and (language.lower() not in {"python", "py", "python3", "json", "text", "txt"} or _STATEFUL_CODE.search(value)):
             highlighted = _highlight_stateful_fragments(language, value)
         elif color:
             # 只缓存有界单行；长单行不长期占据会话缓存。
@@ -170,14 +178,15 @@ def render_markdown_fragments(message: str, *, color: bool = False) -> list[tupl
         elif kind == "tr_close":
             row = prefix()
             for cell in table_cells or []:
-                row.extend([("#a595b3" if color else "", "│ "), *cell, ("", " ")])
-            row.append(("#a595b3" if color else "", "│"))
+                row.extend([(quote_style, "│ "), *cell, ("", " ")])
+            row.append((quote_style, "│"))
             add(row)
             table_cells = None
         elif kind == "table_close":
             add()
         elif kind == "inline":
-            fragments = _inline_fragments(token.children, color, "bold #edb2d2" if heading and color else "")
+            fragments = _inline_fragments(token.children, color,
+                                          output_style("heading", palette, color=color) if heading else text_style, palette)
             if "&" in token.content:
                 # 实体解码可能重新引入方向控制字符，解析后仍需净化。
                 fragments = [(style, clean_text(text)) for style, text in fragments]
@@ -191,7 +200,7 @@ def render_markdown_fragments(message: str, *, color: bool = False) -> list[tupl
             add_code(token.content, token.info.strip().split(None, 1)[0] if token.info.strip() else "text")
             add()
         elif kind == "hr":
-            add([("#a595b3" if color else "", "─" * 24)])
+            add([(quote_style, "─" * 24)])
         elif token.content:
             add([*prefix(), ("", token.content)])
     while rows and not rows[-1]:

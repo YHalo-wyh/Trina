@@ -171,8 +171,8 @@ scripts/dev.sh play --target 127.0.0.1
 | vuln | `poc_scan`（21 个只读 PoC） `nuclei_scan`（缺 nuclei 自动降级内置引擎） | detect |
 | exploit | `sqli_test` `cmd_inject_test` `lfi_test` `file_upload_test` `rce_exec` | verify / exploit |
 | creds | `weak_password_brute`（ssh/ftp/mysql/redis/http_basic/http_form） `http_form_login` `flag_hunt` | exploit / verify |
-| utility | `terminal_exec`（前台 argv 命令）、`terminal_start` / `terminal_status` / `terminal_stop`（后台程序启动、等待、查询和取消） | exploit / detect |
-| workspace | `workspace_read` / `workspace_write` / `workspace_edit`（项目内有界读取、原子写入、精确替换），`workspace_git`（状态与分支管理） | detect / exploit |
+| utility | `terminal_exec`（前台 argv 命令，可调用 `bash -lc`）、`terminal_start` / `terminal_status` / `terminal_stop`（后台程序启动、等待、查询和取消） | exploit / detect |
+| workspace | `workspace_search`（优先 rg）、`workspace_read` / `workspace_write` / `workspace_edit`（有界检索、读取、原子写入、精确替换），`workspace_git`（状态、Diff、暂存、提交、分支、远端与 worktree） | detect / exploit |
 | coordination | `shared_context` / `shared_trace_search` / `shared_trace_get`（共享待办、双图摘要、其他 Worker 观察与失败留痕） | detect |
 | binary | `binary_open` `binary_overview` `binary_functions` `binary_function` `binary_xrefs` `debug_start` `debug_control` `debug_inspect` `binary_session` `binary_execute` | detect / exploit |
 | benchmark | `ctfy_task`（读取、刷新或提交当前 CTFY v3 问题） | detect |
@@ -186,6 +186,8 @@ Binary 能力只在附件或能力清单需要时 JIT 绑定，Role 不会把通
 | **对话式控制台** | `trina`（或 `trina console`） | **直接说人话**：需要动手时直接调用工具。默认 `full` 信任且人工审批关闭；只有显式 `--approve` 才进入确认。`/help` 看命令，`/model` 管理模型 |
 | 一条命令开打 | `trina play [--target T] [--range NAME] [--goal G] [--approve MODE]` | 自动准备靶场（默认内置 lab）→ 跑完整任务（含阶段机与结论/覆盖统计）→ 出报告 |
 | 历史对话 | `/resume` · `/resume list` · `/resume last` · `/resume <编号或ID>` | 搜索并切换当前项目的已保存聊天，恢复上下文、事实与用量；`/new` 开新对话 |
+| 仓库与工作树 | `/repo` · `/branch` · `/worktree` | 查看状态/Diff，显式暂存与提交，管理分支、远端同步和独立 worktree；不强制覆盖本地修改 |
+| 输出与提醒 | `/theme trina|contrast|mono` · `/notify on|off|test` | 切换语义配色；Agent 完成时显示终端通知条，支持的终端同时发桌面提醒 |
 | 运行中介入 | `hint <文本>`（或直接说人话）· `pause/unpause` · `stop` · `status` · `/revoke <target_id>` 撤权 | 运行中说人话＝介入提示；显式开启审批后可用 `y/n`，**超时即拒绝** |
 | 评价 Agent | `trina review [--state runs/<id>/state.json]` | 只读复核：缺证据的声明、结论一致性、覆盖缺口、边界事件、审计链 |
 

@@ -328,6 +328,9 @@ class UIConfig:
     status_line_separator: str = "dot"
     context_bar: bool = True
     motion: str = "full"
+    output_palette: str = "trina"
+    completion_notify: bool = True
+    error_notify: bool = False
 
     def validate(self) -> None:
         if self.status_line_preset not in {"default", "compact", "full"}:
@@ -336,6 +339,10 @@ class UIConfig:
             raise ConfigError("ui.status_line_separator 必须为 dot/pipe/slash")
         if type(self.context_bar) is not bool or self.motion not in {"full", "reduced", "none"}:
             raise ConfigError("ui.context_bar 必须为布尔值，ui.motion 必须为 full/reduced/none")
+        if self.output_palette not in {"trina", "contrast", "mono"}:
+            raise ConfigError("ui.output_palette 必须为 trina/contrast/mono")
+        if type(self.completion_notify) is not bool or type(self.error_notify) is not bool:
+            raise ConfigError("ui.completion_notify 与 ui.error_notify 必须为布尔值")
 
 
 @dataclass

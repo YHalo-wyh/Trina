@@ -104,7 +104,7 @@ class Subworkers:
                 old = self._dialogs.get(event.task_id, {}).get(key, ("", ""))[1]
                 text = old + text
             elif event.kind == "tool.finished":
-                kind = "结果"
+                kind = "错误" if payload.get("ok") is False or payload.get("status") in {"failed", "timed_out", "denied", "invalid", "interrupted"} else "结果"
                 text = str(payload.get("summary") or payload.get("error") or payload.get("status", ""))
                 text = f"{payload.get('tool', '')} · {payload.get('status', '')} · {text}"
                 key += ":result"

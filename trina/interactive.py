@@ -56,6 +56,7 @@ class Console:
         plain: bool = False,
     ):
         self.config = config or TrinaConfig.load()
+        self._output_palette = lambda: self.config.ui.output_palette
         self._input = input_fn
         self._enhanced_input: EnhancedConsoleInput | None = None
         self._plain = plain
@@ -91,6 +92,8 @@ class Console:
         self._active_worker = "commander"
         self._worker_sessions: dict[str, str] = {}
         self._branch = self._read_branch()
+        self._git_branches = [self._branch] if self._branch else []
+        self._git_files: list[str] = []
         from .subworkers import Subworkers
         self.subworkers = Subworkers(lambda text: self._emit(text, prefix="Subworker"))
 
@@ -100,7 +103,7 @@ class Console:
             self.output(text)
 
     def _emit(self, message: str, prefix: str = "[trina]") -> None:
-        self._display(render_message(message, label=prefix, color=self.color) if message else "")
+        self._display(render_message(message, label=prefix, color=self.color, palette=self._output_palette) if message else "")
 
     def _session_emit(self, message: str) -> None:
         pending = self.session.pending
@@ -114,9 +117,9 @@ class Console:
         if message.startswith(("[用户] ", "[动作 ")) or re.match(r"^\[\d+/\d+\]", message) or message.lstrip().startswith("→"):
             return  # 已由结构化事件渲染，避免日志重复成为另一条消息。
         if "想法：" in message:
-            self._display(render_process(message.split("想法：", 1)[1].strip(), label="思考摘要", color=self.color))
+            self._display(render_process(message.split("想法：", 1)[1].strip(), label="思考摘要", color=self.color, palette=self._output_palette))
         else:
-            self._display(render_process(message.strip(), label="过程", color=self.color))
+            self._display(render_process(message.strip(), label="过程", color=self.color, palette=self._output_palette))
 
     def _on_step(self, step: Any) -> None:
         self._live_step = step
@@ -124,7 +127,7 @@ class Console:
     def _on_runtime_event(self, event: Any) -> None:
         from .event_view import EventTranscript
         if self._event_transcript is None:
-            self._event_transcript = EventTranscript(self._display, editor=self._enhanced_input, color=self.color)
+            self._event_transcript = EventTranscript(self._display, editor=self._enhanced_input, color=self.color, palette=self._output_palette)
         if event.kind == "tool.started":
             self.view.set_activity("tool", str(event.payload.get("tool", "工具处理中")))
         elif event.kind == "model.retry":
@@ -161,6 +164,7 @@ class Console:
                 dynamic_values=self._completion_values, plain=self._plain or not self.color,
                 usage=self._footer_usage, activity=self._activity, motion=self.config.ui.motion,
                 context=self._footer_context,
+                output_palette=self._output_palette,
             )
             original_output = self.output
             self.output = self._enhanced_input.write
@@ -285,6 +289,10 @@ class Console:
 
     def _completion_values(self, command: str, completed_args: list[str]) -> list[ChoiceSpec]:
         """补全运行时才能知道的历史会话、模型、工具、靶场和产物路径。"""
+        if command == "branch" and completed_args in ([], ["switch"], ["delete"]):
+            return [ChoiceSpec(name, "本地分支") for name in self._git_branches]
+        if command == "repo" and completed_args in (["stage"], ["unstage"], ["diff"]):
+            return [ChoiceSpec(shlex.quote(name), "最近状态中的文件") for name in self._git_files]
         if command == "subworker":
             if completed_args == ["inspect"]:
                 return [ChoiceSpec(item["id"], item["goal"]) for item in self.subworkers.rows()]
@@ -437,6 +445,12 @@ class Console:
             "model": lambda: self._cmd_model(args),
             "worker": lambda: self._cmd_worker(args),
             "branch": lambda: self._cmd_branch(args),
+            "repo": lambda: self._cmd_repo(args),
+            "worktree": lambda: self._cmd_worktree(args),
+            "wt": lambda: self._cmd_worktree(args),
+            "theme": lambda: self._cmd_theme(args),
+            "colors": lambda: self._cmd_theme(args),
+            "notify": lambda: self._cmd_notify(args),
             "footer": lambda: self._cmd_footer(args),
             "history": lambda: self._cmd_history(args),
             "new": self._cmd_new,
@@ -975,24 +989,105 @@ class Console:
         self._emit(f"{self.subworkers.runtime.run_id} 已启动 · /subworker 查看 · 主会话可继续输入", prefix="Subworker")
 
     def _cmd_branch(self, args: list[str]) -> None:
-        if args and self.subworkers.running:
-            raise ValueError("Subworker 运行中不能切换工作区分支；先 /subworker stop")
-        from .console_ui import select_option
-        chat = self._ensure_chat()
-        action = "switch" if args else "branches"
-        if len(args) > 2 or (len(args) == 2 and args[0] != "new") or (args[:1] == ["new"] and len(args) != 2):
-            raise ValueError("用法：/branch [本地分支]；/branch new <名称>")
-        params = {"action": "create" if args[:1] == ["new"] else action,
-                  "branch": args[-1] if args else ""}
-        result = chat.registry.execute("workspace_git", params, chat.ctx)
-        if not args and result.ok:
+        from .console_ui import edit_field, select_option
+        if not args or args == ["list"]:
+            result = self._execute_repo({"action": "branches"})
             branches = result.data.get("branches", [])
-            if self._input is None and not self._custom_output and enhanced_input_available():
-                selected = select_option("切换本地分支", [ChoiceSpec(name, name) for name in branches], subtitle="Enter 切换 · 不丢弃本地修改")
+            if result.ok and not args and self._input is None and not self._custom_output and enhanced_input_available():
+                selected = select_option("本地分支", [ChoiceSpec(name, ("● " if name == self._branch else "  ") + name) for name in branches]
+                                         + [ChoiceSpec("action:new", "+ 新建分支")], subtitle="保留本地改动；冲突时 Git 拒绝切换")
+                if selected == "action:new":
+                    try:
+                        name = edit_field("新分支名")
+                    except KeyboardInterrupt:
+                        return
+                    return self._cmd_branch(["new", name]) if name else None
                 if selected:
                     return self._cmd_branch([selected])
+            return
+        action = {"new": "create", "switch": "switch", "delete": "delete"}.get(args[0])
+        if action:
+            if len(args) not in ({2, 3} if action == "create" else {2}):
+                raise ValueError("/branch new <名称> [起点]；/branch switch|delete <名称>")
+            self._execute_repo({"action": action, "branch": args[1], **({"base": args[2]} if len(args) == 3 else {})})
+        elif len(args) == 1:
+            self._execute_repo({"action": "switch", "branch": args[0]})
+        else:
+            raise ValueError("/branch [名称|list|new <名称>|switch <名称>|delete <名称>]")
+
+    def _execute_repo(self, params: dict) -> Any:
+        from .tools.git import READ_ACTIONS
+        if params.get("action") not in READ_ACTIONS and (self.session.running or self.subworkers.running):
+            raise ValueError("任务运行中不能修改仓库；等待当前任务与子 Worker 结束")
+        chat = self._ensure_chat()
+        chat.ctx.extra["repository_busy"] = lambda: self.subworkers.running
+        result = chat.registry.execute("workspace_git", params, chat.ctx)
         self._branch = self._read_branch()
-        self._emit(result.summary if result.ok else result.error, prefix="Git" if result.ok else "错误")
+        if result.ok and params.get("action") == "branches" and params.get("repository", ".") == ".":
+            self._git_branches = result.data.get("branches", [])
+        elif result.ok and params.get("action") == "status" and params.get("repository", ".") == ".":
+            self._git_files = [item["path"] for item in result.data.get("changes", [])]
+        if not result.ok:
+            self._emit(result.error or result.summary, prefix="错误")
+        return result
+
+    def _cmd_repo(self, args: list[str]) -> None:
+        from .repo_ui import parse_repo_args, show_repository, show_worktrees
+        if not args and self._input is None and not self._custom_output and enhanced_input_available():
+            show_repository(self._execute_repo, branches=self._cmd_branch, worktrees=lambda: show_worktrees(self._execute_repo))
+        else:
+            self._execute_repo(parse_repo_args(args))
+
+    def _cmd_worktree(self, args: list[str]) -> None:
+        from .repo_ui import parse_repo_args, show_worktrees
+        if not args and self._input is None and not self._custom_output and enhanced_input_available():
+            show_worktrees(self._execute_repo)
+        else:
+            self._execute_repo(parse_repo_args(args, "worktree"))
+
+    def _cmd_theme(self, args: list[str]) -> None:
+        from .console_ui import select_option
+        from .output_styles import PALETTES
+        value = args[0] if len(args) == 1 else None
+        if len(args) > 1:
+            raise ValueError("/theme trina|contrast|mono")
+        if not args and self._input is None and not self._custom_output and enhanced_input_available():
+            value = select_option("输出配色", [ChoiceSpec(name, {"trina": "粉紫 · 语义配色", "contrast": "高对比", "mono": "单色"}[name]) for name in PALETTES],
+                                  subtitle="当前 " + self.config.ui.output_palette)
+        if value is not None:
+            if value not in PALETTES:
+                raise ValueError("/theme trina|contrast|mono")
+            self.config.ui.output_palette = value
+            if self._enhanced_input is not None:
+                control = self._enhanced_input.transcript_control
+                control._blocks.clear()
+                control.invalidate_from(0)
+                self._enhanced_input.app.invalidate()
+        self._display(render_answer("## 输出配色 · " + self.config.ui.output_palette + "\n\n"
+                                    "正文 **强调** 与 `代码`\n\n```diff\n@@ 示例 @@\n- removed\n+ added\n```",
+                                    color=self.color, palette=self._output_palette))
+
+    def _notify_agent(self, body: str, *, error: bool = False) -> None:
+        enabled = self.config.ui.error_notify if error else self.config.ui.completion_notify
+        if not enabled:
+            return
+        if self._enhanced_input is not None:
+            self._enhanced_input.show_notification("Trina", body, level="error" if error else "success")
+        else:
+            from .notifications import send_terminal_notification
+            send_terminal_notification("Trina", body)
+
+    def _cmd_notify(self, args: list[str]) -> None:
+        if len(args) > 1 or (args and args[0] not in {"on", "off", "test"}):
+            raise ValueError("/notify on|off|test")
+        if args[:1] == ["on"]:
+            self.config.ui.completion_notify = True
+        elif args[:1] == ["off"]:
+            self.config.ui.completion_notify = False
+        elif args[:1] == ["test"]:
+            self._notify_agent("提醒测试成功")
+        state = "开启" if self.config.ui.completion_notify else "关闭"
+        self._emit(f"完成提醒已{state}；配置项 ui.completion_notify", prefix="通知")
 
     def _cmd_tool(self, args: list[str]) -> None:
         """二进制手工调用与当前聊天共用生命周期，其他工具保持 CLI 入口。"""
@@ -1028,7 +1123,7 @@ class Console:
         finally:
             chat.save()
         self.session.state = chat.state
-        self._display(render_process(observation, label="工具结果", color=self.color))
+        self._display(render_process(observation, label="工具结果", color=self.color, palette=self._output_palette))
 
     def _cmd_resume(self, args: list[str]) -> None:
         from .chat_store import ChatStore
@@ -1125,7 +1220,7 @@ class Console:
                 if isinstance(action, dict) and "action" in action:
                     self._display(render_process(f"{action['action']} {json.dumps(action.get('params', {}), ensure_ascii=False)}", label="执行记录", color=self.color))
                 else:
-                    self._display(render_answer(text, color=self.color))
+                    self._display(render_answer(text, color=self.color, palette=self._output_palette))
             else:
                 self._display(render_message(text, label="工具" if text.startswith("[工具结果]") else "你", color=self.color))
 
@@ -1369,11 +1464,13 @@ class Console:
                 reply = chat.ask(text)
                 self._task_title = chat.title or self._task_title
                 if not chat.last_reply_streamed:
-                    self._display(render_answer(reply or "(空回复)", color=self.color))
+                    self._display(render_answer(reply or "(空回复)", color=self.color, palette=self._output_palette))
                 self._last_state = chat.state
+                self._notify_agent("本轮回复已完成")
             except Exception as exc:  # noqa: BLE001 - 对话异常不能杀掉控制台
                 chat._cancel_stream()
                 self._emit(f"对话出错: {type(exc).__name__}: {exc}", prefix="[错误]")
+                self._notify_agent("本轮回复异常", error=True)
             finally:
                 self.view.set_activity("idle", "就绪")
 
@@ -1540,6 +1637,7 @@ class Console:
                 + (f" · 目标要求：{goal}" if goal else ""),
                 prefix="[任务]",
             )
+            notice: tuple[str, bool] | None = None
             try:
                 state = run_plan(
                     task_config,
@@ -1560,14 +1658,19 @@ class Console:
                 self._last_state = state
                 self.session.state = state
                 self._report_summary(state)
+                if state.status != "stopped":
+                    notice = (f"任务结束 · {state.status}", state.status in {"failed", "blocked"})
             except Exception as exc:  # noqa: BLE001 - 任务异常必须回显而不是杀掉控制台
                 self._emit(f"任务异常: {type(exc).__name__}: {exc}", prefix="[错误]")
+                notice = ("任务异常", True)
             finally:
                 self._task_config = None
                 self.view.set_activity("idle", "就绪")
                 if teardown_after:
                     plan.teardown()
                     self._emit("已回收本次自动拉起的靶机", prefix="[靶场]")
+                if notice is not None:
+                    self._notify_agent(notice[0], error=notice[1])
 
         self.session.thread = threading.Thread(target=_worker, name="trina-task", daemon=True)
         self.session.thread.start()

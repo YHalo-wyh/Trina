@@ -84,7 +84,8 @@ def render_grid(manager, width: int, height: int, selected: int, *, scroll: int 
         else:
             body = [("过程", "等待 Commander 分配任务")]
         for kind, text in body[:max(0, box_height - 2)]:
-            tone = "class:model" if kind == "模型" else "class:name" if kind in {"回复", "输出"} else "class:dim"
+            tone = {"模型": "class:model", "回复": "class:name", "输出": "class:name", "思考": "class:thinking",
+                    "工具": "class:running", "结果": "class:success", "错误": "class:error"}.get(kind, "class:dim")
             lines.append([(border, "│"), (tone, pad(text)), (border, "│")])
         while len(lines) < max(1, box_height - 1):
             lines.append([(border, "│"), ("", " " * inner), (border, "│")])
@@ -111,6 +112,7 @@ def show_subworkers(manager, config, *, notice: str = "", view: str = "grid"):
     from prompt_toolkit.output import ColorDepth
     from .console_ui import _low_latency_keys, run_panel
     from .swarm import task_llm
+    from .output_styles import output_style
 
     selected = [0 if manager.rows() else -1]
     mode, zoom, scroll = [view], [False], [0]
@@ -214,5 +216,7 @@ def show_subworkers(manager, config, *, notice: str = "", view: str = "grid"):
         refresh_interval=.25, min_redraw_interval=1 / 120, max_render_postpone_time=0,
         color_depth=ColorDepth.DEPTH_24_BIT, mouse_support=True,
         style=Style.from_dict({"title": "bold " + THEME["rose"], "chosen": "bold " + THEME["rose"],
-                              "name": THEME["text"], "model": THEME["lilac"], "dim": THEME["muted"], "rail": THEME["violet"], "focusborder": THEME["rose"]}))
+                              "name": output_style("text", config.ui.output_palette), "model": THEME["lilac"],
+                              "dim": output_style("muted", config.ui.output_palette), "rail": THEME["violet"], "focusborder": THEME["rose"],
+                              **{role: output_style(role, config.ui.output_palette) for role in ("thinking", "running", "success", "error")}}))
     return run_panel(_low_latency_keys(app))

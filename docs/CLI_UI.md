@@ -207,7 +207,9 @@ F2 可暂时关闭鼠标接管，使用终端自带的选取与复制，再按 F
 
 后台程序通过 `terminal_start` 启动，返回 job_id；`terminal_status` 可读取状态、输出和退出码，也可最多等待 10 秒；`terminal_stop` 取消作业。主任务空闲而后台仍在运行时，活动栏显示运行项数。新建会话或退出时回收作业；Swarm Worker 在本项任务结束时回收，作业不迁移到下一题。
 
-前台编码任务使用 `terminal_exec`，文件操作使用 `workspace_read`、`workspace_write` 和 `workspace_edit`。它们均注册在 `ToolRegistry`：命令经 `run_external`，文件路径经工作区检查，写入采用原子替换，精确编辑匹配失败时不修改原文件。该组工具由通用 Worker 始终获得，不会因只选择 Web 或 Binary 能力而丢失命令行写代码能力。
+前台编码任务使用 `terminal_exec`，Bash 命令以 `argv=["bash", "-lc", "..."]` 调用；代码检索使用 `workspace_search`，优先执行真实 ripgrep 并在缺失时有界降级。文件操作使用 `workspace_read`、`workspace_write` 和 `workspace_edit`。它们均注册在 `ToolRegistry`：命令经 `run_external`，文件路径经工作区检查，写入采用原子替换，精确编辑匹配失败时不修改原文件。该组工具由通用 Worker 始终获得，不会因只选择 Web 或 Binary 能力而丢失命令行写代码能力。
+
+`/repo` 提供仓库状态、Diff、历史、暂存、提交和显式远端同步；`/branch` 管理本地分支，`/worktree` 管理独立工作目录。创建 worktree 后当前会话不自动换目录，文件操作传绝对路径，命令使用 `terminal_exec.working_directory`。`/theme` 切换 trina/contrast/mono 语义配色。`ui.completion_notify` 默认开启：Agent 一轮或后台任务完成后，主界面右上短时显示通知；Kitty、WezTerm、iTerm2、Ghostty 和 Warp 等支持通知协议的终端同时收到 OSC 99/9，其他终端回退 BEL。重定向输出保持纯净，`/notify on|off|test` 可切换或验证。
 
 这些工具属于当前持久 Agent 会话；单次 `trina tool terminal_*` 不持有作业，不用于跨命令启动和查询后台程序。
 

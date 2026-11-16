@@ -1,0 +1,501 @@
+{
+  "short": {
+    "name": "short",
+    "columns": 120,
+    "rows": 36,
+    "interval_ms": 40,
+    "history": [
+      "Warm up **Markdown**.\n```python\nvalue = {'ready': True}\nprint(value)\n```\n"
+    ],
+    "events": [
+      {
+        "type": "delta",
+        "kind": "thinking",
+        "delta": "检查工具输入和编译条件，保留真实失败信息。 M00001\n",
+        "seq": 1,
+        "marker": "M00001"
+      },
+      {
+        "type": "delta",
+        "kind": "thinking",
+        "delta": "检查工具输入和编译条件，保留真实失败信息。 M00002\n",
+        "seq": 2,
+        "marker": "M00002"
+      },
+      {
+        "type": "delta",
+        "kind": "thinking",
+        "delta": "检查工具输入和编译条件，保留真实失败信息。 M00003\n",
+        "seq": 3,
+        "marker": "M00003"
+      },
+      {
+        "type": "delta",
+        "kind": "thinking",
+        "delta": "检查工具输入和编译条件，保留真实失败信息。 M00004\n",
+        "seq": 4,
+        "marker": "M00004"
+      },
+      {
+        "type": "delta",
+        "kind": "thinking",
+        "delta": "检查工具输入和编译条件，保留真实失败信息。 M00005\n",
+        "seq": 5,
+        "marker": "M00005"
+      },
+      {
+        "type": "delta",
+        "kind": "thinking",
+        "delta": "检查工具输入和编译条件，保留真实失败信息。 M00006\n",
+        "seq": 6,
+        "marker": "M00006"
+      },
+      {
+        "type": "delta",
+        "kind": "thinking",
+        "delta": "检查工具输入和编译条件，保留真实失败信息。 M00007\n",
+        "seq": 7,
+        "marker": "M00007"
+      },
+      {
+        "type": "delta",
+        "kind": "thinking",
+        "delta": "检查工具输入和编译条件，保留真实失败信息。 M00008\n",
+        "seq": 8,
+        "marker": "M00008"
+      },
+      {
+        "type": "delta",
+        "kind": "thinking",
+        "delta": "检查工具输入和编译条件，保留真实失败信息。 M00009\n",
+        "seq": 9,
+        "marker": "M00009"
+      },
+      {
+        "type": "delta",
+        "kind": "thinking",
+        "delta": "检查工具输入和编译条件，保留真实失败信息。 M00010\n",
+        "seq": 10,
+        "marker": "M00010"
+      },
+      {
+        "type": "delta",
+        "kind": "thinking",
+        "delta": "检查工具输入和编译条件，保留真实失败信息。 M00011\n",
+        "seq": 11,
+        "marker": "M00011"
+      },
+      {
+        "type": "delta",
+        "kind": "thinking",
+        "delta": "检查工具输入和编译条件，保留真实失败信息。 M00012\n",
+        "seq": 12,
+        "marker": "M00012"
+      },
+      {
+        "type": "delta",
+        "kind": "thinking",
+        "delta": "检查工具输入和编译条件，保留真实失败信息。 M00013\n",
+        "seq": 13,
+        "marker": "M00013"
+      },
+      {
+        "type": "delta",
+        "kind": "thinking",
+        "delta": "检查工具输入和编译条件，保留真实失败信息。 M00014\n",
+        "seq": 14,
+        "marker": "M00014"
+      },
+      {
+        "type": "delta",
+        "kind": "thinking",
+        "delta": "检查工具输入和编译条件，保留真实失败信息。 M00015\n",
+        "seq": 15,
+        "marker": "M00015"
+      },
+      {
+        "type": "delta",
+        "kind": "thinking",
+        "delta": "检查工具输入和编译条件，保留真实失败信息。 M00016\n",
+        "seq": 16,
+        "marker": "M00016"
+      },
+      {
+        "type": "delta",
+        "kind": "text",
+        "delta": "准备执行测试。\n```python\n# first line M00017\n",
+        "seq": 17,
+        "marker": "M00017"
+      },
+      {
+        "type": "key",
+        "seq": 18,
+        "marker": "K00018",
+        "text": "K00018 "
+      },
+      {
+        "type": "delta",
+        "kind": "text",
+        "delta": "value_1 = {'index': 1, 'valid': True} # code M00019\n",
+        "seq": 19,
+        "marker": "M00019"
+      },
+      {
+        "type": "delta",
+        "kind": "text",
+        "delta": "value_2 = {'index': 2, 'valid': True} # code M00020\n",
+        "seq": 20,
+        "marker": "M00020"
+      },
+      {
+        "type": "delta",
+        "kind": "text",
+        "delta": "value_3 = {'index': 3, 'valid': True} # code M00021\n",
+        "seq": 21,
+        "marker": "M00021"
+      },
+      {
+        "type": "delta",
+        "kind": "text",
+        "delta": "value_4 = {'index': 4, 'valid': True} # code M00022\n",
+        "seq": 22,
+        "marker": "M00022"
+      },
+      {
+        "type": "delta",
+        "kind": "text",
+        "delta": "value_5 = {'index': 5, 'valid': True} # code M00023\n",
+        "seq": 23,
+        "marker": "M00023"
+      },
+      {
+        "type": "delta",
+        "kind": "text",
+        "delta": "value_6 = {'index': 6, 'valid': True} # code M00024\n",
+        "seq": 24,
+        "marker": "M00024"
+      },
+      {
+        "type": "delta",
+        "kind": "text",
+        "delta": "value_7 = {'index': 7, 'valid': True} # code M00025\n",
+        "seq": 25,
+        "marker": "M00025"
+      },
+      {
+        "type": "delta",
+        "kind": "text",
+        "delta": "value_8 = {'index': 8, 'valid': True} # code M00026\n",
+        "seq": 26,
+        "marker": "M00026"
+      },
+      {
+        "type": "key",
+        "seq": 27,
+        "marker": "K00027",
+        "text": "K00027 "
+      },
+      {
+        "type": "delta",
+        "kind": "text",
+        "delta": "value_9 = {'index': 9, 'valid': True} # code M00028\n",
+        "seq": 28,
+        "marker": "M00028"
+      },
+      {
+        "type": "delta",
+        "kind": "text",
+        "delta": "value_10 = {'index': 10, 'valid': True} # code M00029\n",
+        "seq": 29,
+        "marker": "M00029"
+      },
+      {
+        "type": "delta",
+        "kind": "text",
+        "delta": "value_11 = {'index': 11, 'valid': True} # code M00030\n",
+        "seq": 30,
+        "marker": "M00030"
+      },
+      {
+        "type": "delta",
+        "kind": "text",
+        "delta": "value_12 = {'index': 12, 'valid': True} # code M00031\n",
+        "seq": 31,
+        "marker": "M00031"
+      },
+      {
+        "type": "delta",
+        "kind": "text",
+        "delta": "value_13 = {'index': 13, 'valid': True} # code M00032\n",
+        "seq": 32,
+        "marker": "M00032"
+      },
+      {
+        "type": "delta",
+        "kind": "text",
+        "delta": "value_14 = {'index': 14, 'valid': True} # code M00033\n",
+        "seq": 33,
+        "marker": "M00033"
+      },
+      {
+        "type": "delta",
+        "kind": "text",
+        "delta": "value_15 = {'index': 15, 'valid': True} # code M00034\n",
+        "seq": 34,
+        "marker": "M00034"
+      },
+      {
+        "type": "delta",
+        "kind": "text",
+        "delta": "value_16 = {'index': 16, 'valid': True} # code M00035\n",
+        "seq": 35,
+        "marker": "M00035"
+      },
+      {
+        "type": "key",
+        "seq": 36,
+        "marker": "K00036",
+        "text": "K00036 "
+      },
+      {
+        "type": "delta",
+        "kind": "text",
+        "delta": "value_17 = {'index': 17, 'valid': True} # code M00037\n",
+        "seq": 37,
+        "marker": "M00037"
+      },
+      {
+        "type": "delta",
+        "kind": "text",
+        "delta": "value_18 = {'index': 18, 'valid': True} # code M00038\n",
+        "seq": 38,
+        "marker": "M00038"
+      },
+      {
+        "type": "delta",
+        "kind": "text",
+        "delta": "value_19 = {'index': 19, 'valid': True} # code M00039\n",
+        "seq": 39,
+        "marker": "M00039"
+      },
+      {
+        "type": "delta",
+        "kind": "text",
+        "delta": "value_20 = {'index': 20, 'valid': True} # code M00040\n",
+        "seq": 40,
+        "marker": "M00040"
+      },
+      {
+        "type": "delta",
+        "kind": "text",
+        "delta": "value_21 = {'index': 21, 'valid': True} # code M00041\n",
+        "seq": 41,
+        "marker": "M00041"
+      },
+      {
+        "type": "delta",
+        "kind": "text",
+        "delta": "value_22 = {'index': 22, 'valid': True} # code M00042\n",
+        "seq": 42,
+        "marker": "M00042"
+      },
+      {
+        "type": "delta",
+        "kind": "text",
+        "delta": "value_23 = {'index': 23, 'valid': True} # code M00043\n",
+        "seq": 43,
+        "marker": "M00043"
+      },
+      {
+        "type": "delta",
+        "kind": "text",
+        "delta": "value_24 = {'index': 24, 'valid': True} # code M00044\n",
+        "seq": 44,
+        "marker": "M00044"
+      },
+      {
+        "type": "key",
+        "seq": 45,
+        "marker": "K00045",
+        "text": "K00045 "
+      },
+      {
+        "type": "delta",
+        "kind": "text",
+        "delta": "value_25 = {'index': 25, 'valid': True} # code M00046\n",
+        "seq": 46,
+        "marker": "M00046"
+      },
+      {
+        "type": "delta",
+        "kind": "text",
+        "delta": "value_26 = {'index': 26, 'valid': True} # code M00047\n",
+        "seq": 47,
+        "marker": "M00047"
+      },
+      {
+        "type": "delta",
+        "kind": "text",
+        "delta": "value_27 = {'index': 27, 'valid': True} # code M00048\n",
+        "seq": 48,
+        "marker": "M00048"
+      },
+      {
+        "type": "delta",
+        "kind": "text",
+        "delta": "value_28 = {'index': 28, 'valid': True} # code M00049\n",
+        "seq": 49,
+        "marker": "M00049"
+      },
+      {
+        "type": "delta",
+        "kind": "text",
+        "delta": "value_29 = {'index': 29, 'valid': True} # code M00050\n",
+        "seq": 50,
+        "marker": "M00050"
+      },
+      {
+        "type": "delta",
+        "kind": "text",
+        "delta": "value_30 = {'index': 30, 'valid': True} # code M00051\n",
+        "seq": 51,
+        "marker": "M00051"
+      },
+      {
+        "type": "delta",
+        "kind": "text",
+        "delta": "```\n完成编码。 M00052\n",
+        "seq": 52,
+        "marker": "M00052"
+      },
+      {
+        "type": "tool_start",
+        "call": "tool",
+        "command": "fixture_tool --emit-lines 16",
+        "seq": 53
+      },
+      {
+        "type": "tool_output",
+        "call": "tool",
+        "output": "fixture_output_line_0: controlled replay T00054\n",
+        "marker": "T00054",
+        "seq": 54
+      },
+      {
+        "type": "tool_output",
+        "call": "tool",
+        "output": "fixture_output_line_0: controlled replay T00054\nfixture_output_line_1: controlled replay T00055\n",
+        "marker": "T00055",
+        "seq": 55
+      },
+      {
+        "type": "tool_output",
+        "call": "tool",
+        "output": "fixture_output_line_0: controlled replay T00054\nfixture_output_line_1: controlled replay T00055\nfixture_output_line_2: controlled replay T00056\n",
+        "marker": "T00056",
+        "seq": 56
+      },
+      {
+        "type": "tool_output",
+        "call": "tool",
+        "output": "fixture_output_line_0: controlled replay T00054\nfixture_output_line_1: controlled replay T00055\nfixture_output_line_2: controlled replay T00056\nfixture_output_line_3: controlled replay T00057\n",
+        "marker": "T00057",
+        "seq": 57
+      },
+      {
+        "type": "tool_output",
+        "call": "tool",
+        "output": "fixture_output_line_0: controlled replay T00054\nfixture_output_line_1: controlled replay T00055\nfixture_output_line_2: controlled replay T00056\nfixture_output_line_3: controlled replay T00057\nfixture_output_line_4: controlled replay T00058\n",
+        "marker": "T00058",
+        "seq": 58
+      },
+      {
+        "type": "tool_output",
+        "call": "tool",
+        "output": "fixture_output_line_0: controlled replay T00054\nfixture_output_line_1: controlled replay T00055\nfixture_output_line_2: controlled replay T00056\nfixture_output_line_3: controlled replay T00057\nfixture_output_line_4: controlled replay T00058\nfixture_output_line_5: controlled replay T00059\n",
+        "marker": "T00059",
+        "seq": 59
+      },
+      {
+        "type": "tool_output",
+        "call": "tool",
+        "output": "fixture_output_line_0: controlled replay T00054\nfixture_output_line_1: controlled replay T00055\nfixture_output_line_2: controlled replay T00056\nfixture_output_line_3: controlled replay T00057\nfixture_output_line_4: controlled replay T00058\nfixture_output_line_5: controlled replay T00059\nfixture_output_line_6: controlled replay T00060\n",
+        "marker": "T00060",
+        "seq": 60
+      },
+      {
+        "type": "tool_output",
+        "call": "tool",
+        "output": "fixture_output_line_0: controlled replay T00054\nfixture_output_line_1: controlled replay T00055\nfixture_output_line_2: controlled replay T00056\nfixture_output_line_3: controlled replay T00057\nfixture_output_line_4: controlled replay T00058\nfixture_output_line_5: controlled replay T00059\nfixture_output_line_6: controlled replay T00060\nfixture_output_line_7: controlled replay T00061\n",
+        "marker": "T00061",
+        "seq": 61
+      },
+      {
+        "type": "tool_output",
+        "call": "tool",
+        "output": "fixture_output_line_0: controlled replay T00054\nfixture_output_line_1: controlled replay T00055\nfixture_output_line_2: controlled replay T00056\nfixture_output_line_3: controlled replay T00057\nfixture_output_line_4: controlled replay T00058\nfixture_output_line_5: controlled replay T00059\nfixture_output_line_6: controlled replay T00060\nfixture_output_line_7: controlled replay T00061\nfixture_output_line_8: controlled replay T00062\n",
+        "marker": "T00062",
+        "seq": 62
+      },
+      {
+        "type": "tool_output",
+        "call": "tool",
+        "output": "fixture_output_line_0: controlled replay T00054\nfixture_output_line_1: controlled replay T00055\nfixture_output_line_2: controlled replay T00056\nfixture_output_line_3: controlled replay T00057\nfixture_output_line_4: controlled replay T00058\nfixture_output_line_5: controlled replay T00059\nfixture_output_line_6: controlled replay T00060\nfixture_output_line_7: controlled replay T00061\nfixture_output_line_8: controlled replay T00062\nfixture_output_line_9: controlled replay T00063\n",
+        "marker": "T00063",
+        "seq": 63
+      },
+      {
+        "type": "tool_output",
+        "call": "tool",
+        "output": "fixture_output_line_0: controlled replay T00054\nfixture_output_line_1: controlled replay T00055\nfixture_output_line_2: controlled replay T00056\nfixture_output_line_3: controlled replay T00057\nfixture_output_line_4: controlled replay T00058\nfixture_output_line_5: controlled replay T00059\nfixture_output_line_6: controlled replay T00060\nfixture_output_line_7: controlled replay T00061\nfixture_output_line_8: controlled replay T00062\nfixture_output_line_9: controlled replay T00063\nfixture_output_line_10: controlled replay T00064\n",
+        "marker": "T00064",
+        "seq": 64
+      },
+      {
+        "type": "tool_output",
+        "call": "tool",
+        "output": "fixture_output_line_0: controlled replay T00054\nfixture_output_line_1: controlled replay T00055\nfixture_output_line_2: controlled replay T00056\nfixture_output_line_3: controlled replay T00057\nfixture_output_line_4: controlled replay T00058\nfixture_output_line_5: controlled replay T00059\nfixture_output_line_6: controlled replay T00060\nfixture_output_line_7: controlled replay T00061\nfixture_output_line_8: controlled replay T00062\nfixture_output_line_9: controlled replay T00063\nfixture_output_line_10: controlled replay T00064\nfixture_output_line_11: controlled replay T00065\n",
+        "marker": "T00065",
+        "seq": 65
+      },
+      {
+        "type": "tool_output",
+        "call": "tool",
+        "output": "fixture_output_line_0: controlled replay T00054\nfixture_output_line_1: controlled replay T00055\nfixture_output_line_2: controlled replay T00056\nfixture_output_line_3: controlled replay T00057\nfixture_output_line_4: controlled replay T00058\nfixture_output_line_5: controlled replay T00059\nfixture_output_line_6: controlled replay T00060\nfixture_output_line_7: controlled replay T00061\nfixture_output_line_8: controlled replay T00062\nfixture_output_line_9: controlled replay T00063\nfixture_output_line_10: controlled replay T00064\nfixture_output_line_11: controlled replay T00065\nfixture_output_line_12: controlled replay T00066\n",
+        "marker": "T00066",
+        "seq": 66
+      },
+      {
+        "type": "tool_output",
+        "call": "tool",
+        "output": "fixture_output_line_0: controlled replay T00054\nfixture_output_line_1: controlled replay T00055\nfixture_output_line_2: controlled replay T00056\nfixture_output_line_3: controlled replay T00057\nfixture_output_line_4: controlled replay T00058\nfixture_output_line_5: controlled replay T00059\nfixture_output_line_6: controlled replay T00060\nfixture_output_line_7: controlled replay T00061\nfixture_output_line_8: controlled replay T00062\nfixture_output_line_9: controlled replay T00063\nfixture_output_line_10: controlled replay T00064\nfixture_output_line_11: controlled replay T00065\nfixture_output_line_12: controlled replay T00066\nfixture_output_line_13: controlled replay T00067\n",
+        "marker": "T00067",
+        "seq": 67
+      },
+      {
+        "type": "tool_output",
+        "call": "tool",
+        "output": "fixture_output_line_0: controlled replay T00054\nfixture_output_line_1: controlled replay T00055\nfixture_output_line_2: controlled replay T00056\nfixture_output_line_3: controlled replay T00057\nfixture_output_line_4: controlled replay T00058\nfixture_output_line_5: controlled replay T00059\nfixture_output_line_6: controlled replay T00060\nfixture_output_line_7: controlled replay T00061\nfixture_output_line_8: controlled replay T00062\nfixture_output_line_9: controlled replay T00063\nfixture_output_line_10: controlled replay T00064\nfixture_output_line_11: controlled replay T00065\nfixture_output_line_12: controlled replay T00066\nfixture_output_line_13: controlled replay T00067\nfixture_output_line_14: controlled replay T00068\n",
+        "marker": "T00068",
+        "seq": 68
+      },
+      {
+        "type": "tool_output",
+        "call": "tool",
+        "output": "fixture_output_line_0: controlled replay T00054\nfixture_output_line_1: controlled replay T00055\nfixture_output_line_2: controlled replay T00056\nfixture_output_line_3: controlled replay T00057\nfixture_output_line_4: controlled replay T00058\nfixture_output_line_5: controlled replay T00059\nfixture_output_line_6: controlled replay T00060\nfixture_output_line_7: controlled replay T00061\nfixture_output_line_8: controlled replay T00062\nfixture_output_line_9: controlled replay T00063\nfixture_output_line_10: controlled replay T00064\nfixture_output_line_11: controlled replay T00065\nfixture_output_line_12: controlled replay T00066\nfixture_output_line_13: controlled replay T00067\nfixture_output_line_14: controlled replay T00068\nfixture_output_line_15: controlled replay T00069\n",
+        "marker": "T00069",
+        "seq": 69
+      },
+      {
+        "type": "tool_end",
+        "call": "tool",
+        "output": "fixture_output_line_0: controlled replay T00054\nfixture_output_line_1: controlled replay T00055\nfixture_output_line_2: controlled replay T00056\nfixture_output_line_3: controlled replay T00057\nfixture_output_line_4: controlled replay T00058\nfixture_output_line_5: controlled replay T00059\nfixture_output_line_6: controlled replay T00060\nfixture_output_line_7: controlled replay T00061\nfixture_output_line_8: controlled replay T00062\nfixture_output_line_9: controlled replay T00063\nfixture_output_line_10: controlled replay T00064\nfixture_output_line_11: controlled replay T00065\nfixture_output_line_12: controlled replay T00066\nfixture_output_line_13: controlled replay T00067\nfixture_output_line_14: controlled replay T00068\nfixture_output_line_15: controlled replay T00069\n",
+        "seq": 70
+      },
+      {
+        "type": "done",
+        "seq": 71
+      }
+    ]
+  }
+}

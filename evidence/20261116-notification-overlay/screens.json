@@ -1,0 +1,39 @@
+{
+  "engine": "kitty-vt-wasm",
+  "version": "0.2.0",
+  "columns": 120,
+  "rows": 36,
+  "runs": [
+    {
+      "mode": "control",
+      "trial": 1,
+      "frames": 61,
+      "parse_ms": 5.791,
+      "sha256": "bd11a27b1282a9fd9c62b675e0ed0c12752a4dfab6a967437a9aff2f349793f6"
+    },
+    {
+      "mode": "current",
+      "trial": 1,
+      "frames": 61,
+      "parse_ms": 1.702,
+      "sha256": "bd11a27b1282a9fd9c62b675e0ed0c12752a4dfab6a967437a9aff2f349793f6"
+    },
+    {
+      "mode": "visible",
+      "trial": 1,
+      "frames": 62,
+      "parse_ms": 1.475,
+      "sha256": "db1b8bd6fc0b5053f7f798aae12fda5ac7e15296c54fbf1ea56a2e5e1cc1bcd4"
+    }
+  ],
+  "checks": {
+    "hidden_matches_control": true,
+    "visible_has_toast": true,
+    "hidden_has_no_toast": true
+  },
+  "screens": {
+    "current": "  入和编译条件，保留真实失败信息。检查工具输入和编译条件，保留真实失败信息。检查工具输入和编译条件，保留真实失败信息。检\n  查工具输入和编译条件，保留真实失败信息。检查工具输入和编译条件，保留真实失败信息。\n\n准备执行测试。\n\n  # first linevalue_1 = {'index': 1, 'valid': True} # codevalue_2 = {'index': 2, 'valid': True} # codevalue_3 = {'index'\n: 3, 'valid': True} # codevalue_4 = {'index': 4, 'valid': True} # codevalue_5 = {'index': 5, 'valid': True} # codevalue_\n6 = {'index': 6, 'valid': True} # codevalue_7 = {'index': 7, 'valid': True} # codevalue_8 = {'index': 8, 'valid': True}\n# codevalue_9 = {'index': 9, 'valid': True} # codevalue_10 = {'index': 10, 'valid': True} # codevalue_11 = {'index': 11,\n 'valid': True} # codevalue_12 = {'index': 12, 'valid': True} # codevalue_13 = {'index': 13, 'valid': True} # codevalue_\n14 = {'index': 14, 'valid': True} # codevalue_15 = {'index': 15, 'valid': True} # codevalue_16 = {'index': 16, 'valid':\nTrue} # codevalue_17 = {'index': 17, 'valid': True} # codevalue_18 = {'index': 18, 'valid': True} # codevalue_19 = {'ind\nex': 19, 'valid': True} # codevalue_20 = {'index': 20, 'valid': True} # codevalue_21 = {'index': 21, 'valid': True} # co\ndevalue_22 = {'index': 22, 'valid': True} # codevalue_23 = {'index': 23, 'valid': True} # codevalue_24 = {'index': 24, '\nvalid': True} # codevalue_25 = {'index': 25, 'valid': True} # codevalue_26 = {'index': 26, 'valid': True} # codevalue_27\n = {'index': 27, 'valid': True} # codevalue_28 = {'index': 28, 'valid': True} # codevalue_29 = {'index': 29, 'valid': Tr\nue} # codevalue_30 = {'index': 30, 'valid': True} # code```\n  完成编码。\n\nfixture_output_line_0: controlled replay\nfixture_output_line_1: controlled replay\nfixture_output_line_2: controlled replay\nfixture_output_line_3: controlled replay\nfixture_output_line_4: controlled replay\nfixture_output_line_5: controlled replay\nfixture_output_line_6: controlled replay\nfixture_output_line_7: controlled replay\nfixture_output_line_8: controlled replay\nfixture_output_line_9: controlled replay\nfixture_output_line_10: controlled replay\nfixture_output_line_11: controlled replay\n\n\n────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\nTrina  ›\nfixture",
+    "control": "  入和编译条件，保留真实失败信息。检查工具输入和编译条件，保留真实失败信息。检查工具输入和编译条件，保留真实失败信息。检\n  查工具输入和编译条件，保留真实失败信息。检查工具输入和编译条件，保留真实失败信息。\n\n准备执行测试。\n\n  # first linevalue_1 = {'index': 1, 'valid': True} # codevalue_2 = {'index': 2, 'valid': True} # codevalue_3 = {'index'\n: 3, 'valid': True} # codevalue_4 = {'index': 4, 'valid': True} # codevalue_5 = {'index': 5, 'valid': True} # codevalue_\n6 = {'index': 6, 'valid': True} # codevalue_7 = {'index': 7, 'valid': True} # codevalue_8 = {'index': 8, 'valid': True}\n# codevalue_9 = {'index': 9, 'valid': True} # codevalue_10 = {'index': 10, 'valid': True} # codevalue_11 = {'index': 11,\n 'valid': True} # codevalue_12 = {'index': 12, 'valid': True} # codevalue_13 = {'index': 13, 'valid': True} # codevalue_\n14 = {'index': 14, 'valid': True} # codevalue_15 = {'index': 15, 'valid': True} # codevalue_16 = {'index': 16, 'valid':\nTrue} # codevalue_17 = {'index': 17, 'valid': True} # codevalue_18 = {'index': 18, 'valid': True} # codevalue_19 = {'ind\nex': 19, 'valid': True} # codevalue_20 = {'index': 20, 'valid': True} # codevalue_21 = {'index': 21, 'valid': True} # co\ndevalue_22 = {'index': 22, 'valid': True} # codevalue_23 = {'index': 23, 'valid': True} # codevalue_24 = {'index': 24, '\nvalid': True} # codevalue_25 = {'index': 25, 'valid': True} # codevalue_26 = {'index': 26, 'valid': True} # codevalue_27\n = {'index': 27, 'valid': True} # codevalue_28 = {'index': 28, 'valid': True} # codevalue_29 = {'index': 29, 'valid': Tr\nue} # codevalue_30 = {'index': 30, 'valid': True} # code```\n  完成编码。\n\nfixture_output_line_0: controlled replay\nfixture_output_line_1: controlled replay\nfixture_output_line_2: controlled replay\nfixture_output_line_3: controlled replay\nfixture_output_line_4: controlled replay\nfixture_output_line_5: controlled replay\nfixture_output_line_6: controlled replay\nfixture_output_line_7: controlled replay\nfixture_output_line_8: controlled replay\nfixture_output_line_9: controlled replay\nfixture_output_line_10: controlled replay\nfixture_output_line_11: controlled replay\n\n\n────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\nTrina  ›\nfixture",
+    "visible": "  入和编译条件，保留真实失败信息。检查工具输入和编译条件，保留真实失败信息。检查工具输入和编译条件，保留真实失败信息。检\n  查工具输入和编译条件，保留真实失败信息。检查工具输入和编译条件，保留真实失败 Trina · 编译完成 · 3 项工具\n\n准备执行测试。\n\n  # first linevalue_1 = {'index': 1, 'valid': True} # codevalue_2 = {'index': 2, 'valid': True} # codevalue_3 = {'index'\n: 3, 'valid': True} # codevalue_4 = {'index': 4, 'valid': True} # codevalue_5 = {'index': 5, 'valid': True} # codevalue_\n6 = {'index': 6, 'valid': True} # codevalue_7 = {'index': 7, 'valid': True} # codevalue_8 = {'index': 8, 'valid': True}\n# codevalue_9 = {'index': 9, 'valid': True} # codevalue_10 = {'index': 10, 'valid': True} # codevalue_11 = {'index': 11,\n 'valid': True} # codevalue_12 = {'index': 12, 'valid': True} # codevalue_13 = {'index': 13, 'valid': True} # codevalue_\n14 = {'index': 14, 'valid': True} # codevalue_15 = {'index': 15, 'valid': True} # codevalue_16 = {'index': 16, 'valid':\nTrue} # codevalue_17 = {'index': 17, 'valid': True} # codevalue_18 = {'index': 18, 'valid': True} # codevalue_19 = {'ind\nex': 19, 'valid': True} # codevalue_20 = {'index': 20, 'valid': True} # codevalue_21 = {'index': 21, 'valid': True} # co\ndevalue_22 = {'index': 22, 'valid': True} # codevalue_23 = {'index': 23, 'valid': True} # codevalue_24 = {'index': 24, '\nvalid': True} # codevalue_25 = {'index': 25, 'valid': True} # codevalue_26 = {'index': 26, 'valid': True} # codevalue_27\n = {'index': 27, 'valid': True} # codevalue_28 = {'index': 28, 'valid': True} # codevalue_29 = {'index': 29, 'valid': Tr\nue} # codevalue_30 = {'index': 30, 'valid': True} # code```\n  完成编码。\n\nfixture_output_line_0: controlled replay\nfixture_output_line_1: controlled replay\nfixture_output_line_2: controlled replay\nfixture_output_line_3: controlled replay\nfixture_output_line_4: controlled replay\nfixture_output_line_5: controlled replay\nfixture_output_line_6: controlled replay\nfixture_output_line_7: controlled replay\nfixture_output_line_8: controlled replay\nfixture_output_line_9: controlled replay\nfixture_output_line_10: controlled replay\nfixture_output_line_11: controlled replay\n\n\n────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────\nTrina  ›\nfixture"
+  }
+}

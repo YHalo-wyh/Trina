@@ -179,6 +179,7 @@ class TestRegistry(unittest.TestCase):
         result = self.registry.execute("slow_tool", {"target": "127.0.0.1"}, self.ctx, timeout=0.3)
         self.assertFalse(result.ok)
         self.assertIn("超时", result.error)
+        self.assertIn("工作目录", result.to_observation())
 
     def test_timeout_cannot_commit_late_state_or_log(self):
         logged = []
@@ -196,12 +197,14 @@ class TestRegistry(unittest.TestCase):
         self.assertIn("echo_tool", described)
 
     def test_module_subset_is_not_polluted_by_previous_full_build(self):
-        from trina.tools import build_registry
+        from trina.tools import CTFY_TOOL_MODULES, build_registry
 
         full = build_registry()
         web = build_registry(["web"])
         self.assertGreater(len(full.names()), len(web.names()))
         self.assertEqual(web.names(), ["dir_bruteforce", "param_reflect_scan", "web_surface"])
+        self.assertNotIn("ctfy_task", full.names())
+        self.assertIn("ctfy_task", build_registry(CTFY_TOOL_MODULES).names())
 
     def test_runtime_tool_definitions_keep_parameters_without_tutorial_examples(self):
         class ExampleTool(_Echo):

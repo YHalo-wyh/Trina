@@ -2,6 +2,14 @@
 
 ## 0.4.0 · 2026-11-14
 
+### 2026-11-16 · 仓库工作流、rg 与完成提醒
+
+- `workspace_git` 扩展为仓库级工具：状态、结构化 Diff/历史、显式暂存与撤销、提交、分支、远端 fetch/fast-forward pull/non-force push，以及干净 worktree 的创建、列出和移除。`/repo`、`/branch`、`/worktree` 共用同一注册和审计链。
+- 新增 `workspace_search`，优先调用真实 ripgrep，统一返回文件、行号、列号与匹配文本；缺失时跳过版本库、依赖、大文件和二进制做有界降级。Bash 继续由 `terminal_exec` 的 argv 模式执行。
+- 新增 trina/contrast/mono 语义配色，运行、成功、警告、失败和 Diff 行按真实状态着色；`/theme` 即时切换。
+- Agent 轮次和后台任务终态新增短时终端通知条，并按终端能力发送 OSC 9/99 或 BEL；`/notify on|off|test` 和 `ui.completion_notify` 控制完成提醒，重定向输出不注入控制序列。
+- 机器规约补充 TR-03-R09、TR-05-R05 与 TR-05-R06，设计取舍见 ADR-0035。
+
 ### 2026-11-16 · 直接样式片段与输出性能复测
 
 - CommonMark 正文直接生成终端样式片段，代码高亮使用有界行缓存，跨行语法保留整块处理；稳定后续块不重复排版。工具窗口按帧线性排版，非全屏输出保持 Unicode 折行。

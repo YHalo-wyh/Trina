@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import tempfile
 import threading
 import unittest
@@ -26,6 +27,7 @@ class CTFYTests(unittest.TestCase):
         self.root = Path(temporary.name)
         self.requests = []
         self.gateway_calls = 0
+        self.gateway_mode = "submit"
         self.pending = False
         owner = self
         class Handler(BaseHTTPRequestHandler):
@@ -41,7 +43,12 @@ class CTFYTests(unittest.TestCase):
                     self.send_response(200)
                     self.send_header("Content-Type", "text/event-stream")
                     self.end_headers()
-                    if owner.gateway_calls == 1:
+                    if owner.gateway_mode == "auto" and owner.gateway_calls == 1:
+                        text = json.dumps({"action": "terminal_exec", "params": {
+                            "argv": [sys.executable, "-c", "print('flag{right}')"],
+                            "timeout": 5, "cwd": "project",
+                        }})
+                    elif owner.gateway_calls == 1:
                         text = json.dumps({"action": "ctfy_task", "params": {"action": "submit", "question_id": "flag", "answer": "right"}})
                     else:
                         text = "本地协议夹具结束"
@@ -54,8 +61,10 @@ class CTFYTests(unittest.TestCase):
                 if owner.pending:
                     self.reply({"status": "pending"})
                 else:
+                    answer = body["answer"]
+                    correct = "right" in answer if isinstance(answer, list) else answer in {"right", "flag{right}"}
                     self.reply({"id": "submission-local", "question_id": body["question_id"],
-                                "correct": body["answer"] == "right", "challenge_fully_solved": body["answer"] == "right"})
+                                "correct": correct, "challenge_fully_solved": correct})
             def reply(self, body):
                 encoded = json.dumps(body).encode()
                 self.send_response(200)
@@ -134,9 +143,24 @@ class CTFYTests(unittest.TestCase):
             self.assertEqual(result["solved"], ["flag"])
             self.assertTrue(result["fully_solved"])
             self.assertGreater(self.gateway_calls, 0)
+            self.assertEqual(self.gateway_calls, 1, "权威提交成功后不应再调用模型收尾或生成标题")
             self.assertGreater(result["input_tokens"], 0)
             saved = (self.root / "result.json").read_text()
             self.assertNotIn("fixture-model-key", saved)
             self.assertNotIn("fixture-token", saved)
+        finally:
+            os.chdir(current)
+
+    def test_unique_flag_is_auto_submitted_without_second_model_round_trip(self):
+        current = Path.cwd()
+        self.gateway_mode = "auto"
+        try:
+            self.assertEqual(run_ctfy(self.root), 0)
+            result = json.loads((self.root / "result.json").read_text())
+            self.assertEqual(result["solved"], ["flag"])
+            self.assertTrue(result["fully_solved"])
+            self.assertEqual(self.gateway_calls, 1)
+            submissions = [row for row in self.requests if row[0] == "POST"]
+            self.assertEqual(submissions[-1][2]["answer"], "flag{right}")
         finally:
             os.chdir(current)

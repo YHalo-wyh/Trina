@@ -20,7 +20,9 @@ from .registry import (
 )
 
 #: 工具子模块（顺序即提示词中的分组顺序）
-TOOL_MODULES = ("recon", "web", "vuln", "exploit", "creds", "terminal", "workspace", "coordination", "binary", "ctfy")
+TOOL_MODULES = ("recon", "web", "vuln", "exploit", "creds", "terminal", "workspace", "coordination", "binary")
+# 托管评测只加载解题、命令、二进制和权威提交能力，避免导入无关重型模块及其 Schema。
+CTFY_TOOL_MODULES = ("recon", "web", "terminal", "workspace", "binary", "ctfy")
 
 LOAD_ERRORS: dict[str, str] = {}
 
@@ -60,6 +62,7 @@ __all__ = [
     "ToolRegistry",
     "ToolResult",
     "ToolSpec",
+    "CTFY_TOOL_MODULES",
     "build_registry",
     "denied_result",
     "tool_names",

@@ -1,0 +1,36 @@
+  入和编译条件，保留真实失败信息。检查工具输入和编译条件，保留真实失败信息。检查工具输入和编译条件，保留真实失败信息。检
+  查工具输入和编译条件，保留真实失败信息。检查工具输入和编译条件，保留真实失败信息。
+
+准备执行测试。
+
+  # first linevalue_1 = {'index': 1, 'valid': True} # codevalue_2 = {'index': 2, 'valid': True} # codevalue_3 = {'index'
+: 3, 'valid': True} # codevalue_4 = {'index': 4, 'valid': True} # codevalue_5 = {'index': 5, 'valid': True} # codevalue_
+6 = {'index': 6, 'valid': True} # codevalue_7 = {'index': 7, 'valid': True} # codevalue_8 = {'index': 8, 'valid': True}
+# codevalue_9 = {'index': 9, 'valid': True} # codevalue_10 = {'index': 10, 'valid': True} # codevalue_11 = {'index': 11,
+ 'valid': True} # codevalue_12 = {'index': 12, 'valid': True} # codevalue_13 = {'index': 13, 'valid': True} # codevalue_
+14 = {'index': 14, 'valid': True} # codevalue_15 = {'index': 15, 'valid': True} # codevalue_16 = {'index': 16, 'valid':
+True} # codevalue_17 = {'index': 17, 'valid': True} # codevalue_18 = {'index': 18, 'valid': True} # codevalue_19 = {'ind
+ex': 19, 'valid': True} # codevalue_20 = {'index': 20, 'valid': True} # codevalue_21 = {'index': 21, 'valid': True} # co
+devalue_22 = {'index': 22, 'valid': True} # codevalue_23 = {'index': 23, 'valid': True} # codevalue_24 = {'index': 24, '
+valid': True} # codevalue_25 = {'index': 25, 'valid': True} # codevalue_26 = {'index': 26, 'valid': True} # codevalue_27
+ = {'index': 27, 'valid': True} # codevalue_28 = {'index': 28, 'valid': True} # codevalue_29 = {'index': 29, 'valid': Tr
+ue} # codevalue_30 = {'index': 30, 'valid': True} # code```
+  完成编码。
+
+fixture_output_line_0: controlled replay
+fixture_output_line_1: controlled replay
+fixture_output_line_2: controlled replay
+fixture_output_line_3: controlled replay
+fixture_output_line_4: controlled replay
+fixture_output_line_5: controlled replay
+fixture_output_line_6: controlled replay
+fixture_output_line_7: controlled replay
+fixture_output_line_8: controlled replay
+fixture_output_line_9: controlled replay
+fixture_output_line_10: controlled replay
+fixture_output_line_11: controlled replay
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+Trina  ›
+fixture

@@ -568,6 +568,7 @@ def run_external(
     env: dict[str, str] | None = None,
     audit: bool = True,
     background: bool = False,
+    stream_output: bool = True,
 ) -> ExternalRun:
     """执行外部二进制。护栏拒绝时抛 `ScopeViolation`（由注册表统一转为拒绝结果）。"""
     argv = [str(a) for a in argv]
@@ -624,8 +625,8 @@ def run_external(
         if getattr(ctx, "emit", None) is not None and ctx.extra.get("_tool_call_id"):
             from ..scope import execute_streamed
             proc = execute_streamed(argv, timeout=budget, cwd=cwd, env=env, input_data=input_data,
-                                    on_output=lambda stream, delta: ctx.emit("tool.output", tool=tool or binary,
-                                                                            stream=stream, delta=delta),
+                                    on_output=(lambda stream, delta: ctx.emit("tool.output", tool=tool or binary,
+                                                                            stream=stream, delta=delta)) if stream_output else (lambda *_: None),
                                     stop_event=ctx.extra.get("stop_event"))
         else:
             proc = subprocess.run(argv, input=input_data, capture_output=True, text=True, timeout=budget,

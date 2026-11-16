@@ -11,6 +11,65 @@ from .registry import ParamSpec, Tool, ToolResult, ToolSpec
 _TEXT_LIMIT = 1_000_000
 
 
+def _command(argv: list[str]) -> tuple[str, list[str]]:
+    """返回实际子命令名和参数；兼容 ``busybox find``。"""
+    name = Path(argv[0]).name.lower()
+    if name in {"busybox", "busybox.exe"} and len(argv) > 1:
+        return argv[1].lower(), argv[2:]
+    return name, argv[1:]
+
+
+def _is_unbounded_find(argv: list[str]) -> bool:
+    """识别以文件系统根目录为搜索根的 find，避免把整机扫描交给超时回收。"""
+    name, args = _command(argv)
+    if name not in {"find", "find.exe"}:
+        return False
+    roots: list[str] = []
+    for item in args:
+        if item == "--" or (not roots and item in {"-H", "-L", "-P"}):
+            continue
+        if item.startswith("-") or item in {"!", "("}:
+            break
+        roots.append(item)
+    return "/" in roots
+
+
+def _fast_ctfy_nc(argv: list[str], input_data: str, enabled: bool) -> tuple[list[str], bool]:
+    """CTFY 一次性 nc 调用有 stdin 时收紧退出等待；监听和交互调用保持原样。"""
+    name, args = _command(argv)
+    if not enabled or not input_data or name not in {"nc", "nc.exe", "netcat", "netcat.exe"}:
+        return list(argv), False
+    if any(item in {"-l", "--listen"} or item.startswith("-l") and item != "-l" for item in args):
+        return list(argv), False
+
+    adjusted = list(argv)
+    prefix = 2 if Path(argv[0]).name.lower() in {"busybox", "busybox.exe"} else 1
+
+    def cap(flag: str, limit: float, rendered: str) -> None:
+        nonlocal adjusted
+        for index in range(prefix, len(adjusted)):
+            item = adjusted[index]
+            if item == flag and index + 1 < len(adjusted):
+                try:
+                    if float(adjusted[index + 1]) > limit:
+                        adjusted[index + 1] = rendered
+                except ValueError:
+                    pass
+                return
+            if item.startswith(flag) and item != flag:
+                try:
+                    if float(item[len(flag):]) > limit:
+                        adjusted[index] = flag + rendered
+                except ValueError:
+                    pass
+                return
+        adjusted[prefix:prefix] = [flag, rendered]
+
+    cap("-w", 2, "2")
+    cap("-q", 1, "1")
+    return adjusted, adjusted != argv
+
+
 def _path(ctx, raw: str, root: str = "project") -> Path:
     """所有文件路径统一交给 ScopeGuard 裁决，禁止跨项目/跨任务逃逸。"""
     if not raw or "\x00" in raw:
@@ -44,12 +103,13 @@ class TerminalExec(Tool):
             "timeout": ParamSpec("float", "最长秒数", required=False, default=120),
             "input": ParamSpec("str", "可选标准输入，最多 64KiB", required=False, default=""),
             "cwd": ParamSpec("str", "执行目录", required=False, default="project", enum=["project", "run"]),
+            "working_directory": ParamSpec("str", "可选的明确工作目录，例如已创建的 worktree；经过工作区护栏", required=False, default=""),
             "target": ParamSpec("str", "可选目标，用于审计与限速", required=False, default=""),
         },
         produces=["files"],
     )
 
-    def run(self, ctx, argv, timeout=120, input="", cwd="project", target=""):
+    def run(self, ctx, argv, timeout=120, input="", cwd="project", target="", working_directory=""):
         if not argv or not all(isinstance(arg, str) and arg for arg in argv):
             return ToolResult(ok=False, error="argv 必须为非空字符串数组")
         if not 0 < float(timeout) <= 600:
@@ -57,8 +117,22 @@ class TerminalExec(Tool):
         if len(input.encode("utf-8")) > 65_536:
             return ToolResult(ok=False, error="input 超过 64KiB")
         directory = Path.cwd() if cwd == "project" else ctx.workspace
+        if working_directory:
+            directory = _path(ctx, working_directory)
+        if not directory.is_dir():
+            return ToolResult(ok=False, error="执行目录不存在或不是目录")
+        if _is_unbounded_find(argv):
+            return ToolResult(
+                ok=False,
+                category="invalid",
+                summary="已拒绝无界全盘搜索",
+                error="find / 会扫描整个文件系统并产生长时间无效等待",
+                data={"cwd": str(directory), "workspace": str(ctx.workspace)},
+                next_hints=["先查看当前工作目录和任务合同给出的附件路径", "只对已知的具体目录执行 find"],
+            )
+        actual_argv, adjusted = _fast_ctfy_nc(argv, input, bool(ctx.extra.get("ctfy_fast_nc")))
         call = run_external(
-            argv,
+            actual_argv,
             ctx,
             tool=self.spec.name,
             target=target,
@@ -70,13 +144,21 @@ class TerminalExec(Tool):
         error = call.error or (f"退出码 {call.code}" if call.code not in (0, None) else "")
         output = (call.stdout or "")[-12_000:]
         stderr = (call.stderr or "")[-4_000:]
+        hints = []
+        if call.timed_out:
+            hints = [
+                "不要原样重试或扩大搜索范围",
+                f"先检查执行目录 {directory} 与任务合同中的具体附件路径，再缩小命令范围",
+            ]
         return ToolResult(
             ok=call.ok,
             category="timed_out" if call.timed_out else "",
             summary=f"命令完成，退出码 {call.code}" if call.ok else (error or "命令执行失败"),
             error=error,
             command=call.command,
-            data={"exit_code": call.code, "stdout": output, "stderr": stderr, "cwd": str(directory)},
+            data={"exit_code": call.code, "stdout": output, "stderr": stderr, "cwd": str(directory),
+                  "argv_adjusted": actual_argv if adjusted else []},
+            next_hints=hints,
         )
 
 
@@ -185,32 +267,8 @@ class WorkspaceEdit(Tool):
             return ToolResult(ok=False, error=str(exc))
 
 
-class WorkspaceGit(Tool):
-    spec = ToolSpec(
-        name="workspace_git", summary="查看项目 Git 状态、列出本地分支、切换或创建分支；支持在 main 直接编辑，不强制重置文件",
-        category="workspace", action_level="exploit",
-        params={
-            "action": ParamSpec("str", "Git 操作", enum=["status", "branches", "switch", "create"]),
-            "branch": ParamSpec("str", "本地分支名", required=False, default=""),
-        },
-    )
-
-    def required_level(self, params: dict) -> str:
-        return "detect" if params.get("action") in {"status", "branches"} else "exploit"
-
-    def run(self, ctx, action, branch=""):
-        if action in {"switch", "create"} and (not branch or branch.startswith("-") or any(c in branch for c in "\r\n\x00")):
-            return ToolResult(ok=False, error="必须提供合法的本地分支名")
-        args = {"status": ["status", "--short", "--branch"],
-                "branches": ["for-each-ref", "--format=%(refname:short)", "refs/heads/"],
-                "switch": ["switch", "--no-guess", "--", branch], "create": ["switch", "-c", branch]}[action]
-        result = run_external(["git", *args], ctx, tool=self.spec.name, required_level=ctx.effective_level,
-                              timeout=15, cwd=str(Path.cwd()))
-        output = result.stdout.strip()
-        return ToolResult(ok=result.ok, summary=output or (result.stderr.strip() if result.ok else ""),
-                          error=result.error or (result.stderr.strip() if not result.ok else ""),
-                          data={"branches": output.splitlines() if action == "branches" and result.ok else [],
-                                "output": output, "exit_code": result.code})
+from .git import WorkspaceGit
+from .search import WorkspaceSearch
 
 
-TOOLS = [TerminalExec(), WorkspaceRead(), WorkspaceWrite(), WorkspaceEdit(), WorkspaceGit()]
+TOOLS = [TerminalExec(), WorkspaceRead(), WorkspaceWrite(), WorkspaceEdit(), WorkspaceSearch(), WorkspaceGit()]

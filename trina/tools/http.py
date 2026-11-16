@@ -117,12 +117,13 @@ class HttpClient:
         verify_tls: bool = False,
         headers: dict[str, str] | None = None,
         actor: str = "trina",
+        session: requests.Session | None = None,
     ):
         self.guard = guard
         self.timeout = timeout
         self.retries = retries
         self.actor = actor
-        self.session = requests.Session()
+        self.session = session or requests.Session()
         self.session.headers.update(DEFAULT_HEADERS)
         if headers:
             self.session.headers.update(headers)

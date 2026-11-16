@@ -6,6 +6,7 @@ import os
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 from urllib.parse import quote, urlsplit
 
 from .tools.http import HttpClient
@@ -19,6 +20,8 @@ class CTFYTask:
     solved: list = field(default_factory=list)
     fully_solved: bool = False
     verdicts: list = field(default_factory=list)
+    _http_session: Any = field(default=None, init=False, repr=False)
+    _auto_attempted: set[tuple[str, str]] = field(default_factory=set, init=False, repr=False)
 
     @classmethod
     def load(cls, root: Path) -> CTFYTask:
@@ -34,7 +37,12 @@ class CTFYTask:
         if not base or base != expected or not token:
             raise ValueError("CTFY 平台地址与任务合同不符或缺少运行令牌")
         # 所有方法/路径固定在代码内；绝不接受模型传入 URL 或跨题 ID。
-        http = HttpClient(ctx.guard, retries=0, timeout=15, verify_tls=True)
+        if self._http_session is None:
+            import requests
+            self._http_session = requests.Session()
+        http = HttpClient(ctx.guard, retries=0, timeout=15, verify_tls=True,
+                          headers={"Connection": "keep-alive"}, actor="ctfy-control",
+                          session=self._http_session)
         reply = http.request(method, base + path, json_body=body,
             headers={"Authorization": "Bearer " + token}, control_plane=True,
             payload_label="ctfy:" + path, allow_redirects=False)
@@ -45,6 +53,86 @@ class CTFYTask:
             raise ValueError("CTFY 响应不是对象")
         ctx.audit.append("ctfy.response", method=method, path=path, status=reply.status, response=data)
         return data, reply.as_evidence()
+
+    def close(self) -> None:
+        if self._http_session is not None:
+            self._http_session.close()
+            self._http_session = None
+
+    def environment_contract(self) -> dict[str, Any]:
+        """把托管容器的确定路径一次性交给模型，避免猜目录和全盘搜索。"""
+        files: list[str] = []
+        ignored = {"runs", "logs", ".git", "__pycache__"}
+        for path in sorted(self.root.rglob("*")):
+            try:
+                relative = path.relative_to(self.root)
+            except ValueError:
+                continue
+            if not relative.parts or relative.parts[0] in ignored or not path.is_file():
+                continue
+            if path.name == "result.json":
+                continue
+            files.append(str(path.resolve()))
+            if len(files) >= 80:
+                break
+        return {
+            "working_directory": str(self.root),
+            "task_file": str((self.root / "task.json").resolve()),
+            "known_files": files,
+            "terminal_cwd": {"project": str(self.root), "run": "Trina 本次运行工件目录"},
+            "search_policy": "先用 known_files 和 task.json 中的路径；禁止 find /，只搜索具体目录",
+            "tcp_policy": "一次性 nc 请求应发送 stdin，并使用 -q 1 -w 2；运行器会收紧更长等待",
+        }
+
+    def briefing(self) -> str:
+        payload = {"ctfy_task": self.task, "environment": self.environment_contract()}
+        return json.dumps(payload, ensure_ascii=False)
+
+    def maybe_auto_submit(self, ctx, tool_name: str, result: Any) -> str:
+        """唯一待答题且只出现一个非占位 Flag 时，经注册表立即提交一次。"""
+        if tool_name == "ctfy_task":
+            if getattr(result, "ok", False) and self.fully_solved:
+                ctx.extra["_turn_completion"] = "平台已确认答案正确，任务完成。"
+                return "平台权威判定已确认全部问题完成"
+            return ""
+        if not getattr(result, "ok", False) or ctx.tools is None:
+            return ""
+        pending = [
+            str(row.get("id") or "")
+            for row in self.task.get("questions", [])
+            if isinstance(row, dict) and row.get("id") and row.get("id") not in self.solved
+        ]
+        if len(pending) != 1:
+            return ""
+        from .bench import submission_candidates
+
+        candidates = submission_candidates(
+            ctx.state,
+            extra_texts=[result.to_observation(max_chars=20_000)],
+            limit=3,
+        )
+        if len(candidates) != 1:
+            return ""
+        question_id, answer = pending[0], candidates[0]
+        key = (question_id, answer)
+        if key in self._auto_attempted:
+            return ""
+        self._auto_attempted.add(key)
+        ctx.audit.append("ctfy.auto_submit", decision="attempt", tool=tool_name,
+                         question_id=question_id, candidate=answer)
+        submitted = ctx.tools.execute("ctfy_task", {
+            "action": "submit", "question_id": question_id, "answer": answer,
+        }, ctx)
+        data = submitted.data if isinstance(submitted.data, dict) else {}
+        correct = submitted.ok and data.get("correct") is True
+        ctx.audit.append("ctfy.auto_submit.result", decision="allow" if correct else "error",
+                         question_id=question_id, correct=correct,
+                         error=(submitted.error or "")[:300])
+        if correct and self.fully_solved:
+            ctx.extra["_turn_completion"] = f"发现唯一候选 {answer}，平台已确认正确，任务完成。"
+        if correct:
+            return f"唯一候选 {answer} 已自动提交，平台判定正确"
+        return f"唯一候选 {answer} 已自动提交，但平台未判定正确；不会原样重复提交"
 
     def refresh(self, ctx):
         challenge = str(self.task["challenge"]["id"])
@@ -109,7 +197,7 @@ def run_ctfy(root: Path) -> int:
     from .brain.chat import ChatAgent
     from .brain.binary_prompt import CTFY_ROLE
     from .config import TrinaConfig
-    from .tools import build_registry
+    from .tools import CTFY_TOOL_MODULES, build_registry
     task = CTFYTask.load(root)
     os.chdir(root)
     if os.environ.get("CTFY_EVAL_DRY_RUN") == "1" or task.task.get("dry_run"):
@@ -128,17 +216,25 @@ def run_ctfy(root: Path) -> int:
         llm__api="anthropic" if flavor == "anthropic" else "chat",
         llm__base_url=os.environ.get("LLM_BASE_URL") or ("https://api.anthropic.com" if flavor == "anthropic" else "https://api.openai.com/v1"),
         llm__role_profile=CTFY_ROLE, scope__control_plane_hosts=[urlsplit(base).hostname or ""])
+    requested_effort = os.environ.get("CTFY_REASONING_EFFORT", "low").strip().lower()
+    from .llm.reasoning import reasoning_support
+    if requested_effort in reasoning_support(cfg.llm).levels:
+        cfg.llm.reasoning_effort = requested_effort
     maximum = int(os.environ.get("CTFY_EVAL_MAX_TURNS") or task.task.get("max_turns") or 40)
     if maximum <= 0:
         raise ValueError("CTFY 模型调用预算必须为正数")
-    agent = ChatAgent(cfg, registry=build_registry(), logger=print)
+    agent = ChatAgent(cfg, registry=build_registry(CTFY_TOOL_MODULES), logger=print)
     agent.ctx.extra["ctfy_task"] = task
+    agent.ctx.extra["ctfy_mode"] = True
+    agent.ctx.extra["ctfy_fast_nc"] = True
+    agent.ctx.extra["disable_title_generation"] = True
+    agent.ctx.extra["tool_result_hook"] = task.maybe_auto_submit
     reason = "turn_budget"
     try:
         while agent.usage.calls < maximum:
             before = agent.usage.calls
             agent.MAX_TOOL_STEPS = min(12, maximum - before)
-            briefing = json.dumps(task.task, ensure_ascii=False) if not before else "继续检查当前合同剩余问题，先验证候选再结束。"
+            briefing = task.briefing() if not before else "继续检查当前合同剩余问题，先验证候选再结束。"
             reply = agent.ask(briefing)
             print(reply)
             task.write_result(stop_reason="running", turns=agent.usage.calls, tool_calls=agent.state.counters.get("tool_calls", 0), usage=agent.usage)
@@ -151,4 +247,5 @@ def run_ctfy(root: Path) -> int:
         return 0
     finally:
         agent.close()
+        task.close()
         task.write_result(stop_reason=reason, turns=agent.usage.calls, tool_calls=agent.state.counters.get("tool_calls", 0), usage=agent.usage)

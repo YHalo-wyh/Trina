@@ -212,7 +212,27 @@ COMMANDS: tuple[CommandSpec, ...] = (
                     ("pause", "暂停"), ("continue", "继续"), ("stop", "停止与回收"), ("resume", "恢复 Swarm 检查点"))),
                 examples=("/subworker", "/subworker start audit localhost 检查服务", "/subworker thinking high", "/subworker model deepseek-flash", "/subworker run tasks.yaml")),
     CommandSpec("branch", "工作区", "查看、切换或创建本地 Git 分支", "branch [分支名|new <名称>]",
-                positional_choices=(ChoiceSpec("new", "创建并切换分支"),)),
+                positional_choices=(ChoiceSpec("new", "创建并切换分支"), ChoiceSpec("list", "列出分支"),
+                                    ChoiceSpec("switch", "切换分支"), ChoiceSpec("delete", "删除已合并分支"))),
+    CommandSpec("repo", "工作区", "仓库状态、Diff、历史、暂存、提交与远端同步", "repo [操作] [参数] [--repo <目录>]",
+                positional_choices=tuple(ChoiceSpec(k, v) for k, v in (("status", "查看文件状态"), ("diff", "查看差异"),
+                    ("log", "查看提交历史"), ("remotes", "查看远端名称"), ("stage", "暂存指定文件"), ("unstage", "撤销指定文件的暂存"),
+                    ("commit", "提交暂存区"), ("branches", "查看分支"), ("worktrees", "查看 worktree"),
+                    ("fetch", "获取远端引用"), ("pull", "仅快进拉取"), ("push", "推送当前 HEAD"))),
+                options=(OptionSpec(("--repo",), "操作指定仓库目录", "<目录>"), OptionSpec(("--staged",), "查看暂存区差异"),
+                         OptionSpec(("--limit",), "历史条数", "<1–100>"), OptionSpec(("--remote",), "已配置远端", "<名称>")),
+                examples=("/repo", "/repo diff --staged", '/repo commit "fix: repair parser"', "/repo stage src/main.py")),
+    CommandSpec("worktree", "工作区", "列出、创建或移除干净 worktree", "worktree [list|add <路径> [新分支]|remove <路径>] [--base <起点>]",
+                aliases=("wt",), positional_choices=(ChoiceSpec("list", "查看工作树"), ChoiceSpec("add", "创建独立目录"),
+                                                        ChoiceSpec("remove", "移除干净工作树")),
+                options=(OptionSpec(("--base",), "新工作树的提交起点", "<引用>"), OptionSpec(("--repo",), "源仓库", "<目录>"),
+                         OptionSpec(("--existing",), "使用已有分支"))),
+    CommandSpec("theme", "会话与模型", "切换输出语义配色", "theme [trina|contrast|mono]", aliases=("colors",),
+                positional_choices=(ChoiceSpec("trina", "粉紫主题，绿成功/红失败/蓝运行"), ChoiceSpec("contrast", "高对比输出"),
+                                    ChoiceSpec("mono", "单色输出"))),
+    CommandSpec("notify", "会话与模型", "切换或测试 Agent 完成提醒", "notify [on|off|test]",
+                positional_choices=(ChoiceSpec("on", "启用完成提醒"), ChoiceSpec("off", "关闭完成提醒"),
+                                    ChoiceSpec("test", "立即显示测试提醒"))),
     CommandSpec("footer", "会话与模型", "切换底栏信息密度", "footer [default|compact|full]",
                 positional_choices=(ChoiceSpec("default", "均衡"), ChoiceSpec("compact", "精简"), ChoiceSpec("full", "完整"))),
     CommandSpec("context", "会话与模型", "查看上下文预算、前缀变化和缓存诊断", "context"),
@@ -474,12 +494,13 @@ def enhanced_input_available() -> bool:
 class EnhancedConsoleInput:
     """可滚动内容区与固定底部的活动、输入、索引和会话用量。"""
 
-    def __init__(self, *, status, running, dynamic_values, plain: bool = False, usage=None, activity=None, context=None, motion: str = "full") -> None:
+    def __init__(self, *, status, running, dynamic_values, plain: bool = False, usage=None, activity=None, context=None,
+                 motion: str = "full", output_palette="trina") -> None:
         from prompt_toolkit import Application
         from prompt_toolkit.buffer import Buffer
         from prompt_toolkit.history import InMemoryHistory
         from prompt_toolkit.key_binding import KeyBindings
-        from prompt_toolkit.layout import Layout, HSplit, Window, ConditionalContainer
+        from prompt_toolkit.layout import Layout, HSplit, Window, ConditionalContainer, FloatContainer, Float
         from prompt_toolkit.layout.controls import BufferControl, FormattedTextControl
         from prompt_toolkit.layout.dimension import Dimension
         from prompt_toolkit.layout.processors import BeforeInput
@@ -500,8 +521,12 @@ class EnhancedConsoleInput:
         self._tool_indices: dict[str, int] = {}
         self._thinking_indices: dict[str, int] = {}
         self._plain = plain
+        self._output_palette = output_palette
         self._home_animation = False
         self._home_frame = -1
+        self._toast_message = ""
+        self._toast_level = "success"
+        self._toast_token = 0
         self._motion = motion
         self._mouse_enabled = True
         self._char_count = 0
@@ -603,7 +628,7 @@ class EnhancedConsoleInput:
         def follow_latest(event):
             self._scroll_to_latest()
 
-        style = Style.from_dict({"selection": "reverse"} if plain else {
+        style = Style.from_dict({"selection": "reverse", "toast": "reverse"} if plain else {
             "prompt": "bold " + THEME["rose"], "index": THEME["muted"],
             "selected": "bg:" + THEME["selected"] + " " + THEME["text"] + " bold", "hint": THEME["muted"],
             "status": THEME["lilac"], "title": "bold " + THEME["rose"],
@@ -621,6 +646,8 @@ class EnhancedConsoleInput:
             "context.meter": "bold " + THEME["rose"],
             "context.warn": "bold #e5bb86", "context.hot": "bold #fa8eae",
             "context.label": THEME["muted"], "context.task": "italic " + THEME["lilac"],
+            "toast": "bg:#3b2444 #f4d7ec bold", "toast.success": "bg:#244036 #d9f5e7 bold",
+            "toast.error": "bg:#542c38 #ffdce3 bold",
             "selection": "bg:" + THEME["selected"] + " " + THEME["text"],
         })
         control = BufferControl(buffer=self.buffer, input_processors=[BeforeInput(
@@ -641,8 +668,7 @@ class EnhancedConsoleInput:
             FormattedTextControl(self._usage), wrap_lines=False, dont_extend_height=True,
             height=lambda: self._usage_height(),
         )
-        self.app = Application(
-            layout=Layout(HSplit([
+        content = HSplit([
                 self.output_window,
                 self.activity_window,
                 Window(FormattedTextControl(self._rail), height=1, wrap_lines=False),
@@ -654,7 +680,15 @@ class EnhancedConsoleInput:
                        height=lambda: 1 if self._hint() else 0),
                 Window(FormattedTextControl(self._status), height=self._status_height, wrap_lines=False),
                 ConditionalContainer(self.usage_window, Condition(lambda: self.context is None)),
-            ]), focused_element=control),
+            ])
+        toast = ConditionalContainer(
+            Window(FormattedTextControl(self._toast), height=1, wrap_lines=False,
+                   width=Dimension(min=12, preferred=42, max=60)),
+            Condition(lambda: bool(self._toast_message)),
+        )
+        self.app = Application(
+            layout=Layout(FloatContainer(content=content, floats=[Float(top=1, right=1, content=toast)]),
+                          focused_element=control),
             key_bindings=bindings, style=style, full_screen=True,
             refresh_interval=0.2 if motion == "full" else None,
             min_redraw_interval=1 / 120, max_render_postpone_time=0,
@@ -666,6 +700,46 @@ class EnhancedConsoleInput:
         # 包装仅属于主界面；嵌套表单继续使用 AppSession 的原始输入。
         self.app.input = _ModalInput(self.app.input, self.app)
         self.app.before_render += lambda _: self._animate_home()
+
+    def _toast(self):
+        from .console_state import _fit_cells
+        from .terminal import clean_text
+        width = max(12, min(60, self.app.output.get_size().columns - 2))
+        marker = "!" if self._toast_level == "error" else "✦"
+        style = "class:toast.error" if self._toast_level == "error" else "class:toast.success"
+        return [(style, _fit_cells(f" {marker} {clean_text(self._toast_message).replace(chr(10), ' ')} ", width))]
+
+    def show_notification(self, title: str, body: str = "", *, level: str = "success", seconds: float = 5) -> None:
+        """线程安全地显示短时通知条，并向支持通知协议的终端发送桌面提醒。"""
+        from .notifications import notification_sequence
+        from .terminal import clean_text
+
+        message = " · ".join(part for part in (clean_text(title), clean_text(body)) if part)
+
+        def apply() -> None:
+            self._toast_token += 1
+            token = self._toast_token
+            self._toast_message = message[:240]
+            self._toast_level = "error" if level == "error" else "success"
+            if self.app.is_running:
+                self.app.output.write_raw(notification_sequence(title, body))
+                self.app.output.flush()
+            self.app.invalidate()
+            loop = getattr(self.app, "loop", None)
+            if loop is not None and loop.is_running():
+                loop.call_later(max(.5, float(seconds)), lambda: self._clear_notification(token))
+
+        loop = getattr(self.app, "loop", None)
+        if loop is not None and loop.is_running():
+            loop.call_soon_threadsafe(apply)
+        else:
+            apply()
+
+    def _clear_notification(self, token: int) -> None:
+        if token != self._toast_token:
+            return
+        self._toast_message = ""
+        self.app.invalidate()
 
     def show_home(self) -> None:
         from .terminal import render_home
@@ -867,7 +941,7 @@ class EnhancedConsoleInput:
         """思考和正文使用独立块，只在显示帧排版当前变化部分。"""
         from .terminal import ResponsiveText, render_thinking
         chunk = ResponsiveText(text, lambda width: str(render_thinking(
-            text, final=final, width=width, color=not self._plain)) + "\n\n")
+            text, final=final, width=width, color=not self._plain, palette=self._output_palette)) + "\n\n")
         with self._content_lock:
             index = self._thinking_indices.get(request_id)
             if index is None:
@@ -887,15 +961,15 @@ class EnhancedConsoleInput:
         from .terminal import ResponsiveText, render_answer
 
         if final:
-            source = render_answer(text or " ", color=not self._plain)
+            source = render_answer(text or " ", color=not self._plain, palette=self._output_palette)
             chunk = ResponsiveText(str(source).rstrip("\n") + "\n\n",
                                    lambda width: source.at_width(width).rstrip("\n") + "\n\n",
                                    lambda width: (source.fragments_at_width(width) or []) + [("", "\n\n")])
         else:
             # 快速到来的 delta 只替换文本，渲染频率由 Application 的帧率统一控制。
             chunk = ResponsiveText(text, lambda width:
-                                   str(render_answer(text or " ", width=width, color=not self._plain)) + "\n\n",
-                                   lambda _width: render_markdown_fragments(text or " ", color=not self._plain) + [("", "\n\n")])
+                                   str(render_answer(text or " ", width=width, color=not self._plain, palette=self._output_palette)) + "\n\n",
+                                   lambda _width: render_markdown_fragments(text or " ", color=not self._plain, palette=self._output_palette) + [("", "\n\n")])
         with self._content_lock:
             if self._stream_index is None:
                 if final and not text:
@@ -951,7 +1025,7 @@ class EnhancedConsoleInput:
                 call = lambda: self._handler(text)
                 command = text.strip().lstrip("/").split(maxsplit=1)[0] if text.strip() else ""
                 # 模型表单暂时接管终端，结束后恢复同一内容区和未提交输入。
-                modal = command in {"model", "resume", "worker", "subworker", "branch", "footer"} and (not self.running() or command == "subworker")
+                modal = command in {"model", "resume", "worker", "subworker", "branch", "repo", "worktree", "wt", "theme", "colors", "footer"} and (not self.running() or command == "subworker")
                 keep = await run_in_terminal(call, in_executor=True) if modal else await run_in_executor_with_context(call)
                 if not keep:
                     self.app.exit()

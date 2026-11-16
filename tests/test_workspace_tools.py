@@ -13,6 +13,7 @@ from trina.state import RunState
 from trina.tools import build_registry
 from trina.tools.http import HttpClient
 from trina.tools.registry import ToolContext
+from trina.tools.workspace import _fast_ctfy_nc, _is_unbounded_find
 
 
 class WorkspaceToolTests(unittest.TestCase):
@@ -59,6 +60,27 @@ class WorkspaceToolTests(unittest.TestCase):
         }, self.ctx)
         self.assertFalse(result.ok)
         self.assertEqual(path.read_text(encoding="utf-8"), "same same")
+
+    def test_unbounded_find_is_rejected_before_process_start(self):
+        self.assertTrue(_is_unbounded_find(["find", "/", "-name", "healthcheckd"]))
+        self.assertFalse(_is_unbounded_find(["find", "/ctfy/work", "-name", "healthcheckd"]))
+        result = self.registry.execute("terminal_exec", {
+            "argv": ["find", "/", "-name", "healthcheckd"], "timeout": 120,
+        }, self.ctx)
+        self.assertFalse(result.ok)
+        self.assertEqual(result.category, "invalid")
+        self.assertIn("当前工作目录", result.to_observation())
+
+    def test_ctfy_one_shot_nc_caps_wait_but_listener_is_unchanged(self):
+        adjusted, changed = _fast_ctfy_nc(
+            ["nc", "-x", "127.0.0.1:1080", "target", "31337", "-w", "10"],
+            "hidden\n", True,
+        )
+        self.assertTrue(changed)
+        self.assertEqual(adjusted[adjusted.index("-w") + 1], "2")
+        self.assertEqual(adjusted[adjusted.index("-q") + 1], "1")
+        listener = ["nc", "-l", "31337"]
+        self.assertEqual(_fast_ctfy_nc(listener, "x", True), (listener, False))
 
 
 if __name__ == "__main__":

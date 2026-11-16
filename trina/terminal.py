@@ -13,6 +13,7 @@ PHASES = {"recon": "侦察", "enum": "枚举", "vuln": "验证", "exploit": "利
 STATUSES = {"running": "运行中", "chat": "对话", "success": "完成", "partial": "部分完成", "failed": "失败", "blocked": "已阻止", "stopped": "已停止"}
 VERDICTS = {"CONFIRMED": "已确认", "NOT_CONFIRMED": "本轮未确认", "INCONCLUSIVE": "证据不足"}
 from .text import clean_text
+from .output_styles import Palette, diff_style, output_style, palette_name
 THEME = {"rose": "#edb2d2", "lilac": "#c7a5e8", "violet": "#9b7bc7", "muted": "#a595b3",
          "ink": "#1c1625", "selected": "#50355f", "text": "#ede5f2"}
 
@@ -127,8 +128,11 @@ def render_panel(title: str, *, rows: list[tuple[str, Any]] | None = None, secti
         width=new_width, color=color, accent=accent)), requested_width)
 
 
-def render_message(message: str, *, label: str = "提示", width: int | None = None, color: bool = False) -> str:
+def render_message(message: str, *, label: str = "提示", width: int | None = None, color: bool = False,
+                   palette: Palette = "trina") -> str:
     requested_width = width
+    requested_color = color
+    color = color and palette_name(palette) != "mono"
     width = max(20, width if width is not None else terminal_width())
     text = f"{clean_text(label)}  {clean_text(message)}"
     try:
@@ -137,32 +141,34 @@ def render_message(message: str, *, label: str = "提示", width: int | None = N
     except ImportError:
         value = _wrap(text, width)
         return _responsive(value, lambda new_width: str(render_message(
-            message, label=label, width=new_width, color=color)), requested_width)
+            message, label=label, width=new_width, color=requested_color, palette=palette)), requested_width)
     stream = io.StringIO()
-    content = Text(text, overflow="fold")
-    content.stylize("bold " + THEME["rose"] if label.strip("[] ") not in ("错误", "拒绝") else "bold red", 0, len(clean_text(label)))
+    content = Text(text, style=output_style("text", palette, color=color), overflow="fold")
+    role = "error" if label.strip("[] ") in ("错误", "拒绝") else "warning" if label.strip("[] ") in ("警告", "超时") else "heading"
+    content.stylize(output_style(role, palette, color=color), 0, len(clean_text(label)))
     Console(file=stream, width=width, height=25, force_terminal=color, color_system="truecolor" if color else None,
             no_color=not color, legacy_windows=False, highlight=False).print(content)
     value = stream.getvalue().rstrip("\n")
     return _responsive(value, lambda new_width: str(render_message(
-        message, label=label, width=new_width, color=color)), requested_width)
+        message, label=label, width=new_width, color=requested_color, palette=palette)), requested_width)
 
 
-def render_process(message: str, *, label: str = "过程", width: int | None = None, color: bool = False) -> str:
+def render_process(message: str, *, label: str = "过程", width: int | None = None, color: bool = False,
+                   palette: Palette = "trina") -> str:
     """普通进展直接写入内容区，不套工具窗口。"""
     requested_width = width
     width = max(20, width if width is not None else terminal_width())
     text = _wrap(f"{clean_text(label)}  {clean_text(message)}", width)
     if color:
-        rgb = ";".join(str(int(THEME["muted"][index:index + 2], 16)) for index in (1, 3, 5))
-        value = f"\x1b[38;2;{rgb}m" + text + "\x1b[0m"
+        from .markdown_view import fragments_to_ansi
+        value = fragments_to_ansi([(output_style("thinking" if "思考" in label else "muted", palette), text)])
     else:
         value = text
     return _responsive(value, lambda new_width: str(render_process(
-        message, label=label, width=new_width, color=color)), requested_width)
+        message, label=label, width=new_width, color=color, palette=palette)), requested_width)
 
 
-def render_answer(message: str, *, width: int | None = None, color: bool = False) -> str:
+def render_answer(message: str, *, width: int | None = None, color: bool = False, palette: Palette = "trina") -> str:
     """正式输出使用流式 Markdown 排版，清除控制字符，不附会话统计。"""
     requested_width = width
     width = max(20, width if width is not None else terminal_width())
@@ -171,44 +177,47 @@ def render_answer(message: str, *, width: int | None = None, color: bool = False
     except ImportError:
         value = _wrap(message, width)
         return _responsive(value, lambda new_width: str(render_answer(
-            message, width=new_width, color=color)), requested_width)
-    fragments = render_markdown_fragments(message, color=color)
+            message, width=new_width, color=color, palette=palette)), requested_width)
+    fragments = render_markdown_fragments(message, color=color, palette=palette)
     wrapped = wrap_fragments(fragments, width)
     value = fragments_to_ansi(wrapped) if color else "".join(text for _, text in wrapped)
     if requested_width is not None:
         return value
     return ResponsiveText(value,
-                          lambda new_width: str(render_answer(message, width=new_width, color=color)),
-                          lambda _new_width: render_markdown_fragments(message, color=color))
+                          lambda new_width: str(render_answer(message, width=new_width, color=color, palette=palette)),
+                          lambda _new_width: render_markdown_fragments(message, color=color, palette=palette))
 
 
-def streaming_answer(message: str, *, color: bool = False) -> ResponsiveText:
+def streaming_answer(message: str, *, color: bool = False, palette: Palette = "trina") -> ResponsiveText:
     """流式正文的延迟排版对象；未绘制的 delta 不产生 ANSI 或语法高亮。"""
     from .markdown_view import render_markdown_fragments
-    return ResponsiveText(message, lambda width: str(render_answer(message or " ", width=width, color=color)),
-                          lambda _width: render_markdown_fragments(message or " ", color=color))
+    return ResponsiveText(message, lambda width: str(render_answer(message or " ", width=width, color=color, palette=palette)),
+                          lambda _width: render_markdown_fragments(message or " ", color=color, palette=palette))
 
 
-def render_thinking(message: str, *, final: bool = False, width: int | None = None, color: bool = False) -> str:
+def render_thinking(message: str, *, final: bool = False, width: int | None = None, color: bool = False,
+                    palette: Palette = "trina") -> str:
     """供应商返回的思考单独显示，轻量排版，不走 Markdown/代码高亮。"""
     requested_width = width
     width = max(20, width if width is not None else terminal_width())
     heading = "◇ 思考" if final else "◌ 思考中"
     value = heading + "\n" + "\n".join("  " + line for line in _wrap(clean_text(message), max(1, width - 2)).splitlines())
     if color:
-        value = "\x1b[38;2;160;143;177m" + value + "\x1b[0m"
+        from .markdown_view import fragments_to_ansi
+        value = fragments_to_ansi([(output_style("thinking", palette), value)])
     return _responsive(value, lambda new_width: str(render_thinking(
-        message, final=final, width=new_width, color=color)), requested_width)
+        message, final=final, width=new_width, color=color, palette=palette)), requested_width)
 
 
 def render_tool_call(tool: str, params: dict[str, Any], *, status: str = "running", output: str = "",
                      stderr: str = "", error: str = "", duration: float = 0, command: str = "",
-                     exit_code: int | None = None, width: int | None = None, color: bool = False) -> str:
+                     exit_code: int | None = None, width: int | None = None, color: bool = False,
+                     palette: Palette = "trina") -> str:
     """工具输入、输出和状态共用一个窗口，脚本与 JSON 按字面量高亮。"""
     requested_width = width
     width = max(20, width if width is not None else terminal_width())
     original = dict(tool=tool, params=params, status=status, output=output, stderr=stderr, error=error,
-                    duration=duration, command=command, exit_code=exit_code, color=color)
+                    duration=duration, command=command, exit_code=exit_code, color=color, palette=palette)
     fragments = render_tool_call_fragments(**original, width=width)
     if color:
         from .markdown_view import fragments_to_ansi
@@ -224,7 +233,7 @@ def render_tool_call(tool: str, params: dict[str, Any], *, status: str = "runnin
 def render_tool_call_fragments(tool: str, params: dict[str, Any], *, status: str = "running", output: str = "",
                                stderr: str = "", error: str = "", duration: float = 0, command: str = "",
                                exit_code: int | None = None, width: int = 88,
-                               color: bool = False) -> list[tuple[str, str]]:
+                               color: bool = False, palette: Palette = "trina") -> list[tuple[str, str]]:
     """工具流的延迟排版入口，供全屏 transcript 直接消费。"""
     import json
     import shlex
@@ -240,7 +249,8 @@ def render_tool_call_fragments(tool: str, params: dict[str, Any], *, status: str
     title = f"{clean_text(tool)} · {label}"
     footer = f"{duration:.1f}s" + (f" · exit {exit_code}" if exit_code is not None else "")
     return _render_tool_box_fragments(title, script, output or "（暂无输出）", stderr, error, footer,
-                                      width=width, color=color)
+                                      width=width, color=color, palette=palette, status=status,
+                                      is_diff=tool == "workspace_git" and params.get("action") == "diff")
 
 
 def _cells(text: str) -> int:
@@ -270,13 +280,17 @@ def _wrap_clean_line(text: str, width: int) -> list[str]:
 
 
 def _render_tool_box_fragments(title: str, script: str, output: str, stderr: str, error: str, footer: str, *,
-                               width: int, color: bool) -> list[tuple[str, str]]:
+                               width: int, color: bool, palette: Palette = "trina", status: str = "running",
+                               is_diff: bool = False) -> list[tuple[str, str]]:
     """线性绘制工具窗口；输出增量只进行文本折行和补齐。"""
     inner = max(1, width - 4)
-    border_style = ("#dc6478" if error else "#a595b3") if color else ""
-    input_style = "#c7a5e8" if color else ""
-    stderr_style = "#ebbe5a" if color else ""
-    error_style = "#f06478" if color else ""
+    palette = palette_name(palette)
+    role = ("error" if error or status in {"failed", "invalid", "interrupted"} else
+            "success" if status == "completed" else "warning" if status in {"denied", "timed_out", "cancelled", "unavailable"} else "running")
+    border_style = output_style(role, palette, color=color)
+    input_style = output_style("code", palette, color=color)
+    stderr_style = output_style("warning", palette, color=color)
+    error_style = output_style("error", palette, color=color)
     lines: list[list[tuple[str, str]]] = []
 
     def row(text: str, style: str = "") -> list[tuple[str, str]]:
@@ -301,7 +315,7 @@ def _render_tool_box_fragments(title: str, script: str, output: str, stderr: str
     lines.append(ruled("Output"))
     for source_line in safe_output.splitlines() or [""]:
         for wrapped in _wrap_clean_line(source_line, inner):
-            lines.append(row(wrapped))
+            lines.append(row(wrapped, diff_style(source_line, palette, color=color) if is_diff else output_style("text", palette, color=color)))
     if stderr:
         lines.append(ruled("stderr"))
         for source_line in safe_stderr.splitlines():

@@ -645,7 +645,10 @@ class ToolRegistry:
                 error=f"工具 {tool.spec.name} 超时（{timeout:.0f}s）",
                 summary=f"{tool.spec.name} 超时",
                 category="timed_out",
-                next_hints=["降低扫描范围或改用更快的工具"],
+                next_hints=[
+                    "不要原样重试；降低扫描范围或改用更快的工具",
+                    f"先检查工作目录 {ctx.workspace} 和任务给出的具体路径",
+                ],
                 duration=time.monotonic() - started,
             )
         except ScopeViolation as exc:

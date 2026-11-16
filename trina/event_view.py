@@ -13,8 +13,9 @@ from .terminal import render_answer, render_message, render_process, render_tool
 class EventTranscript:
     """call_id 定位工具窗口，消息增量保留在主内容区，不解析日志猜测状态。"""
 
-    def __init__(self, output: Callable[[str], None], *, editor: Any = None, color: bool = False):
+    def __init__(self, output: Callable[[str], None], *, editor: Any = None, color: bool = False, palette="trina"):
         self.output, self.editor, self.color = output, editor, color
+        self.palette = palette
         self.calls: OrderedDict[str, dict[str, Any]] = OrderedDict()
         self.cursor: dict[str, int] = {}
         self._model_errors: OrderedDict[tuple[str, str], None] = OrderedDict()
@@ -63,15 +64,15 @@ class EventTranscript:
                 from .llm import LLMResponse
                 error = str(payload.get("error") or "供应商未返回错误详情")
                 kind = classify_llm_response(LLMResponse(ok=False, error=error))
-                self.output(render_message(f"{LLM_FAILURE_CN[kind]} · {error}", label="错误", color=self.color))
+                self.output(render_message(f"{LLM_FAILURE_CN[kind]} · {error}", label="错误", color=self.color, palette=self.palette))
                 self._model_errors[identity] = None
                 while len(self._model_errors) > 256:
                     self._model_errors.popitem(last=False)
         elif event.kind == "model.retry":
             self.output(render_process(f"第 {payload.get('attempt')} 次重试 · {payload.get('delay')}s 后重试",
-                                       label="模型", color=self.color))
+                                       label="模型", color=self.color, palette=self.palette))
         elif event.kind == "user.message":
-            self.output(render_message(str(payload.get("text", "")), label="你", color=self.color))
+            self.output(render_message(str(payload.get("text", "")), label="你", color=self.color, palette=self.palette))
         elif event.kind == "assistant.message":
             text, final = str(payload.get("text", "")), bool(payload.get("final"))
             if final and text.rstrip() == self._model_final_text and self._model_final_text:
@@ -79,7 +80,7 @@ class EventTranscript:
             elif self.editor is not None:
                 self.editor.update_stream(text, final=final)
             elif final and text:
-                self.output(render_answer(text, color=self.color))
+                self.output(render_answer(text, color=self.color, palette=self.palette))
         elif event.kind.startswith(("tool.", "job.")) and event.call_id:
             kind = event.kind.replace("job.", "tool.", 1) if event.kind.startswith("job.") else event.kind
             row = self.calls.setdefault(event.call_id, dict(tool=payload.get("tool", "工具"), params={},
@@ -116,11 +117,11 @@ class EventTranscript:
                        f"{row['output']}\n{row['stderr']}\n{row.get('error', '')}")
                 from .terminal import render_tool_call_fragments
                 card = ResponsiveText(raw, lambda width: str(render_tool_call(
-                    **snapshot, color=self.color, width=width)),
-                    lambda width: render_tool_call_fragments(**snapshot, color=self.color, width=width))
+                    **snapshot, color=self.color, width=width, palette=self.palette)),
+                    lambda width: render_tool_call_fragments(**snapshot, color=self.color, width=width, palette=self.palette))
                 self.editor.update_tool(event.call_id, card)
             elif kind == "tool.finished":
-                self.output(render_tool_call(**row, color=self.color))
+                self.output(render_tool_call(**row, color=self.color, palette=self.palette))
             while len(self.calls) > 128:
                 self.calls.popitem(last=False)
         self.cursor[event.stream_id] = event.seq
@@ -129,7 +130,7 @@ class EventTranscript:
         if self.editor is not None:
             self.editor.update_stream(text, final=final)
         elif final and text:
-            self.output(render_answer(text, color=self.color))
+            self.output(render_answer(text, color=self.color, palette=self.palette))
 
     def _finish_thinking(self, request_id: str) -> None:
         text = self._thinking.pop(request_id, "")
@@ -138,4 +139,4 @@ class EventTranscript:
                 self.editor.update_thinking(request_id, text, final=True)
             else:
                 from .terminal import render_thinking
-                self.output(render_thinking(text, final=True, color=self.color))
+                self.output(render_thinking(text, final=True, color=self.color, palette=self.palette))
