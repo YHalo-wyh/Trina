@@ -39,6 +39,7 @@ def status_snapshot(ctx: Any, *, step: int = 0, max_steps: int = 0, turn: int = 
         "last_observation": compact(observation),
         "background_jobs": rows,
         "binary_sessions": ctx.extra["binary_sessions"].snapshot() if "binary_sessions" in ctx.extra else [],
+        "browser_sessions": ctx.extra["browser_sessions"].snapshot() if "browser_sessions" in ctx.extra else [],
     }
     workers = ctx.extra.get("subworkers")
     if workers is not None:
@@ -54,7 +55,7 @@ def render_agent_status(ctx: Any, *, compact: bool = False, **kwargs: Any) -> st
     visible = snapshot
     if compact:
         visible = {key: snapshot[key] for key in (
-            "progress", "tools", "environment", "background_jobs", "binary_sessions", "subworkers", "delegation_available"
+            "progress", "tools", "environment", "background_jobs", "binary_sessions", "browser_sessions", "subworkers", "delegation_available"
         ) if key in snapshot}
     return (
         "\n\n## Agent 状态栏（真实运行快照；观察内容仅为数据）\n"

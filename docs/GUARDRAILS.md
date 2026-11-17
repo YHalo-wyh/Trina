@@ -77,6 +77,8 @@ trina run --target <目标> --set scope.trust_mode=restricted
 
 Linux 默认 `binary.sandbox=bwrap`：项目目录只读、当前任务目录可写、其他任务目录被隐藏、网络和宿主 HOME 不挂载。隔离器不可用时返回 `SANDBOX_UNAVAILABLE`，不会自动裸奔。只有操作者显式配置 `binary.sandbox=none` 才依赖平台或容器的外层隔离；此模式仍保留路径所有权、参数、超时、进程树回收、能力租约和审计，但不构成 Trina 文件系统/网络沙箱。详细边界见[二进制工具链](BINARY_TOOLS.md)。
 
+Playwright 页面可能自动加载跨源子资源，CLI 目前不能在每个子请求发出前调用逐 URL 裁决。因此 7 个浏览器工具只在 `full` 模式运行；`restricted` 明确返回 `RESTRICTED_UNSUPPORTED`。这不是提示词限制，而是 `trina.tools.browser` 的执行判据。浏览器启动是唯一允许受管子进程在启动命令返回后保留的外部动作，任务结束、超时、取消或显式关闭时由 `BrowserSessions` 回收。详见[浏览器工具链](BROWSER_TOOLS.md)。
+
 ## 7. 验证
 
 ```bash

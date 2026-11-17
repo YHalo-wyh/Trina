@@ -217,6 +217,28 @@ class BinaryConfig:
 
 
 @dataclass
+class BrowserConfig:
+    """Playwright CLI 浏览器会话与输出预算。"""
+
+    enabled: bool = True
+    max_sessions: int = 2
+    command_timeout: float = 45
+    idle_timeout: float = 600
+
+    def validate(self) -> None:
+        import math
+
+        if type(self.enabled) is not bool:
+            raise ConfigError("browser.enabled 必须为布尔值")
+        if type(self.max_sessions) is not int or not 1 <= self.max_sessions <= 8:
+            raise ConfigError("browser.max_sessions 必须为 1..8 的整数")
+        for name in ("command_timeout", "idle_timeout"):
+            value = getattr(self, name)
+            if type(value) not in (int, float) or not math.isfinite(value) or value <= 0:
+                raise ConfigError(f"browser.{name} 必须为正数")
+
+
+@dataclass
 class ToolsConfig:
     prefer_external: bool = True
     wordlists: dict[str, str] = field(default_factory=dict)
@@ -256,6 +278,8 @@ class AuditConfig:
             "api_key",
             "cookie",
             "authorization",
+            "input_value",
+            "storage_value",
         ]
     )
 
@@ -357,6 +381,7 @@ class TrinaConfig:
     run: RunConfig = field(default_factory=RunConfig)
     tools: ToolsConfig = field(default_factory=ToolsConfig)
     binary: BinaryConfig = field(default_factory=BinaryConfig)
+    browser: BrowserConfig = field(default_factory=BrowserConfig)
     report: ReportConfig = field(default_factory=ReportConfig)
     audit: AuditConfig = field(default_factory=AuditConfig)
     policy: PolicyConfig = field(default_factory=PolicyConfig)
@@ -407,6 +432,7 @@ class TrinaConfig:
             "run": RunConfig,
             "tools": ToolsConfig,
             "binary": BinaryConfig,
+            "browser": BrowserConfig,
             "report": ReportConfig,
             "audit": AuditConfig,
             "policy": PolicyConfig,
@@ -434,7 +460,7 @@ class TrinaConfig:
     @classmethod
     def _apply_env(cls, cfg: "TrinaConfig") -> "TrinaConfig":
         """`TRINA_SCOPE_EXPLOIT_LEVEL=detect` 形式的覆盖（只处理标量字段）。"""
-        for section in ("scope", "llm", "run", "binary", "report", "audit", "policy", "ui", "subworker"):
+        for section in ("scope", "llm", "run", "binary", "browser", "report", "audit", "policy", "ui", "subworker"):
             obj = getattr(cfg, section)
             for fname, fdef in obj.__dataclass_fields__.items():
                 env_key = f"TRINA_{section.upper()}_{fname.upper()}"
@@ -468,6 +494,7 @@ class TrinaConfig:
         self.llm.validate()
         self.run.validate()
         self.binary.validate()
+        self.browser.validate()
         self.policy.validate()
         self.ui.validate()
         self.subworker.validate()

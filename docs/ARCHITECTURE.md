@@ -24,7 +24,7 @@ flowchart TB
     AUDIT["trina.audit.AuditLog<br/>SHA-256 哈希链"]
     STATE["trina.state.RunState<br/>hosts/findings/creds/flags/evidence/timeline"]
     COORD["trina.coordination<br/>事件 Planner / Todo / Intent / 双图 / Trace"]
-    TOOLS["trina.tools：注册工具（含编码、Git、协作、10 项 binary、1 项 CTFY）"]
+    TOOLS["trina.tools：注册工具（含 7 项 browser、10 项 binary、编码、Git、协作、1 项 CTFY）"]
     HTTP["trina.tools.http.HttpClient<br/>带护栏的 HTTP 出口"]
     EXT["trina.tools.external.run_external<br/>外部二进制（shell=False + 护栏）"]
     LLM["trina.llm<br/>标准 API 流式传输 / replay"]
@@ -92,6 +92,7 @@ flowchart TB
 | `trina.tools.workspace` | `terminal_exec`、`workspace_read/write/edit` | 前台 argv 命令和项目文件编码工具；命令经 `run_external`，路径经 `ScopeGuard.check_workspace_path`，写入原子替换，编辑要求精确匹配数 |
 | `trina.coordination` / `trina.tools.coordination` | `CoordinationRuntime.plan/claim/settle/publish_state/search_traces`、`shared_context/shared_trace_*` | Intent 是唯一任务状态；事件驱动规划、共享 Todo 派生视图、租约/去重/恢复、事实索引与探索视图、跨 Worker 可追踪观察和失败；不共享完整对话或直接合并当前题事实 |
 | `trina.binary` / `trina.tools.binary` | `BinarySessions`、`R2Backend`、`GDBBackend`、`AddressRef`、10 个语义化工具 | r2 stdio JSON 与 GDB/MI3 持久会话；按任务和能力租约隔离，地址空间显式，完整协议写证据；见 [二进制工具链](BINARY_TOOLS.md) |
+| `trina.browser` / `trina.tools.browser` | `BrowserSessions`、7 个结构化工具 | Playwright CLI 命名会话；快照 ref、交互、存储、网络记录与截图；完整输出写证据，恢复不复活进程；见[浏览器工具链](BROWSER_TOOLS.md) |
 | `trina.ctfy` / `trina.tools.ctfy` | `CTFYTask`、`run_ctfy`、`ctfy_task` | CTFY v3 instance/QA 任务读取、环境路径合同、唯一 Flag 自动提交、门控刷新和平台权威提交；专用小型工具集与持久控制面 Session，不读取个人模型配置；见 [CTFY 接入](CTFY.md) |
 | `trina.tools.http` | `HttpClient.request/get/post`、`HttpResult.as_evidence()` | 出网唯一出口：护栏 → 限速 → 请求 → 证据化；护栏拒绝时返回带 `error` 的结果而不是抛异常 |
 | `trina.tools.external` | `run_external(argv, ctx, …)`、`which/have` | `shell=False`、先护栏后执行、命令与输出摘要进审计 |
@@ -213,10 +214,12 @@ Commander 通过 `trina/capabilities/catalog.py` 发现统一能力；`broker.py
 
 任务与对话使用结构化消息，稳定 system 和初始合同处于前缀，动态状态与观察只追加到后方。接近本地窗口预算时创建可复核的继承检查点，不调用模型生成摘要；不同任务不复用完整对话。DeepSeek 自动预算为 500K，明确识别的百万窗口型号为 1M，其他型号保守回退且可由 `/model context` 覆盖。详见 [模型传输与缓存](MODELS.md#上下文窗口)与[缓存运行时](CACHE_RUNTIME.md)。
 
-## 9. 浏览器能力状态
+## 9. 浏览器能力
 
-2026-11-06 核对：当前工具注册表没有浏览器工具，依赖中也没有 Playwright / Selenium。HTTP 获取和并发请求使用 `requests` / `aiohttp`，页面解析使用 `BeautifulSoup`；这条路径不能执行页面 JavaScript，也不能代替真实浏览器的点击、输入和渲染截图。
+2026-11-17 起注册表提供 7 个 Playwright CLI 浏览器工具。采用 CLI 而非 Python API，是为了让浏览器启动继续经过 `run_external` 与 `ScopeGuard`，不在工具模块新增进程或网络出口。命名会话由 `BrowserSessions` 管理，模型只看到任务内句柄；完整快照和网络输出写入运行目录，返回上下文的是有界摘要和 `evidence_ref`。
 
-浏览器封装拟采用 **Playwright Python + Chromium**，沿用 Python 工具体系，按实际需要提供导航、页面快照、点击、输入和截图等操作。[Playwright 官方文档](https://playwright.dev/python/docs/intro)提供 Python 自动化接口，且[支持 Chromium](https://playwright.dev/python/docs/browsers)。此处是选型，尚未添加依赖或注册对应工具；接入时仍应复用 `ToolRegistry`、范围校验、审计与运行目录。
+`browser_open` 启动 Chromium 等浏览器；`browser_snapshot` 返回稳定元素 ref；`browser_interact` 负责导航、点击、填写和标签页；`browser_storage`、`browser_requests`、`browser_screenshot`提供状态和取证；`browser_close`显式回收。任务结束、超时、取消和能力租约释放也会关闭会话，历史恢复只保留失效快照。
 
-资料检索入口选用 **Google / Bing**，检索后打开来源页面核对内容。搜索引擎负责找资料，Playwright 负责浏览器操作；该选择记录在工具接入约定中，不增加模型角色或搜索攻略提示词。当前尚未实现搜索工具，不能把选型记录当成已有运行能力。
+Playwright 页面会自行加载跨源子资源，当前 CLI 无法把每个子请求同步交回 Trina 裁决，因此浏览器工具在 `restricted` 模式明确不可用，避免伪造完整边界；默认 `full` 模式仍保留参数、动作等级、速率、超时与审计。轻量 HTTP 工具继续适用于需要逐跳 URL 裁决的场景。完整契约见[浏览器工具链](BROWSER_TOOLS.md)。
+
+资料检索入口选用 **Google / Bing**，检索后打开来源页面核对内容。搜索引擎负责找资料，Playwright 负责浏览器操作；该选择记录在工具接入约定中，不增加模型角色或搜索攻略提示词。

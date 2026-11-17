@@ -1090,9 +1090,9 @@ class Console:
         self._emit(f"完成提醒已{state}；配置项 ui.completion_notify", prefix="通知")
 
     def _cmd_tool(self, args: list[str]) -> None:
-        """二进制手工调用与当前聊天共用生命周期，其他工具保持 CLI 入口。"""
+        """持久二进制/浏览器手工调用与当前聊天共用生命周期。"""
         tool = self.registry.get(args[0]) if args else None
-        if tool is None or tool.spec.category != "binary":
+        if tool is None or tool.spec.category not in {"binary", "browser"}:
             self._delegate(["tool", *args])
             return
         from .cli import build_parser, _literal
@@ -1105,6 +1105,8 @@ class Console:
             params[key] = _literal(value)
         if parsed.target and "path" in tool.spec.params:
             params.setdefault("path", parsed.target)
+        if parsed.target and "url" in tool.spec.params:
+            params.setdefault("url", parsed.target)
         chat = self._ensure_chat()
         chat._initialize_messages()
         chat.title = chat.title or f"手动工具 {tool.spec.name}"

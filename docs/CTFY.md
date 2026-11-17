@@ -39,7 +39,7 @@ CTFY 使用独立的小型注册表，只加载侦察/Web、前后台终端、�
 
 正式运行前仍需由平台提供真实 `task.json`、Token、LLM 网关和实例。平台创建实例、最终答案裁决与竞赛计时由平台负责，Trina 不自行创建靶机或绕过当前问题顺序。
 
-仓库提供 `Dockerfile.ctfy`。该镜像安装 r2/GDB/GCC，并以非 root 用户运行；由于平台容器本身是外层沙箱，镜像显式设置 `TRINA_BINARY_SANDBOX=none`，不在容器内嵌套 bubblewrap。此设置不会关闭 ToolRegistry、任务路径所有权、能力租约、超时、进程树清理或审计。若运行环境允许 user namespace，也可删除该环境变量，改回 `binary.sandbox=bwrap` 后重新验证。
+仓库提供 `Dockerfile.ctfy`。该镜像安装 r2/GDB/GCC，以及固定版本 Playwright CLI 与 Chromium，并以非 root 用户运行；由于平台容器本身是外层沙箱，镜像显式设置 `TRINA_BINARY_SANDBOX=none`，不在容器内嵌套 bubblewrap。此设置不会关闭 ToolRegistry、任务路径所有权、能力租约、超时、进程树清理或审计。若运行环境允许 user namespace，也可删除该环境变量，改回 `binary.sandbox=bwrap` 后重新验证。
 
 ```bash
 docker build -f Dockerfile.ctfy -t trina-ctfy:0.3.0 .

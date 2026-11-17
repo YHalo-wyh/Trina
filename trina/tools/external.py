@@ -569,6 +569,7 @@ def run_external(
     audit: bool = True,
     background: bool = False,
     stream_output: bool = True,
+    allow_detached_children: bool = False,
 ) -> ExternalRun:
     """执行外部二进制。护栏拒绝时抛 `ScopeViolation`（由注册表统一转为拒绝结果）。"""
     argv = [str(a) for a in argv]
@@ -627,7 +628,8 @@ def run_external(
             proc = execute_streamed(argv, timeout=budget, cwd=cwd, env=env, input_data=input_data,
                                     on_output=(lambda stream, delta: ctx.emit("tool.output", tool=tool or binary,
                                                                             stream=stream, delta=delta)) if stream_output else (lambda *_: None),
-                                    stop_event=ctx.extra.get("stop_event"))
+                                    stop_event=ctx.extra.get("stop_event"),
+                                    allow_detached_children=allow_detached_children)
         else:
             proc = subprocess.run(argv, input=input_data, capture_output=True, text=True, timeout=budget,
                                   check=False, errors="replace", cwd=cwd, env=env)
@@ -658,6 +660,7 @@ def run_external(
             duration=round(result.duration, 2),
             stdout_digest=digest,
             stdout_bytes=len(result.stdout),
+            allow_detached_children=allow_detached_children,
         )
     return result
 

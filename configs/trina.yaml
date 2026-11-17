@@ -92,6 +92,12 @@ binary:
   max_r2_sessions: 2
   max_gdb_sessions: 1
 
+browser:
+  enabled: true
+  max_sessions: 2
+  command_timeout: 45
+  idle_timeout: 600
+
 run:
   workspace: "runs"
   # 单条工具调用超时（秒）
@@ -135,7 +141,7 @@ audit:
   # 记录完整的工具输出摘要（关闭可减小体积）
   record_output_digest: true
   # 审计记录中脱敏的字段名
-  redact_keys: ["password", "passwd", "pwd", "token", "secret", "api_key", "cookie", "authorization"]
+  redact_keys: ["password", "passwd", "pwd", "token", "secret", "api_key", "cookie", "authorization", "input_value", "storage_value"]
 
 # 授权策略：计划器提出，独立控制器批准（P3 要求）
 policy:

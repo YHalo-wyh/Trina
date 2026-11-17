@@ -148,9 +148,21 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     ]
     kv_table(rows, "基础")
 
-    binaries = installed("nmap", "nuclei", "sqlmap", "hydra", "ffuf", "gobuster", "nikto", "masscan", "docker", "r2", "gdb", "bwrap")
+    binaries = installed("nmap", "nuclei", "sqlmap", "hydra", "ffuf", "gobuster", "nikto", "masscan", "docker", "r2", "gdb", "bwrap", "node", "npx", "playwright-cli")
+    required_native = {"r2", "gdb", "bwrap"}
+    browser_launchers = {"npx", "playwright-cli"}
     kv_table(
-        [(name, path or ("缺失（原生能力不可用）" if name in {"r2", "gdb", "bwrap"} else "缺失（将使用内置引擎兜底）")) for name, path in binaries.items()],
+        [
+            (
+                name,
+                path or (
+                    "缺失（原生能力不可用）" if name in required_native
+                    else "缺失（npx/playwright-cli 任一可用即可）" if name in browser_launchers
+                    else "缺失（将使用内置引擎兜底）"
+                ),
+            )
+            for name, path in binaries.items()
+        ],
         "外部工具",
     )
 
@@ -554,6 +566,9 @@ def cmd_tool(args: argparse.Namespace) -> int:
     if registry.get(args.name).spec.category == "binary" and args.name != "binary_execute":
         out("二进制会话需由持久 Agent 持有；请在 trina 控制台通过 /tool 或模型调用。", "red")
         return 2
+    if registry.get(args.name).spec.category == "browser":
+        out("浏览器会话需由持久 Agent 持有；请在 trina 控制台通过 /tool 或模型调用。", "red")
+        return 2
 
     params: dict[str, Any] = {}
     if args.params:
@@ -593,6 +608,7 @@ def cmd_tool(args: argparse.Namespace) -> int:
         result = registry.execute(args.name, params, ctx)
     finally:
         ctx.extra["binary_sessions"].close()
+        ctx.extra["browser_sessions"].close()
     payload = {
         "tool": args.name,
         "ok": result.ok,

@@ -899,6 +899,7 @@ class PentestAgent:
             from ..runtime_status import status_snapshot
             ctx.extra["background_jobs"].close()
             ctx.extra["binary_sessions"].close()
+            ctx.extra["browser_sessions"].close()
             status_snapshot(ctx, step=steps, max_steps=max_steps, observation=observation)
             ctx.extra.pop("model_response_observer", None)
             with record_lock:

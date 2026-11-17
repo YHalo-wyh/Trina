@@ -10,6 +10,7 @@
 | [更新日志](CHANGELOG.md) | 各版本面向使用者的变更摘要、兼容说明与验证状态 |
 | [缓存感知运行时](docs/CACHE_RUNTIME.md) | 状态差量、供应商缓存策略、上下文继承检查点与 `/context` 诊断 |
 | [原生二进制工具链](docs/BINARY_TOOLS.md) | radare2 stdio、GDB/MI3、地址模型、会话隔离、真实 ELF 验证与限制 |
+| [浏览器工具链](docs/BROWSER_TOOLS.md) | Playwright/Chromium、快照 ref、交互、存储、网络证据、截图和会话回收 |
 | [CTFY v3 接入](docs/CTFY.md) | instance/QA 任务、平台权威提交、环境契约和本地协议验证边界 |
 | [对抗组计划文档（网安实训中级课程）](网安实训中级课程——对抗组计划文档.md) | Trina 与桌面助手的需求变更、Evaluation、Observability、交叉复查和回归安排 |
 | [对抗组计划文档（专业综合能力提升课程）](专业综合能力提升课程——对抗组计划文档.md) | Trina 与图片隐写分析系统的格式兼容、异常处理、任务恢复、可观测性和交叉复查安排 |
@@ -100,7 +101,7 @@ scripts/dev.sh play --target 127.0.0.1
 
 > `/model` 以供应商为单位添加、编辑、删除和切换配置。名称、请求地址、API Key、模型与备注在同一表单中管理，支持 Key 显隐、地址连通测试及模型验证；主页面保留模型和思考强度选择。配置保存在仓库外 `~/.trina/providers.json`，详见 [供应商配置与 30 个预设](docs/MODELS.md)。临时产物的整理见 [仓库清理记录](docs/REPOSITORY_LAYOUT.md)。
 
-任务 Agent、对话 Assistant 和通用 Worker 共用稳定的安全工程师系统提示词，角色具有当前任务环境中的最高执行权限，并按 `Engineering / Tool Policy / Exploration / Delegation / Workflow / Delivery / Completeness` 七个模块工作。动作协议、工具参数、范围、事实和预算继续作为每轮运行数据注入，避免把动态内容固化进 system。当前网页工具使用 `requests` / `aiohttp` 与 `BeautifulSoup`，尚未封装真实浏览器；浏览器自动化拟采用 **Playwright Python + Chromium**，状态说明见 [架构文档](docs/ARCHITECTURE.md#9-浏览器能力状态)。
+任务 Agent、对话 Assistant 和通用 Worker 共用稳定的安全工程师系统提示词，角色具有当前任务环境中的最高执行权限，并按 `Engineering / Tool Policy / Exploration / Delegation / Workflow / Delivery / Completeness` 七个模块工作。动作协议、工具参数、范围、事实和预算继续作为每轮运行数据注入，避免把动态内容固化进 system。网页能力同时提供 `requests` / `aiohttp` + `BeautifulSoup` 的轻量 HTTP 路径和 **Playwright CLI + Chromium** 的真实浏览器路径；后者支持页面快照、交互、存储、网络证据和截图，详见[浏览器工具链](docs/BROWSER_TOOLS.md)。
 
 资料检索使用 **Google / Bing**；项目搜索工具尚未接入，这两个来源已纳入浏览器接入约定。
 
@@ -129,7 +130,7 @@ scripts/dev.sh play --target 127.0.0.1
 | 能力 | 落地位置 | 关键设计 |
 |---|---|---|
 | 1. 自动决策大脑 | `trina/brain/` | 单一 Agent Runtime；原生协议一轮可提交多个有前序依赖的工具动作，JSON 兼容路径保持单动作；默认目标驱动，PTES 阶段与假设调度仅在显式配置时启用 |
-| 2. 工具统一封装 | `trina/tools/` | 注册工具统一 `ToolSpec/ToolResult` 契约；包含前台命令、文件读写编辑、Git 分支管理、共享追踪查询及 10 个原生二进制工具；缺少依赖时明确报错，不模拟成功 |
+| 2. 工具统一封装 | `trina/tools/` | 注册工具统一 `ToolSpec/ToolResult` 契约；包含 7 个真实浏览器工具、前台命令、文件读写编辑、Git 分支管理、共享追踪查询及 10 个原生二进制工具；缺少依赖时明确报错，不模拟成功 |
 | 3. 靶场适配 | `trina/adapters/` | `local` / `docker-compose` / `http-range` / `tsecbench` 四类适配器；仓库不再携带静态靶场注册表，按需从 `~/.trina/ranges` 或显式 YAML 载入 |
 | 4. 执行信任与审计 | `trina/scope.py` + `trina/audit.py` | 默认 `full` 信任并自动执行；可切换 `restricted` 恢复网段、动作和载荷边界；两种模式都保留超时、取消、限速和 SHA-256 哈希链审计 |
 | 5. 标准报告 | `trina/report/` | Markdown + 自包含 HTML（内联 CSS/SVG，无外部依赖），含执行摘要、攻击路径、漏洞详情（CVSS/CWE/证据/复现/修复）、**证据链与假设台账**（mermaid 关系图，结论可反向追溯）、凭据与 flag、工具时间线、合规声明 |
@@ -168,6 +169,7 @@ scripts/dev.sh play --target 127.0.0.1
 |---|---|---|
 | recon | `port_scan` `service_probe` `http_fingerprint` `tls_info` | detect |
 | web | `dir_bruteforce` `web_surface` `param_reflect_scan` | detect |
+| browser | `browser_open` `browser_snapshot` `browser_interact` `browser_storage` `browser_requests` `browser_screenshot` `browser_close` | detect / verify |
 | vuln | `poc_scan`（21 个只读 PoC） `nuclei_scan`（缺 nuclei 自动降级内置引擎） | detect |
 | exploit | `sqli_test` `cmd_inject_test` `lfi_test` `file_upload_test` `rce_exec` | verify / exploit |
 | creds | `weak_password_brute`（ssh/ftp/mysql/redis/http_basic/http_form） `http_form_login` `flag_hunt` | exploit / verify |
@@ -177,7 +179,7 @@ scripts/dev.sh play --target 127.0.0.1
 | binary | `binary_open` `binary_overview` `binary_functions` `binary_function` `binary_xrefs` `debug_start` `debug_control` `debug_inspect` `binary_session` `binary_execute` | detect / exploit |
 | benchmark | `ctfy_task`（读取、刷新或提交当前 CTFY v3 问题） | detect |
 
-Binary 能力只在附件或能力清单需要时 JIT 绑定，Role 不会把通用 Worker 改成固定逆向流水线。用法、依赖、证据和已知限制见[原生二进制工具链](docs/BINARY_TOOLS.md)。
+浏览器和 Binary 能力都使用任务内持久会话，恢复后不复活旧进程。用法、依赖、证据和已知限制见[浏览器工具链](docs/BROWSER_TOOLS.md)与[原生二进制工具链](docs/BINARY_TOOLS.md)。
 
 ## 人的位置：审批、介入、复核
 

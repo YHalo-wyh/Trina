@@ -57,8 +57,8 @@ def execution_budget(timeout: float) -> float:
 
 def execute_streamed(argv: list[str], *, timeout: float, cwd: str | None, env: dict[str, str] | None,
                      input_data: str | None, on_output: Callable[[str, str], None],
-                     stop_event: Any = None) -> Any:
-    """受现有 run_external 放行后使用的进程出口；流式读取与取消仍受执行租约约束。"""
+                     stop_event: Any = None, allow_detached_children: bool = False) -> Any:
+    """受控进程出口；仅显式托管的长期会话可让子进程跨调用存活。"""
     import codecs
     import os
     import subprocess
@@ -101,7 +101,9 @@ def execute_streamed(argv: list[str], *, timeout: float, cwd: str | None, env: d
     readers: list[threading.Thread] = []
     deadline = time.monotonic() + timeout
     try:
-        native_job = _windows_background_job(proc) if os.name == "nt" else None
+        # Playwright 这类长期会话由上层句柄表负责 close/cancel。Windows Job 的
+        # KILL_ON_JOB_CLOSE 会误杀其守护进程，因此仅该显式分支不绑定 Job。
+        native_job = _windows_background_job(proc) if os.name == "nt" and not allow_detached_children else None
         readers = [threading.Thread(target=read, args=(proc.stdout, "stdout"), daemon=True),
                    threading.Thread(target=read, args=(proc.stderr, "stderr"), daemon=True)]
         for reader in readers:
@@ -121,7 +123,8 @@ def execute_streamed(argv: list[str], *, timeout: float, cwd: str | None, env: d
             except subprocess.TimeoutExpired:
                 pass
     finally:
-        _terminate_background(proc, native_job)
+        if not allow_detached_children or proc.poll() is None:
+            _terminate_background(proc, native_job)
         if native_job is not None:
             import ctypes
             ctypes.windll.kernel32.CloseHandle(native_job)

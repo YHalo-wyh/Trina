@@ -237,6 +237,8 @@ class ToolContext:
         self.extra: dict[str, Any] = {"background_jobs": BackgroundJobs(), "task_deadline": deadline}
         from ..binary.sessions import BinarySessions
         self.extra["binary_sessions"] = BinarySessions(self)
+        from ..browser.sessions import BrowserSessions
+        self.extra["browser_sessions"] = BrowserSessions(self)
 
     # -------------------------------------------------------------- 便捷方法
     def log(self, message: str) -> None:
@@ -368,7 +370,7 @@ class ToolRegistry:
         grouped = self.by_category()
         excluded = set(exclude)
         blocks: list[str] = []
-        order = ["recon", "web", "vuln", "exploit", "utility"]
+        order = ["recon", "web", "browser", "vuln", "exploit", "utility"]
         keys = [k for k in order if k in grouped] + [k for k in grouped if k not in order]
         for category in keys:
             if categories and category not in categories:
@@ -639,6 +641,7 @@ class ToolRegistry:
             future.cancel()
             ctx.extra["background_jobs"].stop_owner(lease)
             ctx.extra["binary_sessions"].cancel_owner(lease)
+            ctx.extra["browser_sessions"].cancel_owner(lease)
             ctx.state.counters["errors"] = ctx.state.counters.get("errors", 0) + 1
             return ToolResult(
                 ok=False,
@@ -654,10 +657,12 @@ class ToolRegistry:
         except ScopeViolation as exc:
             ctx.extra["background_jobs"].stop_owner(lease)
             ctx.extra["binary_sessions"].cancel_owner(lease)
+            ctx.extra["browser_sessions"].cancel_owner(lease)
             return denied_result(exc.decision, tool=tool.spec.name)
         except Exception as exc:  # noqa: BLE001 - 任何工具异常都不能中断整条链路
             ctx.extra["background_jobs"].stop_owner(lease)
             ctx.extra["binary_sessions"].cancel_owner(lease)
+            ctx.extra["browser_sessions"].cancel_owner(lease)
             ctx.state.counters["errors"] = ctx.state.counters.get("errors", 0) + 1
             detail = traceback.format_exc(limit=3)
             ctx.audit.append("tool.error", tool=tool.spec.name, decision="error", error=f"{type(exc).__name__}: {exc}"[:400])
@@ -672,6 +677,8 @@ class ToolRegistry:
             lease.cancelled.set()
         if not isinstance(result, ToolResult):
             ctx.extra["background_jobs"].stop_owner(lease)
+            ctx.extra["binary_sessions"].cancel_owner(lease)
+            ctx.extra["browser_sessions"].cancel_owner(lease)
             return ToolResult(ok=False, error=f"工具返回值类型错误: {type(result)!r}", summary="工具契约违反")
         if not result.ok:
             ctx.extra["background_jobs"].stop_owner(lease)

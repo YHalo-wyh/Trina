@@ -345,6 +345,10 @@ class TestScopeAwareToolBehaviour(unittest.TestCase):
                 self.assertNotIn("url", spec.params)
                 self.assertTrue("path" in spec.params or "session_id" in spec.params)
                 continue
+            if spec.category == "browser":
+                self.assertNotIn("target", spec.params)
+                self.assertTrue("url" in spec.params or "session_id" in spec.params)
+                continue
             if spec.category == "benchmark":
                 self.assertIn("action", spec.params)
                 self.assertNotIn("target", spec.params)

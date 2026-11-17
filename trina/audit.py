@@ -33,6 +33,8 @@ DEFAULT_REDACT_KEYS = [
     "cookie",
     "authorization",
     "pass",
+    "input_value",
+    "storage_value",
 ]
 
 

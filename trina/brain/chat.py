@@ -141,6 +141,8 @@ class ChatAgent:
                 self._restore(resume_data)
             except Exception:
                 self.ctx.extra["background_jobs"].close()
+                self.ctx.extra["binary_sessions"].close()
+                self.ctx.extra["browser_sessions"].close()
                 self._file_lock.close()
                 raise
 
@@ -489,6 +491,7 @@ class ChatAgent:
         try:
             self.ctx.extra["background_jobs"].close()
             self.ctx.extra["binary_sessions"].close()
+            self.ctx.extra["browser_sessions"].close()
             status_snapshot(self.ctx, turn=self.turns)
             self.save()
         finally:
@@ -507,6 +510,7 @@ class ChatAgent:
                          "worker_role": self.worker_role,
                          "history": self.history, "messages": self._messages, "state": self.state.to_dict(),
                          "binary_sessions": self.ctx.extra["binary_sessions"].snapshot(),
+                         "browser_sessions": self.ctx.extra["browser_sessions"].snapshot(),
                          "hypotheses": self.ledger.to_dict(), "usage": self.usage.to_dict(),
                          "usage_gaps": self.usage_gaps,
                          "controller": self._controller.coverage() if self._controller is not None else {},
@@ -531,6 +535,8 @@ class ChatAgent:
         self.state.artifacts["events_path"] = str(self.events.path)
         self.ctx.extra["binary_sessions"].previous = [{**row, "state": "EXPIRED", "live": False}
                                                     for row in data.get("binary_sessions", [])]
+        self.ctx.extra["browser_sessions"].previous = [{**row, "state": "EXPIRED", "live": False}
+                                                       for row in data.get("browser_sessions", [])]
         self.history = data["history"]
         self._messages, self._messages_ready = data["messages"], True
         self.turns, self.title = data["turns"], data["title"]
