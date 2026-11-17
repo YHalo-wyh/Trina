@@ -380,7 +380,7 @@
       "title": "靶场与评测入口",
       "priority": "P1",
       "status": "implemented",
-      "implementation": ["trina/eval", "trina/lab", "trina/adapters", "trina/bench", "trina/ctfy.py", "trina/tools/ctfy.py"],
+      "implementation": ["trina/eval", "trina/lab", "trina/adapters", "trina/bench", "trina/capabilities", "docs/TASK_MODULES.md"],
       "verification": ["V-CONTRACT", "V-TESTS"],
       "rules": [
         {
@@ -392,8 +392,8 @@
         {
           "id": "TR-09-R02",
           "level": "MUST",
-          "statement": "CTFY v3 运行器必须只使用平台工作目录与网关变量，dry-run 不联网；instance/QA 的 solved 只能来自当前问题的 correct=true 平台响应，协议夹具不得标记为线上成绩。",
-          "tests": ["tests.test_ctfy.CTFYTests.test_actual_http_instance_and_qa_verdicts_and_gated_refresh", "tests.test_ctfy.CTFYTests.test_pending_is_not_verified_and_cross_question_is_refused", "tests.test_ctfy.CTFYTests.test_dry_run_no_credentials_no_gateway_and_missing_key_no_fallback", "tests.test_ctfy.CTFYTests.test_actual_gateway_chat_registry_submit_and_result_file"]
+          "statement": "具体靶场或比赛平台必须以仓库外临时 Capability 包接入；同目录 AGENT.md 只在任务租约建立时读取并进入 user 合同，不得注入 system，模块释放后旧调用必须失效。",
+          "tests": ["tests.test_capabilities.CapabilityFabricTests.test_manifest_is_discovered_without_core_change_and_guidance_is_jit", "tests.test_capabilities.CapabilityFabricTests.test_worker_switches_capability_and_released_lease_cannot_be_reused"]
         }
       ]
     },

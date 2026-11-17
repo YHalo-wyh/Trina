@@ -1188,10 +1188,6 @@ def build_parser() -> argparse.ArgumentParser:
     report_rebuild.add_argument("--state", required=True)
     report_rebuild.set_defaults(func=cmd_report)
 
-    ctfy = sub.add_parser("ctfy", help="运行 CTFY-0001 v3 托管任务（instance/qa）")
-    ctfy.add_argument("--work-dir", default="", help="含 task.json 的 CTFY 工作目录")
-    ctfy.set_defaults(func=cmd_ctfy)
-
     goal = sub.add_parser("goal", help="保存、查看或清除当前项目目标")
     goal.add_argument("goal_action", choices=("show", "set", "clear"), nargs="?", default="show")
     goal.add_argument("text", nargs="*")
@@ -1218,12 +1214,6 @@ def build_parser() -> argparse.ArgumentParser:
     serve.set_defaults(func=cmd_schedule)
 
     return parser
-
-
-def cmd_ctfy(args) -> int:
-    from .ctfy import run_ctfy
-    return run_ctfy(Path(args.work_dir or os.environ.get("CTFY_WORK_DIR") or Path.cwd()).resolve())
-
 
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)

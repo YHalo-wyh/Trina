@@ -25,7 +25,7 @@ npx --yes --package @playwright/cli@0.1.24 playwright-cli install-browser chromi
 python -m trina doctor
 ```
 
-CTFY 完整镜像在 `Dockerfile.ctfy` 中安装 Node.js、Playwright CLI、Chromium、radare2、GDB、GCC 与 bubblewrap。轻量托管评测镜像 `Dockerfile` 不预装这些大型原生依赖。
+核心镜像不预装大型浏览器和逆向依赖。临时靶场/比赛平台若需要 Chromium、radare2、GDB 或 GCC，应在自己的可插拔任务模块镜像中声明，并保持版本固定。
 
 ## 会话、证据与回收
 

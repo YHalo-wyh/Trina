@@ -92,7 +92,7 @@ class CapabilityFabricTests(unittest.TestCase):
     def test_manifest_is_discovered_without_core_change_and_guidance_is_jit(self) -> None:
         capability_dir = self.root / "capabilities"
         capability_dir.mkdir()
-        guidance = capability_dir / "SKILL.md"
+        guidance = capability_dir / "AGENT.md"
         guidance.write_text("旧内容", encoding="utf-8")
         manifest = {
             "id": "fixture.cli.echo",
@@ -100,7 +100,6 @@ class CapabilityFabricTests(unittest.TestCase):
             "description": "外部回显能力",
             "provides": ["fixture.echo"],
             "interface": {"name": "fixture_cli_echo", "params": {}},
-            "guidance": "SKILL.md",
             "runtime": {"type": "cli", "command": [sys.executable, "-c", "print('ok')"]},
             "policy": {"action_level": "detect", "filesystem": "workspace"},
             "requires": {},
@@ -113,8 +112,9 @@ class CapabilityFabricTests(unittest.TestCase):
         self.assertIsNotNone(capability)
         assert capability is not None
         self.assertEqual(capability.provides, ("fixture.echo",))
+        self.assertEqual(capability.guidance, "AGENT.md")
 
-        # Catalog 建立后再改 Guidance；租约建立时才应读取新内容。
+        # Catalog 建立后再改 AGENT.md；租约建立时才应读取新内容。
         guidance.write_text("租约时读取的新内容", encoding="utf-8")
         fabric = CapabilityFabric(catalog, CapabilityRuntime(ToolRegistry()))
         lease = fabric.lease(
@@ -123,6 +123,10 @@ class CapabilityFabricTests(unittest.TestCase):
         )
         self.assertIn("租约时读取的新内容", lease.guidance)
         self.assertEqual(lease.snapshot[0]["version"], "1.0.0")
+        from trina.brain.prompts import build_prompt_layers
+        layers = build_prompt_layers(extra_rules=lease.guidance, protocol="native")
+        self.assertNotIn("租约时读取的新内容", layers.system())
+        self.assertIn("租约时读取的新内容", layers.first_user())
         fabric.release(lease.id)
 
     def test_worker_switches_capability_and_released_lease_cannot_be_reused(self) -> None:

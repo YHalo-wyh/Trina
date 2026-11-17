@@ -50,6 +50,8 @@ class TestParseAction(unittest.TestCase):
         for category in ("Web / API", "Pwn", "逆向", "密码", "取证", "隐写", "Misc", "移动端", "AI / ML"):
             self.assertIn(category, task_prompt)
         self.assertIn("真实回执", task_prompt)
+        self.assertIn("两个及以上互不依赖的分支", task_prompt)
+        self.assertIn("主动分别 spawn", task_prompt)
         for section in ("Engineering", "Tool Policy", "Exploration", "Delegation", "Workflow", "Delivery", "Completeness"):
             self.assertIn(f"# {section}", task_prompt)
 

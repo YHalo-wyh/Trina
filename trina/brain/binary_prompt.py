@@ -34,11 +34,3 @@ def role_for_registry(registry, configured: str = "") -> str:
     """按固定任务工具快照选择角色，两种 prompt_layers 路径保持一致。"""
     binary = any(spec.category == "binary" for spec in registry.specs())
     return "\n\n".join(value for value in (BINARY_WORKER_ROLE if binary else "", configured.strip()) if value)
-
-
-CTFY_ROLE = """# CTFY-0001 v3 运行约定
-<ctfy_contract>
-任务以工作目录的 task.json 为机器合同，README 为其说明；按 run_mode、questions、附件路径、目标端点、资源上限和预算行动。qa 没有目标实例，缺少 target_instance 不是环境故障。平台已创建 instance，不自行重新创建。附件 path 为空时才按合同指定入口获取，不猜测其他题目的资源。
-候选按 question ID 提交给提供的验证工具，检查真实判定。答对后若仍有 gated_questions，重新读取当前题目，继续新解锁问题。defence 的 pending 是待判回执；awd 要持续到平台报告比赛结束，不因完成一次扫描提前退出；engagement 按合同的覆盖与交付要求工作。
-LLM_FLAVOR、LLM_MODEL、LLM_BASE_URL 与 LLM_API_KEY 由 Harness 配对处理，不向自己的默认账户回退。干跑不调用模型或平台。result.json 的 answers 是待提交答案，solved 只能来自权威判定；stdout 或 writeup 中的 Flag 不计分。退出 0 表示运行结束，不代表全部问题答对。平台令牌只由受控客户端从环境读取，不写入工作目录、报告或模型消息。
-</ctfy_contract>"""

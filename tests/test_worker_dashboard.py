@@ -145,6 +145,8 @@ class WorkerDashboardTests(unittest.TestCase):
         manager.start(self.config, [TaskSpec("a", "localhost", "A"), TaskSpec("b", "localhost", "B")], executor=execute, backend_factory=lambda _: object())
         self.addCleanup(lambda: (release.set(), manager.close()))
         entered.wait()
+        self.assertEqual({row["status"] for row in manager.rows()}, {"running"})
+        self.assertEqual(len(manager.runtime.pool.workers), 2, "两个无依赖任务应主动占用两个 Worker 并行启动")
         manager.task_control("b", "message", "先验证输出文件")
         manager.task_control("a", "cancel")
         self.assertFalse(manager.runtime.stop_event.is_set())

@@ -14,7 +14,7 @@
 .\.venv\Scripts\python.exe -m trina swarm --target http://127.0.0.1:9099 --goal "验证目标并获取 flag" --workers 2
 ```
 
-默认创建一个 `main` Intent。需要并行分支时提供清单；运行中也可通过 `SwarmRuntime.add_task()` 增加任务。Fabric 根据任务发现少量能力；编码和协作查询工具作为所有 Worker 的核心运行时能力提供。Worker 完成后释放能力租约，模型后端实例可复用，但前一题的 Agent、状态和工具视图不会复用。
+默认创建一个 `main` Intent。需要并行分支时提供清单；运行中也可通过 `SwarmRuntime.add_task()` 增加任务。交互 Commander 持有真实 `worker_tasks` 宿主，识别到两个及以上互不依赖的分支时会在一轮中主动提交多个 spawn；Worker Pool 立即领取至 `subworker.workers` 与范围并发上限，存在 `depends_on` 的任务仍等待前序完成。Fabric 根据任务发现少量能力；编码和协作查询工具作为所有 Worker 的核心运行时能力提供。Worker 完成后释放能力租约，模型后端实例可复用，但前一题的 Agent、状态和工具视图不会复用。
 
 ## 五个协作部件
 
@@ -148,7 +148,7 @@ Flag、完整聊天、开放假设和来源题目的 `RunState` 不进入简报�
 
 四宫格读取同一事件流中已解析的 `assistant.message/react.action/tool.*`，不直接显示 `model.text_delta` 协议碎片或隐藏思考增量。每任务最多缓存 80 个块、每块 4000 字，折行保留最近 600 行；仅变化任务和新宽度重新折行，窗口帧只取可见行。恢复可重放当前尝试的可见事件，只恢复显示，不执行旧动作或重复统计用量。
 
-折行进一步按块缓存，只更新变化块；同任务稳定块也不重复处理。没有委派宿主的 Agent 会在合同和原生 schema 中省略 `worker_tasks`，避免向 CTFY 或普通 Worker 的紧张上下文注入不可用功能。
+折行进一步按块缓存，只更新变化块；同任务稳定块也不重复处理。没有委派宿主的 Agent 会在合同和原生 schema 中省略 `worker_tasks`，避免向普通 Worker 的上下文注入不可用功能。
 
 控制台通过 `submit_task/configure_task` 投递命令，只有 Commander 线程校验和修改 DAG；Future 返回接受、等价去重或明确拒绝。普通渲染只读小型状态投影，不遍历事实图或读写检查点。停止得到 `cancelled`，不能记录为 `completed`；取消、超时和其他失败依赖都会阻止后继任务执行。旧版本缺少模型元信息的检查点仍按当时 TaskSpec/当前默认值补齐，已保存明确模型身份的新快照保持固定。
 

@@ -180,7 +180,14 @@ class CapabilityCatalog:
                 if not isinstance(rows, list):
                     raise ValueError(f"{path} 的 capabilities 必须是列表")
                 for row in rows:
-                    self.register(Capability.from_dict(row, source=str(path.resolve())))
+                    if not isinstance(row, dict):
+                        raise ValueError(f"{path} 的 Capability 必须是对象")
+                    prepared = dict(row)
+                    # 临时靶场/比赛模块约定把任务说明放在清单同目录的 AGENT.md。
+                    # 只记录相对路径；正文仍到租约建立时才读取，并进入 user 任务合同而非 system。
+                    if "guidance" not in prepared and (path.parent / "AGENT.md").is_file():
+                        prepared["guidance"] = "AGENT.md"
+                    self.register(Capability.from_dict(prepared, source=str(path.resolve())))
                     loaded += 1
         return loaded
 

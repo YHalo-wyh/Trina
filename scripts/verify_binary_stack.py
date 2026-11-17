@@ -57,8 +57,8 @@ def main() -> int:
                   "native_observation_bytes": sum(row.get("raw_bytes", 0) for row in observations),
                   "raw_index": raw_index,
                   "closed_sessions": case.ctx.extra["binary_sessions"].snapshot(),
-                  "model_usage": None, "ctfy_online_score": None,
-                  "limits": "确定性工具链测试；未运行真实模型/CTFY 线上评分或四组模型质量对照"}
+                  "model_usage": None,
+                  "limits": "确定性工具链测试；未运行真实模型、外部平台评分或四组模型质量对照"}
         (output / "native-e2e.json").write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         print(json.dumps({key: result[key] for key in ("execution", "versions", "fixture_verified", "audit_ok", "elapsed_seconds", "native_observation_bytes")}, ensure_ascii=False))
         return 0

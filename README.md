@@ -1,54 +1,20 @@
 # Trina · 全自动渗透测试 Agent
 
-## 项目检查入口（0.4.0）
+![Trina 启动界面](evidence/20261114-worker-dashboard/console-clean-footer.png)
 
-| 文档 | 检查内容 |
+Trina 是面向 CTF 与授权攻防环境的自动化 Agent，提供真实浏览器、原生二进制分析、任务级并行 Worker、证据链和可恢复运行状态。
+
+## 文档导航
+
+| 文档 | 内容 |
 |---|---|
-| [需求](需求.md) | 使用者、场景、22 项功能需求、8 项质量要求、当前状态与验收口径 |
-| [规约](规约.md) · [机器规约](规约.json) | CLI 与 Agent 接口、状态转换、规则 ID、实现路径、测试方法与白名单验证命令 |
-| [设计决策](设计决策.md) | 原有单 Agent 决策链，以及 0.2.0—0.4.0 的更新记录、修改原因与兼容边界 |
-| [更新日志](CHANGELOG.md) | 各版本面向使用者的变更摘要、兼容说明与验证状态 |
-| [缓存感知运行时](docs/CACHE_RUNTIME.md) | 状态差量、供应商缓存策略、上下文继承检查点与 `/context` 诊断 |
-| [原生二进制工具链](docs/BINARY_TOOLS.md) | radare2 stdio、GDB/MI3、地址模型、会话隔离、真实 ELF 验证与限制 |
-| [浏览器工具链](docs/BROWSER_TOOLS.md) | Playwright/Chromium、快照 ref、交互、存储、网络证据、截图和会话回收 |
-| [CTFY v3 接入](docs/CTFY.md) | instance/QA 任务、平台权威提交、环境契约和本地协议验证边界 |
-| [对抗组计划文档（网安实训中级课程）](网安实训中级课程——对抗组计划文档.md) | Trina 与桌面助手的需求变更、Evaluation、Observability、交叉复查和回归安排 |
-| [对抗组计划文档（专业综合能力提升课程）](专业综合能力提升课程——对抗组计划文档.md) | Trina 与图片隐写分析系统的格式兼容、异常处理、任务恢复、可观测性和交叉复查安排 |
-
-《设计决策》第 1—27 节保留早期基线，第 28—43 节记录 0.2.0 演进，第 44—45 节记录 0.3.0 的 full trust、系统提示词与 Commander 情报决策。旧课程规格与历史证据继续按原版本保存。
-
-六项提交内容均有仓库入口，并由机器规约检查是否缺失：
-
-| 完成项 | 仓库证据 |
-|---|---|
-| 需求 | [当前需求](需求.md) |
-| 规约 | [行为规约](规约.md) · [机器规约](规约.json) |
-| ADR（含前 3 项前置决策） | [ADR 索引](design/README.md) · `design/adr/0001—0003` |
-| 项目级 Harness | [双层 Harness](docs/course/harness-manifest.md) · [项目约定](AGENTS.md) · [AI 规则](design/ai-rules.md) |
-| Global Plan / Tasks | [全局计划](docs/PLAN.md) · [实施计划](docs/course/plan.md) · [任务卡](docs/course/tasks.md) |
-| 可执行代码与评测证据 | `trina/` · `tests/` · [证据索引](evidence/README.md) · [评测记录](评测/README.md) |
-
-```powershell
-.\.venv\Scripts\python.exe -m scripts.verify_contract --execute --json
-```
-
-[开题报告与第一次汇报](开题报告与第一次汇报.md) · [需求规格](docs/course/specification.md) · [课程材料目录](docs/course/README.md)
-
-## 课程提交与第一次汇报（教师检查入口）
-
-**[打开《开题报告与第一次汇报》](开题报告与第一次汇报.md)**：项目背景、目标与范围、需求规格、技术路线、双层 Harness、实施计划、当前成果、验证证据和后续问题。
-
-| 重点材料 | 检查入口 |
-|---|---|
-| 完整开题 / 第一次汇报报告 | **[根目录主报告](开题报告与第一次汇报.md)** |
-| 决策层每一步的设计理由与实现边界 | **[设计决策](设计决策.md)** |
-| 20 条历史课程需求与规格 | [需求规格](docs/course/specification.md) |
-| 26 个场景及逐条验证关系 | [验收场景](docs/course/scenarios.md) · [验收矩阵](docs/course/acceptance-matrix.md) |
-| 计划、8 张任务卡、双层 Harness 等完整交付物 | [课程文档目录](docs/course/README.md) |
-| 10 月 26 日决策文档核对及 267 项回归结果 | [决策层文档验证](evidence/20261026-decision-docs/README.md) |
-| 10 月 21 日课程提交的测试、两轮靶机验证及审查 | [验证事实](evidence/20261021-course-pack/README.md) · [审查记录](review/20261021-course-pack-review.md) |
-
-课程材料按章节 02 V1.1 要求整理，版本日期为 **2026-10-21**。产品能力和已知缺口分别说明；详细规格、计划、证据均在仓库中，可直接检查。
+| [使用说明](docs/CLI_UI.md) | 控制台、命令、模型、任务与子 Worker 操作 |
+| [架构](docs/ARCHITECTURE.md) | Agent Runtime、执行链、状态与模块契约 |
+| [Swarm](docs/SWARM.md) | 多任务调度、并行 Worker、租约与恢复 |
+| [浏览器工具链](docs/BROWSER_TOOLS.md) | Playwright/Chromium、交互、网络证据与截图 |
+| [原生二进制工具链](docs/BINARY_TOOLS.md) | radare2、GDB/MI、地址模型与会话隔离 |
+| [临时任务模块](docs/TASK_MODULES.md) | Capability + `AGENT.md` 的可插拔平台适配 |
+| [更新日志](CHANGELOG.md) | 版本变化和兼容说明 |
 
 ## 项目使用说明
 
@@ -159,7 +125,7 @@ scripts/dev.sh play --target 127.0.0.1
 
 ### 动态能力装配
 
-[Capability Fabric](docs/CAPABILITY_FABRIC.md) 按任务发现、租用和执行 Tool、CLI 与 MCP 能力。通用 Worker 在任务间切换能力，版本快照固定，释放后旧租约失效。Guidance 与工具 Schema 按需加载，执行继续通过 ToolRegistry；Commander 只转发证据索引与来源明确的候选情报。实现取舍见 [ADR-0021](design/adr/0021-capability-fabric.md)。
+[Capability Fabric](docs/CAPABILITY_FABRIC.md) 按任务发现、租用和执行 Tool、CLI 与 MCP 能力。通用 Worker 在任务间切换能力，版本快照固定，释放后旧租约失效。Guidance 与工具 Schema 按需加载，执行继续通过 ToolRegistry；Commander 只转发证据索引与来源明确的候选情报。靶场或比赛平台适配应做成仓库外[临时任务模块](docs/TASK_MODULES.md)：清单同目录的 `AGENT.md` 只进入当前任务的 user 合同，不注入 system。实现取舍见 [ADR-0021](design/adr/0021-capability-fabric.md)。
 
 `trina swarm` 使用事件驱动 Planner、共享 Todolist、可去重且带租约的 Intent 队列，以及事实图 / 探索图双图。每个题目的 `RunState` 与聊天仍隔离；Commander 只把来源明确的观察、失败经验和事实候选定向交给相关 Worker，接收方必须在自己的目标上重新验证后才能入账。Flag、完整聊天和其他题目的 `RunState` 不会被合并。
 
@@ -177,7 +143,6 @@ scripts/dev.sh play --target 127.0.0.1
 | workspace | `workspace_search`（优先 rg）、`workspace_read` / `workspace_write` / `workspace_edit`（有界检索、读取、原子写入、精确替换），`workspace_git`（状态、Diff、暂存、提交、分支、远端与 worktree） | detect / exploit |
 | coordination | `shared_context` / `shared_trace_search` / `shared_trace_get`（共享待办、双图摘要、其他 Worker 观察与失败留痕） | detect |
 | binary | `binary_open` `binary_overview` `binary_functions` `binary_function` `binary_xrefs` `debug_start` `debug_control` `debug_inspect` `binary_session` `binary_execute` | detect / exploit |
-| benchmark | `ctfy_task`（读取、刷新或提交当前 CTFY v3 问题） | detect |
 
 浏览器和 Binary 能力都使用任务内持久会话，恢复后不复活旧进程。用法、依赖、证据和已知限制见[浏览器工具链](docs/BROWSER_TOOLS.md)与[原生二进制工具链](docs/BINARY_TOOLS.md)。
 

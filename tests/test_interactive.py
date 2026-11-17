@@ -322,6 +322,18 @@ class TestChatAgent(unittest.TestCase):
         self.assertIn("动作预算已用尽", chat._messages[-2]["content"])
         self.assertEqual(chat._messages[-1], {"role": "assistant", "content": reply})
 
+    def test_external_harness_can_preserve_a_hard_model_call_budget_without_platform_code(self):
+        chat = self._chat([
+            {"response": '{"action":"echo_probe","params":{"target":"127.0.0.1"}}'},
+            {"response": "不应调用的额外总结"},
+        ])
+        chat.MAX_TOOL_STEPS = 1
+        chat.ctx.extra["hard_model_budget"] = True
+        reply = chat.ask("检查目标")
+        self.assertIn("工具结果已保存", reply)
+        self.assertEqual(chat.usage.calls, 1)
+        self.assertEqual(chat.state.counters.get("tool_calls"), 1)
+
     def test_prose_plus_action_is_executed(self):
         """模型常写「一句解释 + JSON 动作」：必须识别动作并执行，而不是当成纯文本回答。"""
         chat = self._chat(

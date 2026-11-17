@@ -19,7 +19,7 @@ Commander 委派与四格：[ADR-0030](adr/0030-commander-delegation-and-live-gr
 
 统一运行事件与工具窗口：[ADR-0027](adr/0027-unified-runtime-events.md) 记录事务事件流、实时事实调度、游标确认、重放续流及恢复边界；协议见[统一运行事件](../docs/EVENTS.md)。
 
-原生二进制与模型窗口：[ADR-0026](adr/0026-native-binary-runtime-and-model-windows.md) 记录 r2/GDB 受控会话、CTFY 权威提交和 DeepSeek 500K / 已确认模型 1M 的可配置预算。
+原生二进制、临时任务模块与模型窗口：[ADR-0026](adr/0026-native-binary-runtime-and-model-windows.md) 记录 r2/GDB 受控会话、仓库外 `AGENT.md` 任务模块和 DeepSeek 500K / 已确认模型 1M 的可配置预算。
 
 历史对话与恢复：[ADR-0025](adr/0025-persistent-chat-resume.md) 记录项目隔离的 SQLite 保存、会话切换、独占打开及恢复边界。
 

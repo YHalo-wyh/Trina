@@ -34,42 +34,6 @@ def _is_unbounded_find(argv: list[str]) -> bool:
     return "/" in roots
 
 
-def _fast_ctfy_nc(argv: list[str], input_data: str, enabled: bool) -> tuple[list[str], bool]:
-    """CTFY 一次性 nc 调用有 stdin 时收紧退出等待；监听和交互调用保持原样。"""
-    name, args = _command(argv)
-    if not enabled or not input_data or name not in {"nc", "nc.exe", "netcat", "netcat.exe"}:
-        return list(argv), False
-    if any(item in {"-l", "--listen"} or item.startswith("-l") and item != "-l" for item in args):
-        return list(argv), False
-
-    adjusted = list(argv)
-    prefix = 2 if Path(argv[0]).name.lower() in {"busybox", "busybox.exe"} else 1
-
-    def cap(flag: str, limit: float, rendered: str) -> None:
-        nonlocal adjusted
-        for index in range(prefix, len(adjusted)):
-            item = adjusted[index]
-            if item == flag and index + 1 < len(adjusted):
-                try:
-                    if float(adjusted[index + 1]) > limit:
-                        adjusted[index + 1] = rendered
-                except ValueError:
-                    pass
-                return
-            if item.startswith(flag) and item != flag:
-                try:
-                    if float(item[len(flag):]) > limit:
-                        adjusted[index] = flag + rendered
-                except ValueError:
-                    pass
-                return
-        adjusted[prefix:prefix] = [flag, rendered]
-
-    cap("-w", 2, "2")
-    cap("-q", 1, "1")
-    return adjusted, adjusted != argv
-
-
 def _path(ctx, raw: str, root: str = "project") -> Path:
     """所有文件路径统一交给 ScopeGuard 裁决，禁止跨项目/跨任务逃逸。"""
     if not raw or "\x00" in raw:
@@ -130,9 +94,8 @@ class TerminalExec(Tool):
                 data={"cwd": str(directory), "workspace": str(ctx.workspace)},
                 next_hints=["先查看当前工作目录和任务合同给出的附件路径", "只对已知的具体目录执行 find"],
             )
-        actual_argv, adjusted = _fast_ctfy_nc(argv, input, bool(ctx.extra.get("ctfy_fast_nc")))
         call = run_external(
-            actual_argv,
+            argv,
             ctx,
             tool=self.spec.name,
             target=target,
@@ -156,8 +119,7 @@ class TerminalExec(Tool):
             summary=f"命令完成，退出码 {call.code}" if call.ok else (error or "命令执行失败"),
             error=error,
             command=call.command,
-            data={"exit_code": call.code, "stdout": output, "stderr": stderr, "cwd": str(directory),
-                  "argv_adjusted": actual_argv if adjusted else []},
+            data={"exit_code": call.code, "stdout": output, "stderr": stderr, "cwd": str(directory)},
             next_hints=hints,
         )
 

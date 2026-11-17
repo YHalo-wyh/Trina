@@ -36,7 +36,7 @@ radare2 采用其官方 stdio NUL 分帧协议，命令模板固定为 JSON 查�
   "file_offset": "0x1080",
   "static_va": "0x2080",
   "runtime_va": "0x702080",
-  "module": "/ctfy/work/challenge",
+  "module": "/workspace/challenge",
   "load_bias": "0x700000",
   "arch": "62",
   "pointer_bits": 64
@@ -60,7 +60,7 @@ PIE 的 `static_va` 只有在 inferior 停止、主模块 PT_LOAD 与真实映�
 
 静态分析、动态调试、候选恢复和 `binary_execute` 组成验证闭环，但 `binary_execute.code == 0` 只证明被测程序本次正常退出。工具固定返回 `verified_solve=false`，不会从 stdout 自动吸收 Flag。
 
-CTFY v3 运行器只在平台提交 API 返回 `correct=true` 时计为解题；本地 ELF 端到端用例则同时执行正确候选和错误候选，验证夹具自己的权威分支。两种证据不能相互冒充。
+平台是否接受候选由对应临时任务模块的验证工具判定；本地 ELF 端到端用例同时执行正确候选和错误候选，只验证夹具自己的权威分支。两种证据不能相互冒充。
 
 ## 6. 依赖、配置与限制
 

@@ -52,7 +52,7 @@ interface:
       required: true
       description: Worker 工作目录中的 ELF 路径
 
-guidance: ./SKILL.md
+guidance: ./AGENT.md
 
 runtime:
   type: mcp
@@ -76,7 +76,7 @@ requires:
 |---|---|
 | `description` / `provides` | Catalog 用于匹配意图的能力说明和稳定标签 |
 | `interface` | 对模型暴露的工具名、参数类型和必填约束 |
-| `guidance` | 只在能力被租用时读取的操作知识；相对路径不能越出清单目录 |
+| `guidance` | 只在能力被租用时读取的操作知识；省略时自动使用同目录 `AGENT.md`，相对路径不能越出清单目录 |
 | `runtime` | `tool`、`cli` 或 `mcp`；命令使用 argv，不经过 shell |
 | `policy` / `requires` | 动作等级、工作目录、路径参数、超时和外部依赖 |
 
@@ -99,6 +99,7 @@ fabric.release(lease.id)
 ## 执行与安全语义
 
 - 能力租约在调用前和返回后各检查一次；释放或过期后不能复用。
+- `AGENT.md`/Guidance 通过任务的 `extra_rules` 进入首条 user 合同，不进入稳定 system；未租用模块的说明不会加载。
 - CLI 与 MCP 只继承启动所需的最小环境变量，宿主 API Key 不会默认传给能力进程；清单只能显式添加所需变量。
 - `filesystem: workspace` 把工作目录设为当前 Worker 工作区；声明在 `path_params` 的路径不得越出工作区。`filesystem: manifest` 仅用于可信的能力包目录。
 - MCP stdio 使用逐行 JSON-RPC，初始化后调用 `tools/call`；超时、错误和正常返回都会回收本次子进程，stderr 只作诊断，结果写入 `external.mcp` 审计事件。
@@ -112,7 +113,7 @@ python -m unittest tests.test_capabilities tests.test_swarm -v
 
 | 场景 | 对应测试 | 判定 |
 |---|---|---|
-| 新增清单，无需修改 Agent 核心即可发现和租用；Guidance 为 JIT 加载 | `test_manifest_is_discovered_without_core_change_and_guidance_is_jit` | Catalog 能发现，租约快照固定，读取租约时的 Guidance |
+| 新增清单，无需修改 Agent 核心即可发现和租用；`AGENT.md` 为 JIT 加载 | `test_manifest_is_discovered_without_core_change_and_guidance_is_jit` | Catalog 能发现约定文件，租约时读取，正文只在 user 合同出现 |
 | 同一通用 Worker 在任务间切换能力，旧租约立即失效 | `test_worker_switches_capability_and_released_lease_cannot_be_reused` | 旧调用抛出租约错误，新任务获得不同租约并执行新能力 |
 | 两个 Worker 复用同一能力定义并分别发布证据索引 | `test_two_workers_reuse_definition_and_publish_independent_evidence_refs` | 快照相同、引用按任务隔离、无完整对话字段 |
 | 外部 MCP 清单通过真实 stdio 进程与统一注册表执行 | `test_mcp_stdio_manifest_invokes_real_server_through_registry` | JSON-RPC 调用成功、审计链有效、未显式授权的宿主秘密未继承 |

@@ -1,4 +1,4 @@
-# ADR-0026：原生二进制会话、平台权威验证与可配置模型窗口
+# ADR-0026：原生二进制会话、临时任务模块与可配置模型窗口
 
 - 日期：2026-11-13
 - 状态：Accepted
@@ -6,7 +6,7 @@
 
 ## 背景
 
-原有 terminal 工具能执行命令，但无法向模型提供稳定的 r2 JSON、GDB/MI 状态、地址空间或跨轮调试句柄。把 r2/GDB 操作只写进 Binary 提示词会绕过参数 Schema、工具租约、审计和超时。CTFY v3 又要求最终成功由平台提交接口确认，stdout 中的候选不能充当成绩。同时，固定 32768 上下文不能表达 DeepSeek 与已确认百万窗口模型的差异，也缺少供应商级手工设置。
+原有 terminal 工具能执行命令，但无法向模型提供稳定的 r2 JSON、GDB/MI 状态、地址空间或跨轮调试句柄。把 r2/GDB 操作只写进 Binary 提示词会绕过参数 Schema、工具租约、审计和超时。平台适配若直接进入核心，也会把一次性合同和工具扩散到所有任务。同时，固定 32768 上下文不能表达 DeepSeek 与已确认百万窗口模型的差异，也缺少供应商级手工设置。
 
 ## 决定
 
@@ -14,7 +14,7 @@
 2. Linux 默认要求 bubblewrap。路径必须属于当前项目或任务；能力释放、超时、取消和关闭会回收进程树。恢复只继承事实和会话描述，不继承 PID。
 3. 地址由 `AddressRef` 同时表达文件偏移、静态 VA、运行 VA、模块和已证实的 load bias。PIE 转换必须匹配 PT_LOAD 与实际映射。
 4. Binary Role 只在绑定 binary 能力时追加到稳定 Core 后方；JSON/native 协议和两种提示词分层路径都使用同一工具契约，不固定逆向步骤。
-5. CTFY 提交由 `ctfy_task` 完成，只有平台 `correct=true` 更新 solved。本地 fixture 的 accepted/rejected 分支只属于本地验证。
+5. 具体靶场/平台使用仓库外 Capability 清单、适配器和 `AGENT.md`；Guidance 按任务租约进入 user 合同，不进入 system，权威判定由模块工具返回。
 6. `context_window=0` 表示自动：DeepSeek 为 500,000；代码明确识别且官方文档确认具有百万窗口的 GPT、Claude、Gemini 型号为 1,000,000；未知型号保守为 32,768。`/model context` 与供应商表单可显式覆盖并随整条连接保存。
 
 ## 取舍
@@ -27,4 +27,4 @@
 
 旧供应商 v2 记录缺少 `context_window` 时采用自动值。现有 ReAct、Commander、Worker、缓存诊断与 `/resume` 格式保持兼容。binary 会话元数据进入快照，但旧运行恢复为 EXPIRED。动态调试首版限本机 ELF、单 inferior 和文本 PTY；跨架构、PE 动态、复杂 GDB argv 与 OS checkpoint 尚未实现。
 
-CTFY 当前只实现 instance/QA，且自动测试来自本地协议夹具；没有把它描述成线上通过。验证证据见 `evidence/20261113-native-binary/`，测试入口见 `tests/test_binary.py`、`tests/test_ctfy.py`、`tests/test_model_context.py`。
+仓库不再内置具体比赛平台运行器。临时模块的发现、JIT Guidance、system 隔离和租约失效由 `tests/test_capabilities.py` 验证；二进制与模型窗口入口见 `tests/test_binary.py`、`tests/test_model_context.py`。

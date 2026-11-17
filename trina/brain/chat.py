@@ -292,9 +292,9 @@ class ChatAgent:
         if outcome.answer is not None:
             return outcome.answer
         self.logger(f"[提示] 单条消息内已执行 {runtime.steps} 个动作，正在整理阶段性结果")
-        if self.ctx.extra.get("ctfy_mode"):
-            # 托管评测的模型调用次数属于硬预算，不能为展示性收尾越界。
-            return f"（本次已连续执行 {runtime.steps} 个动作；回复「继续」可从当前结果推进。）"
+        if self.ctx.extra.get("hard_model_budget"):
+            # 外部临时 Harness 可声明模型调用是硬预算；核心不绑定任何具体平台名称。
+            return f"（本次已连续执行 {runtime.steps} 个动作；工具结果已保存，回复「继续」可从当前状态推进。）"
         return self._summarize_budget_exhaustion(runtime.steps)
 
     # ------------------------------------------------------------------ 内部

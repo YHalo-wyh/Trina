@@ -197,14 +197,12 @@ class TestRegistry(unittest.TestCase):
         self.assertIn("echo_tool", described)
 
     def test_module_subset_is_not_polluted_by_previous_full_build(self):
-        from trina.tools import CTFY_TOOL_MODULES, build_registry
+        from trina.tools import build_registry
 
         full = build_registry()
         web = build_registry(["web"])
         self.assertGreater(len(full.names()), len(web.names()))
         self.assertEqual(web.names(), ["dir_bruteforce", "param_reflect_scan", "web_surface"])
-        self.assertNotIn("ctfy_task", full.names())
-        self.assertIn("ctfy_task", build_registry(CTFY_TOOL_MODULES).names())
 
     def test_runtime_tool_definitions_keep_parameters_without_tutorial_examples(self):
         class ExampleTool(_Echo):
