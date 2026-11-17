@@ -1,6 +1,6 @@
 # Trina · 全自动渗透测试 Agent
 
-![Trina 启动界面](evidence/20261114-worker-dashboard/console-clean-footer.png)
+![Trina 启动界面](docs/assets/trina-startup.png)
 
 Trina 是面向 CTF 与授权攻防环境的自动化 Agent，提供真实浏览器、原生二进制分析、任务级并行 Worker、证据链和可恢复运行状态。
 
