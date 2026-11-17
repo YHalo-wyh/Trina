@@ -257,16 +257,17 @@ class OpenAICompatBackend(LLMBackend):
         tools: list[dict[str, Any]] | None = None,
     ) -> tuple[str, dict[str, Any]]:
         normalized = _normalize_messages(messages)
-        limit = max_tokens or self.config.max_tokens
+        limit = self.config.max_tokens if max_tokens is None else max_tokens
         value = self.config.temperature if temperature is None else temperature
         endpoint = "chat/completions"
         payload: dict[str, Any] = {
             "model": self.config.model,
             "messages": normalized,
             "temperature": value,
-            "max_tokens": limit,
             "stream": stream,
         }
+        if limit:
+            payload["max_tokens"] = limit
         if tools:
             if self.config.api != "chat":
                 raise ValueError(
@@ -285,7 +286,8 @@ class OpenAICompatBackend(LLMBackend):
                 "system": system,
                 "messages": conversation,
                 "temperature": value,
-                "max_tokens": limit,
+                # Messages 协议要求此字段为正数；沿用输入窗口的输出预留。
+                "max_tokens": limit or self.config.output_reserve,
                 "stream": stream,
             }
         elif self.config.api == "responses":
@@ -295,11 +297,13 @@ class OpenAICompatBackend(LLMBackend):
                 "model": self.config.model,
                 "instructions": system,
                 "input": conversation,
-                "max_output_tokens": limit,
                 "stream": stream,
             }
+            if limit:
+                payload["max_output_tokens"] = limit
         elif self.config.model.startswith(("gpt-5", "gpt-6", "o1", "o3", "o4")):
-            payload["max_completion_tokens"] = payload.pop("max_tokens")
+            if "max_tokens" in payload:
+                payload["max_completion_tokens"] = payload.pop("max_tokens")
             payload.pop("temperature")
         from .reasoning import apply_reasoning
 
@@ -637,8 +641,13 @@ def _decode_stream_event(
                         tool_deltas.append(item)
             finish_reason = choice.get("finish_reason")
             terminal = terminal or finish_reason is not None
-            if finish_reason in {"length", "content_filter"}:
-                error = f"模型输出未完整结束: {finish_reason}"
+            if finish_reason == "length":
+                error = (
+                    "模型输出未完整结束: length（达到 max_tokens；"
+                    "请提高 llm.max_tokens 或降低 llm.reasoning_effort 后重试）"
+                )
+            elif finish_reason == "content_filter":
+                error = "模型输出未完整结束: content_filter（被供应商内容过滤）"
     return deltas, terminal, error, usage, tool_deltas
 
 

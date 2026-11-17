@@ -71,7 +71,7 @@ class Planner:
         self.stagnant_steps = 0 if new_facts else self.stagnant_steps + 1
         note: str | None = None
 
-        budget_hit = self.phase_step >= self.max_steps_per_phase
+        budget_hit = self.max_steps_per_phase > 0 and self.phase_step >= self.max_steps_per_phase
         if self.objective_met(state):
             note = f"{self.phase} 阶段目标达成"
         elif budget_hit:
@@ -108,6 +108,6 @@ class Planner:
             return True
         if self.phase == "report":
             return True
-        if self.stagnant_steps >= max(3, self.max_steps_per_phase):
+        if self.max_steps_per_phase > 0 and self.stagnant_steps >= max(3, self.max_steps_per_phase):
             return True
         return False

@@ -9,7 +9,7 @@
 --------
 1. **目标注册**：只接受注册的 `target_id`；不在注册表里的目标一律拒绝（不给"任意 URL"开口子）。
 2. **检查注册**：只接受注册的 `test_id`（绑定工具与参数模板）；未注册工具/动作拒绝。
-3. **预算与停止合同**：检查数、逻辑预算、无新增证据即停；授权撤销后立即转为拒绝（减权而非绕路）。
+3. **停止合同与撤权**：连续无新增证据即停；授权撤销后立即转为拒绝（减权而非绕路）。
 
 注册表来源（人可读、可审查）
 --------------------------
@@ -91,7 +91,7 @@ class Decision:
     """控制器的裁决（与 ScopeGuard 的 Decision 区分：这里是"授权"，那里是"边界"）。"""
 
     allowed: bool
-    kind: str = "policy"  # target|test|budget|revoked|mode|ok
+    kind: str = "policy"  # target|test|revoked|mode|ok
     reason: str = ""
     target_id: str = ""
     test_id: str = ""
@@ -215,15 +215,16 @@ class PolicyRegistry:
 
 @dataclass
 class Budget:
-    """预算与停止合同（P3：数字是试跑参数，不是安全标准）。"""
+    """停止合同：只保留「连续无新增证据」这一启发式停止条件。
 
-    max_checks: int = 40
-    logic_seconds: int = 900
-    stop_on_no_new_evidence: int = 4
+    时间与检查次数不再设硬上限；外层运行时长、步数和工具超时负责实际边界。
+    """
+
+    stop_on_no_new_evidence: int = 0
 
 
 class AuthorizationController:
-    """独立控制器：在执行层逐动作批准，并维护预算、覆盖与撤销状态。"""
+    """独立控制器：在执行层逐动作批准，并维护覆盖、停止合同与撤销状态。"""
 
     def __init__(
         self,
@@ -274,10 +275,6 @@ class AuthorizationController:
         return self.budget.stop_on_no_new_evidence > 0 and self.stale_steps >= self.budget.stop_on_no_new_evidence
 
     def stop_reason(self) -> str:
-        if self.elapsed >= self.budget.logic_seconds:
-            return f"逻辑预算用尽（{self.budget.logic_seconds}s）"
-        if self.checks_used >= self.budget.max_checks:
-            return f"检查数达到上限（{self.budget.max_checks}）"
         if self.budget.stop_on_no_new_evidence > 0 and self.stale_steps >= self.budget.stop_on_no_new_evidence:
             return f"连续 {self.stale_steps} 步无新增证据"
         return ""
@@ -292,7 +289,7 @@ class AuthorizationController:
         target: RegisteredTarget | None = self.registry.match_target(target_raw) if target_raw else None
         if target is None and self.default_target_id:
             # 动作里写了裸主机/少写端口时，若与本次运行的目标同主机则继承其注册
-            # （继承不等于放宽：仍然受撤权、预算与检查注册约束）
+            # （继承不等于放宽：仍然受撤权与检查注册约束）
             fallback = self.registry.targets.get(self.default_target_id)
             action_host = _split_address(target_raw)[0]
             if fallback is not None and action_host and any(
@@ -300,12 +297,6 @@ class AuthorizationController:
             ):
                 target = fallback
         target_id = target.target_id if target else ""
-
-        # 1) 预算闸门
-        if self.checks_used >= self.budget.max_checks:
-            return self._deny("budget", f"检查数已达预算上限 {self.budget.max_checks}", target_id, test_id)
-        if self.elapsed >= self.budget.logic_seconds:
-            return self._deny("budget", f"逻辑预算已用尽（{self.budget.logic_seconds}s）", target_id, test_id)
 
         if self.mode == "strict" and self.registry.empty:
             return self._deny("test", "strict 模式没有显式检查项，拒绝执行", target_id, test_id)
@@ -414,7 +405,7 @@ class AuthorizationController:
         ]
         return {
             "mode": self.mode,
-            "budget": {"max_checks": self.budget.max_checks, "logic_seconds": self.budget.logic_seconds},
+            "stop_contract": {"stop_on_no_new_evidence": self.budget.stop_on_no_new_evidence},
             "checks_used": self.checks_used,
             "executed": sorted(executed),
             "unregistered": sorted(set(self.unregistered)),
@@ -428,10 +419,6 @@ class AuthorizationController:
     def _untested_reason(self, test: RegisteredTest) -> str:
         if test.target_id in self.revoked:
             return "授权被撤销"
-        if self.checks_used >= self.budget.max_checks:
-            return "预算用尽"
-        if self.elapsed >= self.budget.logic_seconds:
-            return "逻辑预算用尽"
         if self.budget.stop_on_no_new_evidence > 0 and self.stale_steps >= self.budget.stop_on_no_new_evidence:
             return "连续无新增证据，按停止合同提前结束"
         return "未调度（步数/优先级不足）"

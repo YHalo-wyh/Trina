@@ -137,6 +137,8 @@ class CoordinationRuntime:
             return [item["id"] for item in sorted(ready, key=lambda item: (-item["priority"], item["id"]))]
 
     def claim(self, intent_id: str, worker_id: str, *, lease_id: str = "", ttl: float = 600) -> str:
+        if ttl < 0:
+            raise ValueError("ttl 必须非负，0 随任务释放")
         with self.lock:
             intent = self.intents[intent_id]
             if intent["status"] != "pending":
@@ -145,7 +147,7 @@ class CoordinationRuntime:
             now = time.time()
             intent.update({
                 "status": "running", "worker_id": worker_id, "lease_id": lease,
-                "claimed_at": now, "deadline": now + max(1.0, float(ttl)),
+                "claimed_at": now, "deadline": now + float(ttl) if ttl else 0.0,
                 "attempt": int(intent["attempt"]) + 1, "error": "",
             })
             self.todo[intent_id]["status"] = "in_progress"

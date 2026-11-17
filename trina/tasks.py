@@ -44,7 +44,7 @@ class ScheduledTask:
     run_at: str
     target: str
     goal: str = ""
-    max_steps: int = 12
+    max_steps: int = 0
     approve: str = "off"
     config_path: str = ""
     status: str = "queued"
@@ -127,13 +127,13 @@ class TaskStore:
             else:
                 data["goals"].pop(self.project, None)
 
-    def add(self, target: str, when: str, *, goal: str | None = None, max_steps: int = 12,
+    def add(self, target: str, when: str, *, goal: str | None = None, max_steps: int = 0,
             approve: str = "off", config=None, now: datetime | None = None) -> ScheduledTask:
         from .scope import ScopeGuard
         from .config import TrinaConfig, DEFAULT_CONFIG_PATH
         from .session import APPROVAL_MODES
         config = config or TrinaConfig.load()
-        if not target or max_steps < 1 or approve not in APPROVAL_MODES:
+        if not target or type(max_steps) is not int or max_steps < 0 or approve not in APPROVAL_MODES:
             raise ValueError("定时任务需要目标、正数步数和有效审批模式")
         decision = ScopeGuard(config.scope).check_target(target)
         if decision.denied:

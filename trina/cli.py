@@ -730,13 +730,15 @@ def cmd_bench(args: argparse.Namespace) -> int:
         return 2
     hosted = _bench_bool("TRINA_BENCH_HOSTED", default=False)
     _prepare_bench_llm(config, hosted=hosted, force_gateway=bool(getattr(args, "gateway", False)))
+    def bench_limit(name: str) -> int:
+        value = getattr(args, name, None)
+        return int(value) if value is not None else _bench_int("TRINA_BENCH_" + name.upper(), 0)
+
     options = BenchOptions(
-        max_steps=int(getattr(args, "max_steps", None) or _bench_int("TRINA_BENCH_MAX_STEPS", 36)),
-        per_task_seconds=int(
-            getattr(args, "per_task_seconds", None) or _bench_int("TRINA_BENCH_PER_TASK_SECONDS", 420)
-        ),
-        total_seconds=int(getattr(args, "total_seconds", None) or _bench_int("TRINA_BENCH_TOTAL_SECONDS", 6 * 3600)),
-        attempts=int(getattr(args, "attempts", None) or _bench_int("TRINA_BENCH_ATTEMPTS", 2)),
+        max_steps=bench_limit("max_steps"),
+        per_task_seconds=bench_limit("per_task_seconds"),
+        total_seconds=bench_limit("total_seconds"),
+        attempts=bench_limit("attempts"),
         use_hints=bool(getattr(args, "use_hints", False) or _bench_bool("TRINA_BENCH_USE_HINTS", False)),
         limit=int(getattr(args, "limit", None) or _bench_int("TRINA_BENCH_LIMIT", 0)),
         workers=int(getattr(args, "workers", None) or _bench_int("TRINA_BENCH_WORKERS", 2)),
@@ -1029,10 +1031,10 @@ def build_parser() -> argparse.ArgumentParser:
     add_common(bench)
     bench.add_argument("--base-url", help="答题 API 根地址（默认 BENCHMARK_BASE_URL）")
     bench.add_argument("--token-env", default="BENCHMARK_TOKEN", help="token 所在环境变量名")
-    bench.add_argument("--max-steps", type=int, help="单轮决策步数上限（默认 36）")
-    bench.add_argument("--per-task-seconds", type=int, help="单题时间预算（默认 420）")
-    bench.add_argument("--total-seconds", type=int, help="整场时间预算（默认 21600）")
-    bench.add_argument("--attempts", type=int, help="单题最多续做轮次（默认 2；无新增事实时提前释放）")
+    bench.add_argument("--max-steps", type=int, help="单轮决策步数上限（默认 0 不限制）")
+    bench.add_argument("--per-task-seconds", type=int, help="单题时间预算（默认 0 不限制）")
+    bench.add_argument("--total-seconds", type=int, help="整场时间预算（默认 0 不限制）")
+    bench.add_argument("--attempts", type=int, help="单题续做轮次（默认 0 不限制；无新增事实时释放）")
     bench.add_argument("--use-hints", action="store_true", help="补漏轮次前获取平台提示（会扣分）")
     bench.add_argument("--limit", type=int, help="只跑前 N 题（调试用）")
     bench.add_argument("--workers", type=int, choices=range(1, 4), help="并行题目数（默认 2，上限 3）")
@@ -1080,8 +1082,8 @@ def build_parser() -> argparse.ArgumentParser:
     swarm.add_argument("--resume", help="从 runs/<id>/swarm.json 继续")
     swarm.add_argument("--workers", type=int, default=2, help="最大并行 Worker 数（默认 2）")
     swarm.add_argument("--no-auto-expand", action="store_true", help="关闭事实变化驱动的有界后继 Intent 生成")
-    swarm.add_argument("--max-steps", type=int, default=12, help="默认图每任务步数上限")
-    swarm.add_argument("--max-seconds", type=int, default=600, help="默认图每任务秒数上限")
+    swarm.add_argument("--max-steps", type=int, default=0, help="默认图每任务步数上限，0 不限制")
+    swarm.add_argument("--max-seconds", type=int, default=0, help="默认图每任务秒数上限，0 不限制")
     swarm.add_argument("--model", help="覆盖模型名")
     swarm.add_argument("--backend", choices=["openai", "replay"])
     swarm.add_argument("--replay", help="离线回放脚本（每个 Worker 独立加载）")
@@ -1189,7 +1191,7 @@ def build_parser() -> argparse.ArgumentParser:
     create.add_argument("--at", required=True, help="HH:MM、ISO 日期时间或 +10m")
     create.add_argument("--target", required=True)
     create.add_argument("--goal")
-    create.add_argument("--max-steps", type=int, default=12)
+    create.add_argument("--max-steps", type=int, default=0)
     create.add_argument("--approve", choices=("off", "exploit", "verify", "all"), default="off")
     create.set_defaults(func=cmd_schedule)
     cancel = schedule_sub.add_parser("cancel")

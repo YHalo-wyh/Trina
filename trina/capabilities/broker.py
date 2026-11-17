@@ -41,7 +41,7 @@ class CapabilityLease:
     def check(self) -> None:
         if not self.active:
             raise CapabilityLeaseError(f"Capability 租约已释放: {self.id}")
-        if time.monotonic() >= self.expires_at:
+        if self.expires_at and time.monotonic() >= self.expires_at:
             self.active = False
             raise CapabilityLeaseError(f"Capability 租约已过期: {self.id}")
 
@@ -90,8 +90,8 @@ class CapabilityFabric:
         ttl: float = 900,
         pinned: Iterable[dict[str, str]] | None = None,
     ) -> CapabilityLease:
-        if not worker_id or not task_id or ttl <= 0:
-            raise ValueError("Capability 租约需要 worker_id/task_id 和正数 ttl")
+        if not worker_id or not task_id or ttl < 0:
+            raise ValueError("Capability 租约需要 worker_id/task_id 和非负 ttl；0 随任务释放")
         with self._lock:
             key = (worker_id, task_id)
             previous = self._worker_leases.get(key)
@@ -115,7 +115,7 @@ class CapabilityFabric:
                 worker_id=worker_id,
                 task_id=task_id,
                 capabilities=tuple(capabilities),
-                expires_at=time.monotonic() + ttl,
+                expires_at=time.monotonic() + ttl if ttl else 0.0,
             )
 
             def publish(capability: Capability, result: ToolResult, arguments: dict[str, Any]) -> None:

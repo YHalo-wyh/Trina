@@ -33,7 +33,7 @@ def render_chat_prompt(include_hypothesis: bool = True) -> str:
 class ChatAgent:
     """把"对话"和"调用工具"合在一个循环里。"""
 
-    MAX_TOOL_STEPS = 12
+    MAX_TOOL_STEPS = 0  # 默认不限制；托管入口可显式设置平台限制
 
     def __del__(self) -> None:
         # 异常退出或旧调用方未显式 close 时，仅释放占用，不执行或写入数据。
@@ -62,6 +62,7 @@ class ChatAgent:
         on_event: Callable[[Any], None] | None = None,
     ):
         self.config = config
+        self.MAX_TOOL_STEPS = config.llm.max_steps
         self.registry = registry or build_registry()
         self.backend = backend or make_backend(config.llm)
         self.logger = logger or (lambda message: None)
@@ -153,7 +154,7 @@ class ChatAgent:
             self._controller = AuthorizationController(
                 PolicyRegistry.load(self.config, extra_dirs=list(policy.registry_dirs)),
                 mode=policy.mode,
-                budget=Budget(policy.max_checks, policy.logic_seconds, policy.stop_on_no_new_evidence),
+                budget=Budget(policy.stop_on_no_new_evidence),
                 audit=self.audit,
             )
         self.ctx.extra["authorization_controller"] = self._controller
@@ -288,8 +289,11 @@ class ChatAgent:
             return terminal_reply
         if outcome.answer is not None:
             return outcome.answer
-        self.logger(f"[提示] 单条消息内已执行 {runtime.steps} 个动作，先给你阶段性结果")
-        return f"（本次已连续执行 {runtime.steps} 个动作；回复「继续」可从当前结果推进。）"
+        self.logger(f"[提示] 单条消息内已执行 {runtime.steps} 个动作，正在整理阶段性结果")
+        if self.ctx.extra.get("ctfy_mode"):
+            # 托管评测的模型调用次数属于硬预算，不能为展示性收尾越界。
+            return f"（本次已连续执行 {runtime.steps} 个动作；回复「继续」可从当前结果推进。）"
+        return self._summarize_budget_exhaustion(runtime.steps)
 
     # ------------------------------------------------------------------ 内部
     def _initialize_messages(self) -> None:
@@ -327,7 +331,8 @@ class ChatAgent:
         ]
         self._messages_ready = True
 
-    def _ask_model(self, step: int = 0):
+    def _ask_model(self, step: int = 0, *, allow_tools: bool = True,
+                   final_instruction: str = ""):
         registered = self.controller.registry.prompt_block(
             self.controller.registry.match_target(self.state.target).target_id  # type: ignore[union-attr]
             if self.state.target and self.controller.registry.match_target(self.state.target)
@@ -340,9 +345,14 @@ class ChatAgent:
         last_observation = self.history[-1]["content"] if self.history and self.history[-1]["content"].startswith("[工具结果]") else ""
         runtime_parts.append(render_agent_status(self.ctx, step=step, max_steps=self.MAX_TOOL_STEPS,
                                                turn=self.turns, observation=last_observation, compact=True))
+        if final_instruction:
+            runtime_parts.append(final_instruction)
         # 动态状态作为新的 user 消息追加；绝不重写 system 或把历史压成角色标签字符串。
         self._messages.append({"role": "user", "content": "\n\n".join(runtime_parts)})
-        tool_payload = tool_schemas(self.registry, exclude=() if self.ctx.extra.get("subworkers") else ("worker_tasks",)) if self._native_tools_enabled() else None
+        tool_payload = (tool_schemas(
+            self.registry,
+            exclude=() if self.ctx.extra.get("subworkers") else ("worker_tasks",),
+        ) if allow_tools and self._native_tools_enabled() else None)
         from ..events import ModelEventStream
         self._message_id = uuid.uuid4().hex
         self._pending_stream = _VisibleStream(self._visible_update)
@@ -383,6 +393,46 @@ class ChatAgent:
         self.context.after_response(diagnostic, response)
         self._record_usage(response.usage)
         return response
+
+    def _summarize_budget_exhaustion(self, steps: int) -> str:
+        """动作预算耗尽后再做一次无工具总结，避免真实结果只留在观察历史里。"""
+        instruction = (
+            "[动作预算已用尽] 现在只根据本轮已经返回的真实工具结果，直接回答用户最初的请求。"
+            "禁止继续调用任何工具，不要输出 JSON action、DSML 或工具调用协议。"
+            "给出当前结论和关键证据；如果尚未完成，明确未完成项与下一步。"
+        )
+        response = self._ask_model(steps, allow_tools=False, final_instruction=instruction)
+        if not response.ok:
+            self._cancel_stream()
+            self.audit.append("chat.budget_summary", decision="error", steps=steps,
+                              error=response.error[:300])
+            return f"（已执行 {steps} 个动作，但阶段性总结生成失败：{response.error}；回复「继续」可接着推进。）"
+
+        raw = response.text.strip()
+        action, note = _parse_action_lenient(raw)
+        if action is not None and "final" in action:
+            final = action["final"]
+            reply = str(final.get("summary") if isinstance(final, dict) else final).strip()
+        elif action is not None:
+            # 无工具收尾不执行意外动作；若模型先给了自然语言，只保留那部分。
+            reply = note.strip()
+        else:
+            from .prompts import _looks_like_dsml
+
+            reply = "" if _looks_like_dsml(raw) else raw
+        if not reply:
+            reply = f"（本次已连续执行 {steps} 个动作；工具结果已保存，回复「继续」可从当前状态推进。）"
+        # 收尾请求没有 tools；即使异常后端仍返回 tool_calls，也只保留自然语言，
+        # 避免写入一个缺少 tool 回执的非法标准消息序列。
+        message: LLMMessage = {"role": "assistant", "content": reply}
+        if response.reasoning:
+            message["reasoning_content"] = response.reasoning
+        self._messages.append(message)
+        self.history.append({"role": "assistant", "content": reply})
+        self.audit.append("chat.budget_summary", decision="allow", steps=steps,
+                          chars=len(reply), ignored_tool_calls=len(response.tool_calls))
+        self._finish_stream(reply)
+        return reply
 
     def _record_usage(self, usage: Any) -> None:
         """主回复与独立标题请求使用同一真实用量账本。"""
@@ -576,7 +626,7 @@ class ChatAgent:
         if thought:
             self.logger(f"          想法：{thought[:160]}")
 
-        # 控制器（授权：注册/预算/撤权）
+        # 控制器（授权：注册/撤权）
         decision = self.controller.check(
             {"step": step, "tool": tool_name, "params": params, "level": level, "target": target, "test_id": test_id}
         )

@@ -300,6 +300,28 @@ class TestChatAgent(unittest.TestCase):
                          {"call_one", "call_two", "call_finish"})
         self.assertEqual(chat.usage.calls, 2)
 
+    def test_tool_budget_reserves_a_tool_free_summary_call(self):
+        chat = self._chat([
+            {"response": '{"action":"echo_probe","params":{"target":"127.0.0.1"}}'},
+            {"response": '{"final":{"summary":"阶段性结论：127.0.0.1 的 80 端口开放。"}}'},
+        ])
+        chat.MAX_TOOL_STEPS = 1
+        supplied: list[bool] = []
+        original = chat.backend.complete_messages
+
+        def capture(messages, **kwargs):
+            supplied.append(bool(kwargs.get("tools")))
+            return original(messages, **kwargs)
+
+        chat.backend.complete_messages = capture  # type: ignore[method-assign]
+        reply = chat.ask("检查目标并给出结果")
+        self.assertIn("阶段性结论", reply)
+        self.assertEqual(supplied, [True, False], "收尾调用不得继续暴露工具")
+        self.assertEqual(chat.usage.calls, 2)
+        self.assertEqual(chat.state.counters.get("tool_calls"), 1)
+        self.assertIn("动作预算已用尽", chat._messages[-2]["content"])
+        self.assertEqual(chat._messages[-1], {"role": "assistant", "content": reply})
+
     def test_prose_plus_action_is_executed(self):
         """模型常写「一句解释 + JSON 动作」：必须识别动作并执行，而不是当成纯文本回答。"""
         chat = self._chat(
@@ -618,16 +640,16 @@ class TestConsole(unittest.TestCase):
         console, _output = self._console([])
         interactive = console._ensure_controller()
         interactive.revoke("lab-http")
-        scheduled_config = console.config.with_overrides(policy__max_checks=7)
+        scheduled_config = console.config.with_overrides(policy__stop_on_no_new_evidence=7)
 
         scheduled = console._ensure_controller(scheduled_config)
         self.assertIsNot(scheduled, interactive)
-        self.assertEqual(scheduled.budget.max_checks, 7)
+        self.assertEqual(scheduled.budget.stop_on_no_new_evidence, 7)
         self.assertNotIn("lab-http", scheduled.revoked)
 
         restored = console._ensure_controller()
         self.assertIsNot(restored, scheduled)
-        self.assertEqual(restored.budget.max_checks, console.config.policy.max_checks)
+        self.assertEqual(restored.budget.stop_on_no_new_evidence, console.config.policy.stop_on_no_new_evidence)
 
     def test_run_without_target_explains_usage(self):
         console, output = self._console(["run", "quit"])

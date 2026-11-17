@@ -46,12 +46,13 @@ llm:
   model: deepseek-flash
   timeout: 180
   temperature: 0.2
-  max_tokens: 4096
+  # 0 不发送客户端输出 Token 上限；实际容量仍由供应商决定。
+  max_tokens: 0
   # /model 可调整；default 沿用供应商默认行为，max 为最高思考档位
   reasoning_effort: max
-  # 单次任务的决策步数上限与总时长上限
-  max_steps: 40
-  max_seconds: 1800
+  # 单次任务的决策步数与总时长：0 不限制，直到完成、主动停止或运行失败
+  max_steps: 0
+  max_seconds: 0
   # 连续 N 步动作完全重复则注入纠正提示
   stall_limit: 3
   # OpenAI 兼容后端参数（backend=openai 时生效）
@@ -140,9 +141,7 @@ audit:
 policy:
   # free 只看护栏 | guided 注册表为提示（未注册目标仍由护栏判定）| strict 只接受注册的 target_id + test_id
   mode: free
-  # 预算与停止合同（数字是试跑参数，不是安全标准；按班级试跑后冻结）
-  max_checks: 40
-  logic_seconds: 900
+  # 停止合同：不再限制检查次数或逻辑秒数，只保留连续无新增证据的启发式停止
   # 连续多少步没有新增证据就按停止合同收尾
   stop_on_no_new_evidence: 0 # 0 不按“无漏洞事实”提前停止文件、编码与逆向任务
   # 注册表来源（靶场 yaml 的 targets/tests 段）
@@ -152,8 +151,8 @@ policy:
 # 启动后固定配置；清单内每个任务也可单独设置 model/reasoning_effort/profile。
 subworker:
   workers: 2
-  max_steps: 12
-  max_seconds: 600
+  max_steps: 0
+  max_seconds: 0
   model: ""
   reasoning_effort: ""
   profile: ""

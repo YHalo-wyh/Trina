@@ -220,9 +220,9 @@ def run_ctfy(root: Path) -> int:
     from .llm.reasoning import reasoning_support
     if requested_effort in reasoning_support(cfg.llm).levels:
         cfg.llm.reasoning_effort = requested_effort
-    maximum = int(os.environ.get("CTFY_EVAL_MAX_TURNS") or task.task.get("max_turns") or 40)
-    if maximum <= 0:
-        raise ValueError("CTFY 模型调用预算必须为正数")
+    maximum = int(os.environ.get("CTFY_EVAL_MAX_TURNS") or task.task.get("max_turns") or 0)
+    if maximum < 0:
+        raise ValueError("CTFY 模型调用预算必须非负，0 不限制")
     agent = ChatAgent(cfg, registry=build_registry(CTFY_TOOL_MODULES), logger=print)
     agent.ctx.extra["ctfy_task"] = task
     agent.ctx.extra["ctfy_mode"] = True
@@ -231,9 +231,9 @@ def run_ctfy(root: Path) -> int:
     agent.ctx.extra["tool_result_hook"] = task.maybe_auto_submit
     reason = "turn_budget"
     try:
-        while agent.usage.calls < maximum:
+        while not maximum or agent.usage.calls < maximum:
             before = agent.usage.calls
-            agent.MAX_TOOL_STEPS = min(12, maximum - before)
+            agent.MAX_TOOL_STEPS = maximum - before if maximum else 0
             briefing = task.briefing() if not before else "继续检查当前合同剩余问题，先验证候选再结束。"
             reply = agent.ask(briefing)
             print(reply)

@@ -537,6 +537,8 @@ class EnhancedConsoleInput:
         #: 最近一次渲染出的真实行数；光标越界会直接把 prompt_toolkit 的滚动逻辑打崩。
         self._rendered_lines = 1
         self._scrollback = 0
+        # 只有用户主动上翻历史时才暂停尾随；不能用残留选区猜测用户意图。
+        self._follow_latest = True
         self.running = running
         self.completer = SlashCommandCompleter(running=running, dynamic_values=dynamic_values)
         self.dismissed = False
@@ -584,6 +586,7 @@ class EnhancedConsoleInput:
             else:
                 self.buffer.append_to_history()
                 self.buffer.reset()
+                self._scroll_to_latest()
                 self._queue.put_nowait(value)
 
         @bindings.add("c-c")
@@ -772,8 +775,14 @@ class EnhancedConsoleInput:
         maximum = self.transcript_control.max_scrollback()
         updated = min(maximum, max(0, self._scrollback + lines))
         if updated == self._scrollback:
+            if lines < 0 and updated == 0:
+                self._follow_latest = True
+                self.transcript_control.clear_selection()
             return
         self._scrollback = updated
+        self._follow_latest = updated == 0
+        if self._follow_latest:
+            self.transcript_control.clear_selection()
         self.transcript_control.precondition_scroll(old_start, self.transcript_control.viewport_start())
         self.app.invalidate()
 
@@ -783,6 +792,7 @@ class EnhancedConsoleInput:
         if updated == self._scrollback:
             return
         self._scrollback = updated
+        self._follow_latest = False
         self.transcript_control.precondition_scroll(old_start, self.transcript_control.viewport_start())
         self.app.invalidate()
 
@@ -792,6 +802,7 @@ class EnhancedConsoleInput:
             return
         old_start = self.transcript_control.viewport_start()
         self._scrollback = 0
+        self._follow_latest = True
         self.transcript_control.clear_selection()
         self.transcript_control.precondition_scroll(old_start, self.transcript_control.viewport_start())
         self.app.invalidate()
@@ -913,6 +924,7 @@ class EnhancedConsoleInput:
             self._thinking_indices.clear()
             self._stream_index = None
             self._char_count = self._scrollback = 0
+            self._follow_latest = True
             self._rendered_lines = self._line_count = 1
             self.transcript_control.clear_selection()
             self.transcript_control.invalidate_from(0)

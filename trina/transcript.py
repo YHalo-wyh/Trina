@@ -78,7 +78,9 @@ class TranscriptControl(UIControl):
             self._changed.clear()
             self.dirty = len(owner._chunks)
             owner._rendered_lines = owner._line_count = max(1, len(self.rows))
-            if owner._scrollback or self.anchor is not None:
+            if owner._follow_latest and not self.dragging:
+                owner._scrollback = 0
+            elif owner._scrollback or self.anchor is not None:
                 owner._scrollback = max(0, owner._scrollback + owner._rendered_lines - previous)
             owner._scrollback = min(owner._scrollback, self.max_scrollback())
             new_start = self.viewport_start()
@@ -194,11 +196,14 @@ class TranscriptControl(UIControl):
             if event.event_type == MouseEventType.MOUSE_DOWN:
                 self.anchor = self.head = position
                 self.dragging = True
+                self.owner._follow_latest = False
             elif event.event_type == MouseEventType.MOUSE_MOVE and self.dragging:
                 self.head = position
             elif event.event_type == MouseEventType.MOUSE_UP and self.dragging:
                 self.head, self.dragging = position, False
                 self.copy_selection()
+                if self.owner._scrollback == 0:
+                    self.owner._follow_latest = True
             else:
                 return NotImplemented
             self.owner.app.invalidate()

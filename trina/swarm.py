@@ -45,8 +45,8 @@ class TaskSpec:
     capabilities: tuple[str, ...] = ()
     depends_on: tuple[str, ...] = ()
     priority: int = 0
-    max_steps: int = 12
-    max_seconds: int = 600
+    max_steps: int = 0
+    max_seconds: int = 0
     model: str = ""
     reasoning_effort: str = ""
     profile: str = ""
@@ -198,7 +198,8 @@ def validate_tasks(tasks: list[TaskSpec]) -> None:
     for task in tasks:
         if not _TASK_ID.fullmatch(task.id):
             raise ValueError(f"非法任务 ID: {task.id!r}")
-        if not task.target or not task.goal or task.max_steps < 1 or task.max_seconds < 1:
+        if (not task.target or not task.goal or
+                any(type(value) is not int or value < 0 for value in (task.max_steps, task.max_seconds))):
             raise ValueError(f"任务 {task.id} 缺少目标或预算非法")
         if any(not isinstance(value, str) for value in (task.model, task.reasoning_effort, task.profile)):
             raise ValueError(f"任务 {task.id} 模型配置必须为字符串")
@@ -229,7 +230,7 @@ def validate_tasks(tasks: list[TaskSpec]) -> None:
         visit(task.id)
 
 
-def default_tasks(target: str, goal: str, *, max_steps: int = 12, max_seconds: int = 600) -> list[TaskSpec]:
+def default_tasks(target: str, goal: str, *, max_steps: int = 0, max_seconds: int = 0) -> list[TaskSpec]:
     """默认只创建一个目标任务，不预设 Recon/Web/Verify 专职 Worker。"""
     return [TaskSpec("main", target, goal or "分析目标并完成可验证结果", (), max_steps=max_steps, max_seconds=max_seconds)]
 
@@ -303,7 +304,7 @@ class SwarmRuntime:
         capability_dirs: list[str | Path] | None = None,
         write_report: bool = True,
         auto_expand: bool = False,
-        max_generated_tasks: int = 8,
+        max_generated_tasks: int | None = None,
         _restoring: bool = False,
     ):
         validate_tasks(tasks)
@@ -334,7 +335,7 @@ class SwarmRuntime:
         self.executor = executor or self._execute_agent
         self.write_report = bool(write_report)
         self.auto_expand = bool(auto_expand)
-        self.max_generated_tasks = max(0, int(max_generated_tasks))
+        self.max_generated_tasks = None if max_generated_tasks is None else max(0, int(max_generated_tasks))
         self.intent_planner = FactIntentPlanner()
         self.stop_event = threading.Event()
         self._task_stops = {task.id: threading.Event() for task in tasks}
@@ -383,7 +384,7 @@ class SwarmRuntime:
             capability_dirs=capability_dirs,
             write_report=bool(data.get("write_report", True)),
             auto_expand=bool(data.get("auto_expand", False)),
-            max_generated_tasks=int(data.get("max_generated_tasks", 8)),
+            max_generated_tasks=data.get("max_generated_tasks"),
             _restoring=True,
         )
         if Path(checkpoint).resolve() != runtime.checkpoint.resolve():
@@ -448,7 +449,7 @@ class SwarmRuntime:
 
     def _expand_from_facts(self, source_id: str, fact_ids: list[str]) -> list[str]:
         """Commander 根据新事实生成有界后继任务；Worker 不直接修改任务图。"""
-        if not self.auto_expand or not fact_ids or self.max_generated_tasks <= 0:
+        if not self.auto_expand or not fact_ids or self.max_generated_tasks == 0:
             return []
         facts = self.coordination.unplanned_facts(fact_ids)
         if not facts:
@@ -457,7 +458,8 @@ class SwarmRuntime:
         if source is None:
             return []
         existing_generated = sum(item.id.startswith("auto-") for item in self.tasks)
-        remaining = max(0, self.max_generated_tasks - existing_generated)
+        remaining = (max(0, self.max_generated_tasks - existing_generated)
+                     if self.max_generated_tasks is not None else None)
         accepted: list[str] = []
         # 自动后继共用显式任务的规划键，重观测同一资产不能递归生成新任务。
         by_id = {task.id: task for task in self.tasks}
@@ -471,7 +473,7 @@ class SwarmRuntime:
             origin = parent
         try:
             for proposal in self.intent_planner.propose(source, facts, planning_scope=origin.id):
-                if len(accepted) >= remaining:
+                if remaining is not None and len(accepted) >= remaining:
                     break
                 task = TaskSpec(
                     proposal.id, proposal.target, proposal.goal,
@@ -576,7 +578,7 @@ class SwarmRuntime:
             task.id,
             f"{task.goal}\n目标: {task.target}",
             constraints=constraints,
-            ttl=task.max_seconds + 30,
+            ttl=task.max_seconds + 30 if task.max_seconds else 0,
             pinned=record.capability_snapshot or None,
         )
         record.capability_lease_id = lease.id
@@ -847,7 +849,7 @@ class SwarmRuntime:
                             continue
                         self.coordination.claim(
                             task.id, worker.id, lease_id=worker.lease_id,
-                            ttl=task.max_seconds + 30,
+                            ttl=task.max_seconds + 30 if task.max_seconds else 0,
                         )
                         record.started_at = time.time()
                         task_run_id = f"{self.run_id}-{task.id}-{record.attempt}"

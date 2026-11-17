@@ -71,6 +71,18 @@ class RuntimeStatusTests(unittest.TestCase):
         self.assertEqual(self.jobs.snapshot(running)[0]["status"], "cancelled")
         self.assertIsNotNone(self.jobs.snapshot(running)[0]["exit_code"])
 
+    def test_compact_status_includes_real_host_and_available_empty_worker_pool(self):
+        from types import SimpleNamespace
+        self.ctx.extra["subworkers"] = SimpleNamespace(rows=lambda: [])
+        snapshot = status_snapshot(self.ctx)
+        self.assertEqual(snapshot["environment"]["platform"], sys.platform)
+        self.assertEqual(snapshot["environment"]["python_executable"], sys.executable)
+        self.assertTrue(snapshot["delegation_available"])
+        self.assertEqual(snapshot["subworkers"], [])
+        rendered = render_agent_status(self.ctx, compact=True)
+        self.assertIn('"python_executable":', rendered)
+        self.assertIn('"delegation_available":true', rendered)
+
     def test_statebar_is_tail_message_data_and_does_not_rewrite_prefix(self):
         backend = ReplayBackend(LLMConfig(backend="replay"))
         messages = []

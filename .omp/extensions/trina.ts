@@ -107,8 +107,8 @@ export default function paiExtension(pi: ExtensionAPI) {
     parameters: z.object({
       target: z.string().describe("目标（host:port 或 URL）"),
       goal: z.string().optional().describe("本次任务目标，如「拿到 flag」「验证是否存在 SQL 注入」"),
-      max_steps: z.number().int().positive().optional().describe("决策步数上限（默认 40）"),
-      max_seconds: z.number().int().positive().optional().describe("总时长上限（秒）"),
+      max_steps: z.number().int().nonnegative().optional().describe("决策步数上限（默认 0 不限制）"),
+      max_seconds: z.number().int().nonnegative().optional().describe("总时长上限（秒，默认 0 不限制）"),
       range: z.string().optional().describe("靶场适配器名，如 lab/dvwa/pikachu"),
       hint: z.string().optional().describe("附加约束或提示"),
       allow_exploit: z.boolean().optional().describe("restricted 模式兼容项：提升动作等级到 exploit；full 模式无需设置"),
@@ -116,13 +116,13 @@ export default function paiExtension(pi: ExtensionAPI) {
     async execute(_id, params, _signal, onUpdate) {
       const argv = ["run", "--target", params.target];
       if (params.goal) argv.push("--goal", params.goal);
-      if (params.max_steps) argv.push("--max-steps", String(params.max_steps));
-      if (params.max_seconds) argv.push("--max-seconds", String(params.max_seconds));
+      if (params.max_steps !== undefined) argv.push("--max-steps", String(params.max_steps));
+      if (params.max_seconds !== undefined) argv.push("--max-seconds", String(params.max_seconds));
       if (params.range) argv.push("--range", params.range);
       if (params.hint) argv.push("--hint", params.hint);
       if (params.allow_exploit) argv.push("--allow-exploit");
       onUpdate?.({ content: [{ type: "text", text: `Trina 正在对 ${params.target} 执行自动渗透…` }] });
-      const text = await trina(argv, 3_600_000);
+      const text = await trina(argv, 0);
       return { content: [{ type: "text", text }], details: { target: params.target } };
     },
   });

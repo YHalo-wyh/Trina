@@ -1,0 +1,785 @@
+{
+  "id": "surf-04",
+  "goal": "检查 127.0.0.1:54338 是否存在 .git 目录暴露",
+  "expected_tool": "web_surface",
+  "chosen": false,
+  "tool_ok": false,
+  "flag": false,
+  "accepted": false,
+  "status": "success",
+  "steps": [
+    {
+      "kind": "tool",
+      "tool": "port_scan",
+      "params": {
+        "target": "127.0.0.1",
+        "ports": "54338",
+        "timeout": 1.0,
+        "max_ports": 4096
+      },
+      "ok": true,
+      "summary": "端口扫描 127.0.0.1: 1 个开放端口 / 扫描 1 个 (engine=builtin)",
+      "duration": 0.328,
+      "ts": 1794918707.676
+    },
+    {
+      "index": 1,
+      "phase": "execute",
+      "thought": "",
+      "action": "port_scan",
+      "params": {
+        "target": "127.0.0.1",
+        "ports": "54338"
+      },
+      "ok": true,
+      "denied": false,
+      "summary": "端口扫描 127.0.0.1: 1 个开放端口 / 扫描 1 个 (engine=builtin)",
+      "duration": 0.328,
+      "llm_seconds": 1.81,
+      "error": "",
+      "ts": 1794918707.719
+    },
+    {
+      "kind": "tool",
+      "tool": "http_fingerprint",
+      "params": {
+        "url": "http://127.0.0.1:54338/"
+      },
+      "ok": true,
+      "summary": "HTTP 指纹 http://127.0.0.1:54338/: 200 title=Trina Lab tech=Apache 缺失安全头 4 个",
+      "duration": 0.109,
+      "ts": 1794918707.917
+    },
+    {
+      "index": 2,
+      "phase": "execute",
+      "thought": "",
+      "action": "http_fingerprint",
+      "params": {
+        "url": "http://127.0.0.1:54338/"
+      },
+      "ok": true,
+      "denied": false,
+      "summary": "HTTP 指纹 http://127.0.0.1:54338/: 200 title=Trina Lab tech=Apache 缺失安全头 4 个",
+      "duration": 0.109,
+      "llm_seconds": 0.0,
+      "error": "",
+      "ts": 1794918707.975
+    },
+    {
+      "kind": "tool",
+      "tool": "poc_scan",
+      "params": {
+        "url": "http://127.0.0.1:54338"
+      },
+      "ok": true,
+      "summary": "命中 1 个 PoC: git_leak(high)",
+      "duration": 0.579,
+      "ts": 1794918711.248
+    },
+    {
+      "index": 3,
+      "phase": "execute",
+      "thought": "",
+      "action": "poc_scan",
+      "params": {
+        "url": "http://127.0.0.1:54338"
+      },
+      "ok": true,
+      "denied": false,
+      "summary": "命中 1 个 PoC: git_leak(high)",
+      "duration": 0.579,
+      "llm_seconds": 2.51,
+      "error": "",
+      "ts": 1794918711.296
+    },
+    {
+      "kind": "tool",
+      "tool": "terminal_exec",
+      "params": {
+        "argv": [
+          "bash",
+          "-lc",
+          "for p in /.git/HEAD /.git/config /.git/index /.git/description /.git/refs/heads/master /.git/logs/HEAD /.gitignore; do code=$(curl -s -o /tmp/o.$$ -w '%{http_code} %{size_download}' --max-time 5 \"http://127.0.0.1:54338$p\"); echo \"== $p -> $code\"; head -c 200 /tmp/o.$$ | tr -d '\\000'; echo; done"
+        ],
+        "timeout": 120.0,
+        "input": "",
+        "cwd": "project",
+        "working_directory": "",
+        "target": ""
+      },
+      "ok": true,
+      "summary": "命令完成，退出码 0",
+      "duration": 2.828,
+      "ts": 1794918714.185
+    },
+    {
+      "index": 4,
+      "phase": "execute",
+      "thought": "",
+      "action": "terminal_exec",
+      "params": {
+        "argv": [
+          "bash",
+          "-lc",
+          "for p in /.git/HEAD /.git/config /.git/index /.git/description /.git/refs/heads/master /.git/logs/HEAD /.gitignore; do code=$(curl -s -o /tmp/o.$$ -w '%{http_code} %{size_download}' --max-time 5 \"http://127.0.0.1:54338$p\"); echo \"== $p -> $code\"; head -c 200 /tmp/o.$$ | tr -d '\\000'; echo; done"
+        ]
+      },
+      "ok": true,
+      "denied": false,
+      "summary": "命令完成，退出码 0",
+      "duration": 2.828,
+      "llm_seconds": 0.0,
+      "error": "",
+      "ts": 1794918714.213
+    },
+    {
+      "kind": "tool",
+      "tool": "terminal_exec",
+      "params": {
+        "argv": [
+          "curl",
+          "-s",
+          "-i",
+          "--max-time",
+          "8",
+          "http://127.0.0.1:54338/.git/HEAD"
+        ],
+        "timeout": 120.0,
+        "input": "",
+        "cwd": "project",
+        "working_directory": "",
+        "target": ""
+      },
+      "ok": true,
+      "summary": "命令完成，退出码 0",
+      "duration": 0.312,
+      "ts": 1794918717.667
+    },
+    {
+      "index": 5,
+      "phase": "execute",
+      "thought": "",
+      "action": "terminal_exec",
+      "params": {
+        "argv": [
+          "curl",
+          "-s",
+          "-i",
+          "--max-time",
+          "8",
+          "http://127.0.0.1:54338/.git/HEAD"
+        ]
+      },
+      "ok": true,
+      "denied": false,
+      "summary": "命令完成，退出码 0",
+      "duration": 0.312,
+      "llm_seconds": 3.0,
+      "error": "",
+      "ts": 1794918717.696
+    },
+    {
+      "kind": "tool",
+      "tool": "terminal_exec",
+      "params": {
+        "argv": [
+          "curl",
+          "-s",
+          "-i",
+          "--max-time",
+          "8",
+          "http://127.0.0.1:54338/no-such-path-trina-9f3a"
+        ],
+        "timeout": 120.0,
+        "input": "",
+        "cwd": "project",
+        "working_directory": "",
+        "target": ""
+      },
+      "ok": true,
+      "summary": "命令完成，退出码 0",
+      "duration": 0.375,
+      "ts": 1794918718.125
+    },
+    {
+      "index": 6,
+      "phase": "execute",
+      "thought": "",
+      "action": "terminal_exec",
+      "params": {
+        "argv": [
+          "curl",
+          "-s",
+          "-i",
+          "--max-time",
+          "8",
+          "http://127.0.0.1:54338/no-such-path-trina-9f3a"
+        ]
+      },
+      "ok": true,
+      "denied": false,
+      "summary": "命令完成，退出码 0",
+      "duration": 0.375,
+      "llm_seconds": 0.0,
+      "error": "",
+      "ts": 1794918718.194
+    },
+    {
+      "kind": "tool",
+      "tool": "terminal_exec",
+      "params": {
+        "argv": [
+          "curl",
+          "-s",
+          "-i",
+          "--max-time",
+          "8",
+          "http://127.0.0.1:54338/.git/config"
+        ],
+        "timeout": 120.0,
+        "input": "",
+        "cwd": "project",
+        "working_directory": "",
+        "target": ""
+      },
+      "ok": true,
+      "summary": "命令完成，退出码 0",
+      "duration": 0.235,
+      "ts": 1794918721.034
+    },
+    {
+      "index": 7,
+      "phase": "execute",
+      "thought": "",
+      "action": "terminal_exec",
+      "params": {
+        "argv": [
+          "curl",
+          "-s",
+          "-i",
+          "--max-time",
+          "8",
+          "http://127.0.0.1:54338/.git/config"
+        ]
+      },
+      "ok": true,
+      "denied": false,
+      "summary": "命令完成，退出码 0",
+      "duration": 0.235,
+      "llm_seconds": 2.34,
+      "error": "",
+      "ts": 1794918721.059
+    },
+    {
+      "kind": "tool",
+      "tool": "terminal_exec",
+      "params": {
+        "argv": [
+          "curl",
+          "-s",
+          "-i",
+          "--max-time",
+          "8",
+          "http://127.0.0.1:54338/.git/refs/heads/main"
+        ],
+        "timeout": 120.0,
+        "input": "",
+        "cwd": "project",
+        "working_directory": "",
+        "target": ""
+      },
+      "ok": true,
+      "summary": "命令完成，退出码 0",
+      "duration": 0.234,
+      "ts": 1794918721.337
+    },
+    {
+      "index": 8,
+      "phase": "execute",
+      "thought": "",
+      "action": "terminal_exec",
+      "params": {
+        "argv": [
+          "curl",
+          "-s",
+          "-i",
+          "--max-time",
+          "8",
+          "http://127.0.0.1:54338/.git/refs/heads/main"
+        ]
+      },
+      "ok": true,
+      "denied": false,
+      "summary": "命令完成，退出码 0",
+      "duration": 0.234,
+      "llm_seconds": 0.0,
+      "error": "",
+      "ts": 1794918721.361
+    },
+    {
+      "kind": "tool",
+      "tool": "terminal_exec",
+      "params": {
+        "argv": [
+          "curl",
+          "-s",
+          "-o",
+          "/dev/null",
+          "-w",
+          "%{http_code} %{size_download} %{content_type}\\n",
+          "--max-time",
+          "8",
+          "http://127.0.0.1:54338/.git/index"
+        ],
+        "timeout": 120.0,
+        "input": "",
+        "cwd": "project",
+        "working_directory": "",
+        "target": ""
+      },
+      "ok": false,
+      "summary": "退出码 23",
+      "duration": 0.203,
+      "ts": 1794918721.592
+    },
+    {
+      "index": 9,
+      "phase": "execute",
+      "thought": "",
+      "action": "terminal_exec",
+      "params": {
+        "argv": [
+          "curl",
+          "-s",
+          "-o",
+          "/dev/null",
+          "-w",
+          "%{http_code} %{size_download} %{content_type}\\n",
+          "--max-time",
+          "8",
+          "http://127.0.0.1:54338/.git/index"
+        ]
+      },
+      "ok": false,
+      "denied": false,
+      "summary": "退出码 23",
+      "duration": 0.203,
+      "llm_seconds": 0.0,
+      "error": "退出码 23",
+      "ts": 1794918721.615
+    },
+    {
+      "kind": "tool",
+      "tool": "terminal_exec",
+      "params": {
+        "argv": [
+          "curl",
+          "-s",
+          "-i",
+          "--max-time",
+          "8",
+          "http://127.0.0.1:54338/.git/"
+        ],
+        "timeout": 120.0,
+        "input": "",
+        "cwd": "project",
+        "working_directory": "",
+        "target": ""
+      },
+      "ok": true,
+      "summary": "命令完成，退出码 0",
+      "duration": 0.219,
+      "ts": 1794918721.873
+    },
+    {
+      "index": 10,
+      "phase": "execute",
+      "thought": "",
+      "action": "terminal_exec",
+      "params": {
+        "argv": [
+          "curl",
+          "-s",
+          "-i",
+          "--max-time",
+          "8",
+          "http://127.0.0.1:54338/.git/"
+        ]
+      },
+      "ok": true,
+      "denied": false,
+      "summary": "命令完成，退出码 0",
+      "duration": 0.219,
+      "llm_seconds": 0.0,
+      "error": "",
+      "ts": 1794918721.895
+    },
+    {
+      "kind": "tool",
+      "tool": "terminal_exec",
+      "params": {
+        "argv": [
+          "curl",
+          "-s",
+          "-w",
+          "\\n[%{http_code} %{size_download}] %{url_effective}\\n",
+          "--max-time",
+          "10",
+          "http://127.0.0.1:54338/.git/index",
+          "http://127.0.0.1:54338/.git/logs/HEAD",
+          "http://127.0.0.1:54338/.git/COMMIT_EDITMSG",
+          "http://127.0.0.1:54338/.git/packed-refs",
+          "http://127.0.0.1:54338/.git/description"
+        ],
+        "timeout": 120.0,
+        "input": "",
+        "cwd": "project",
+        "working_directory": "",
+        "target": ""
+      },
+      "ok": true,
+      "summary": "命令完成，退出码 0",
+      "duration": 0.265,
+      "ts": 1794918726.051
+    },
+    {
+      "index": 11,
+      "phase": "execute",
+      "thought": "",
+      "action": "terminal_exec",
+      "params": {
+        "argv": [
+          "curl",
+          "-s",
+          "-w",
+          "\\n[%{http_code} %{size_download}] %{url_effective}\\n",
+          "--max-time",
+          "10",
+          "http://127.0.0.1:54338/.git/index",
+          "http://127.0.0.1:54338/.git/logs/HEAD",
+          "http://127.0.0.1:54338/.git/COMMIT_EDITMSG",
+          "http://127.0.0.1:54338/.git/packed-refs",
+          "http://127.0.0.1:54338/.git/description"
+        ]
+      },
+      "ok": true,
+      "denied": false,
+      "summary": "命令完成，退出码 0",
+      "duration": 0.265,
+      "llm_seconds": 3.72,
+      "error": "",
+      "ts": 1794918726.081
+    },
+    {
+      "kind": "tool",
+      "tool": "terminal_exec",
+      "params": {
+        "argv": [
+          "curl",
+          "-s",
+          "-w",
+          "\\n[%{http_code} %{size_download} %{content_type}] %{url_effective}\\n",
+          "--max-time",
+          "10",
+          "http://127.0.0.1:54338/.git/HEAD",
+          "http://127.0.0.1:54338/.git/config",
+          "http://127.0.0.1:54338/.git/HEAD/"
+        ],
+        "timeout": 120.0,
+        "input": "",
+        "cwd": "project",
+        "working_directory": "",
+        "target": ""
+      },
+      "ok": true,
+      "summary": "命令完成，退出码 0",
+      "duration": 0.297,
+      "ts": 1794918729.138
+    },
+    {
+      "index": 12,
+      "phase": "execute",
+      "thought": "",
+      "action": "terminal_exec",
+      "params": {
+        "argv": [
+          "curl",
+          "-s",
+          "-w",
+          "\\n[%{http_code} %{size_download} %{content_type}] %{url_effective}\\n",
+          "--max-time",
+          "10",
+          "http://127.0.0.1:54338/.git/HEAD",
+          "http://127.0.0.1:54338/.git/config",
+          "http://127.0.0.1:54338/.git/HEAD/"
+        ]
+      },
+      "ok": true,
+      "denied": false,
+      "summary": "命令完成，退出码 0",
+      "duration": 0.297,
+      "llm_seconds": 2.61,
+      "error": "",
+      "ts": 1794918729.174
+    },
+    {
+      "index": 13,
+      "phase": "execute",
+      "thought": "",
+      "action": "final",
+      "params": {},
+      "ok": true,
+      "denied": false,
+      "summary": "结论：http://127.0.0.1:54338 存在 .git 目录暴露（部分暴露，非完整可拖库）。\n\n已验证事实（工具证据）：\n1) 端口：port_scan 显示 127.0.0.1:54338 TCP 开放（builtin 引擎）。\n2) 服务：http_fingerprint 返回 200，标题 \"Trina Lab\"，Server: Apache/2.4.41 (Ubuntu)。\n3",
+      "duration": 0.0,
+      "llm_seconds": 0.0,
+      "error": "",
+      "ts": 1794918734.851
+    }
+  ],
+  "counters": {
+    "steps": 25,
+    "llm_calls": 7,
+    "tool_calls": 12,
+    "denied": 0,
+    "errors": 0,
+    "failures": 1,
+    "model_milliseconds": 22296,
+    "native_calls": 13,
+    "fail_hypothesis_error": 1,
+    "decision_rounds": 7
+  },
+  "duration": 29.72,
+  "ledger": {
+    "calls": 7,
+    "input_tokens": 120522,
+    "output_tokens": 2855,
+    "cache_read_tokens": 114048,
+    "cache_write_tokens": 0,
+    "total_tokens": 123377,
+    "tokens_reported": true,
+    "cache_reported": true,
+    "cost_reported": false,
+    "input_reported": true,
+    "output_reported": true,
+    "cache_read_reported": true,
+    "cache_write_reported": false,
+    "input_reported_calls": 7,
+    "output_reported_calls": 7,
+    "cache_read_reported_calls": 7,
+    "cache_write_reported_calls": 0,
+    "cost_reported_calls": 0,
+    "cache_input_tokens": 120522,
+    "cache_hit_rate": 0.9462836660526709,
+    "cost_usd": 0,
+    "model": "deepseek-flash"
+  },
+  "artifacts": {
+    "events_path": "C:\\Users\\WYH\\Desktop\\网安实训中级\\runs\\live-unlimited-20261117-202846-surf-04\\events.sqlite3",
+    "workspace": "C:\\Users\\WYH\\Desktop\\网安实训中级\\runs\\live-unlimited-20261117-202846-surf-04",
+    "audit_path": "C:\\Users\\WYH\\Desktop\\网安实训中级\\logs\\live-unlimited-20261117-202846-surf-04.jsonl",
+    "state_file": "C:\\Users\\WYH\\Desktop\\网安实训中级\\runs\\live-unlimited-20261117-202846-surf-04\\state.json"
+  },
+  "audit": [
+    true,
+    "哈希链完整：180 条记录，末端 e9f346cad900…"
+  ],
+  "exchanges": [
+    {
+      "prompt_chars": 819,
+      "text": "",
+      "tool_calls": [
+        {
+          "id": "call_00_qAgvVLXytRuKBdHVRZbi2946",
+          "type": "function",
+          "function": {
+            "name": "port_scan",
+            "arguments": "{\"target\": \"127.0.0.1\", \"ports\": \"54338\"}"
+          }
+        },
+        {
+          "id": "call_01_qDJP0LCKGb1l6AwGHyGn7099",
+          "type": "function",
+          "function": {
+            "name": "http_fingerprint",
+            "arguments": "{\"url\": \"http://127.0.0.1:54338/\"}"
+          }
+        }
+      ],
+      "ok": true,
+      "error": "",
+      "reasoning_chars": 330,
+      "usage": {
+        "in": 12724,
+        "out": 205
+      }
+    },
+    {
+      "prompt_chars": 3141,
+      "text": "",
+      "tool_calls": [
+        {
+          "id": "call_00_UuzuY8OCMXGQPUBCjLlu1581",
+          "type": "function",
+          "function": {
+            "name": "poc_scan",
+            "arguments": "{\"url\": \"http://127.0.0.1:54338\"}"
+          }
+        },
+        {
+          "id": "call_01_rHxm6OTJ7KtZvnJLosct1574",
+          "type": "function",
+          "function": {
+            "name": "terminal_exec",
+            "arguments": "{\"argv\": [\"bash\", \"-lc\", \"for p in /.git/HEAD /.git/config /.git/index /.git/description /.git/refs/heads/master /.git/logs/HEAD /.gitignore; do code=$(curl -s -o /tmp/o.$$ -w '%{http_code} %{size_download}' --max-time 5 \\\"http://127.0.0.1:54338$p\\\"); echo \\\"== $p -> $code\\\"; head -c 200 /tmp/o.$$ | tr -d '\\\\000'; echo; done\"]}"
+          }
+        }
+      ],
+      "ok": true,
+      "error": "",
+      "reasoning_chars": 374,
+      "usage": {
+        "in": 14621,
+        "out": 294
+      }
+    },
+    {
+      "prompt_chars": 2062,
+      "text": "",
+      "tool_calls": [
+        {
+          "id": "call_00_oq37HLOJzWsBeVib5MmO0197",
+          "type": "function",
+          "function": {
+            "name": "terminal_exec",
+            "arguments": "{\"argv\": [\"curl\", \"-s\", \"-i\", \"--max-time\", \"8\", \"http://127.0.0.1:54338/.git/HEAD\"]}"
+          }
+        },
+        {
+          "id": "call_01_SbOlO1aB9CN6Hx5qoA4H6230",
+          "type": "function",
+          "function": {
+            "name": "terminal_exec",
+            "arguments": "{\"argv\": [\"curl\", \"-s\", \"-i\", \"--max-time\", \"8\", \"http://127.0.0.1:54338/no-such-path-trina-9f3a\"]}"
+          }
+        }
+      ],
+      "ok": true,
+      "error": "",
+      "reasoning_chars": 1104,
+      "usage": {
+        "in": 16500,
+        "out": 450
+      }
+    },
+    {
+      "prompt_chars": 494,
+      "text": "",
+      "tool_calls": [
+        {
+          "id": "call_00_1mOaIHPi8A8caxyYawKs2822",
+          "type": "function",
+          "function": {
+            "name": "terminal_exec",
+            "arguments": "{\"argv\": [\"curl\", \"-s\", \"-i\", \"--max-time\", \"8\", \"http://127.0.0.1:54338/.git/config\"]}"
+          }
+        },
+        {
+          "id": "call_01_aD5fkkg0jLqEuwBQfkF24522",
+          "type": "function",
+          "function": {
+            "name": "terminal_exec",
+            "arguments": "{\"argv\": [\"curl\", \"-s\", \"-i\", \"--max-time\", \"8\", \"http://127.0.0.1:54338/.git/refs/heads/main\"]}"
+          }
+        },
+        {
+          "id": "call_02_thSdLQuBBPfXcq3a8yZX5605",
+          "type": "function",
+          "function": {
+            "name": "terminal_exec",
+            "arguments": "{\"argv\": [\"curl\", \"-s\", \"-o\", \"/dev/null\", \"-w\", \"%{http_code} %{size_download} %{content_type}\\\\n\", \"--max-time\", \"8\", \"http://127.0.0.1:54338/.git/index\"]}"
+          }
+        },
+        {
+          "id": "call_03_1BPHoDib8N6GiDfLD0WP1012",
+          "type": "function",
+          "function": {
+            "name": "terminal_exec",
+            "arguments": "{\"argv\": [\"curl\", \"-s\", \"-i\", \"--max-time\", \"8\", \"http://127.0.0.1:54338/.git/\"]}"
+          }
+        }
+      ],
+      "ok": true,
+      "error": "",
+      "reasoning_chars": 277,
+      "usage": {
+        "in": 17472,
+        "out": 354
+      }
+    },
+    {
+      "prompt_chars": 604,
+      "text": "",
+      "tool_calls": [
+        {
+          "id": "call_00_b2o42SSYmK8m7DXcxzth2096",
+          "type": "function",
+          "function": {
+            "name": "terminal_exec",
+            "arguments": "{\"argv\": [\"curl\", \"-s\", \"-w\", \"\\\\n[%{http_code} %{size_download}] %{url_effective}\\\\n\", \"--max-time\", \"10\", \"http://127.0.0.1:54338/.git/index\", \"http://127.0.0.1:54338/.git/logs/HEAD\", \"http://127.0.0.1:54338/.git/COMMIT_EDITMSG\", \"http://127.0.0.1:54338/.git/packed-refs\", \"http://127.0.0.1:54338/.git/description\"]}"
+          }
+        }
+      ],
+      "ok": true,
+      "error": "",
+      "reasoning_chars": 1532,
+      "usage": {
+        "in": 18674,
+        "out": 612
+      }
+    },
+    {
+      "prompt_chars": 497,
+      "text": "",
+      "tool_calls": [
+        {
+          "id": "call_00_HG3uPafXR4EKBoKrXFa47344",
+          "type": "function",
+          "function": {
+            "name": "terminal_exec",
+            "arguments": "{\"argv\": [\"curl\", \"-s\", \"-w\", \"\\\\n[%{http_code} %{size_download} %{content_type}] %{url_effective}\\\\n\", \"--max-time\", \"10\", \"http://127.0.0.1:54338/.git/HEAD\", \"http://127.0.0.1:54338/.git/config\", \"http://127.0.0.1:54338/.git/HEAD/\"]}"
+          }
+        }
+      ],
+      "ok": true,
+      "error": "",
+      "reasoning_chars": 690,
+      "usage": {
+        "in": 19890,
+        "out": 292
+      }
+    },
+    {
+      "prompt_chars": 497,
+      "text": "",
+      "tool_calls": [
+        {
+          "id": "call_00_UJVDE3tOu9Q9MAG3KiBt7335",
+          "type": "function",
+          "function": {
+            "name": "finish",
+            "arguments": "{\"status\": \"success\", \"summary\": \"结论：http://127.0.0.1:54338 存在 .git 目录暴露（部分暴露，非完整可拖库）。\\n\\n已验证事实（工具证据）：\\n1) 端口：port_scan 显示 127.0.0.1:54338 TCP 开放（builtin 引擎）。\\n2) 服务：http_fingerprint 返回 200，标题 \\\"Trina Lab\\\"，Server: Apache/2.4.41 (Ubuntu)。\\n3) 自动化命中：poc_scan 21 个内置 PoC 中命中 git_leak(high)，URL http://127.0.0.1:54338/.git/HEAD，状态 200。\\n4) 人工确认为真实文件而非软 404：\\n   - GET /.git/HEAD → 200，Content-Type: text/plain，Content-Length: 21，正文 \\\"ref: refs/heads/main\\\"（说明存在 git 仓库，当前分支 main）。\\n   - GET /.git/config → 200，text/plain，106 字节，正文含 [core] repositoryformatversion = 0, filemode = true 与 [remote \\\"origin\\\"] url = git@lab.local:trina/lab.git（泄露内部仓库地址）。\\n   - 对照：随机不存在路径 /no-such-path-trina-9f3a 及 /.git/HEAD/ 返回 text/html 的 \\\"404 Not Found\\\" 页面（虽然状态码被站点统一置为 200，但正文与长度 137 字节明显不同），排除软 404 误报。\\n5) 暴露边界（均为 200/137 字节的 404 页面，即不可获取）：/.git/ 目录列表、/.git/index、/.git/refs/heads/main、/.git/logs/HEAD、/.git/COMMIT_EDITMSG、/.git/packed-refs、/.git/description。\\n   → 因此目前只能读取 HEAD 与 config，无法据此还原源码或提交历史。\\n\\n影响与建议：.git 控制文件可从 Web 直接读取，属 CWE-538 信息泄露，并泄露内部 Git 远端地址（git@lab.local:trina/lab.git）等敏感信息；建议在 Web 服务器层对 /.git/ 全路径拒绝访问（如 Apache 中 <DirectoryMatch \\\"^/.*/\\\\.git/\\\"> Require all denied 或 RewriteRule），并从发布目录中移除 .git；同时修复站点对不存在路径返回 HTTP 200 的错误行为（会干扰后续安全扫描判定）。\\n\\n未执行项：未进行目录爆破扩展寻找可读对象（如 /.git/objects/ 下的松散对象）以外的利用，因为目标（确认是否存在 .git 暴露）已达成并已划定范围。\"}"
+          }
+        }
+      ],
+      "ok": true,
+      "error": "",
+      "reasoning_chars": 31,
+      "usage": {
+        "in": 20641,
+        "out": 648
+      }
+    }
+  ]
+}

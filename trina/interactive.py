@@ -114,7 +114,7 @@ class Console:
 
     def _agent_log(self, message: str) -> None:
         import re
-        if message.startswith(("[用户] ", "[动作 ")) or re.match(r"^\[\d+/\d+\]", message) or message.lstrip().startswith("→"):
+        if message.startswith(("[用户] ", "[动作 ")) or re.match(r"^\[\d+/(?:\d+|不限)\]", message) or message.lstrip().startswith("→"):
             return  # 已由结构化事件渲染，避免日志重复成为另一条消息。
         if "想法：" in message:
             self._display(render_process(message.split("想法：", 1)[1].strip(), label="思考摘要", color=self.color, palette=self._output_palette))
@@ -938,7 +938,7 @@ class Console:
                 if candidate.subworker.workers > candidate.scope.max_host_concurrency:
                     raise ValueError("并发数不能超过 scope.max_host_concurrency")
                 self.config.subworker = candidate.subworker
-            self._emit(f"并发 {self.config.subworker.workers} · 步数 {self.config.subworker.max_steps} · {self.config.subworker.max_seconds}s · 持久默认值在 YAML subworker 段", prefix="Subworker")
+            self._emit(f"并发 {self.config.subworker.workers} · 步数 {self.config.subworker.max_steps or '不限'} · 时长 {str(self.config.subworker.max_seconds) + 's' if self.config.subworker.max_seconds else '不限'} · 持久默认值在 YAML subworker 段", prefix="Subworker")
         elif action in {"model", "thinking", "provider"}:
             if not values and interactive:
                 self._edit_subworker_model(action, "")
@@ -1345,7 +1345,7 @@ class Console:
             parser.add_argument("--at", required=True)
             parser.add_argument("--target", required=True)
             parser.add_argument("--goal")
-            parser.add_argument("--max-steps", type=int, default=12)
+            parser.add_argument("--max-steps", type=int, default=0)
             parser.add_argument("--approve", choices=APPROVAL_MODES, default=self.session.approval_mode)
             values = parser.parse_args(args[1:])
             task = self.task_store.add(values.target, values.at, goal=values.goal, max_steps=values.max_steps,
@@ -1533,7 +1533,7 @@ class Console:
             self._controller = AuthorizationController(
                 PolicyRegistry.load(owner_config, extra_dirs=list(policy.registry_dirs)),
                 mode=policy.mode,
-                budget=Budget(policy.max_checks, policy.logic_seconds, policy.stop_on_no_new_evidence),
+                budget=Budget(policy.stop_on_no_new_evidence),
             )
             self._controller_config = owner_config
         return self._controller
@@ -1622,7 +1622,7 @@ class Console:
         self._last_state = None
         self._plan = plan
         self._task_title = plan.goal or f"扫描 {plan.target}"
-        self._task_max_steps = max_steps or task_config.llm.max_steps
+        self._task_max_steps = task_config.llm.max_steps if max_steps is None else max_steps
         self.session.state = None
         self.session.started_at = time.monotonic()
         teardown_after = bool(plan.started_fixtures)

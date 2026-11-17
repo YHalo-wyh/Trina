@@ -18,6 +18,8 @@ import json
 import re
 import copy
 import inspect
+import itertools
+import math
 import threading
 import time
 import uuid
@@ -84,24 +86,19 @@ class BenchmarkTask:
 class BenchOptions:
     """运行参数（均可用 TRINA_BENCH_* 环境变量覆盖）。"""
 
-    max_steps: int = 36
-    per_task_seconds: int = 420
-    total_seconds: int = 6 * 3600
-    attempts: int = 2
+    max_steps: int = 0
+    per_task_seconds: int = 0
+    total_seconds: int = 0
+    attempts: int = 0
     use_hints: bool = False
     limit: int = 0
     max_candidates: int = 30
     workers: int = 2
 
     def validate(self) -> None:
-        if self.max_steps <= 0:
-            raise ValueError("max_steps 必须为正整数")
-        if self.per_task_seconds <= 0:
-            raise ValueError("per_task_seconds 必须为正整数")
-        if self.total_seconds <= 0:
-            raise ValueError("total_seconds 必须为正整数")
-        if self.attempts <= 0:
-            raise ValueError("attempts 必须为正整数")
+        for name in ("max_steps", "per_task_seconds", "total_seconds", "attempts"):
+            if type(getattr(self, name)) is not int or getattr(self, name) < 0:
+                raise ValueError(f"{name} 必须为非负整数，0 不限制")
         if not 1 <= self.workers <= 3:
             raise ValueError("workers 必须在 1..3 之间（平台并发容器上限为 3）")
 
@@ -341,7 +338,7 @@ class BenchmarkRunner:
         summary = BenchSummary(started_at=time.time())
         with self._outcome_lock:
             self._outcomes.clear()
-        deadline = time.monotonic() + self.options.total_seconds
+        deadline = time.monotonic() + self.options.total_seconds if self.options.total_seconds else math.inf
         try:
             raw_tasks = self.client.list_challenges()
         except BenchmarkError as exc:
@@ -358,7 +355,8 @@ class BenchmarkRunner:
         self._task_count = len(tasks)
         self.log(
             f"[bench] 待解 {len(tasks)} 题（已完成/跳过的题不计），"
-            f"总时限 {self.options.total_seconds}s，单题 {self.options.per_task_seconds}s，"
+            f"总时限 {str(self.options.total_seconds) + 's' if self.options.total_seconds else '不限'}，"
+            f"单题 {str(self.options.per_task_seconds) + 's' if self.options.per_task_seconds else '不限'}，"
             f"Worker {self.options.workers}"
         )
         if tasks:
@@ -424,15 +422,18 @@ class BenchmarkRunner:
     def _remaining_seconds(self, deadline: float) -> float:
         return deadline - time.monotonic()
 
-    def _attempt_budget(self, deadline: float, task_deadline: float, attempts_left: int) -> int:
+    def _attempt_budget(self, deadline: float, task_deadline: float, attempts_left: int) -> int | None:
         """在整场、单题与续轮三层预算内留出恢复空间。"""
         remaining = min(self._remaining_seconds(deadline) - 5, task_deadline - time.monotonic())
         if remaining <= 0:
             return 0
+        if math.isinf(remaining):
+            return None  # 无总时限和单题时限；向 Agent 传 0，不伪造巨大预算
         minimum = min(60, max(5, self.options.per_task_seconds // 4))
         with self._outcome_lock:
             unfinished = max(1, self._task_count - len(self._outcomes))
-        fair_share = max(minimum, int(max(0, self._remaining_seconds(deadline) - 5) / unfinished))
+        fair_share = (max(minimum, int(max(0, self._remaining_seconds(deadline) - 5) / unfinished))
+                      if math.isfinite(deadline) else remaining)
         reserve = minimum if attempts_left > 1 and remaining > minimum * 2 else 0
         return max(1, int(min(remaining - reserve if reserve else remaining, fair_share)))
 
@@ -466,7 +467,8 @@ class BenchmarkRunner:
         client = self.client.fork()
         started = False
         task_started = time.monotonic()
-        task_deadline = min(deadline - 5, task_started + self.options.per_task_seconds)
+        task_deadline = min(deadline - 5, task_started + self.options.per_task_seconds
+                            if self.options.per_task_seconds else math.inf)
         resume_state: RunState | None = None
         try:
             try:
@@ -485,9 +487,9 @@ class BenchmarkRunner:
             outcome.total_flags = int(task.flag_count or 0)
             self.log(f"[bench] 容器地址: {', '.join(addresses)} → 首选 {target}")
 
-            for attempt in range(1, self.options.attempts + 1):
+            for attempt in itertools.count(1):
                 budget = self._attempt_budget(deadline, task_deadline, self.options.attempts - attempt + 1)
-                if budget <= 0:
+                if budget == 0:
                     break
                 hint_text = ""
                 if attempt > 1 and self.options.use_hints:
@@ -500,12 +502,13 @@ class BenchmarkRunner:
                         self.log(f"[bench] 获取提示失败（忽略）: {exc}")
                 extra_rules = self._extra_rules(task, addresses, attempt, hint_text)
                 goal = self._goal(task)
-                self.log(f"[bench] 第 {attempt}/{self.options.attempts} 轮，预算 {budget}s，步数上限 {self.options.max_steps}")
+                self.log(f"[bench] 第 {attempt}/{self.options.attempts or '不限'} 轮，"
+                         f"时长 {str(budget) + 's' if budget is not None else '不限'}，步数 {self.options.max_steps or '不限'}")
                 outcome.attempts = attempt
                 attempt_started = time.monotonic()
                 before_counters = dict(resume_state.counters) if resume_state is not None else {}
                 try:
-                    kwargs = dict(max_steps=self.options.max_steps, max_seconds=budget,
+                    kwargs = dict(max_steps=self.options.max_steps, max_seconds=budget or 0,
                                   extra_rules=extra_rules, attempt=attempt, log=self.log)
                     if self.runner is not None:
                         if self._runner_accepts_resume(self.runner):
@@ -577,11 +580,11 @@ class BenchmarkRunner:
                     outcome.error = ""
                     break
                 resume_state = state
-                if attempt >= self.options.attempts or not self._retry_worthwhile(state, outcome, progressed):
+                if (self.options.attempts and attempt >= self.options.attempts) or not self._retry_worthwhile(state, outcome, progressed):
                     if not progressed:
                         self.log("[bench] 本轮没有新增事实，释放 Worker，不做无依据重试")
                     break
-                if self._attempt_budget(deadline, task_deadline, self.options.attempts - attempt) <= 0:
+                if self._attempt_budget(deadline, task_deadline, self.options.attempts - attempt) == 0:
                     break
             outcome.ok = outcome.correct_flags >= outcome.total_flags > 0
             if not outcome.ok and not outcome.error:

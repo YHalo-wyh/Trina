@@ -30,9 +30,7 @@ class BinarySessions:
             check()
         stop = self.ctx.extra.get("stop_event")
         deadline = self.ctx.extra.get("task_deadline")
-        controller = self.ctx.extra.get("authorization_controller")
-        budget_over = controller is not None and controller.elapsed >= controller.budget.logic_seconds
-        if (stop is not None and stop.is_set()) or (deadline and time.monotonic() >= deadline) or budget_over:
+        if (stop is not None and stop.is_set()) or (deadline and time.monotonic() >= deadline):
             self.close()
             raise BinaryError("SESSION_EXPIRED", "任务已停止或超时")
 

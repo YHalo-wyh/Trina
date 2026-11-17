@@ -93,9 +93,9 @@ class LLMConfig:
     model: str = "deepseek-chat"
     timeout: int = 180
     temperature: float = 0.2
-    max_tokens: int = 4096
-    max_steps: int = 40
-    max_seconds: int = 1800
+    max_tokens: int = 0  # 0 不发送客户端输出 Token 上限（Anthropic 必填字段除外）
+    max_steps: int = 0  # 0 不限制任务动作和决策轮数
+    max_seconds: int = 0  # 0 不限制任务总时长
     stall_limit: int = 3
     base_url: str = ""
     api_key_env: str = "TRINA_LLM_API_KEY"
@@ -128,6 +128,11 @@ class LLMConfig:
         from .model_context import default_context_window
         return self.context_window or default_context_window(self.model, self.base_url)
 
+    @property
+    def output_reserve(self) -> int:
+        """输入窗口预留空间；0 输出上限不等于无需为供应商输出预留容量。"""
+        return self.max_tokens or 8192
+
     def validate(self) -> None:
         if self.backend not in ("openai", "replay"):
             raise ConfigError(f"llm.backend 必须是 openai|replay，得到 {self.backend!r}")
@@ -138,8 +143,11 @@ class LLMConfig:
         from .llm.reasoning import LEVEL_LABELS
         if self.reasoning_effort not in LEVEL_LABELS:
             raise ConfigError("llm.reasoning_effort 档位无效")
-        if self.max_steps <= 0:
-            raise ConfigError("llm.max_steps 必须为正整数")
+        if type(self.max_tokens) is not int or self.max_tokens < 0:
+            raise ConfigError("llm.max_tokens 必须为非负整数，0 使用供应商默认上限")
+        for name in ("max_steps", "max_seconds"):
+            if type(getattr(self, name)) is not int or getattr(self, name) < 0:
+                raise ConfigError(f"llm.{name} 必须为非负整数，0 不限制")
         if self.cache_mode not in {"auto", "explicit", "off"}:
             raise ConfigError("llm.cache_mode 必须是 auto|explicit|off")
         if not isinstance(self.cache_features, list) or any(item not in {
@@ -148,7 +156,7 @@ class LLMConfig:
             raise ConfigError("llm.cache_features 含未知缓存能力")
         if self.cache_ttl not in {"", "5m", "1h", "30m", "12h", "in_memory", "24h"}:
             raise ConfigError("llm.cache_ttl 无效")
-        if type(self.context_window) is not int or self.context_window < 0 or self.effective_context_window <= self.max_tokens + 1024 or not 0.3 <= self.compaction_threshold <= 0.95:
+        if type(self.context_window) is not int or self.context_window < 0 or self.effective_context_window <= self.output_reserve + 1024 or not 0.3 <= self.compaction_threshold <= 0.95:
             raise ConfigError("上下文预算须大于输出预算加 1024，压缩阈值须在 [0.3,0.95] 内")
         if self.context_keep_messages < 1 or self.state_checkpoint_interval < 1:
             raise ConfigError("上下文保留消息数和状态检查点间隔必须为正整数")
@@ -257,13 +265,11 @@ class PolicyConfig:
     """授权策略（计划器提出、控制器批准）的配置。
 
     * `mode`: `free`（只看护栏）/ `guided`（注册表是提示，未注册目标拒绝）/ `strict`（只接受注册 target_id + test_id）
-    * `max_checks` / `logic_seconds` / `stop_on_no_new_evidence`: 预算与停止合同
+    * `stop_on_no_new_evidence`: 连续无新增证据时提前停止（0 关闭）
     * `registry_dirs`: 注册表来源目录（靶场 yaml 里的 targets/tests 段）
     """
 
     mode: str = "free"
-    max_checks: int = 40
-    logic_seconds: int = 900
     stop_on_no_new_evidence: int = 0
     registry_dirs: list[str] = field(default_factory=list)
 
@@ -272,10 +278,6 @@ class PolicyConfig:
 
         if self.mode not in POLICY_MODES:
             raise ConfigError(f"policy.mode 必须是 {POLICY_MODES} 之一，得到 {self.mode!r}")
-        if self.max_checks <= 0:
-            raise ConfigError("policy.max_checks 必须为正整数")
-        if self.logic_seconds <= 0:
-            raise ConfigError("policy.logic_seconds 必须为正整数")
         if type(self.stop_on_no_new_evidence) is not int or self.stop_on_no_new_evidence < 0:
             raise ConfigError("policy.stop_on_no_new_evidence 必须为非负整数，0 关闭启发式停止")
 
@@ -302,8 +304,8 @@ class SubworkerConfig:
     """交互并行任务默认值；执行仍沿用 Swarm 的独立上下文与能力租约。"""
 
     workers: int = 2
-    max_steps: int = 12
-    max_seconds: int = 600
+    max_steps: int = 0
+    max_seconds: int = 0
     model: str = ""
     reasoning_effort: str = ""
     profile: str = ""
@@ -314,10 +316,13 @@ class SubworkerConfig:
             raise ConfigError("subworker 模型、供应商及思考强度必须是字符串")
         if self.reasoning_effort and self.reasoning_effort not in LEVEL_LABELS:
             raise ConfigError("subworker.reasoning_effort 档位无效")
-        for name, limit in (("workers", 16), ("max_steps", 1000), ("max_seconds", 86400)):
+        for name, limit in (("workers", 16),):
             value = getattr(self, name)
             if type(value) is not int or not 1 <= value <= limit:
                 raise ConfigError(f"subworker.{name} 必须为 1..{limit} 的整数")
+        for name in ("max_steps", "max_seconds"):
+            if type(getattr(self, name)) is not int or getattr(self, name) < 0:
+                raise ConfigError(f"subworker.{name} 必须为非负整数，0 不限制")
 
 
 @dataclass

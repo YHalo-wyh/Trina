@@ -196,9 +196,9 @@ Binary 能力只在附件或能力清单需要时 JIT 绑定，Role 不会把通
 ## 授权策略：计划器提出，控制器批准
 
 - 默认 `policy.mode=free` 且 `scope.trust_mode=full`，已注册工具直接执行。需要旧范围边界时使用 `--set scope.trust_mode=restricted`；需要检查项约束时再配置 `policy.registry_dirs`。
-- 控制器（`trina/policy.py`）在执行层逐动作批准：注册 → 预算 → 撤权；模型**没有写权限**，
+- 控制器（`trina/policy.py`）在执行层逐动作批准：注册 → 撤权；模型**没有写权限**，
   也不能用"这应该安全"当许可。模式：`free`（默认）/ `guided` / `strict`（只接受显式注册的 `target_id` + `test_id`；空注册表直接拒绝）。
-- 预算与停止合同：`policy.max_checks` / `logic_seconds` / `stop_on_no_new_evidence`，到点即停并留下**已测/未测/原因**。
+- 停止合同：只保留 `policy.stop_on_no_new_evidence`（连续无新增证据即停，0 关闭）；不再设检查次数或逻辑秒数硬上限，实际边界由 `run.max_seconds` / `max_steps` / 工具超时负责。
 - 撤权 = 减权不绕路：`revoke <target_id>` 后对该目标的一切检查被拒（换地址/换工具同样被拒）。
 - 结论三分类：`CONFIRMED`（有证据）/ `NOT_CONFIRMED`（**仅限已执行检查**）/ `INCONCLUSIVE`（缺口、工具失败、授权受限）。
 

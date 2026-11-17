@@ -69,6 +69,8 @@ class AgentRuntime:
                  execute: Callable, decode_text: Callable, native: Callable[[], bool],
                  record_response: Callable | None = None, observe: Callable | None = None,
                  say: Callable | None = None, interrupted: Callable | None = None):
+        if type(max_steps) is not int or max_steps < 0:
+            raise ValueError("max_steps 必须为非负整数，0 不限制")
         self.max_steps, self.messages = max_steps, messages
         self.request, self.execute, self.decode_text, self.native = request, execute, decode_text, native
         self.record_response, self.observe, self.say = record_response, observe, say
@@ -77,7 +79,7 @@ class AgentRuntime:
 
     def run(self) -> ActionOutcome:
         last = ActionOutcome()
-        while self.steps < self.max_steps and self.rounds < self.max_steps:
+        while not self.max_steps or (self.steps < self.max_steps and self.rounds < self.max_steps):
             self.rounds += 1
             response = self.request(self.steps + 1, self.rounds)
             if response is None:
@@ -108,7 +110,7 @@ class AgentRuntime:
             for item in actions:
                 cancellation = cancellation or self.interrupted()
                 reason = cancellation
-                if stopping or reason or self.steps >= self.max_steps:
+                if stopping or reason or (self.max_steps and self.steps >= self.max_steps):
                     outcome = ActionOutcome(observation=reason or "未执行：本次任务已停止或动作预算已用尽", ok=False)
                 elif any(not outcomes[index].ok for index in item.dependencies):
                     outcome = ActionOutcome(observation="未执行：依赖调用失败或未执行", ok=False)

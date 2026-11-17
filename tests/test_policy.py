@@ -53,7 +53,7 @@ class TestController(unittest.TestCase):
         return AuthorizationController(
             self.registry,
             mode=mode,
-            budget=Budget(**{"max_checks": 40, "logic_seconds": 900, "stop_on_no_new_evidence": 4, **budget}),
+            budget=Budget(**{"stop_on_no_new_evidence": 4, **budget}),
         )
 
     def test_strict_requires_registered_test_id(self):
@@ -130,14 +130,14 @@ class TestController(unittest.TestCase):
         controller.grant("lab-http")
         self.assertTrue(controller.check({"tool": "sqli_test", "level": "verify", "target": "http://127.0.0.1:9099/sqli"}).allowed)
 
-    def test_budget_stops_checks(self):
-        controller = self._controller(mode="guided", max_checks=1)
+    def test_time_and_check_budgets_are_removed(self):
+        """时间与检查次数不再触发拒绝；外层运行时长和步数负责边界。"""
+        controller = self._controller(mode="guided")
+        controller.started_at -= 10_000
         request = {"tool": "sqli_test", "level": "verify", "target": "http://127.0.0.1:9099/sqli"}
-        self.assertTrue(controller.check(request).allowed)
-        denied = controller.check(request)
-        self.assertFalse(denied.allowed)
-        self.assertEqual(denied.kind, "budget")
-        self.assertIn("上限", controller.stop_reason())
+        for _ in range(50):
+            self.assertTrue(controller.check(request).allowed)
+        self.assertEqual(controller.stop_reason(), "")
 
     def test_no_new_evidence_triggers_stop(self):
         controller = self._controller(mode="guided", stop_on_no_new_evidence=2)

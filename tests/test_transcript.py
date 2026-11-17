@@ -135,6 +135,44 @@ class TranscriptTests(unittest.TestCase):
             control.create_content(80, 5)
             shift.assert_not_called()
 
+    def test_latest_output_auto_follows_until_user_scrolls_history(self):
+        self.editor.write("\n".join(f"line {index}" for index in range(20)))
+        control = self.editor.transcript_control
+        control.create_content(80, 5)
+        first_bottom = control.viewport_start()
+        self.assertTrue(self.editor._follow_latest)
+
+        self.editor.update_stream("latest\n" * 8)
+        control.create_content(80, 5)
+        self.assertEqual(self.editor._scrollback, 0)
+        self.assertGreater(control.viewport_start(), first_bottom)
+
+        self.editor._scroll_by(3)
+        frozen = control.viewport_start()
+        self.assertFalse(self.editor._follow_latest)
+        self.editor.update_stream("latest\n" * 16)
+        control.create_content(80, 5)
+        self.assertEqual(control.viewport_start(), frozen)
+
+        self.editor._scroll_by(-10_000)
+        self.assertTrue(self.editor._follow_latest)
+        self.assertEqual(self.editor._scrollback, 0)
+        self.editor.update_stream("final latest\n" * 20)
+        control.create_content(80, 5)
+        self.assertEqual(control.viewport_start(), control.max_scrollback())
+
+        import queue
+        self.editor._scroll_by(2)
+        self.assertFalse(self.editor._follow_latest)
+        self.editor._handler = lambda _text: True
+        self.editor._queue = queue.SimpleQueue()
+        self.editor.buffer.text = "继续"
+        binding = self.editor.app.key_bindings.get_bindings_for_keys(("c-m",))[0]
+        binding.handler(SimpleNamespace(app=self.editor.app))
+        self.assertTrue(self.editor._follow_latest)
+        self.assertEqual(self.editor._scrollback, 0)
+        self.assertEqual(self.editor._queue.get_nowait(), "继续")
+
     def test_drag_selection_copies_chinese_lines_and_keeps_input_draft(self):
         self.editor.write("第一行 abc\n第二行 xyz")
         control = self.editor.transcript_control

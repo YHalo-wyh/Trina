@@ -155,8 +155,10 @@ class PentestAgent:
     ) -> RunState:
         """对单目标执行一次全自动渗透；续轮只继承结构化事实，不复用旧对话。"""
         run_id = run_id or time.strftime("%Y%m%d-%H%M%S") + "-" + _short_hash(target)
-        max_steps = max_steps or self.config.llm.max_steps
-        max_seconds = max_seconds or self.config.llm.max_seconds
+        max_steps = self.config.llm.max_steps if max_steps is None else max_steps
+        max_seconds = self.config.llm.max_seconds if max_seconds is None else max_seconds
+        if any(type(value) is not int or value < 0 for value in (max_steps, max_seconds)):
+            raise ValueError("max_steps/max_seconds 必须为非负整数，0 不限制")
 
         previous_run_id = ""
         previous_decision_rounds = 0
@@ -242,7 +244,7 @@ class PentestAgent:
             http=HttpClient(guard, timeout=15.0),
             workspace=workspace,
             tools=self.registry,
-            deadline=time.monotonic() + max_seconds,
+            deadline=time.monotonic() + max_seconds if max_seconds else None,
             logger=self.logger,
             event_bus=self.events,
         )
@@ -284,7 +286,7 @@ class PentestAgent:
         planner = None
         if self.config.run.phases:
             from .planner import Planner
-            planner = Planner(max_steps_per_phase=max(4, max_steps // len(self.config.run.phases)))
+            planner = Planner(max_steps_per_phase=max(4, max_steps // len(self.config.run.phases)) if max_steps else 0)
         else:
             state.phase = "execute"
         requirements = GoalRequirements.parse(goal)
@@ -317,7 +319,7 @@ class PentestAgent:
             from .scheduler import HypothesisScheduler
             scheduler = HypothesisScheduler(min_priority=self.config.run.scheduler_min_priority)
 
-        # 独立控制器：授权来自注册表与预算合同，不来自模型的文字
+        # 独立控制器：授权来自注册表与停止合同，不来自模型的文字
         controller = self.controller
         if controller is None:
             from ..policy import AuthorizationController, Budget, PolicyRegistry
@@ -326,8 +328,6 @@ class PentestAgent:
                 PolicyRegistry.load(self.config, extra_dirs=list(self.config.policy.registry_dirs)),
                 mode=self.config.policy.mode,
                 budget=Budget(
-                    max_checks=self.config.policy.max_checks,
-                    logic_seconds=self.config.policy.logic_seconds,
                     stop_on_no_new_evidence=self.config.policy.stop_on_no_new_evidence,
                 ),
                 audit=audit,
@@ -521,8 +521,8 @@ class PentestAgent:
                 runtime_context="",
                 budget={
                     "进度": f"{planner.phase_step}/{planner.max_steps_per_phase}" if planner is not None else "目标驱动",
-                    "总步数": f"{index}/{max_steps}",
-                    "剩余秒": int(ctx.remaining() or 0),
+                    "总步数": f"{index}/{max_steps or '不限'}",
+                    "剩余秒": int(ctx.remaining()) if ctx.remaining() is not None else "不限",
                 },
                 # 任务硬性要求放在显眼位置：否则模型容易被"顺路发现"带偏，把预算花在目标之外
                 extra_context=schedule.prompt_block() if schedule is not None else "",
@@ -721,7 +721,7 @@ class PentestAgent:
                     )
                     return ActionOutcome(observation=observation, ok=False)
 
-            self.logger(f"[{index}/{max_steps}] {phase} · {tool_name} {_brief_params(params)}")
+            self.logger(f"[{index}/{max_steps or '不限'}] {phase} · {tool_name} {_brief_params(params)}")
             audit.append(
                 "react.action", step=index, phase=phase, thought=thought[:300], tool=tool_name, params=params,
                 # 假设进哈希链：state.json 可改，审计链不可改——"为什么做这步"必须可追溯
@@ -851,7 +851,7 @@ class PentestAgent:
             for hint in hints:
                 state.note("hint", hint)
 
-            # 预算与停止合同：连续无新增证据 / 检查数 / 逻辑预算到点就停，并留下覆盖说明
+            # 停止合同：连续无新增证据到点就停，并留下覆盖说明
             background_running = any(job["status"] == "running" for job in ctx.extra["background_jobs"].snapshot())
             if not background_running and controller.note_evidence(new_facts):
                 state.note("budget", f"按停止合同收尾：{controller.stop_reason()}")

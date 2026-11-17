@@ -42,8 +42,8 @@ class FactIntentPlanner:
                 goal=goal,
                 depends_on=(str(source.id),),
                 priority=max(-100, int(source.priority) - 1),
-                max_steps=max(1, min(int(source.max_steps), 12)),
-                max_seconds=max(1, min(int(source.max_seconds), 300)),
+                max_steps=int(source.max_steps),
+                max_seconds=int(source.max_seconds),
                 capabilities=tuple(source.capabilities),
                 fact_ids=(fact_id,),
             ))
