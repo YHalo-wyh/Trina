@@ -46,9 +46,11 @@
         "design/adr/0002-text-json-action-protocol.md",
         "design/adr/0003-single-execution-chokepoint.md",
         "design/adr/0020-security-engineer-prompt-and-commander-intelligence.md",
-        "design/adr/0026-native-binary-runtime-and-model-windows.md"
+        "design/adr/0026-native-binary-runtime-and-model-windows.md",
+        "design/adr/0030-commander-delegation-and-live-grid.md",
+        "design/adr/0037-proactive-workers-and-pluggable-task-modules.md"
       ],
-      "required_globs": [{"pattern": "design/adr/*.md", "minimum": 20}]
+      "required_globs": [{"pattern": "design/adr/*.md", "minimum": 37}]
     },
     {
       "id": "D-HARNESS",
@@ -451,10 +453,11 @@
         {
           "id": "TR-12-R01",
           "level": "MUST",
-          "statement": "独立任务可并行运行，Worker 可复用，但错误租约不得释放正在执行的 Worker。",
+          "statement": "独立任务可并行运行，Worker 可复用，但错误租约不得释放正在执行的 Worker；两个无依赖任务应能同时进入 running 并占用两个 Worker。",
           "tests": [
             "tests.test_swarm.SwarmTests.test_parallel_leases_reuse_and_handoff",
-            "tests.test_swarm.SwarmTests.test_worker_lease_rejects_stale_release"
+            "tests.test_swarm.SwarmTests.test_worker_lease_rejects_stale_release",
+            "tests.test_worker_dashboard.WorkerDashboardTests.test_targeted_cancel_and_message_do_not_stop_sibling"
           ]
         },
         {
@@ -565,12 +568,12 @@
       "status": "partial",
       "implementation": ["trina/swarm.py", "trina/subworkers.py", "trina/subworker_ui.py", "trina/interactive.py"],
       "verification": ["V-CONTRACT", "V-TESTS"],
-      "limitations": ["支持列表、模型/思考配置、暂停/继续/停止与恢复；暂无活动对话接管、定向补充或运行中预算调整。"],
+      "limitations": ["支持列表、模型/思考配置、暂停/继续/停止、定向补充、单任务取消与恢复；暂无活动对话接管或运行中预算调整。"],
       "rules": [
         {
           "id": "TR-17-R01",
           "level": "PLANNED",
-          "statement": "未来交付必须提供可审计的 Swarm 暂停、恢复、定向补充、预算调整与接管协议。",
+          "statement": "未来交付必须提供可审计的活动对话接管与运行中预算调整协议。",
           "tests": []
         },
         {

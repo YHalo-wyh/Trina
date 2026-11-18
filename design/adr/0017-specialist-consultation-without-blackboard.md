@@ -1,10 +1,12 @@
 # ADR-0017：按需咨询专职 Agent，执行权集中，不引入协作黑板
 
 - 日期：2026-10-21；研究复核：2026-10-28
-- 状态：已实现，默认关闭；启用方式 `--set run.specialists=true`
+- 状态：历史实现；固定专职咨询已由 [ADR-0021](0021-capability-fabric.md) 取代，相关开关与实现已删除
 - 关联：[ADR-0003](0003-single-execution-chokepoint.md)、[ADR-0006](0006-planner-controller-separation.md)、[ADR-0018](0018-fact-context-and-atomic-snapshots.md)
 
 ## 问题与约束
+
+> 2026-11-12 后续：保留本文用于说明当时为何不引入共享黑板；当前 Worker 不再绑定 `recon/web/review` 固定身份，而由任务租约装配 Capability。
 
 Trina 已有任务大脑、对话大脑、假设台账、证据关系图和只读复核器。
 给这些模块分别起一个 Agent 名字，不会自动获得多智能体能力。

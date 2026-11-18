@@ -123,7 +123,7 @@ flowchart TB
 | `trina.console_state` | `ConsoleContext`、`ConsoleState`、`TrackedBackend` | 底栏读取当前运行模型、目录、短会话名和步骤；横线展示最近一次当前输入量相对上下文窗口的占用，累计 Token 另行统计；跨模型累计、建新会话清零，未知用量不伪造，不修改提示词、动作、授权或后端账本 |
 | `trina.worker_roles` / `Console._cmd_worker` | `WORKER_ROLES`、角色会话 ID 表 | 交互 Worker 各自独立 ChatAgent，切换通过已有持久历史恢复，角色随聊天快照保存；运行中不切换，Swarm 执行调度保持独立入口 |
 | `trina.subworkers` / `trina.subworker_ui` | `Subworkers.start/add/configure/control`、`/subworker` | 后台复用 Swarm；主会话不阻塞；每任务模型/思考强度与供应商引用独立，等待任务可修改，运行任务冻结；UI 只读取事件驱动的小型投影 |
-| `WorkerTasks` / 四格对话投影 | `worker_tasks`、`render_grid`、`Subworkers.dialog_lines` | Commander 工具委派/回收/定向补充与取消，四格仅投影可见事件，按任务和宽度缓存；历史恢复无执行副作用 |
+| `WorkerTasks` / 四格对话投影 | `worker_tasks`、`render_grid`、`Subworkers.dialog_lines` | Commander 对两个及以上独立分支主动委派并回收，支持定向补充与取消；四格仅投影可见事件，按任务和宽度缓存；历史恢复无执行副作用 |
 | `SwarmRuntime.submit_task/configure_task` | 命令队列 + Future | 控制台跨线程只提交，Commander 单线程修改任务图；收尾拒绝迟到提交，取消不记成功；配置相同的闲置后端优先复用，快照固定模型身份 |
 | `trina.config.UIConfig` | `status_line_preset/status_line_separator/context_bar/motion` | 分段单行底栏；角色优先，窄屏收起次要指标；首页动画只更新等待输入的唯一字标块，提交后冻结 |
 | `trina.console_ui` | `EnhancedConsoleInput.run/write/update_stream/update_tool` | 持续全屏内容区与固定底部输入、索引和用量；正文增量与工具窗口原位更新，保留输入草稿；模型表单临时接管终端后恢复 |
@@ -210,7 +210,7 @@ flowchart TB
 
 ## 8. Capability Fabric 与上下文
 
-Commander 通过 `trina/capabilities/catalog.py` 发现统一能力；`broker.py` 根据依赖、策略与版本快照签发任务租约；`runtime.py` 将 Tool、CLI 或 MCP 能力投影为当前 Worker 的 ToolRegistry。Schema 与 Guidance 按租约加载，调用前后验证 TTL 和释放状态。清单同目录的 `AGENT.md` 是约定式 Guidance，只进入当前任务的 user 合同。通用 Worker 可在任务间复用执行环境，事实图、凭据、假设和对话仍默认独立。Commander 只转发相关证据索引与带来源的线索。清单、API、运行限制与验收见 [Capability Fabric](CAPABILITY_FABRIC.md)、[临时任务模块](TASK_MODULES.md)和 [ADR-0021](../design/adr/0021-capability-fabric.md)。
+Commander 通过 `trina/capabilities/catalog.py` 发现统一能力；`broker.py` 根据依赖、策略与版本快照签发任务租约；`runtime.py` 将 Tool、CLI 或 MCP 能力投影为当前 Worker 的 ToolRegistry。Schema 与 Guidance 按租约加载，调用前后验证 TTL 和释放状态。清单同目录的 `AGENT.md` 是约定式 Guidance，只进入当前任务的 user 合同。通用 Worker 可在任务间复用执行环境，事实图、凭据、假设和对话仍默认独立。Commander 只转发相关证据索引与带来源的线索。清单、API、运行限制与验收见 [Capability Fabric](CAPABILITY_FABRIC.md)、[临时任务模块](TASK_MODULES.md)、[ADR-0021](../design/adr/0021-capability-fabric.md)和[ADR-0037](../design/adr/0037-proactive-workers-and-pluggable-task-modules.md)。
 
 任务与对话使用结构化消息，稳定 system 和初始合同处于前缀，动态状态与观察只追加到后方。接近本地窗口预算时创建可复核的继承检查点，不调用模型生成摘要；不同任务不复用完整对话。DeepSeek 自动预算为 500K，明确识别的百万窗口型号为 1M，其他型号保守回退且可由 `/model context` 覆盖。详见 [模型传输与缓存](MODELS.md#上下文窗口)与[缓存运行时](CACHE_RUNTIME.md)。
 

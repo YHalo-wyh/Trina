@@ -2,6 +2,7 @@
 
 - 日期：2026-11-16
 - 状态：Accepted
+- 关联：[ADR-0037](0037-proactive-workers-and-pluggable-task-modules.md)（外部 Harness 使用通用硬预算标志，不绑定平台名称）
 
 ## 背景
 

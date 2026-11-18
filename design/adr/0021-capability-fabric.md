@@ -19,6 +19,7 @@ Trina 采用任务驱动的 Capability Fabric：
 5. 每个任务的事实图和对话继续隔离；共享层只保存带来源的证据索引与 Commander 选择的情报。
 6. 任务快照固定能力版本和内容摘要；租约有 Worker、任务、TTL 和主动释放边界。
 7. 删除 `consult_specialist`、固定角色实现和对应配置，不维护并行兼容系统。
+8. 清单未显式声明 `guidance` 时，Catalog 约定发现同目录 `AGENT.md`；正文在租约建立时 JIT 读取，只进入当前任务的首条 user 合同，不注入稳定 system。
 
 ## 为什么这样修改
 
@@ -30,7 +31,7 @@ Trina 采用任务驱动的 Capability Fabric：
 
 ## 结果与限制
 
-现有 `trina swarm` 默认只创建一个 `main` 任务；显式清单仍可建立 DAG。旧 `recon/web/verify/full` 静态映射被移除，`capabilities` 字段现在接受 Capability ID 或 `provides` 选择器，留空时按意图发现。
+现有 `trina swarm` 默认只创建一个 `main` Intent；显式清单仍可建立 DAG，交互 Commander 也可通过 `worker_tasks` 主动提交多个独立分支。旧 `recon/web/verify/full` 静态映射被移除，`capabilities` 字段现在接受 Capability ID 或 `provides` 选择器，留空时按意图发现。
 
 首版没有 Marketplace、复杂依赖求解、Hook 总线、操作系统沙箱或长驻 MCP 进程池。MCP stdio 每次调用独立启动并回收。应用级租约不能代替容器或低权限宿主隔离。
 
@@ -41,4 +42,4 @@ python -m unittest tests.test_capabilities tests.test_swarm -v
 python -m scripts.verify_contract --execute --json
 ```
 
-详细清单格式、状态语义和测试映射见 `docs/CAPABILITY_FABRIC.md`。
+详细清单格式、状态语义和测试映射见 [`docs/CAPABILITY_FABRIC.md`](../../docs/CAPABILITY_FABRIC.md) 与 [`docs/TASK_MODULES.md`](../../docs/TASK_MODULES.md)。

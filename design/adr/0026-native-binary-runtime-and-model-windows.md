@@ -2,7 +2,7 @@
 
 - 日期：2026-11-13
 - 状态：Accepted
-- 关联：TR-05、TR-09、TR-19
+- 关联：TR-05、TR-09、TR-19、[ADR-0037](0037-proactive-workers-and-pluggable-task-modules.md)
 
 ## 背景
 

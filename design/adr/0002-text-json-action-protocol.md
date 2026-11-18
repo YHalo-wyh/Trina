@@ -1,7 +1,9 @@
-# ADR-0002：动作协议用文本 JSON，不用 function-calling
+# ADR-0002：文本 JSON 动作协议（现作为兼容回退）
 
-- 状态：已采纳（M1）
-- 相关：ADR-0001
+- 状态：历史基线；JSON/DSML 回退仍保留，默认原生工具调用由 [ADR-0031](0031-unified-agent-runtime-and-state.md) 取代
+- 相关：ADR-0001、[ADR-0022](0022-standard-messages-and-streaming.md)、[ADR-0031](0031-unified-agent-runtime-and-state.md)
+
+> 2026-11-18 同步：下文描述的是最初的单动作文本协议。当前在线模型优先使用标准 API `tools/tool_calls`，一次响应可包含多个调用；只有兼容路径继续解析单个文本 JSON 动作。
 
 ## 背景
 模型需要输出"下一步调用哪个工具、参数是什么"。可选：原生 function-calling，或文本协议（约定输出 JSON）。
