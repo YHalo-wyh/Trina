@@ -1,10 +1,10 @@
 # design · ADR、AI 规则、状态与权限
 
-章节 02 的[双层 Harness](../docs/course/harness-manifest.md)、[实际状态模型](../docs/course/state-model.md)及[完整汇报](../开题报告与第一次汇报.md)位于课程包。下文一页图为原有流程概览，具体生命周期以当前状态模型为准。
+章节 02 的[双层 Harness](../docs/course/harness-manifest.md)、[实际状态模型](../docs/course/state-model.md)及[完整汇报](../docs/开题报告与第一次汇报/开题报告与第一次汇报.md)位于课程包。下文一页图为原有流程概览，具体生命周期以当前状态模型为准。
 
 ## 目录
 
-- **[设计决策](../设计决策.md)**：按时间持续编号，逐步解释目标约束、阶段、排序与调度、模型协议、授权审批、证据更新、失败与收尾，并附案例和方案比较。
+- **[设计决策](../docs/设计决策/设计决策.md)**：按时间持续编号，逐步解释目标约束、阶段、排序与调度、模型协议、授权审批、证据更新、失败与收尾，并附案例和方案比较。
 - `adr/` — 关键决策记录（为什么这么做，以及被否决的方案）
 - `ai-rules.md` — AI 使用规则与人机责任（O1）
 - 架构与护栏细节：[`docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md)、[`docs/GUARDRAILS.md`](../docs/GUARDRAILS.md)

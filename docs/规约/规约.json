@@ -3,8 +3,8 @@
   "contract_id": "trina-product-contract",
   "product_version": "0.4.0",
   "updated_at": "2026-11-16",
-  "normative_document": "规约.md",
-  "requirements_document": "需求.md",
+  "normative_document": "docs/规约/规约.md",
+  "requirements_document": "docs/需求/需求.md",
   "verification_commands": {
     "V-CONTRACT": {
       "argv": ["{python}", "-X", "utf8", "-m", "scripts.verify_contract"],
@@ -28,13 +28,13 @@
       "id": "D-REQ",
       "name": "需求",
       "status": "complete",
-      "required_paths": ["需求.md"]
+      "required_paths": ["docs/需求/需求.md"]
     },
     {
       "id": "D-SPEC",
       "name": "机器可验证规约",
       "status": "complete",
-      "required_paths": ["规约.md", "规约.json", "scripts/verify_contract.py", "tests/test_contract.py"]
+      "required_paths": ["docs/规约/规约.md", "docs/规约/规约.json", "scripts/verify_contract.py", "tests/test_contract.py"]
     },
     {
       "id": "D-ADR",
@@ -73,8 +73,8 @@
         "docs/PLAN.md",
         "docs/course/plan.md",
         "docs/course/tasks.md",
-        "网安实训中级课程——对抗组计划文档.md",
-        "专业综合能力提升课程——对抗组计划文档.md"
+        "docs/网安实训中级课程——对抗组计划文档/网安实训中级课程——对抗组计划文档.md",
+        "docs/专业综合能力提升课程——对抗组计划文档/专业综合能力提升课程——对抗组计划文档.md"
       ]
     },
     {

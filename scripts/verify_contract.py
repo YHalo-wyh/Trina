@@ -15,7 +15,7 @@ from typing import Any
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-CONTRACT_PATH = Path("规约.json")
+CONTRACT_PATH = Path("docs/规约/规约.json")
 DELIVERABLE_IDS = {"D-REQ", "D-SPEC", "D-ADR", "D-HARNESS", "D-PLAN", "D-EVIDENCE"}
 LEVELS = {"MUST", "SHOULD", "MAY", "PLANNED"}
 STATUSES = {"implemented", "partial", "planned"}
@@ -183,8 +183,8 @@ def check(root: Path = PROJECT_ROOT, *, data: dict[str, Any] | None = None) -> C
             if count < minimum:
                 report.errors.append(f"{identifier} 的 {pattern} 仅 {count} 项，要求至少 {minimum} 项")
 
-    requirements_source = (root / "需求.md").read_text(encoding="utf-8-sig")
-    specification_source = (root / "规约.md").read_text(encoding="utf-8-sig")
+    requirements_source = (root / "docs" / "需求" / "需求.md").read_text(encoding="utf-8-sig")
+    specification_source = (root / "docs" / "规约" / "规约.md").read_text(encoding="utf-8-sig")
     headings = _requirement_headings(requirements_source)
     requirements = contract.get("requirements")
     if not isinstance(requirements, list):
@@ -250,7 +250,7 @@ def check(root: Path = PROJECT_ROOT, *, data: dict[str, Any] | None = None) -> C
                 if test not in declared_tests:
                     report.errors.append(f"{rule_id} 引用不存在的测试: {test}")
             if specification_source.count(f"`{rule_id}`") != 1:
-                report.errors.append(f"{rule_id} 必须在规约.md 的机器索引中恰好出现一次")
+                report.errors.append(f"{rule_id} 必须在 docs/规约/规约.md 的机器索引中恰好出现一次")
 
     report.rules = len(all_rule_ids)
     report.tests_referenced = len(referenced_tests)

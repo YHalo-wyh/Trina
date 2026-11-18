@@ -9,12 +9,15 @@ Trina 是面向 CTF 与授权攻防环境的自动化 Agent，提供真实浏览
 | 文档 | 内容 |
 |---|---|
 | [使用说明](docs/CLI_UI.md) | 控制台、命令、模型、任务与子 Worker 操作 |
+| [产品需求](docs/需求/需求.md) | 当前能力、优先级、状态与验收目标 |
+| [行为规约](docs/规约/规约.md) · [机器规约](docs/规约/规约.json) | 状态转换、规则 ID、实现路径与验证方法 |
+| [设计决策](docs/设计决策/设计决策.md) | 关键方案的背景、取舍、边界与验证依据 |
 | [架构](docs/ARCHITECTURE.md) | Agent Runtime、执行链、状态与模块契约 |
 | [Swarm](docs/SWARM.md) | 多任务调度、并行 Worker、租约与恢复 |
 | [浏览器工具链](docs/BROWSER_TOOLS.md) | Playwright/Chromium、交互、网络证据与截图 |
 | [原生二进制工具链](docs/BINARY_TOOLS.md) | radare2、GDB/MI、地址模型与会话隔离 |
 | [临时任务模块](docs/TASK_MODULES.md) | Capability + `AGENT.md` 的可插拔平台适配 |
-| [更新日志](CHANGELOG.md) | 版本变化和兼容说明 |
+| [更新日志](docs/CHANGELOG/CHANGELOG.md) | 版本变化和兼容说明 |
 
 ## 项目使用说明
 

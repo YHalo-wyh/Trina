@@ -120,7 +120,7 @@ def check(root: Path) -> Report:
             "open-questions", "continuity", "ai-disclosure", "course-alignment",
         )
     }
-    required.update({"README.md", "开题报告与第一次汇报.md"})
+    required.update({"README.md", "docs/开题报告与第一次汇报/开题报告与第一次汇报.md"})
     if not required.issubset(documents):
         report.errors.append(f"清单遗漏课程工件: {sorted(required - set(documents))}")
     texts = {relative: _read(root, relative, report) for relative in documents}

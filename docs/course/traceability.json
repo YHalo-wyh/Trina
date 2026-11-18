@@ -13,7 +13,7 @@
     "sha256": "9b711c132d3d7a2bb1919190c974ef90099940b18e2795d93e9aba5330a26d08"
   },
   "documents": [
-    "设计决策.md",
+    "docs/设计决策/设计决策.md",
     "docs/ARCHITECTURE.md",
     "docs/EVAL.md",
     "design/README.md",
@@ -21,7 +21,7 @@
     "design/adr/0016-deterministic-hypothesis-scheduling.md",
     "evidence/20261026-decision-docs/README.md",
     "README.md",
-    "开题报告与第一次汇报.md",
+    "docs/开题报告与第一次汇报/开题报告与第一次汇报.md",
     "docs/course/README.md",
     "docs/course/intent.md",
     "docs/course/problem-frame.md",
