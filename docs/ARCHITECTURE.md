@@ -1,4 +1,5 @@
 # 架构与模块契约
+| `trina.bench` | `BenchmarkRunner.run`、`BenchmarkClient.fork`、`BenchCommander` | 平台适配层；每题映射为 Task，由 Swarm Worker Pool 并发执行（默认 2、上限 3）；独立控制面会话，submit 的 `correct` 是唯一成功判据；轮次边界 Commander 按部分 Flag/新增事实决定续做或加时（ADR-0039） |
 
 决策流程及每一步的设计理由详见[《设计决策》](设计决策/设计决策.md)。该文按实际执行顺序展开输入输出、规则、替代方案、失败分支和验证依据；本页保留总体模块契约。系统提示词与 Commander 情报部分于 2026-11-11 对照实现核对。
 

@@ -35,6 +35,7 @@ from ..state import RunState
 from ..swarm import SwarmRuntime, TaskSpec, Worker
 from ..tools import ToolRegistry
 from .client import BenchmarkClient, BenchmarkError
+from .commander import CONTINUE, EXTEND, RELEASE, RETRY, BenchCommander, CommanderSettings
 
 #: 候选 flag 的提取模式（平台样例均形如 flag{...}；兼顾其他赛事前缀）。
 _FLAG_PATTERNS: tuple[re.Pattern[str], ...] = (
@@ -94,6 +95,13 @@ class BenchOptions:
     limit: int = 0
     max_candidates: int = 30
     workers: int = 2
+    commander: bool = False
+    commander_extension_seconds: int = 60
+    commander_max_extensions: int = 1
+    commander_checkpoint_steps: int = 8
+    commander_reserve_ratio: float = 0.10
+    commander_min_remaining_seconds: int = 120
+    commander_max_redundant_rate: float = 0.80
 
     def validate(self) -> None:
         for name in ("max_steps", "per_task_seconds", "total_seconds", "attempts"):
@@ -101,6 +109,16 @@ class BenchOptions:
                 raise ValueError(f"{name} 必须为非负整数，0 不限制")
         if not 1 <= self.workers <= 3:
             raise ValueError("workers 必须在 1..3 之间（平台并发容器上限为 3）")
+        for name in ("commander_extension_seconds", "commander_max_extensions",
+                     "commander_checkpoint_steps", "commander_min_remaining_seconds"):
+            if type(getattr(self, name)) is not int or getattr(self, name) < 0:
+                raise ValueError(f"{name} 必须为非负整数")
+        for name in ("commander_reserve_ratio", "commander_max_redundant_rate"):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise ValueError(f"{name} 必须为 0..1 的数值")
+            if not 0 <= float(value) <= 1:
+                raise ValueError(f"{name} 必须在 0..1 之间")
 
 
 @dataclass
@@ -292,6 +310,8 @@ def _agent_runner(
     registry: ToolRegistry,
     run_id: str,
     resume_state: RunState | None = None,
+    checkpoint: Callable[[RunState, int, float | None], tuple[str, int]] | None = None,
+    checkpoint_steps: int = 0,
 ) -> RunState:
     """默认执行器直接复用核心 Agent Loop，不加载 Play/UI/报告适配层。"""
     from ..brain import PentestAgent
@@ -305,6 +325,8 @@ def _agent_runner(
         extra_rules=extra_rules,
         run_id=run_id,
         resume_state=resume_state,
+        checkpoint=checkpoint,
+        checkpoint_steps=checkpoint_steps,
         seed_hints=(["这是续做轮次：已继承上一轮结构化事实；优先覆盖未验证方向，不要重复相同调用。"]
                     if resume_state is not None else None),
     )
@@ -326,12 +348,31 @@ class BenchmarkRunner:
         self.client = client
         self.options = options or BenchOptions()
         self.options.validate()
+        self.commander = (
+            BenchCommander(CommanderSettings(
+                extension_seconds=self.options.commander_extension_seconds,
+                max_extensions=self.options.commander_max_extensions,
+                reserve_ratio=self.options.commander_reserve_ratio,
+                min_remaining_seconds=self.options.commander_min_remaining_seconds,
+                max_redundant_rate=self.options.commander_max_redundant_rate,
+            ))
+            if self.options.commander else None
+        )
         self._custom_runner = runner is not None
         self.runner = runner
-        self.log = log or (lambda message: print(message, flush=True))
+        self._raw_log = log or (lambda message: print(message, flush=True))
+        self._log_context = threading.local()
+        self.log = self._prefixed_log
         self._outcomes: dict[str, TaskOutcome] = {}
         self._outcome_lock = threading.Lock()
         self._task_count = 0
+        self._active: set[str] = set()
+        self._active_lock = threading.Lock()
+
+    def _prefixed_log(self, message: str) -> None:
+        """多 Worker 并发写同一日志时，用当前任务编号区分交错行。"""
+        task = getattr(self._log_context, "task", "")
+        self._raw_log(f"[{task}] {message}" if task else message)
 
     # ------------------------------------------------------------------ 入口
     def run(self) -> BenchSummary:
@@ -422,20 +463,27 @@ class BenchmarkRunner:
     def _remaining_seconds(self, deadline: float) -> float:
         return deadline - time.monotonic()
 
-    def _attempt_budget(self, deadline: float, task_deadline: float, attempts_left: int) -> int | None:
-        """在整场、单题与续轮三层预算内留出恢复空间。"""
+    def _attempt_budget(self, deadline: float, task_deadline: float, attempts_left: int,
+                        *, fair_share: bool = True) -> int | None:
+        """在整场、单题与续轮三层预算内留出恢复空间。
+
+        Commander 加时后以 ``fair_share=False`` 调用：加时是明确从储备池拨给本题的，
+        不再被“剩余总预算 / 未完成题数”的公平份额压回。
+        """
         remaining = min(self._remaining_seconds(deadline) - 5, task_deadline - time.monotonic())
         if remaining <= 0:
             return 0
         if math.isinf(remaining):
             return None  # 无总时限和单题时限；向 Agent 传 0，不伪造巨大预算
+        if not fair_share:
+            return max(0, int(remaining))
         minimum = min(60, max(5, self.options.per_task_seconds // 4))
         with self._outcome_lock:
             unfinished = max(1, self._task_count - len(self._outcomes))
-        fair_share = (max(minimum, int(max(0, self._remaining_seconds(deadline) - 5) / unfinished))
-                      if math.isfinite(deadline) else remaining)
+        share = (max(minimum, int(max(0, self._remaining_seconds(deadline) - 5) / unfinished))
+                 if math.isfinite(deadline) else remaining)
         reserve = minimum if attempts_left > 1 and remaining > minimum * 2 else 0
-        return max(1, int(min(remaining - reserve if reserve else remaining, fair_share)))
+        return max(1, int(min(remaining - reserve if reserve else remaining, share)))
 
     @staticmethod
     def _progressed(previous: RunState | None, current: RunState) -> bool:
@@ -461,22 +509,83 @@ class BenchmarkRunner:
         return any(item.kind == inspect.Parameter.VAR_KEYWORD or item.name == "resume_state"
                    for item in parameters)
 
+    # ------------------------------------------------------------ 容器生命周期
+    def _safe_close(self, client: BenchmarkClient, code: str) -> bool:
+        """尽力关闭容器；平台在关闭竞态下可能返回 challenge_not_found。"""
+        try:
+            client.close(code)
+            return True
+        except BenchmarkError as exc:
+            self.log(f"[bench] 关闭容器失败（忽略）{code}: {exc}")
+            return False
+
+    def _reconcile_orphans(self, client: BenchmarkClient) -> list[str]:
+        """关闭平台仍显示活跃、但不属于本 Runner 在办任务的容器。
+
+        `start` 超时可能已在平台创建容器而客户端没拿到地址；不回收会永久占用
+        平台 3 个并发槽位，后续所有 start 都返回 max active。
+        """
+        try:
+            tasks = client.list_challenges()
+        except BenchmarkError as exc:
+            self.log(f"[bench] 查询活跃容器失败（忽略）: {exc}")
+            return []
+        with self._active_lock:
+            active = set(self._active)
+        closed: list[str] = []
+        for item in tasks:
+            code = str(item.get("unique_code") or "")
+            status = str(item.get("container_status") or "")
+            if not code or code in active or status not in {"pending", "available", "stop_pending"}:
+                continue
+            self.log(f"[bench] 回收孤儿容器 {code}（{status}）")
+            if self._safe_close(client, code):
+                closed.append(code)
+        return closed
+
+    def _start_with_retry(self, client: BenchmarkClient, code: str, *, attempts: int = 4) -> dict[str, Any]:
+        """start 遇到并发上限或超时时回收孤儿并退避重试。"""
+        last: BenchmarkError | None = None
+        for attempt in range(1, attempts + 1):
+            try:
+                return client.start(code)
+            except BenchmarkError as exc:
+                last = exc
+                retryable = exc.code == "invalid_state" or exc.status in (0, 409, 503)
+                if not retryable or attempt >= attempts:
+                    raise
+                self.log(f"[bench] start 重试 {attempt}/{attempts} {code}: {exc}")
+                if exc.status == 0 or "timeout" in str(exc).lower():
+                    # 超时可能已在平台创建容器；先按本题编号关闭，再回收其它孤儿。
+                    self._safe_close(client, code)
+                self._reconcile_orphans(client)
+                time.sleep(min(2 * attempt, 8))
+        assert last is not None
+        raise last
+
     def _run_task(self, task: BenchmarkTask, deadline: float, *, worker: Worker,
                   registry: ToolRegistry, run_id: str, config: TrinaConfig) -> TaskOutcome:
         outcome = TaskOutcome(unique_code=task.unique_code, total_flags=task.flag_count)
+        self._log_context.task = task.unique_code
         client = self.client.fork()
         started = False
         task_started = time.monotonic()
         task_deadline = min(deadline - 5, task_started + self.options.per_task_seconds
                             if self.options.per_task_seconds else math.inf)
         resume_state: RunState | None = None
+        extensions = 0
+        checkpoints = 0
+        with self._active_lock:
+            self._active.add(task.unique_code)
         try:
             try:
-                start_data = client.start(task.unique_code)
+                start_data = self._start_with_retry(client, task.unique_code)
                 started = True
             except BenchmarkError as exc:
                 outcome.error = f"start 失败: {exc}"
                 self.log(f"[bench] {outcome.error}")
+                self._safe_close(client, task.unique_code)
+                self._reconcile_orphans(client)
                 return outcome
             addresses = [str(item) for item in (start_data.get("container_addr") or []) if item]
             if not addresses:
@@ -487,8 +596,11 @@ class BenchmarkRunner:
             outcome.total_flags = int(task.flag_count or 0)
             self.log(f"[bench] 容器地址: {', '.join(addresses)} → 首选 {target}")
 
+            extended = False
             for attempt in itertools.count(1):
-                budget = self._attempt_budget(deadline, task_deadline, self.options.attempts - attempt + 1)
+                budget = self._attempt_budget(deadline, task_deadline,
+                                              self.options.attempts - attempt + 1,
+                                              fair_share=not extended)
                 if budget == 0:
                     break
                 hint_text = ""
@@ -502,14 +614,50 @@ class BenchmarkRunner:
                         self.log(f"[bench] 获取提示失败（忽略）: {exc}")
                 extra_rules = self._extra_rules(task, addresses, attempt, hint_text)
                 goal = self._goal(task)
-                self.log(f"[bench] 第 {attempt}/{self.options.attempts or '不限'} 轮，"
-                         f"时长 {str(budget) + 's' if budget is not None else '不限'}，步数 {self.options.max_steps or '不限'}")
+                limit = self.options.attempts
+                if self.commander is not None:
+                    limit = (limit + self.commander.settings.max_extensions) if limit else 0
+                self.log(f"[bench] 第 {attempt}/{limit or '不限'} 轮，"
+                         f"时长 {str(budget) + 's' if budget is not None else '不限'}，"
+                         f"步数 {self.options.max_steps or '不限'}"
+                         + (f"，已加时 {extensions} 次" if extensions else ""))
                 outcome.attempts = attempt
                 attempt_started = time.monotonic()
                 before_counters = dict(resume_state.counters) if resume_state is not None else {}
+                checkpoint_cb = None
+                if self.commander is not None and self.options.commander_checkpoint_steps > 0:
+                    def checkpoint_cb(state, steps, remaining):  # noqa: ANN001 - 内部回调
+                        nonlocal task_deadline, extensions, checkpoints
+                        del remaining
+                        now = time.monotonic()
+                        decision = self.commander.review_mid_attempt(
+                            status=state.status,
+                            correct_flags=outcome.correct_flags,
+                            total_flags=outcome.total_flags,
+                            progressed=self._progressed(resume_state, state),
+                            redundant_rate=float((state.loop or {}).get("redundant_action_rate", 0.0) or 0.0),
+                            extensions=extensions,
+                            task_remaining=task_deadline - now,
+                            global_remaining=((deadline - now) if math.isfinite(deadline) else math.inf),
+                            total_seconds=self.options.total_seconds,
+                        )
+                        checkpoints += 1
+                        if decision.action == CONTINUE:
+                            return ("continue", 0)
+                        if decision.action == EXTEND:
+                            task_deadline += decision.seconds
+                            extensions += 1
+                            self.log(f"[bench] commander checkpoint: extend +{decision.seconds}s"
+                                     f"（{decision.reason}）")
+                            return ("extend", decision.seconds)
+                        self.log(f"[bench] commander checkpoint: release（{decision.reason}）")
+                        return ("stop", 0)
                 try:
                     kwargs = dict(max_steps=self.options.max_steps, max_seconds=budget or 0,
                                   extra_rules=extra_rules, attempt=attempt, log=self.log)
+                    if checkpoint_cb is not None:
+                        kwargs["checkpoint"] = checkpoint_cb
+                        kwargs["checkpoint_steps"] = self.options.commander_checkpoint_steps
                     if self.runner is not None:
                         if self._runner_accepts_resume(self.runner):
                             kwargs["resume_state"] = resume_state
@@ -579,7 +727,42 @@ class BenchmarkRunner:
                 if outcome.correct_flags >= outcome.total_flags > 0:
                     outcome.error = ""
                     break
+                decision = None
+                if self.commander is not None:
+                    now = time.monotonic()
+                    decision = self.commander.review(
+                        status=state.status,
+                        correct_flags=outcome.correct_flags,
+                        total_flags=outcome.total_flags,
+                        progressed=progressed,
+                        redundant_rate=attempt_row["redundant_action_rate"],
+                        attempt=attempt,
+                        extensions=extensions,
+                        task_remaining=task_deadline - now,
+                        global_remaining=((deadline - now) if math.isfinite(deadline) else math.inf),
+                        total_seconds=self.options.total_seconds,
+                    )
+                    attempt_row["commander_action"] = decision.action
+                    attempt_row["commander_reason"] = decision.reason
+                    self.log(
+                        f"[bench] commander: {decision.action}"
+                        + (f" +{decision.seconds}s" if decision.seconds else "")
+                        + f"（{decision.reason}）"
+                    )
                 resume_state = state
+                if decision is not None:
+                    if decision.action == RELEASE:
+                        break
+                    if decision.action == EXTEND:
+                        task_deadline += decision.seconds
+                        extensions += 1
+                        extended = True
+                        continue
+                    # RETRY：先使用剩余单题预算；已耗尽则释放。
+                    if self._attempt_budget(deadline, task_deadline, 0,
+                                            fair_share=not extended) == 0:
+                        break
+                    continue
                 if (self.options.attempts and attempt >= self.options.attempts) or not self._retry_worthwhile(state, outcome, progressed):
                     if not progressed:
                         self.log("[bench] 本轮没有新增事实，释放 Worker，不做无依据重试")
@@ -602,14 +785,18 @@ class BenchmarkRunner:
                     sum(float(item.get("redundant_action_rate", 0.0)) * int(item.get("tool_calls", 0))
                         for item in outcome.attempt_metrics) / max(1, total_tools), 4),
                 "progressing_attempts": sum(bool(item.get("progressed")) for item in outcome.attempt_metrics),
+                "commander_extensions": extensions,
+                "commander_checkpoints": checkpoints,
+                "commander": bool(self.commander),
             }
             outcome.ok = outcome.correct_flags >= outcome.total_flags > 0
-            if started:
-                try:
-                    client.close(task.unique_code)
+            try:
+                if started and self._safe_close(client, task.unique_code):
                     self.log(f"[bench] 已关闭容器 {task.unique_code}")
-                except BenchmarkError as exc:
-                    self.log(f"[bench] 关闭容器失败（忽略）: {exc}")
+            finally:
+                with self._active_lock:
+                    self._active.discard(task.unique_code)
+                self._log_context.task = ""
 
     # ------------------------------------------------------------------ 提示词
     @staticmethod

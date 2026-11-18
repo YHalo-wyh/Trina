@@ -152,6 +152,8 @@ class PentestAgent:
         record_path: str | Path | None = None,
         run_id: str | None = None,
         resume_state: RunState | None = None,
+        checkpoint: Callable[[RunState, int, float | None], tuple[str, int]] | None = None,
+        checkpoint_steps: int = 0,
     ) -> RunState:
         """对单目标执行一次全自动渗透；续轮只继承结构化事实，不复用旧对话。"""
         run_id = run_id or time.strftime("%Y%m%d-%H%M%S") + "-" + _short_hash(target)
@@ -159,6 +161,8 @@ class PentestAgent:
         max_seconds = self.config.llm.max_seconds if max_seconds is None else max_seconds
         if any(type(value) is not int or value < 0 for value in (max_steps, max_seconds)):
             raise ValueError("max_steps/max_seconds 必须为非负整数，0 不限制")
+        if type(checkpoint_steps) is not int or checkpoint_steps < 0:
+            raise ValueError("checkpoint_steps 必须为非负整数")
 
         previous_run_id = ""
         previous_decision_rounds = 0
@@ -476,6 +480,14 @@ class PentestAgent:
                 while self.pause_event.is_set() and not (self.stop_event is not None and self.stop_event.is_set()):
                     time.sleep(0.2)
             accept_steers()
+            if checkpoint is not None and checkpoint_steps > 0 and steps > 0 and steps % checkpoint_steps == 0:
+                action, seconds = checkpoint(state, steps, ctx.remaining())
+                if action == "stop":
+                    state.note("commander", f"检查点停止（已执行 {steps} 步）")
+                    return None
+                if action == "extend" and seconds > 0:
+                    ctx.deadline = (ctx.deadline if ctx.deadline is not None else time.monotonic()) + seconds
+                    state.note("commander", f"检查点加时 {seconds}s（已执行 {steps} 步）")
             if ctx.remaining() is not None and ctx.remaining() <= 0:
                 state.note("budget", f"时长预算用尽（{max_seconds}s）")
                 return None

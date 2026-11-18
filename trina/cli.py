@@ -1,4 +1,47 @@
 """Trina 命令行入口。
+def _bench_float(name: str, default: float) -> float:
+    raw = os.environ.get(name)
+    if raw is None or raw == "":
+        return default
+    return float(raw)
+
+
+    def bench_int_arg(name: str, env: str, default: int) -> int:
+        value = getattr(args, name, None)
+        return int(value) if value is not None else _bench_int(env, default)
+
+    def bench_float_arg(name: str, env: str, default: float) -> float:
+        value = getattr(args, name, None)
+        return float(value) if value is not None else _bench_float(env, default)
+
+        commander=bool(getattr(args, "commander", False) or _bench_bool("TRINA_BENCH_COMMANDER", False)),
+        commander_extension_seconds=bench_int_arg(
+            "commander_extension_seconds", "TRINA_BENCH_COMMANDER_EXTENSION_SECONDS", 60),
+        commander_max_extensions=bench_int_arg(
+            "commander_max_extensions", "TRINA_BENCH_COMMANDER_MAX_EXTENSIONS", 1),
+        commander_checkpoint_steps=bench_int_arg(
+            "commander_checkpoint_steps", "TRINA_BENCH_COMMANDER_CHECKPOINT_STEPS", 8),
+        commander_reserve_ratio=bench_float_arg(
+            "commander_reserve_ratio", "TRINA_BENCH_COMMANDER_RESERVE_RATIO", 0.10),
+        commander_min_remaining_seconds=bench_int_arg(
+            "commander_min_remaining_seconds", "TRINA_BENCH_COMMANDER_MIN_REMAINING_SECONDS", 120),
+        commander_max_redundant_rate=bench_float_arg(
+            "commander_max_redundant_rate", "TRINA_BENCH_COMMANDER_MAX_REDUNDANT_RATE", 0.80),
+    commander_label = (
+        f"rules / +{options.commander_extension_seconds}s × {options.commander_max_extensions}"
+        f"，每 {options.commander_checkpoint_steps} 步复核，储备 {options.commander_reserve_ratio:.0%}"
+        if options.commander else "off"
+    )
+                ("Commander", commander_label),
+    bench.add_argument("--commander", action="store_true",
+                       help="启用轮次边界 Commander：按部分 Flag/新增事实动态续做或加时")
+    bench.add_argument("--commander-extension-seconds", type=int, help="Commander 单次加时秒数（默认 60）")
+    bench.add_argument("--commander-max-extensions", type=int, help="单题最多加时次数（默认 1）")
+    bench.add_argument("--commander-checkpoint-steps", type=int,
+                       help="Commander 观察检查点的动作间隔（默认 8，不是停止上限）")
+    bench.add_argument("--commander-reserve-ratio", type=float, help="全局储备池比例（默认 0.10）")
+    bench.add_argument("--commander-min-remaining-seconds", type=int, help="全局储备绝对下限（默认 120s）")
+    bench.add_argument("--commander-max-redundant-rate", type=float, help="触发释放的重复探索率（默认 0.80）")
 
     trina doctor                       环境自检（模型后端/外部工具/护栏边界）
     trina tools [--verbose] [--json]   查看已封装的工具清单
