@@ -248,8 +248,11 @@ def _attack_path(parts: list[str], data: dict[str, Any]) -> None:
 
 def _assets(parts: list[str], data: dict[str, Any]) -> None:
     parts.append(f"<h2>{esc(data['sections']['assets'])}</h2>")
+    if data.get("api_asset_rows"):
+        parts.append(_table(["方法", "入口", "来源类型", "检查状态", "已执行检查"], data["api_asset_rows"]))
     if not data["asset_rows"]:
-        parts.append('<p class="empty">（未发现资产）</p>')
+        if not data.get("api_asset_rows"):
+            parts.append('<p class="empty">（未发现资产）</p>')
         return
     parts.append(_table(["主机", "存活", "端口/服务/版本", "技术栈", "已发现路径"], data["asset_rows"]))
 
@@ -283,6 +286,12 @@ def _finding(parts: list[str], finding: dict[str, Any]) -> None:
         f"<h3>[{esc(finding['id'])}] {esc(finding['title'])} "
         f'<span class="sev sev-{_sev_class(finding["severity"])}">{esc(finding["severity_cn"])}</span></h3>'
     )
+    if finding.get("retests"):
+        parts.append("<h4>复测历史</h4>")
+        parts.append(_table(["结论", "环境", "判断依据", "新证据 / 正常对照"],
+                     [[r["result"], r["environment"], r["explanation"], ", ".join(r["evidence_refs"] + r["control_refs"])] for r in finding["retests"]]))
+    if finding.get("traffic_ids"):
+        parts.append("<p>关联流量：" + esc(", ".join(finding["traffic_ids"])) + "</p>")
     cvss_note = "（内置默认向量）" if finding["cvss_source"] == "default" else "（来自工具）"
     cwe_note = {"provided": "（来自工具）", "default": "（内置默认）"}.get(finding["cwe_source"], "")
     parts.append(

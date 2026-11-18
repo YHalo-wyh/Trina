@@ -113,13 +113,21 @@ class TerminalExec(Tool):
                 "不要原样重试或扩大搜索范围",
                 f"先检查执行目录 {directory} 与任务合同中的具体附件路径，再缩小命令范围",
             ]
+        import json
+        import uuid
+        evidence_id = "cmd-" + uuid.uuid4().hex
+        transcript = json.dumps({"argv": argv, "cwd": str(directory), "exit_code": call.code,
+                                 "stdout": call.stdout, "stderr": call.stderr}, ensure_ascii=False)
+        artifact = ctx.save_artifact(evidence_id + ".json", transcript)
         return ToolResult(
             ok=call.ok,
             category="timed_out" if call.timed_out else "",
             summary=f"命令完成，退出码 {call.code}" if call.ok else (error or "命令执行失败"),
             error=error,
             command=call.command,
-            data={"exit_code": call.code, "stdout": output, "stderr": stderr, "cwd": str(directory)},
+            data={"exit_code": call.code, "stdout": output, "stderr": stderr, "cwd": str(directory), "evidence_id": evidence_id},
+            evidence=[{"id": evidence_id, "kind": "command", "path": str(artifact), "sha256": _digest(transcript),
+                       "exit_code": call.code, "target": target, "successful": call.ok}],
             next_hints=hints,
         )
 

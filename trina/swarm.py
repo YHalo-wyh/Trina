@@ -596,9 +596,10 @@ class SwarmRuntime:
         # 编码能力和协作读取属于所有通用 Worker 的基础能力，不随领域能力租约裁掉。
         from .tools.coordination import TOOLS as COORDINATION_TOOLS
         from .tools.workspace import TOOLS as WORKSPACE_TOOLS
+        from .tools.casebook import TOOLS as CASEBOOK_TOOLS
 
-        for tool in [*COORDINATION_TOOLS, *WORKSPACE_TOOLS]:
-            if tool.spec.name == "worker_tasks":
+        for tool in [*COORDINATION_TOOLS, *WORKSPACE_TOOLS, *CASEBOOK_TOOLS]:
+            if tool.spec.name in {"worker_tasks", "add_intent", "steer_work", "kill_work"}:
                 continue  # 委派宿主只属于 Commander，不向普通 Worker 加载递归分工 schema。
             if lease.registry.get(tool.spec.name) is None:
                 lease.registry.register(tool)
@@ -669,7 +670,9 @@ class SwarmRuntime:
             max_seconds=task.max_seconds,
             commander_briefs=self._briefs(task),
             commander_brief_provider=lambda: self._briefs(task),
-            extra_rules=getattr(registry, "capability_guidance", ""),
+            extra_rules=("本次只完成指定意图，旁支线索及时用 record_intelligence 登记交主控，不自行扩大任务。"
+                         "发现时立即用 report_finding/record_fact 写回证据；收尾前独立复核成功结果。\n"
+                         + getattr(registry, "capability_guidance", "")),
             run_id=run_id,
         )
         if state.ledger:

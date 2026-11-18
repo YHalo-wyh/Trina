@@ -358,6 +358,12 @@ class TestScopeAwareToolBehaviour(unittest.TestCase):
                 self.assertNotIn("target", spec.params, "协作查询按当前 Swarm/Intent 定位")
                 self.assertNotIn("url", spec.params)
                 continue
+            if spec.category == "evidence":
+                # 台账操作按当前RunState、流量/发现/资产编号定位，不能伪造--target。
+                self.assertNotIn("url", spec.params)
+                if name != "report_finding":
+                    self.assertNotIn("target", spec.params)
+                continue
             if spec.category == "workspace":
                 self.assertTrue("path" in spec.params or name == "workspace_git", "文件工具按路径定位，Git 工具固定当前项目")
                 self.assertNotIn("target", spec.params)

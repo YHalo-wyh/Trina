@@ -25,6 +25,13 @@ class CapabilityRuntime:
 
     def available(self, capability: Capability) -> tuple[bool, str]:
         kind = str(capability.runtime.get("type") or "").lower()
+        if kind == "mcp_http":
+            runtime = capability.runtime
+            if not (runtime.get("url") or os.environ.get(str(runtime.get("url_env", "")))):
+                return False, "未配置MCP服务地址环境变量"
+            if runtime.get("key_env") and not os.environ.get(str(runtime["key_env"])):
+                return False, "未配置MCP凭据环境变量"
+            return True, ""
         if kind == "tool":
             tool = self.base_registry.get(str(capability.runtime.get("tool") or capability.tool_name))
             return tool.available() if tool is not None else (False, "对应 ToolRegistry 工具不存在")
@@ -59,6 +66,9 @@ class CapabilityRuntime:
     def invoke(self, capability: Capability, ctx: ToolContext, params: dict[str, Any]) -> ToolResult:
         kind = str(capability.runtime.get("type") or "").lower()
         _check_workspace_paths(capability, ctx.workspace, params)
+        if kind == "mcp_http":
+            from .mcp_http import invoke
+            return invoke(capability, ctx, params)
         command = self.command(capability)
         filesystem = str(
             capability.policy.get("filesystem")

@@ -448,7 +448,10 @@ def _evidence_row(ev: dict[str, Any]) -> dict[str, Any]:
     return {
         "kind": str(ev.get("kind") or "evidence"),
         "target": str(ev.get("target") or ev.get("url") or ""),
-        "note": _short(ev.get("note") or "", 200),
+        "note": _short(ev.get("note") or "", 200) + (
+            " | 证据: " + str(ev.get("traffic_id") or ev.get("id") or ev.get("evidence_ref") or "")
+            + (" | 工件: " + str(ev["path"]) if ev.get("path") else "")
+            if ev.get("traffic_id") or ev.get("id") or ev.get("evidence_ref") else ""),
         "payload": _short(ev.get("payload") or "", 160),
         "request": request_text,
         "response": response_text,
@@ -820,6 +823,10 @@ def collect_data(
     steps = _step_data(state)
     timeline = _timeline_data(state)
     findings = [_finding_data(f, cfg) for f in _sorted_findings(state.findings)]
+    for finding in findings:
+        finding["retests"] = list(state.casebook.get("retests", {}).get(finding["id"], []))
+        finding["traffic_ids"] = list(dict.fromkeys(state.casebook.get("bindings", {}).get(finding["id"], []) +
+            [e.get("traffic_id") for f in state.findings if f.id == finding["id"] for e in f.evidence if e.get("traffic_id")]))
 
     severity_counts: dict[str, int] = {}
     for finding in state.findings:
@@ -1076,6 +1083,8 @@ def collect_data(
         "attack_path": _attack_path(state),
         "hosts": hosts,
         "asset_rows": asset_rows,
+        "api_asset_rows": [[a.get("method", "GET"), a.get("target", ""), a.get("kind", ""), a.get("status", "discovered"), a.get("checks", "")]
+                           for a in state.casebook.get("assets", {}).values()],
         "findings": findings,
         "finding_rows": finding_rows,
         "hypotheses": hypotheses,

@@ -1,0 +1,34 @@
+capabilities:
+  - id: scopesentry.query
+    version: 1.0.0
+    description: 按需连接外部 ScopeSentry MCP，读取实时工具定义、项目、任务、资产、模板与节点
+    provides: [scopesentry, asset.inventory, mcp.query]
+    interface:
+      name: scopesentry_query
+      params:
+        action: {type: str, description: 先list_tools读取实时schema，再call, required: true, enum: [list_tools, call]}
+        tool_name: {type: str, description: 实时工具名称, required: false, default: ''}
+        arguments: {type: dict, description: 严格按实时schema填写, required: false, default: {}}
+    runtime:
+      type: mcp_http
+      url_env: TRINA_SCOPESENTRY_URL
+      key_env: TRINA_SCOPESENTRY_KEY
+      key_header: X-API-Key
+      allowed_tools: [list_projects, list_projects_data, get_project, list_tasks, get_task, list_scan_templates, get_scan_template, list_plugin_modules, list_plugins, list_assets, count_assets, get_asset_detail, list_nodes]
+    policy: {action_level: detect, timeout: 30}
+  - id: scopesentry.manage
+    version: 1.0.0
+    description: 在用户给定任务中通过 ScopeSentry MCP 创建项目、扫描模板或扫描任务、添加资产标签
+    provides: [scopesentry, scan.orchestration]
+    interface:
+      name: scopesentry_manage
+      params:
+        action: {type: str, description: 先list_tools再call, required: true, enum: [list_tools, call]}
+        tool_name: {type: str, description: 实时工具名称, required: false, default: ''}
+        arguments: {type: dict, description: 按实时schema填写并核对目标, required: false, default: {}}
+    runtime:
+      type: mcp_http
+      url_env: TRINA_SCOPESENTRY_URL
+      key_env: TRINA_SCOPESENTRY_KEY
+      allowed_tools: [create_project, create_scan_template, create_scan_task, add_asset_tag]
+    policy: {action_level: exploit, timeout: 30}

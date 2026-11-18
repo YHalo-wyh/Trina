@@ -1,0 +1,7 @@
+id: api-recon.static
+version: 1.0.0
+description: HTML、MPA、JS chunk和manifest静态API侦察
+provides: [api.recon, frontend.routes, web.discovery]
+interface: {name: api_recon_static}
+runtime: {type: tool, tool: api_recon_static}
+policy: {action_level: detect}

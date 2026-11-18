@@ -77,14 +77,38 @@ class BrowserToolTests(unittest.TestCase):
     def test_registry_exposes_structured_browser_tools(self):
         self.assertEqual(
             self.registry.names(),
-            [
+            sorted([
                 "browser_close", "browser_interact", "browser_open", "browser_requests",
                 "browser_screenshot", "browser_snapshot", "browser_storage",
-            ],
+                "browser_evaluate", "browser_upload", "browser_route", "browser_recording",
+            ]),
         )
         self.assertEqual(self.registry.get("browser_interact").required_level({"action": "click"}), "verify")
         self.assertEqual(self.registry.get("browser_interact").required_level({"action": "goto"}), "detect")
         self.assertEqual(self.registry.get("browser_storage").required_level({"action": "set"}), "verify")
+
+    def test_extended_tools_keep_mock_taint_until_reload_and_archive_hash(self):
+        sid = self.execute("browser_open", {"url": "https://example.test"}).data["session_id"]
+        self.assertTrue(self.execute("browser_route", {"session_id": sid, "action": "set", "pattern": "**/api/*", "body": '{"mock":true}'}).ok)
+        code = "async page => {\n return page.url();\n}"
+        evaluated = self.execute("browser_evaluate", {"session_id": sid, "mode": "playwright", "code": code})
+        self.assertTrue(evaluated.ok, evaluated.error)
+        self.assertTrue(evaluated.data["synthetic"])
+        self.assertNotIn(code, evaluated.command)
+        self.assertIn("sha256", evaluated.evidence[0])
+        self.execute("browser_route", {"session_id": sid, "action": "remove"})
+        tainted = self.execute("browser_snapshot", {"session_id": sid})
+        self.assertTrue(tainted.data["synthetic"])
+        self.execute("browser_interact", {"session_id": sid, "action": "reload"})
+        self.assertFalse(self.execute("browser_snapshot", {"session_id": sid}).data["synthetic"])
+
+    def test_extended_tools_cannot_run_browser_in_restricted_mode(self):
+        sid = self.execute("browser_open", {"url": "https://example.test"}).data["session_id"]
+        self.config.scope.trust_mode = "restricted"
+        before = len(self.calls)
+        result = self.execute("browser_evaluate", {"session_id": sid, "code": "() => 42"})
+        self.assertFalse(result.ok)
+        self.assertEqual(len(self.calls), before)
 
     def test_open_snapshot_screenshot_and_close_keep_evidence(self):
         opened = self.execute("browser_open", {"url": "https://example.test"})
@@ -92,6 +116,7 @@ class BrowserToolTests(unittest.TestCase):
         sid = opened.data["session_id"]
         self.assertTrue(sid.startswith("web-"))
         self.assertTrue(self.calls[-1][1]["allow_detached_children"])
+        self.assertEqual(self.calls[-1][0][-2:], ["--browser", "chromium"])
 
         snapshot = self.execute("browser_snapshot", {"session_id": sid})
         self.assertTrue(snapshot.ok, snapshot.error)

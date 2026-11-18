@@ -132,8 +132,12 @@ def _attack_path(lines: list[str], data: dict[str, Any]) -> None:
 
 def _assets(lines: list[str], data: dict[str, Any]) -> None:
     lines += _section(data, "assets")
+    if data.get("api_asset_rows"):
+        lines += _table(["方法", "入口", "来源类型", "检查状态", "已执行检查"], data["api_asset_rows"])
+        lines.append("")
     if not data["asset_rows"]:
-        lines.append("（未发现资产）")
+        if not data.get("api_asset_rows"):
+            lines.append("（未发现资产）")
         return
     lines += _table(["主机", "存活", "端口/服务/版本", "技术栈", "已发现路径"], data["asset_rows"])
 
@@ -156,6 +160,14 @@ def _finding(lines: list[str], finding: dict[str, Any]) -> None:
     lines.append("")
     lines.append(f"### [{finding['id']}] {finding['title']}")
     lines.append("")
+    if finding.get("retests"):
+        lines.append("复测历史：")
+        lines += _table(["结论", "环境", "判断依据", "新证据 / 正常对照"],
+                        [[r["result"], r["environment"], r["explanation"], ", ".join(r["evidence_refs"] + r["control_refs"])] for r in finding["retests"]])
+        lines.append("")
+    if finding.get("traffic_ids"):
+        lines.append("关联流量：" + ", ".join(finding["traffic_ids"]))
+        lines.append("")
     cvss_note = "（内置默认向量）" if finding["cvss_source"] == "default" else "（来自工具）"
     cwe_note = {"provided": "（来自工具）", "default": "（内置默认）"}.get(finding["cwe_source"], "")
     lines += _kv(

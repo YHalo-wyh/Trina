@@ -16,6 +16,7 @@ Trina 是面向 CTF 与授权攻防环境的自动化 Agent，提供真实浏览
 | [Swarm](docs/SWARM.md) | 多任务调度、并行 Worker、租约与恢复 |
 | [浏览器工具链](docs/BROWSER_TOOLS.md) | Playwright/Chromium、交互、网络证据与截图 |
 | [原生二进制工具链](docs/BINARY_TOOLS.md) | radare2、GDB/MI、地址模型与会话隔离 |
+| [工具、成果与复测](docs/TOOL_STACK/TOOL_STACK.md) | 完整工具安装、API侦察、流量关联、资产覆盖和ScopeSentry模块 |
 | [临时任务模块](docs/TASK_MODULES.md) | Capability + `AGENT.md` 的可插拔平台适配 |
 | [更新日志](docs/CHANGELOG/CHANGELOG.md) | 版本变化和兼容说明 |
 

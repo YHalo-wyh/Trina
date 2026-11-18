@@ -172,6 +172,8 @@ class RunState:
     #: 模型每次决策前读取的动态状态栏；后台作业记录按当前任务隔离。
     runtime_status: dict[str, Any] = field(default_factory=dict)
     context_stats: dict[str, Any] = field(default_factory=dict)
+    #: 通用成果台账：资产、观察、情报、流量绑定与带版本的复测记录。
+    casebook: dict[str, Any] = field(default_factory=dict)
     max_evidence: int = 200
 
     # ------------------------------------------------------------------ 基础
@@ -346,6 +348,14 @@ class RunState:
             "findings": [finding.to_dict() for finding in self.findings],
             "credentials": [credential.to_dict() for credential in self.credentials],
             "flags": self.flags,
+            "casebook": {
+                "assets": [{k: v for k, v in a.items() if k in {"target", "method", "kind", "status", "parameters", "checks"}}
+                           for a in self.casebook.get("assets", {}).values()],
+                "observations": [{"text": a.get("text"), "kind": a.get("kind")}
+                                 for key in ("facts", "intelligence") for a in self.casebook.get(key, [])],
+                "retests": {key: [{"result": a.get("result"), "environment": a.get("environment"), "explanation": a.get("explanation")}
+                                  for a in values] for key, values in self.casebook.get("retests", {}).items()},
+            },
         }
         payload = json.dumps(stable(knowledge), sort_keys=True, ensure_ascii=False)
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
@@ -413,6 +423,7 @@ class RunState:
             "scheduler": self.scheduler,
             "runtime_status": self.runtime_status,
             "context_stats": self.context_stats,
+            "casebook": self.casebook,
         }
 
     @classmethod
@@ -486,6 +497,7 @@ class RunState:
             boundary_events=list(data.get("boundary_events") or []),
             hypotheses=list(data.get("hypotheses") or []),
             graph=dict(data.get("graph") or {}),
+            casebook=dict(data.get("casebook") or {}),
             loop=dict(data.get("loop") or {}),
             scheduler=dict(data.get("scheduler") or {}),
             runtime_status=dict(data.get("runtime_status") or {}),

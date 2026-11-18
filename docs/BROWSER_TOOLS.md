@@ -13,12 +13,17 @@
 | `browser_requests` | 列出真实页面请求，读取请求/响应头和正文 |
 | `browser_screenshot` | 保存视口、完整页面或元素 PNG |
 | `browser_close` | 关闭浏览器并回收会话 |
+| `browser_evaluate` | 页面JS或Playwright page函数，完整结果归档 |
+| `browser_upload` | 上传经过路径护栏校验的工作区文件 |
+| `browser_route` | 添加/移除/查看模拟路由，结果标记synthetic |
+| `browser_recording` | trace、交互代码、视频录制与回收 |
+| `api_recon_runtime` | 当前页面请求、参数样本、WS帧和SSE类型采集 |
 
-页面显著变化或导航后应重新调用 `browser_snapshot`；旧 `ref` 可能失效。工具没有暴露任意 JavaScript `eval` 或 `run-code`，需要页面数据时优先使用快照、存储和网络证据。
+页面显著变化或导航后应重新调用 `browser_snapshot`；旧 `ref` 可能失效。页面数据优先使用快照、存储和网络证据；需要JS或完整Playwright操作时使用 `browser_evaluate`，仍由统一执行链审计。mock移除后需重载/导航才解除synthetic，不能用模拟响应确认后端漏洞。
 
 ## 安装
 
-本机需要 Node.js/npm，二选一即可启动：全局 `playwright-cli`，或 `npx` 动态调用固定版本。首次安装 Chromium：
+本机需要 Node.js >=20 / npm，二选一即可启动：全局 `playwright-cli`，或 `npx` 动态调用固定版本。首次安装 Chromium：
 
 ```powershell
 npx --yes --package @playwright/cli@0.1.24 playwright-cli install-browser chromium
@@ -49,3 +54,5 @@ python -m unittest discover -s tests
 ```
 
 `tests/test_browser.py` 覆盖注册 Schema、会话隔离、限制、证据、截图、敏感值脱敏和受管子进程执行边界。真实冒烟链路为 `open → snapshot → requests → screenshot → close`。
+
+扩展真实冒烟：`python scripts/verify_api_browser_stack.py`，覆盖运行时API采集、mock证据拒绝、移除重载、文件上传、trace工件与资产写回。完整安装、HTTP流量覆盖范围和ScopeSentry模块见[工具栈](TOOL_STACK/TOOL_STACK.md)。

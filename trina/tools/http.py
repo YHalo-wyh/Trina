@@ -17,6 +17,7 @@ import requests
 
 from .. import __version__
 from ..scope import Decision, ScopeGuard
+from ..traffic import capture_http
 
 DEFAULT_UA = f"Trina/{__version__}"
 DEFAULT_HEADERS = {
@@ -42,6 +43,8 @@ class HttpResult:
     request_headers: dict[str, str] = field(default_factory=dict)
     request_body: str = ""
     history: list[str] = field(default_factory=list)
+    traffic_id: str = ""
+    body_truncated: bool = False
 
     @property
     def ok(self) -> bool:
@@ -68,6 +71,7 @@ class HttpResult:
 
     def to_dict(self, *, include_body: bool = True, body_limit: int = 1200) -> dict[str, Any]:
         data = {
+            "traffic_id": self.traffic_id,
             "url": self.url,
             "method": self.method,
             "status": self.status,
@@ -87,6 +91,7 @@ class HttpResult:
 
     def as_evidence(self, kind: str = "http", note: str = "", **extra: Any) -> dict[str, Any]:
         evidence = {
+            "traffic_id": self.traffic_id,
             "kind": kind,
             "target": self.url,
             "method": self.method,
@@ -94,7 +99,7 @@ class HttpResult:
             "request": {
                 "method": self.method,
                 "url": self.url,
-                "headers": {k: v for k, v in (self.request_headers or {}).items() if k.lower() not in ("cookie", "authorization", "proxy-authorization")},
+                "headers": {k: v for k, v in (self.request_headers or {}).items() if k.lower() not in ("cookie", "authorization", "proxy-authorization", "x-api-key", "mcp-session-id")},
                 "body": (self.request_body or "")[:600],
             },
             "response": {"status": self.status, "length": self.length, "body_excerpt": self.excerpt(600)},
@@ -160,12 +165,12 @@ class HttpClient:
         history: list[str] = []
 
         def failure(message: str, request: requests.PreparedRequest | None = None) -> HttpResult:
-            return HttpResult(
+            return capture_http(HttpResult(
                 url=request.url if request is not None else url,
                 method=request.method if request is not None else method.upper(),
                 error=message, elapsed=time.monotonic() - started,
                 payload=payload_label, history=list(history),
-            )
+            ))
 
         def denied(decision: Decision, request: requests.PreparedRequest) -> HttpResult:
             self.denials.append(decision)
@@ -224,15 +229,17 @@ class HttpClient:
             try:
                 body = response.text[:200_000]
                 self.bytes_received += len(body)
+                recorded = capture_http(HttpResult(
+                    url=prepared.url, method=prepared.method, status=response.status_code,
+                    headers=dict(response.headers), body=body, elapsed=time.monotonic() - started,
+                    payload=payload_label or body_text[:300], request_headers=dict(prepared.headers),
+                    request_body=body_text[:200_000], history=list(history),
+                    body_truncated=len(response.text) > 200_000 or len(body_text) > 200_000,
+                ))
                 # Requests 只准备下一跳（含方法改写、Cookie 和 307/308 请求体），不发送。
                 following = response.next if allow_redirects else None
                 if following is None:
-                    return HttpResult(
-                        url=prepared.url, method=prepared.method, status=response.status_code,
-                        headers=dict(response.headers), body=body, elapsed=time.monotonic() - started,
-                        payload=payload_label or body_text[:300], request_headers=dict(prepared.headers),
-                        request_body=body_text[:2000], history=list(history),
-                    )
+                    return recorded
                 if len(history) >= self.session.max_redirects:
                     return failure(f"重定向次数超过上限 {self.session.max_redirects}", prepared)
                 history.append(prepared.url)
@@ -266,12 +273,13 @@ class HttpClient:
         started = time.monotonic()
         try:
             async with session.request(method, url, allow_redirects=False, timeout=aiohttp.ClientTimeout(total=timeout)) as response:
-                raw = await response.content.read(200_000)
+                raw = await response.content.read(200_001)
                 self.bytes_received += len(raw)
-                return HttpResult(url=url, method=method, status=response.status, headers=dict(response.headers),
-                                  body=raw.decode("utf-8", "replace"), elapsed=time.monotonic() - started)
+                return capture_http(HttpResult(url=str(response.url), method=method, status=response.status, headers=dict(response.headers),
+                                  body=raw[:200_000].decode("utf-8", "replace"), elapsed=time.monotonic() - started,
+                                  body_truncated=len(raw) > 200_000))
         except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as exc:
-            return HttpResult(url=url, method=method, error=f"{type(exc).__name__}: {exc}")
+            return capture_http(HttpResult(url=url, method=method, error=f"{type(exc).__name__}: {exc}"))
 
     # ------------------------------------------------------------------ 便捷
     def get(self, url: str, **kwargs: Any) -> HttpResult:

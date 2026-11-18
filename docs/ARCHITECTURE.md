@@ -24,7 +24,7 @@ flowchart TB
     AUDIT["trina.audit.AuditLog<br/>SHA-256 哈希链"]
     STATE["trina.state.RunState<br/>hosts/findings/creds/flags/evidence/timeline"]
     COORD["trina.coordination<br/>事件 Planner / Todo / Intent / 双图 / Trace"]
-    TOOLS["trina.tools：注册工具（含 7 项 browser、10 项 binary、编码、Git、协作）"]
+    TOOLS["trina.tools：注册工具（browser、binary、API侦察、成果、编码、Git、协作）"]
     HTTP["trina.tools.http.HttpClient<br/>带护栏的 HTTP 出口"]
     EXT["trina.tools.external.run_external<br/>外部二进制（shell=False + 护栏）"]
     LLM["trina.llm<br/>标准 API 流式传输 / replay"]
@@ -54,6 +54,9 @@ flowchart TB
 ```
 
 ## 2. 单步数据流
+
+通用成果与流量新增契约：`RunState.casebook` 保存资产、观察、绑定和带版本复测；原生HTTP执行窗口将各跳写入任务的 `traffic.sqlite3`，不替代事实库。脚本工件有证据编号与哈希，报告消费同一状态中的资产覆盖、流量关联和复测记录。
+ScopeSentry由外置Capability通过 `mcp_http` 复用 `ctx.http`；浏览器采集仍保留自己的证据工件。覆盖与限制见[工具栈](TOOL_STACK/TOOL_STACK.md)及[ADR-0038](../design/adr/0038-tool-evidence-and-retest.md)。
 
 ```
 人工信号与任务剩余时间

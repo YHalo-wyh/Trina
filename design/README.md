@@ -11,9 +11,9 @@
 
 ## ADR 一览
 
-当前共有 **37 份 ADR**。`Accepted / 已实施` 表示仍是当前契约；“历史基线”保留当时证据与取舍，但默认行为以其注明的后续 ADR 为准。新增能力必须更新索引和关联 ADR，不能靠改写旧结论伪造一直如此。
+当前共有 **38 份 ADR**。`Accepted / 已实施` 表示仍是当前契约；“历史基线”保留当时证据与取舍，但默认行为以其注明的后续 ADR 为准。新增能力必须更新索引和关联 ADR，不能靠改写旧结论伪造一直如此。
 
-### 当前运行时决策（ADR-0021—0037）
+### 当前运行时决策（ADR-0021—0038）
 
 | 编号 | 决定 | 当前作用 |
 |---|---|---|
@@ -34,6 +34,7 @@
 | [ADR-0035](adr/0035-repository-shell-notifications.md) | 仓库工作流、Shell 检索与完成提醒 | Git/rg 使用统一工具契约，终态通知按能力降级 |
 | [ADR-0036](adr/0036-budget-summary-follow-tail.md) | 动作预算后收尾与显式尾随 | 无工具总结真实观察；阅读历史时不抢视口 |
 | [ADR-0037](adr/0037-proactive-workers-and-pluggable-task-modules.md) | 主动并行 Worker 与外置任务模块 | 两个以上独立分支主动 spawn；平台 `AGENT.md` 不进入 system |
+| [ADR-0038](adr/0038-tool-evidence-and-retest.md) | 成果、流量、API侦察与复测 | 脚本证据登记、流量绑定、资产覆盖、复测版本和外置ScopeSentry |
 
 ### 基础与历史决策（ADR-0001—0020）
 | 编号 | 决定 | 关键理由 |

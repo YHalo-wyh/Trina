@@ -77,3 +77,7 @@ python -m unittest tests.test_capabilities tests.test_swarm tests.test_worker_da
 回归覆盖自动发现 `AGENT.md`、租约时 JIT 读取、system 隔离、能力释放，以及多个无依赖任务并发占用多个 Worker。
 
 架构取舍、核心移除范围和主动并行边界见 [ADR-0037](../design/adr/0037-proactive-workers-and-pluggable-task-modules.md)。
+
+仓库提供 `capabilities/api-recon/` 的按需侦察指南和 `capabilities/scopesentry/` 的外部MCP模块。
+ScopeSentry使用 `runtime.type=mcp_http`，服务地址与密钥来自命名环境变量；先读取实时Schema，再通过独立查询/写操作允许列表调用。
+模块仍可移到仓库外，通过 `TRINA_CAPABILITY_DIRS` 临时加载；AGENT.md不进入system。安装与验证范围见[工具栈](TOOL_STACK/TOOL_STACK.md)和[ADR-0038](../design/adr/0038-tool-evidence-and-retest.md)。

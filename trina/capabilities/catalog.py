@@ -58,8 +58,8 @@ class Capability:
         policy = _mapping(raw.get("policy"), "policy")
         requires = _mapping(raw.get("requires"), "requires")
         guidance = str(raw.get("guidance") or "").strip()
-        if str(runtime.get("type") or "").lower() not in {"tool", "cli", "mcp", "mcp_stdio"}:
-            raise ValueError(f"Capability {capability_id} runtime.type 仅支持 tool/cli/mcp")
+        if str(runtime.get("type") or "").lower() not in {"tool", "cli", "mcp", "mcp_stdio", "mcp_http"}:
+            raise ValueError(f"Capability {capability_id} runtime.type 仅支持 tool/cli/mcp/mcp_http")
         canonical = {
             "id": capability_id,
             "version": version,

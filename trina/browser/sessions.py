@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
+import shutil
 import threading
 import time
 import uuid
@@ -13,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from ..scope import ensure_execution_active, execution_budget
-from ..tools.external import have, run_external
+from ..tools.external import run_external
 
 PLAYWRIGHT_PACKAGE = "@playwright/cli@0.1.24"
 
@@ -29,6 +31,10 @@ def _safe_args(args: list[str]) -> list[str]:
         "sessionstorage-set": {2},
     }.get(args[0] if args else "", set())
     safe = list(args)
+    if args and args[0] in {"eval", "run-code"}:
+        sensitive = {1}
+    if args and args[0] == "route" and "--body" in args:
+        sensitive = {args.index("--body") + 1}
     for index in sensitive:
         if index < len(safe):
             digest = hashlib.sha256(safe[index].encode("utf-8", "replace")).hexdigest()[:8]
@@ -38,9 +44,22 @@ def _safe_args(args: list[str]) -> list[str]:
 
 def playwright_launcher() -> list[str]:
     """优先使用镜像内全局 CLI，本机没有时通过固定版本 npx 启动。"""
-    if have("playwright-cli"):
-        return ["playwright-cli"]
-    if have("npx"):
+    resolved = shutil.which("playwright-cli")
+    if resolved:
+        # npm 的 Windows .cmd 会再次经过 cmd.exe，破坏多行JS和引号；直接交给Node。
+        script = Path(resolved).parent / "node_modules" / "@playwright" / "cli" / "playwright-cli.js"
+        node = shutil.which("node")
+        if os.name == "nt" and script.is_file() and node:
+            return [node, str(script)]
+        return [resolved]
+    npx = shutil.which("npx")
+    if npx:
+        script = Path(npx).parent / "node_modules" / "npm" / "bin" / "npx-cli.js"
+        node = shutil.which("node")
+        if os.name == "nt":
+            if not script.is_file() or not node:
+                return []
+            return [node, str(script), "--yes", "--package", PLAYWRIGHT_PACKAGE, "playwright-cli"]
         return ["npx", "--yes", "--package", PLAYWRIGHT_PACKAGE, "playwright-cli"]
     return []
 
@@ -62,6 +81,7 @@ class BrowserCall:
     command: str = ""
     evidence_ref: str = ""
     session_dir: str = ""
+    synthetic: bool = False
 
 
 def _decode_json(text: str) -> Any:
@@ -139,8 +159,8 @@ class BrowserSessions:
         args = ["open", url, "--idle-timeout", str(int(ctx.config.browser.idle_timeout * 1000))]
         if headed:
             args.append("--headed")
-        if browser != "chromium":
-            args.extend(["--browser", browser])
+        # CLI 自身默认寻找系统Chrome；明确指定，才能使用已安装的Playwright Chromium。
+        args.extend(["--browser", browser])
         call = self._invoke(ctx, row, args, target=url, lock=False)
         with self.lock:
             if call.ok:
@@ -273,6 +293,8 @@ class BrowserSessions:
                     evidence_ref=str(evidence),
                     session_dir=str(row["directory"]),
                 )
+            if args and args[0] in {"goto", "reload", "go-back", "go-forward", "tab-new"} and not row.get("mock_patterns"):
+                row["mock_tainted"] = False
             return BrowserCall(
                 ok=True,
                 session_id=str(row["session_id"]),
@@ -282,6 +304,7 @@ class BrowserSessions:
                 command=result.command,
                 evidence_ref=str(evidence),
                 session_dir=str(row["directory"]),
+                synthetic=bool(row.get("mock_patterns") or row.get("mock_tainted")),
             )
         finally:
             row["owner"] = None

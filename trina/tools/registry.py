@@ -239,6 +239,9 @@ class ToolContext:
         self.extra["binary_sessions"] = BinarySessions(self)
         from ..browser.sessions import BrowserSessions
         self.extra["browser_sessions"] = BrowserSessions(self)
+        from ..traffic import TrafficStore
+        self.extra["traffic"] = TrafficStore(self.workspace)
+        self.state.artifacts["traffic_path"] = str(self.extra["traffic"].path)
 
     # -------------------------------------------------------------- 便捷方法
     def log(self, message: str) -> None:
@@ -631,7 +634,8 @@ class ToolRegistry:
         working.audit = _LeaseProxy(ctx.audit, lease)
         working.http = _LeaseProxy(ctx.http, lease)
         def run():
-            with execution_window(lease):
+            from ..traffic import traffic_window
+            with execution_window(lease), traffic_window(ctx.extra["traffic"], str(ctx.extra.get("_tool_call_id", ""))):
                 return tool.run(working, **kwargs)
         future = _TOOL_EXECUTOR.submit(run)
         try:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import re
 import uuid
 from pathlib import Path
@@ -75,11 +76,15 @@ def _call_result(
     hints: list[str] | None = None,
 ) -> ToolResult:
     base = {
+        "synthetic": call.synthetic,
         "session_id": session_id,
         "evidence_ref": call.evidence_ref,
         **(data or {}),
     }
-    evidence = [{"kind": kind, "session_id": session_id, "url": url, "evidence_ref": call.evidence_ref}]
+    evidence = [{"kind": kind, "session_id": session_id, "url": url, "evidence_ref": call.evidence_ref,
+                 "successful": call.ok, "synthetic": call.synthetic or kind == "browser.mock"}]
+    if call.evidence_ref and Path(call.evidence_ref).is_file():
+        evidence[0].update(path=call.evidence_ref, sha256=hashlib.sha256(Path(call.evidence_ref).read_bytes()).hexdigest())
     if not call.ok:
         return ToolResult(
             ok=False,
@@ -458,6 +463,105 @@ class BrowserClose(Tool):
             return _browser_error(exc, session_id=session_id)
 
 
+class BrowserEvaluate(Tool):
+    spec = ToolSpec(name="browser_evaluate", category="browser", action_level="exploit",
+        summary="执行页面 JS 或 Playwright page 函数；完整输出保存为证据，仅 full 模式",
+        params={"session_id": P("str", "会话句柄"), "code": P("str", "JS函数；playwright 模式为 async page => {...}"),
+                "mode": P("str", "执行上下文", required=False, default="page", enum=["page", "playwright"])})
+
+    def available(self):
+        return _available()
+
+    def run(self, ctx, session_id, code, mode="page"):
+        try:
+            if not code.strip() or len(code) > 64000:
+                return ToolResult(ok=False, error="code 需要1..64000字符")
+            call = _pool(ctx).invoke(ctx, session_id, ["run-code" if mode == "playwright" else "eval", code])
+            return _call_result(call, session_id=session_id, summary="浏览器代码已执行", kind="browser.code",
+                                data={"output": _preview(call.payload, 8000)})
+        except BrowserError as exc:
+            return _browser_error(exc, session_id=session_id)
+
+
+class BrowserUpload(Tool):
+    spec = ToolSpec(name="browser_upload", category="browser", action_level="verify",
+        summary="向当前页面文件选择器上传工作区文件；先点击上传控件",
+        params={"session_id": P("str", "会话句柄"), "paths": P("list", "要上传的现有文件绝对路径")})
+
+    def available(self):
+        return _available()
+
+    def run(self, ctx, session_id, paths):
+        try:
+            from .workspace import _path
+            if not 1 <= len(paths) <= 20 or not all(isinstance(p, str) for p in paths):
+                return ToolResult(ok=False, error="paths 需要1..20条文件路径")
+            files = [_path(ctx, p) for p in paths]
+            if not all(p.is_file() for p in files):
+                return ToolResult(ok=False, error="上传路径必须为已存在的普通文件")
+            call = _pool(ctx).invoke(ctx, session_id, ["upload", *map(str, files)])
+            return _call_result(call, session_id=session_id, summary="文件上传操作已执行", kind="browser.upload")
+        except (ValueError, BrowserError) as exc:
+            return ToolResult(ok=False, error=str(exc))
+
+
+class BrowserRoute(Tool):
+    spec = ToolSpec(name="browser_route", category="browser", action_level="verify",
+        summary="按URL模式 mock/移除/查看响应；仅用于前端侦察，mock 结果不能证明后端权限绕过",
+        params={"session_id": P("str", "会话句柄"),
+            "action": P("str", "操作", enum=["set", "remove", "list"]),
+            "pattern": P("str", "URL匹配模式", required=False, default=""),
+            "body": P("str", "模拟响应正文", required=False, default="{}"),
+            "status": P("int", "HTTP状态码", required=False, default=200),
+            "content_type": P("str", "模拟响应类型", required=False, default="application/json")})
+
+    def available(self):
+        return _available()
+
+    def required_level(self, params):
+        return "detect" if params.get("action") == "list" else "verify"
+
+    def run(self, ctx, session_id, action, pattern="", body="{}", status=200, content_type="application/json"):
+        try:
+            if action == "set" and (not pattern or not 100 <= status <= 599 or len(body) > 64000):
+                return ToolResult(ok=False, error="set 需要 pattern、合法状态码和不超过64K的body")
+            args = (["route", pattern, "--status", str(status), "--body", body, "--content-type", content_type] if action == "set"
+                    else ["route-list"] if action == "list" else ["unroute", *([pattern] if pattern else [])])
+            call = _pool(ctx).invoke(ctx, session_id, args)
+            if call.ok:
+                row = ctx.extra["browser_sessions"].sessions.get(session_id, {})
+                mocks = row.setdefault("mock_patterns", set())
+                if action == "set":
+                    mocks.add(pattern)
+                    row["mock_tainted"] = True
+                elif action == "remove":
+                    mocks.discard(pattern) if pattern else mocks.clear()
+            return _call_result(call, session_id=session_id, summary="浏览器路由操作已完成（模拟数据须独立验证）",
+                                kind="browser.mock", data={"output": _preview(call.payload), "synthetic": True})
+        except BrowserError as exc:
+            return _browser_error(exc, session_id=session_id)
+
+
+class BrowserRecording(Tool):
+    spec = ToolSpec(name="browser_recording", category="browser", action_level="detect",
+        summary="开始或停止 Playwright trace、交互代码录制或视频；工件留在本会话目录",
+        params={"session_id": P("str", "会话句柄"),
+            "kind": P("str", "录制类型", enum=["trace", "actions", "video"]),
+            "action": P("str", "操作", enum=["start", "stop"])})
+
+    def available(self):
+        return _available()
+
+    def run(self, ctx, session_id, kind, action):
+        try:
+            prefix = {"trace": "tracing", "actions": "recording", "video": "video"}[kind]
+            call = _pool(ctx).invoke(ctx, session_id, [prefix + "-" + action])
+            return _call_result(call, session_id=session_id, summary=f"{kind} {action} 已执行", kind="browser.recording",
+                                data={"directory": call.session_dir, "output": _preview(call.payload)})
+        except BrowserError as exc:
+            return _browser_error(exc, session_id=session_id)
+
+
 TOOLS = [
     BrowserOpen(),
     BrowserSnapshot(),
@@ -466,4 +570,5 @@ TOOLS = [
     BrowserRequests(),
     BrowserScreenshot(),
     BrowserClose(),
+    BrowserEvaluate(), BrowserUpload(), BrowserRoute(), BrowserRecording(),
 ]
