@@ -40,6 +40,15 @@ CTF_BROWSER_TOOLS = frozenset({
     "browser_evaluate",
 })
 
+CTF_BINARY_WEB_TOOLS = frozenset({
+    "web_search", "http_fingerprint", "browser_open", "browser_close",
+    "api_recon_runtime", "api_recon_static", "api_route_tree", "web_surface",
+    "dir_bruteforce", "param_reflect_scan", "nuclei_scan", "poc_scan",
+    "sqli_test", "lfi_test", "cmd_inject_test", "file_upload_test",
+    "http_form_login", "weak_password_brute", "rce_exec",
+    *CTF_WEB_TOOLS, *CTF_BROWSER_TOOLS,
+})
+
 
 def visible_tool_names(registry: Any, route: str = "general", *, browser: bool = False,
                        terminal_session: bool = False) -> set[str]:
@@ -56,6 +65,10 @@ def visible_tool_names(registry: Any, route: str = "general", *, browser: bool =
         selected.update(available & CTF_WEB_TOOLS)
     if route == "binary":
         selected.update(name for name in available if name.startswith("binary_") or name.startswith("debug_"))
+        # Binary/Pwn/Reverse 任务走本地文件、终端、r2 和 GDB。把 Web 搜索、
+        # 浏览器和 HTTP 测试工具从本轮 Schema 移除，避免模型在无关分支上
+        # 消耗模型请求和上下文预算。用户明确要求资料检索时可切换到 General。
+        selected.difference_update(available & CTF_BINARY_WEB_TOOLS)
     if browser:
         selected.update(available & CTF_BROWSER_TOOLS)
     if terminal_session:
