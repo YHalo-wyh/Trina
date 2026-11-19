@@ -74,7 +74,12 @@ class EventBus:
 
     def _connect(self) -> sqlite3.Connection:
         db = sqlite3.connect(self.path, timeout=15)
-        db.execute("PRAGMA synchronous=FULL")
+        # 运行事件不是授权审计链。审计日志仍由 AuditLog 单独 fsync，事件流
+        # 采用 WAL + NORMAL，避免每个思考/正文批次都等待一次完整磁盘同步。
+        # 提交顺序、哈希链和最终状态仍由原有事务保证。
+        db.execute("PRAGMA synchronous=NORMAL")
+        db.execute("PRAGMA temp_store=MEMORY")
+        db.execute("PRAGMA cache_size=-8192")
         return db
 
     @classmethod

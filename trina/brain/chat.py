@@ -166,13 +166,11 @@ class ChatAgent:
     def ask(self, message: str) -> str:
         if self._closed:
             raise ValueError("对话已关闭，请使用 /resume 恢复")
-        should_name = not self.title and not self.ctx.extra.get("disable_title_generation")
         self.in_flight = True
         try:
-            reply = self._ask_turn(message)
-            if should_name and reply and not reply.startswith("（模型调用失败"):
-                self._generate_title(message)
-            return reply
+            # _ask_turn 已用首条消息生成确定性短标题。标题是展示元数据，不能
+            # 为它额外占用一次在线模型请求，首轮直接进入主 Agent 循环。
+            return self._ask_turn(message)
         finally:
             self.in_flight = False
             self.save()
@@ -374,11 +372,16 @@ class ChatAgent:
             runtime_parts.append(final_instruction)
         # 动态状态作为新的 user 消息追加；绝不重写 system 或把历史压成角色标签字符串。
         self._messages.append({"role": "user", "content": "\n\n".join(runtime_parts)})
-        tool_payload = (tool_schemas(
-            self.registry,
-            include=self.ctx.extra.get("tool_allowlist"),
-            exclude=() if self.ctx.extra.get("subworkers") else ("worker_tasks",),
-        ) if allow_tools and self._native_tools_enabled() else None)
+        tool_payload = None
+        if allow_tools and self._native_tools_enabled():
+            tool_payload = self.ctx.extra.get("_chat_tool_payload")
+            if tool_payload is None:
+                tool_payload = tool_schemas(
+                    self.registry,
+                    include=self.ctx.extra.get("tool_allowlist"),
+                    exclude=() if self.ctx.extra.get("subworkers") else ("worker_tasks",),
+                )
+                self.ctx.extra["_chat_tool_payload"] = tool_payload
         from ..events import ModelEventStream
         self._message_id = uuid.uuid4().hex
         self._pending_stream = _VisibleStream(self._visible_update)
