@@ -49,6 +49,8 @@ CTF_BINARY_WEB_TOOLS = frozenset({
     *CTF_WEB_TOOLS, *CTF_BROWSER_TOOLS,
 })
 
+CTF_BINARY_COORDINATION_TOOLS = frozenset({"list_goals", "workspace_git", "worker_tasks"})
+
 
 def visible_tool_names(registry: Any, route: str = "general", *, browser: bool = False,
                        terminal_session: bool = False) -> set[str]:
@@ -69,6 +71,7 @@ def visible_tool_names(registry: Any, route: str = "general", *, browser: bool =
         # 浏览器和 HTTP 测试工具从本轮 Schema 移除，避免模型在无关分支上
         # 消耗模型请求和上下文预算。用户明确要求资料检索时可切换到 General。
         selected.difference_update(available & CTF_BINARY_WEB_TOOLS)
+        selected.difference_update(available & CTF_BINARY_COORDINATION_TOOLS)
     if browser:
         selected.update(available & CTF_BROWSER_TOOLS)
     if terminal_session:
