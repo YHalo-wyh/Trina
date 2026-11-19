@@ -15,6 +15,7 @@ from .registry import (
     ToolContext,
     ToolRegistry,
     ToolResult,
+    ToolResultView,
     ToolSpec,
     denied_result,
 )
@@ -59,6 +60,7 @@ __all__ = [
     "ToolContext",
     "ToolRegistry",
     "ToolResult",
+    "ToolResultView",
     "ToolSpec",
     "build_registry",
     "denied_result",

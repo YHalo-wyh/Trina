@@ -1,6 +1,9 @@
 """后台终端工具：启动、查询和取消均经 ToolRegistry 与受控执行入口。"""
 from __future__ import annotations
 
+import hashlib
+import json
+
 from .external import run_external
 from .registry import ParamSpec, Tool, ToolResult, ToolSpec
 
@@ -25,7 +28,7 @@ class TerminalStart(Tool):
 
 class TerminalStatus(Tool):
     spec = ToolSpec(
-        name="terminal_status", summary="读取本会话后台作业的真实状态、退出码与输出尾部，可短暂等待",
+        name="terminal_status", summary="读取后台作业真实状态、退出码与输出尾部；指定已结束作业时归档 evidence_id，可短暂等待",
         category="utility", action_level="detect",
         params={"job_id": ParamSpec("str", "留空列出近期作业", required=False, default=""),
                 "wait_seconds": ParamSpec("float", "等待指定作业，最多 10 秒", required=False, default=0)},
@@ -38,10 +41,25 @@ class TerminalStatus(Tool):
         if job_id and wait_seconds:
             jobs.wait(job_id, wait_seconds)
         rows = jobs.snapshot(job_id, tail=1600)
+        evidence = []
+        data = {"jobs": rows}
+        if job_id and rows and rows[0]["finished"]:
+            evidence_id = "bg-" + job_id
+            data["evidence_id"] = evidence_id
+            if not any(item.get("id") == evidence_id for item in ctx.state.evidence):
+                # 仅由前台注册表提交状态；后台线程不向事实库写入。
+                record = jobs.snapshot(job_id, tail=16_000)[0]
+                transcript = json.dumps({**record, "output_is_tail": True}, ensure_ascii=False)
+                artifact = ctx.save_artifact(evidence_id + ".json", transcript)
+                evidence.append({"id": evidence_id, "kind": "command", "path": str(artifact),
+                                 "sha256": hashlib.sha256(artifact.read_bytes()).hexdigest(),
+                                 "job_id": job_id, "exit_code": record["exit_code"],
+                                 "successful": record["status"] == "completed" and record["exit_code"] == 0,
+                                 "output_is_tail": True})
         failed = any(row["status"] in {"failed", "timed_out", "cancelled"} for row in rows)
         ctx.audit.append("external.background.status", jobs=[{k: v for k, v in row.items() if not k.endswith("_tail")} for row in rows])
         return ToolResult(ok=not failed, summary="；".join(f"{row['id']} {row['status']} code={row['exit_code']}" for row in rows) or "没有后台作业",
-                          error="后台作业失败、超时或取消" if failed else "", data={"jobs": rows})
+                          error="后台作业失败、超时或取消" if failed else "", data=data, evidence=evidence)
 
 
 class TerminalStop(Tool):

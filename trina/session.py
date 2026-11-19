@@ -74,6 +74,8 @@ class Session:
         if not self.needs_approval(level):
             return True
         with self._lock:
+            if self.stop_event.is_set():
+                return False
             self.pending = request
             self._answer_event.clear()
             self._answer_value = False
@@ -85,7 +87,7 @@ class Session:
         answered = self._answer_event.wait(self.approval_timeout)
         with self._lock:
             self.pending = None
-            allowed = bool(self._answer_value) if answered else False
+            allowed = bool(self._answer_value) if answered and not self.stop_event.is_set() else False
         record = {
             "tool": request.get("tool"),
             "level": level,
@@ -124,7 +126,11 @@ class Session:
         self.emit("[目标] 已更新，将在下一决策点接收")
 
     def request_stop(self) -> None:
-        self.stop_event.set()
+        with self._lock:
+            self.stop_event.set()
+            self.pause_event.clear()
+            self._answer_value = False
+            self._answer_event.set()
         self.emit("[停止] 已请求停止当前任务（当前工具调用结束后生效）")
 
     def toggle_pause(self) -> bool:

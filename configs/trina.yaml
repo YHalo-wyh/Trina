@@ -72,7 +72,8 @@ llm:
   cache_features: []
   cache_namespace: trina
   # 本地估算预算；应小于等于实际模型容量，输出和工具 Schema 另留空间。
-  context_window: 0  # 自动按模型；可显式填写 Token 整数
+  # 1M 的一半：显式 500000；0 表示按模型自动（DeepSeek 亦为 500K）。
+  context_window: 500000
   compaction_threshold: 0.8
   context_keep_messages: 8
   state_checkpoint_interval: 16

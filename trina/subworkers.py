@@ -323,9 +323,10 @@ class Subworkers:
             raise ValueError(f"未知控制动作: {action}")
         self.runtime.event_bus.publish("runtime.wake", source="console", action=action)
 
-    def close(self) -> bool:
+    def close(self, timeout: float = 5) -> bool:
         self._closed = True
         if self.running:
             self.control("stop")
-            self.thread.join(timeout=5)
+            if timeout > 0 and self.thread is not threading.current_thread():
+                self.thread.join(timeout=timeout)
         return not self.running

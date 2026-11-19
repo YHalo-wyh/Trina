@@ -200,6 +200,19 @@ class PentestAgent:
         from ..events import EventBus
         self.events = self.event_bus or EventBus(workspace / "events.sqlite3", run_id,
                                                  redact_keys=self.config.audit.redact_keys)
+        from ..profiling import AgentProfiler
+        profile_name = Path(str(getattr(self.config.run, "profile_output", "performance.json"))).name or "performance.json"
+        profiler = AgentProfiler.from_env(
+            run_id,
+            worker_id=str(self.shared_context.get("worker_id", "")),
+            enabled=bool(getattr(self.config.run, "profiling", True)),
+        )
+        self.profiler = profiler
+        profile_subscription = self.events.subscribe(
+            profiler.consume_event,
+            after=self.events.last_seq,
+            kinds=("model.*", "tool.*", "task.*", "worker.*"),
+        )
         event_subscription = self.events.subscribe(self.on_event, after=self.events.last_seq) if self.on_event else None
         self.events.publish("run.started", run_id=run_id, target=target, goal=goal)
 
@@ -216,7 +229,6 @@ class PentestAgent:
         )
 
         # 预检：目标越界直接拒绝，不进入 LLM（模型无权授权）
-        from pathlib import Path
         from urllib.parse import urlsplit, unquote
         local = unquote(urlsplit(target).path) if target.startswith("file://") else target
         if Path(local).is_file():
@@ -237,6 +249,9 @@ class PentestAgent:
             self.events.publish("run.finished", run_id=run_id, status="blocked", error=decision.reason)
             if event_subscription is not None:
                 event_subscription.close()
+            state.performance = profiler.finish(workspace / profile_name)
+            state.artifacts["performance"] = str(workspace / profile_name)
+            profile_subscription.close()
             self._save_state(state, workspace)
             return state
 
@@ -255,6 +270,7 @@ class PentestAgent:
         self._ctx = ctx
         ctx.extra["stop_event"] = self.stop_event
         ctx.extra["llm_backend"] = self.backend
+        ctx.extra["profiler"] = profiler
         ctx.extra.update(self.shared_context)
         state.note("run", f"开始对 {target} 的自动化渗透测试", goal=goal)
 
@@ -471,6 +487,7 @@ class PentestAgent:
 
         def request(index, round_index):
             nonlocal phase, native_mode, tool_payload, hints, observation, schedule
+            profiler.record_loop(step=index, round_number=round_index)
             # 人工介入：停止 / 暂停 / 实时提示
             if self.stop_event is not None and self.stop_event.is_set():
                 state.note("human", "收到人工停止指令")
@@ -522,6 +539,7 @@ class PentestAgent:
                         + ("；强制" if schedule.required else ""),
                     )
 
+            prompt_started = time.monotonic()
             step_prompt = build_step_prompt(
                 state_digest=context.state_update(state_projection(
                     state, hypotheses=ledger.to_dict() if use_ledger else None, registered=policy_block,
@@ -544,6 +562,7 @@ class PentestAgent:
             messages.append({"role": "user", "content": step_prompt})
             from ..runtime_status import render_agent_status
             messages[-1]["content"] += render_agent_status(ctx, step=index, max_steps=max_steps, compact=True)
+            profiler.record_phase("prompt_build", time.monotonic() - prompt_started)
             native_call_id = ""
             try:
                 context.prepare(messages, tool_payload)
@@ -553,7 +572,9 @@ class PentestAgent:
                 state.context_stats = {**context.stats, "budget_error": str(exc)}
                 audit.append("context.budget_error", error=str(exc))
                 return None
+            diagnostic_started = time.monotonic()
             diagnostic = context.before_request(messages, tool_payload)
+            profiler.record_phase("context_diagnostic", time.monotonic() - diagnostic_started)
             model_started = time.monotonic()
             try:
                 response = self._ask(messages, tool_payload)
@@ -1027,6 +1048,9 @@ class PentestAgent:
         state.artifacts.update({"workspace": str(workspace), "audit_path": str(audit.path), "state_file": str(workspace / "state.json")})
         ctx.emit("run.finished", status=state.status, duration=state.duration)
         status_snapshot(ctx, step=steps, max_steps=max_steps, observation=observation)
+        state.performance = profiler.finish(workspace / profile_name)
+        state.artifacts["performance"] = str(workspace / profile_name)
+        profile_subscription.close()
         self._save_state(state, workspace)
         if event_subscription is not None:
             event_subscription.close()

@@ -30,6 +30,7 @@ from .console_ui import (
     command_names, enhanced_input_available, find_command,
 )
 from .session import APPROVAL_MODES, Session
+from .shutdown import Shutdown
 from .tasks import TaskStore, TaskScheduler
 from .terminal import (
     PHASES, clean_text, render_approval, render_message,
@@ -74,12 +75,14 @@ class Console:
         self.autostart_lab = autostart_lab
         self._lock = threading.RLock()
         self._last_state: Any = None
+        self._last_turn_seconds: float | None = None
         self._plan: Any = None
         self._controller: Any = None
         self._controller_config: TrinaConfig | None = None
         self.chat: Any = None
         self.session = Session(approval_mode=approval_mode, emit=self._session_emit)
         self.exit_requested = False
+        self._cleanup_done = False
         self.task_store = TaskStore()
         self._goal_text = self.task_store.goal()
         self._launch_lock = threading.RLock()
@@ -168,31 +171,28 @@ class Console:
             )
             original_output = self.output
             self.output = self._enhanced_input.write
-            self._start_scheduler()
-            self._enhanced_input.show_home()
             try:
+                self._start_scheduler()
+                self._enhanced_input.show_home()
                 self._enhanced_input.run(self.handle)
             except (EOFError, KeyboardInterrupt):
                 pass
             finally:
-                self._cleanup()
-                self.output = original_output
+                try:
+                    self._cleanup()
+                finally:
+                    self.output = original_output
             return 0
-        show_home(output=self._display, color=self.color)
-        while not self.exit_requested:
-            try:
+        try:
+            show_home(output=self._display, color=self.color)
+            while not self.exit_requested:
                 raw = self._read_input()
-            except (EOFError, KeyboardInterrupt):
-                if self.session.running and self.session.thread is not None:
-                    self._emit("输入已结束：等待当前对话/任务收尾（最多 20 秒）…")
-                    self.session.thread.join(timeout=20)
-                self._emit("再见。")
-                break
-            except StopIteration:
-                break
-            if not self.handle(raw):
-                break
-        self._cleanup()
+                if not self.handle(raw):
+                    break
+        except (EOFError, KeyboardInterrupt, StopIteration):
+            pass
+        finally:
+            self._cleanup()
         return 0
 
     def _read_input(self) -> str:
@@ -250,10 +250,25 @@ class Console:
         from .worker_roles import WORKER_ROLES
         ui = self.config.ui
         role = WORKER_ROLES[self._active_worker][0] if is_chat or not self.session.running else "Task Agent"
+        duration_seconds = None
+        if is_chat:
+            if self.session.running:
+                duration_seconds = max(0.0, time.monotonic() - self.session.started_at)
+            else:
+                duration_seconds = self._last_turn_seconds
+        elif state is not None:
+            try:
+                started = float(getattr(state, "started_at", 0) or 0)
+                duration_seconds = max(0.0, float(state.duration)) if started else None
+            except (TypeError, ValueError):
+                duration_seconds = None
+        elif self.session.running:
+            duration_seconds = max(0.0, time.monotonic() - self.session.started_at)
         return ConsoleContext(status=status + queued, model=_display_model(llm.model, llm.reasoning_effort),
                               directory=str(Path.cwd()), task=self._task_title or "新对话",
                               progress=progress, context_tokens=context_tokens,
-                              context_window=llm.effective_context_window, role=role, branch=self._branch,
+                              context_window=llm.effective_context_window, duration_seconds=duration_seconds,
+                              role=role, branch=self._branch,
                               preset=ui.status_line_preset, separator=ui.status_line_separator, context_bar=ui.context_bar,
                               metrics=self.view.metrics(), workers=self.subworkers.badge)
 
@@ -1474,6 +1489,7 @@ class Console:
                 self._emit(f"对话出错: {type(exc).__name__}: {exc}", prefix="[错误]")
                 self._notify_agent("本轮回复异常", error=True)
             finally:
+                self._last_turn_seconds = max(0.0, time.monotonic() - self.session.started_at)
                 self.view.set_activity("idle", "就绪")
 
         self.session.thread = threading.Thread(target=_worker, name="trina-chat", daemon=True)
@@ -1687,19 +1703,22 @@ class Console:
             self._emit(f"[{finding.severity}] {finding.vuln_class} {finding.url or finding.target} ({finding.status})", prefix="发现")
 
     def _cleanup(self) -> None:
-        self.subworkers.close()
-        if self._scheduler is not None:
-            self._scheduler.stop_event.set()
-        if self.session.running:
-            self.session.request_stop()
-            assert self.session.thread is not None
-            self.session.thread.join(timeout=5)
-        if self._scheduler_thread is not None and self._scheduler_thread is not threading.current_thread():
-            self._scheduler_thread.join(timeout=2)
-        if self.chat is not None:
-            self.chat.close()
-        if self._plan is not None and self._plan.started_fixtures:
-            self._plan.teardown()
+        if self._cleanup_done:
+            return
+        with Shutdown(self._emit) as shutdown:
+            self._cleanup_done = True
+            # 先通知所有生产者停止，再等待；再次 Ctrl+C 只跳过线程等待。
+            if self._scheduler is not None:
+                shutdown.call("调度器", self._scheduler.stop_event.set)
+            shutdown.call("当前任务", self.session.request_stop)
+            shutdown.call("Subworker", lambda: self.subworkers.close(timeout=0))
+            shutdown.join(self.session.thread)
+            shutdown.join(self.subworkers.thread)
+            shutdown.join(self._scheduler_thread)
+            if self.chat is not None:
+                shutdown.call("会话", self.chat.close)
+            if self._plan is not None and self._plan.started_fixtures:
+                shutdown.call("靶机", self._plan.teardown)
 
 
 def _parse_play_args(args: list[str]) -> dict[str, Any]:

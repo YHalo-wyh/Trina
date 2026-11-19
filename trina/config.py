@@ -167,6 +167,9 @@ class RunConfig:
     workspace: str = "runs"
     tool_timeout: int = 300
     max_evidence: int = 200
+    #: 记录不含敏感正文的 Agent 阶段耗时、用量与工具统计。
+    profiling: bool = True
+    profile_output: str = "performance.json"
     #: 每 N 步把 state.json 落盘一次(供 trina watch / 外部工具实时读取;0 = 只在结束时落盘)
     flush_state_every: int = 5
     #: 假设排序里的风险厌恶系数 λ:优先级 = 置信度×价值×信息增量 / (成本 + λ·风险 + ε)
@@ -182,6 +185,8 @@ class RunConfig:
     phases: list[str] = field(default_factory=list)
 
     def validate(self) -> None:
+        if type(self.profiling) is not bool or not isinstance(self.profile_output, str) or not self.profile_output.strip():
+            raise ConfigError("run.profiling 必须为布尔值，run.profile_output 必须为非空字符串")
         if not isinstance(self.phases, list) or any(not isinstance(item, str) or not item for item in self.phases):
             raise ConfigError("run.phases 必须是字符串列表；空列表使用目标驱动执行")
         if type(self.flush_state_every) is not int or self.flush_state_every < 0:

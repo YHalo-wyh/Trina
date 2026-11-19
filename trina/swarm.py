@@ -27,6 +27,7 @@ from .context import BRIEF_VERSION
 from .intent_planner import FactIntentPlanner
 from .llm import make_backend
 from .state import RunState
+from .profiling import AgentProfiler
 from .tools import ToolRegistry, build_registry
 
 
@@ -348,6 +349,18 @@ class SwarmRuntime:
         self._accepting = True
         self.events: list[dict[str, Any]] = []
         self.event_bus = EventBus(self.workspace / "events.sqlite3", self.run_id, redact_keys=config.audit.redact_keys)
+        profile_name = Path(str(getattr(config.run, "profile_output", "performance.json"))).name or "performance.json"
+        self.profiler = AgentProfiler.from_env(
+            self.run_id,
+            worker_id="commander",
+            enabled=bool(getattr(config.run, "profiling", True)),
+        )
+        self.profile_path = self.workspace / f"commander-{profile_name}"
+        self.profile_subscription = self.event_bus.subscribe(
+            self.profiler.consume_event,
+            after=self.event_bus.last_seq,
+            kinds=("model.*", "tool.*", "task.*", "worker.*"),
+        )
         self.coordination = CoordinationRuntime(self.tasks, event_bus=None if _restoring else self.event_bus)
         self._bind_records()
         self._commander_events = self.event_bus.subscribe(name="commander", after=0)
@@ -697,6 +710,7 @@ class SwarmRuntime:
             "verdict": state.verdict,
             "facts": facts,
             "counters": state.counters,
+            "performance": state.performance,
             "ledger": state.ledger,
             "artifacts": state.artifacts,
             "duration": state.duration,
@@ -789,6 +803,9 @@ class SwarmRuntime:
         try:
             return self._run()
         finally:
+            report = self.profiler.finish(self.profile_path)
+            self.profile_subscription.close()
+            self._profile_report = report
             with self._lifecycle_lock:
                 self._accepting = False
             while not self._inbox.empty():
@@ -984,6 +1001,8 @@ class SwarmRuntime:
             "checkpoint": str(self.checkpoint),
             "events_path": str(self.event_bus.path),
             "audit_path": str(self.audit.path),
+            "performance_path": str(getattr(self, "profile_path", "")),
+            "performance": getattr(self, "_profile_report", self.profiler.snapshot()),
             "report_paths": [str(self.config.report_dir / f"{self.run_id}_report.md"), str(self.config.report_dir / f"{self.run_id}_report.html")],
             "tasks": {
                 task.id: {

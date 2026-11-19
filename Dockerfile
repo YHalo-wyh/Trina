@@ -9,10 +9,6 @@ RUN python -m pip install --no-cache-dir .
 ENV TRINA_LLM_BACKEND=openai \
     TRINA_SCOPE_EXPLOIT_LEVEL=exploit \
     TRINA_BENCH_HOSTED=1 \
-    TRINA_RUN_WORKSPACE=/tmp/trina/runs \
-    TRINA_AUDIT_DIR=/tmp/trina/logs \
-    TRINA_REPORT_OUTPUT_DIR=/tmp/trina/reports
-ENTRYPOINT ["python", "-m", "trina", "bench"]
     TRINA_BENCH_COMMANDER=1 \
     TRINA_BENCH_COMMANDER_EXTENSION_SECONDS=60 \
     TRINA_BENCH_COMMANDER_MAX_EXTENSIONS=1 \
@@ -21,3 +17,7 @@ ENTRYPOINT ["python", "-m", "trina", "bench"]
     TRINA_BENCH_TOTAL_SECONDS=21600 \
     TRINA_BENCH_ATTEMPTS=2 \
     TRINA_BENCH_WORKERS=2 \
+    TRINA_RUN_WORKSPACE=/tmp/trina/runs \
+    TRINA_AUDIT_DIR=/tmp/trina/logs \
+    TRINA_REPORT_OUTPUT_DIR=/tmp/trina/reports
+ENTRYPOINT ["python", "-m", "trina", "bench"]

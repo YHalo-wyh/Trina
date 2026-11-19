@@ -78,7 +78,11 @@ def render_grid(manager, width: int, height: int, selected: int, *, scroll: int 
             if not body:
                 body = [("过程", row.get("activity") or ("等待依赖或空闲 Worker" if row["status"] == "pending" else row["goal"]))]
             body = [("模型", model), *body]
-            stats = [f"{_number(row[key])} {label}" for key, label in (("calls", "req"), ("tools", "tools"), ("tokens", "tok")) if key in row]
+            stats = []
+            if row.get("started_at"):
+                elapsed = max(0, int((row.get("ended_at") or time.time()) - row["started_at"]))
+                stats.append(f"{elapsed // 60}m{elapsed % 60:02d}s")
+            stats.extend(f"{_number(row[key])} {label}" for key, label in (("calls", "req"), ("tools", "tools"), ("tokens", "tok")) if key in row)
             if stats:
                 body.append(("状态", " · ".join(stats)))
         else:

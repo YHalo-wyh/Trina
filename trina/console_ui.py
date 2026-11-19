@@ -500,7 +500,7 @@ class EnhancedConsoleInput:
         from prompt_toolkit.buffer import Buffer
         from prompt_toolkit.history import InMemoryHistory
         from prompt_toolkit.key_binding import KeyBindings
-        from prompt_toolkit.layout import Layout, HSplit, Window, ConditionalContainer, FloatContainer, Float
+        from prompt_toolkit.layout import Layout, HSplit, VSplit, Window, ConditionalContainer, FloatContainer, Float
         from prompt_toolkit.layout.controls import BufferControl, FormattedTextControl
         from prompt_toolkit.layout.dimension import Dimension
         from prompt_toolkit.layout.processors import BeforeInput
@@ -642,6 +642,7 @@ class EnhancedConsoleInput:
             "context.role": THEME["lilac"],
             "context.branch": THEME["muted"],
             "context.cache": "#a9d9d1", "context.tokens": THEME["lilac"],
+            "context.duration": THEME["lilac"],
             "context.workers": "bold " + THEME["rose"],
             "context.model.icon": "bold " + THEME["rose"],
             "context.state": "bold " + THEME["lilac"],
@@ -652,12 +653,81 @@ class EnhancedConsoleInput:
             "toast": "bg:#3b2444 #f4d7ec bold", "toast.success": "bg:#244036 #d9f5e7 bold",
             "toast.error": "bg:#542c38 #ffdce3 bold",
             "selection": "bg:" + THEME["selected"] + " " + THEME["text"],
+            "scrollbar.thumb": THEME["rose"], "scrollbar.track": THEME["muted"],
         })
         control = BufferControl(buffer=self.buffer, input_processors=[BeforeInput(
             lambda: [("class:prompt", "补充  › " if self.running() else "Trina  › ")])])
         from .transcript import TranscriptControl
 
         self.transcript_control = TranscriptControl(self)
+
+        owner = self
+
+        class ScrollbarControl(FormattedTextControl):
+            """右侧滚动条：拖动/滚轮改变视口，到底部恢复跟随最新输出。"""
+
+            def __init__(self):
+                self._dragging = False
+                super().__init__(self._render, focusable=False, show_cursor=False)
+
+            def _height(self) -> int:
+                return max(1, int(getattr(owner.transcript_control, "viewport_height", 1) or 1))
+
+            def _render(self):
+                control = owner.transcript_control
+                height = self._height()
+                total = max(1, owner._rendered_lines)
+                maximum = max(0, total - height)
+                rows: list[tuple[str, str]] = []
+                if maximum <= 0:
+                    for _ in range(height):
+                        rows.extend((("class:scrollbar.track", "│"), ("", "\n")))
+                    return rows
+                thumb = max(1, min(height, int(round(height * height / total))))
+                position = int(round((height - thumb) * (control.viewport_start() / maximum)))
+                for index in range(height):
+                    style = "class:scrollbar.thumb" if position <= index < position + thumb else "class:scrollbar.track"
+                    rows.extend(((style, "█" if style.endswith("thumb") else "│"), ("", "\n")))
+                return rows
+
+            def _seek(self, y: int) -> None:
+                control = owner.transcript_control
+                height = self._height()
+                maximum = control.max_scrollback()
+                if maximum <= 0:
+                    owner._scroll_to_latest()
+                    return
+                ratio = min(1.0, max(0.0, float(y) / max(1, height - 1)))
+                updated = max(0, min(maximum, int(round((1.0 - ratio) * maximum))))
+                old_start = control.viewport_start()
+                owner._scrollback = updated
+                owner._follow_latest = updated == 0
+                if owner._follow_latest:
+                    control.clear_selection()
+                control.precondition_scroll(old_start, control.viewport_start())
+                owner.app.invalidate()
+
+            def mouse_handler(self, event):
+                from prompt_toolkit.mouse_events import MouseButton, MouseEventType
+                if event.event_type == MouseEventType.SCROLL_UP:
+                    owner._scroll_by(3)
+                    return None
+                if event.event_type == MouseEventType.SCROLL_DOWN:
+                    owner._scroll_by(-3)
+                    return None
+                if event.button == MouseButton.LEFT:
+                    if event.event_type == MouseEventType.MOUSE_DOWN:
+                        self._dragging = True
+                        self._seek(event.position.y)
+                        return None
+                    if event.event_type == MouseEventType.MOUSE_MOVE and self._dragging:
+                        self._seek(event.position.y)
+                        return None
+                    if event.event_type == MouseEventType.MOUSE_UP:
+                        self._dragging = False
+                        return None
+                return NotImplemented
+
         # transcript 已按脏块缓存成物理行；关闭 Window 二次折行并直接给出视口偏移。
         self.output_window = Window(
             self.transcript_control,
@@ -665,6 +735,8 @@ class EnhancedConsoleInput:
             always_hide_cursor=True,
             get_vertical_scroll=lambda _window: self.transcript_control.viewport_start(),
         )
+        self.scrollbar_control = ScrollbarControl()
+        self.scrollbar_window = Window(self.scrollbar_control, width=1, wrap_lines=False, always_hide_cursor=True)
         self.activity_window = Window(FormattedTextControl(self._activity), height=1, wrap_lines=False)
         self.input_window = Window(control, wrap_lines=True, height=Dimension(min=1, max=3), dont_extend_height=True)
         self.usage_window = Window(
@@ -672,7 +744,7 @@ class EnhancedConsoleInput:
             height=lambda: self._usage_height(),
         )
         content = HSplit([
-                self.output_window,
+                VSplit([self.output_window, self.scrollbar_window]),
                 self.activity_window,
                 Window(FormattedTextControl(self._rail), height=1, wrap_lines=False),
                 self.input_window,

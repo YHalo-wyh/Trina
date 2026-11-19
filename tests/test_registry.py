@@ -81,6 +81,13 @@ class _LateMutation(Tool):
         return ToolResult(ok=True, summary="late")
 
 
+class _Raw(Tool):
+    spec = ToolSpec(name="raw_tool", summary="长原文", action_level="detect")
+
+    def run(self, ctx, **params):
+        return ToolResult(ok=True, summary="长原文完成", raw="raw-secret-safe-fixture\n" * 500)
+
+
 class TestRegistry(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -99,7 +106,7 @@ class TestRegistry(unittest.TestCase):
             workspace=Path(self.tmp.name),
             deadline=time.monotonic() + 30,
         )
-        self.registry = ToolRegistry([_Echo(), _Boom(), _Slow(), _Destructive(), _LateMutation()])
+        self.registry = ToolRegistry([_Echo(), _Boom(), _Slow(), _Destructive(), _LateMutation(), _Raw()])
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -110,6 +117,14 @@ class TestRegistry(unittest.TestCase):
         self.assertFalse(result.ok)
         self.assertIn("未知工具", result.error)
         self.assertIn("available_tools", result.data)
+
+    def test_long_raw_output_is_archived_and_observation_only_has_reference(self):
+        result = self.registry.execute("raw_tool", {}, self.ctx)
+        self.assertTrue(result.ok)
+        self.assertTrue(result.artifact_ref)
+        self.assertTrue(Path(result.artifact_ref).is_file())
+        self.assertIn(result.artifact_ref, result.to_observation())
+        self.assertIn("raw-secret-safe-fixture", Path(result.artifact_ref).read_text(encoding="utf-8"))
 
     def test_unknown_param_rejected(self):
         result = self.registry.execute("echo_tool", {"target": "127.0.0.1", "bogus": 1}, self.ctx)

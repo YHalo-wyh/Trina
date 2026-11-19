@@ -214,6 +214,7 @@ class BackgroundJobs:
             return [{
                 "id": job["id"], "tool": job["tool"], "status": job["status"],
                 "exit_code": job["exit_code"], "error": job["error"],
+                "finished": job["done"].is_set(),
                 "elapsed_seconds": round(time.monotonic() - job["started"], 2) if job["status"] == "running" else job["elapsed_seconds"],
                 "stdout_tail": job["stdout"][-tail:], "stderr_tail": job["stderr"][-tail:],
             } for job in rows[-8:]]

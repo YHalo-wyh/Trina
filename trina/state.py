@@ -172,6 +172,8 @@ class RunState:
     #: 模型每次决策前读取的动态状态栏；后台作业记录按当前任务隔离。
     runtime_status: dict[str, Any] = field(default_factory=dict)
     context_stats: dict[str, Any] = field(default_factory=dict)
+    #: AgentProfiler 生成的无正文性能快照。
+    performance: dict[str, Any] = field(default_factory=dict)
     #: 通用成果台账：资产、观察、情报、流量绑定与带版本的复测记录。
     casebook: dict[str, Any] = field(default_factory=dict)
     max_evidence: int = 200
@@ -423,6 +425,7 @@ class RunState:
             "scheduler": self.scheduler,
             "runtime_status": self.runtime_status,
             "context_stats": self.context_stats,
+            "performance": self.performance,
             "casebook": self.casebook,
         }
 
@@ -502,6 +505,7 @@ class RunState:
             scheduler=dict(data.get("scheduler") or {}),
             runtime_status=dict(data.get("runtime_status") or {}),
             context_stats=dict(data.get("context_stats") or {}),
+            performance=dict(data.get("performance") or {}),
         )
         state.started_at = float(data.get("started_at") or state.started_at)
         ended = data.get("ended_at")

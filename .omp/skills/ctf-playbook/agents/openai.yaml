@@ -1,0 +1,4 @@
+interface:
+  display_name: "CTF Playbook"
+  short_description: "Classify CTF challenges and route to category-specific or PHP/Java web-audit references."
+  default_prompt: "Classify the challenge, open the smallest relevant reference set, and solve it methodically."

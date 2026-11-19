@@ -118,27 +118,20 @@ class ToolResult:
     next_hints: list[str] = field(default_factory=list)
     denied: bool = False
     category: str = ""
+    #: 面向模型的确定性重点，完整结果仍保留在 data/raw/evidence。
+    key_findings: list[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
+    artifact_ref: str = ""
+    truncated: bool = False
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     def to_observation(self, max_chars: int = 2600) -> str:
-        """转成大模型看的观察文本。"""
-        parts: list[str] = []
-        status = "OK" if self.ok else ("被护栏拒绝" if self.denied else "失败")
-        parts.append(f"[{status}] {self.summary or self.error or '(无摘要)'}")
-        if self.denied and self.next_hints:
-            parts.append("合规提示: " + "；".join(self.next_hints))
-        payload = self.data or {}
-        if payload:
-            import json
-
-            rendered = json.dumps(payload, ensure_ascii=False, indent=1)
-            if len(rendered) > max_chars:
-                rendered = rendered[:max_chars] + "\n…(截断)"
-            parts.append(rendered)
-        if self.error and self.ok:
-            parts.append(f"错误: {self.error}")
-        if self.next_hints and not self.denied:
-            parts.append("建议: " + "；".join(self.next_hints[:3]))
-        return "\n".join(parts)
+        """生成可追溯、确定性的模型观察视图。"""
+        view = ToolResultView.from_result(self, max_chars=max_chars)
+        self.truncated = self.truncated or view.truncated
+        if view.artifact_ref and not self.artifact_ref:
+            self.artifact_ref = view.artifact_ref
+        return view.render()
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -150,7 +143,137 @@ class ToolResult:
             "duration": round(self.duration, 3),
             "data": self.data,
             "hints": self.next_hints,
+            "key_findings": self.key_findings,
+            "errors": self.errors,
+            "artifact_ref": self.artifact_ref,
+            "truncated": self.truncated,
+            "metadata": self.metadata,
         }
+
+
+@dataclass(frozen=True)
+class ToolResultView:
+    """工具原始结果与模型可见摘要之间的稳定边界。"""
+
+    status: str
+    summary: str
+    key_findings: tuple[str, ...] = ()
+    errors: tuple[str, ...] = ()
+    hints: tuple[str, ...] = ()
+    data: Any = None
+    artifact_ref: str = ""
+    truncated: bool = False
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_result(cls, result: ToolResult, *, max_chars: int = 2600) -> "ToolResultView":
+        status = "OK" if result.ok else ("被护栏拒绝" if result.denied else "失败")
+        errors = [str(item) for item in result.errors if str(item)]
+        if result.error and result.error not in errors:
+            errors.insert(0, result.error)
+        findings = [str(item) for item in result.key_findings if str(item)]
+        if not findings:
+            findings = _derive_findings(result.data)
+        artifact_ref = result.artifact_ref or _derive_artifact_ref(result)
+        compact, truncated = _compact_value(result.data or {}, max_chars=max(400, max_chars - 600))
+        return cls(status=status, summary=result.summary or result.error or "(无摘要)",
+                   key_findings=tuple(findings[:8]), errors=tuple(errors[:6]), data=compact,
+                   artifact_ref=artifact_ref, truncated=bool(result.truncated or truncated),
+                   hints=tuple(str(item) for item in (result.next_hints or [])[:4]),
+                   metadata=dict(result.metadata or {}))
+
+    def render(self) -> str:
+        import json
+
+        parts = [f"[{self.status}] {self.summary}"]
+        if self.key_findings:
+            parts.append("关键结果: " + "；".join(self.key_findings))
+        if self.errors:
+            parts.append("错误: " + "；".join(self.errors))
+        if self.hints:
+            label = "合规提示" if self.status == "被护栏拒绝" else "建议"
+            parts.append(label + ": " + "；".join(self.hints))
+        if self.data not in (None, {}, [], ""):
+            parts.append(json.dumps(self.data, ensure_ascii=False, separators=(",", ":")))
+        if self.artifact_ref:
+            parts.append(f"原始证据: {self.artifact_ref}")
+        if self.truncated:
+            parts.append("(模型视图已压缩；可按原始证据引用读取完整结果)" if self.artifact_ref
+                         else "(模型视图已压缩；当前结果未提供原始证据引用)")
+        return "\n".join(parts)
+
+
+def _derive_artifact_ref(result: ToolResult) -> str:
+    """从现有 evidence/data 里提取已存在的原始工件引用。"""
+    keys = ("path", "raw_ref", "artifact", "artifact_ref", "evidence_ref", "transcript")
+    for item in result.evidence or ():
+        if not isinstance(item, dict):
+            continue
+        for key in keys:
+            value = item.get(key)
+            if isinstance(value, str) and value:
+                return value
+    if isinstance(result.data, dict):
+        for key in keys:
+            value = result.data.get(key)
+            if isinstance(value, str) and value:
+                return value
+    return ""
+
+
+def _derive_findings(data: Any) -> list[str]:
+    if not isinstance(data, dict):
+        return []
+    preferred = ("status", "code", "http_status", "title", "url", "target", "count", "total",
+                 "ports", "findings", "routes", "assets", "verified", "changed")
+    findings: list[str] = []
+    for key in preferred:
+        if key not in data:
+            continue
+        value = data[key]
+        if isinstance(value, (str, int, float, bool)):
+            findings.append(f"{key}={value}")
+        elif isinstance(value, (list, dict)):
+            findings.append(f"{key}[{len(value)}]")
+    return findings
+
+
+def _compact_value(value: Any, *, max_chars: int, depth: int = 0) -> tuple[Any, bool]:
+    """递归压缩 JSON 数据，保留计数和稳定的前几个条目。"""
+    if depth > 4:
+        return "…", True
+    if isinstance(value, str):
+        if len(value) <= max_chars:
+            return value, False
+        return value[:max_chars] + "…", True
+    if isinstance(value, (int, float, bool)) or value is None:
+        return value, False
+    if isinstance(value, list):
+        limit = 12
+        items = []
+        truncated = len(value) > limit
+        for item in value[:limit]:
+            compact, cut = _compact_value(item, max_chars=max(120, max_chars // max(1, limit)), depth=depth + 1)
+            items.append(compact)
+            truncated = truncated or cut
+        if truncated:
+            return {"items": items, "total": len(value), "omitted": max(0, len(value) - limit)}, True
+        return items, False
+    if isinstance(value, dict):
+        output: dict[str, Any] = {}
+        truncated = False
+        for index, (key, item) in enumerate(value.items()):
+            if index >= 24:
+                truncated = True
+                break
+            compact, cut = _compact_value(item, max_chars=max(120, max_chars // 8), depth=depth + 1)
+            output[str(key)] = compact
+            truncated = truncated or cut
+        if len(value) > 24:
+            output["_omitted_keys"] = len(value) - 24
+            truncated = True
+        return output, truncated
+    return str(value), True
 
 
 def denied_result(decision: Decision, *, tool: str = "") -> ToolResult:
@@ -549,6 +672,7 @@ class ToolRegistry:
         result = self._run_with_timeout(tool, validated, ctx, budget, started)
 
         # 6) 吸收事实 + 审计
+        self._attach_raw_artifact(ctx, name, result)
         if result.facts:
             changed = ctx.state.absorb(result.facts)
             if changed:
@@ -580,6 +704,25 @@ class ToolRegistry:
             }
         )
         return result
+
+    @staticmethod
+    def _attach_raw_artifact(ctx: ToolContext, name: str, result: ToolResult) -> None:
+        """长原文只保存在本地工件，模型只收到摘要和引用。"""
+        if not result.raw or len(result.raw) <= 2600 or result.artifact_ref:
+            return
+        import hashlib
+        import uuid
+
+        call_id = str(ctx.extra.get("_tool_call_id") or uuid.uuid4().hex)
+        safe_name = "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in name)[:40]
+        path = ctx.save_artifact(f"tool-{safe_name}-{call_id[:12]}.raw.txt", result.raw)
+        digest = hashlib.sha256(result.raw.encode("utf-8", errors="replace")).hexdigest()
+        result.artifact_ref = str(path)
+        result.truncated = True
+        result.metadata = {**result.metadata, "raw_bytes": len(result.raw.encode("utf-8", errors="replace")),
+                           "raw_sha256": digest}
+        result.evidence.append({"kind": "tool_raw", "path": str(path), "sha256": digest,
+                                "bytes": result.metadata["raw_bytes"]})
 
     # -------------------------------------------------------------- 内部
     @staticmethod

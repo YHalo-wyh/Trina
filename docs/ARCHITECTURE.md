@@ -1,5 +1,4 @@
 # 架构与模块契约
-| `trina.bench` | `BenchmarkRunner.run`、`BenchmarkClient.fork`、`BenchCommander` | 平台适配层；每题映射为 Task，由 Swarm Worker Pool 并发执行（默认 2、上限 3）；独立控制面会话，submit 的 `correct` 是唯一成功判据；轮次边界 Commander 按部分 Flag/新增事实决定续做或加时（ADR-0039） |
 
 决策流程及每一步的设计理由详见[《设计决策》](设计决策/设计决策.md)。该文按实际执行顺序展开输入输出、规则、替代方案、失败分支和验证依据；本页保留总体模块契约。系统提示词与 Commander 情报部分于 2026-11-11 对照实现核对。
 
@@ -82,6 +81,8 @@ ScopeSentry由外置Capability通过 `mcp_http` 复用 `ctx.http`；浏览器采
 
 批内动作当前顺序执行，目的是避免同一 `RunState` 上的数据竞争；不同 Worker 仍可并行。控制器允许发生在完整工具参数校验和实际完成之前，故 `executed` 不能直接用作成功覆盖证明。对话与任务共用同一模型—动作循环，只保留各自的展示与收尾适配。
 
+等待外部输出时，通过 `terminal_start` 返回句柄，让后续模型决策推进独立工作；依赖结果时再用 `terminal_status` 回收，独立分析分支用 `worker_tasks`。同步调用本身不触发并行模型决策。后台线程只维护作业状态和输出事件，`terminal_status` 在作业与输出流完成后经注册表归档证据，保持事实提交和执行租约契约。
+
 ## 3. 模块契约
 
 | 模块 | 关键类型 / 函数 | 约定 |
@@ -107,7 +108,7 @@ ScopeSentry由外置Capability通过 `mcp_http` 复用 `ctx.http`；浏览器采
 | `trina.brain.failure` | `classify_failure`、`LoopGuard.observe`、`advice_for`、`alternatives_for` | 失败归因（boundary/tool/environment/budget/hypothesis）+ 无新信息重复识别，给出递进建议（换参数→换工具→人工） |
 | `trina.brain.scheduler` | `HypothesisScheduler.decide(...)` | 显式兼容模块；默认 `run.hypothesis_scheduler=false`，假设台账记录证据但不再成为第二个逐步调度中心 |
 | `trina.evidence_graph` | `build(state, registry=, hypotheses=)`、`EvidenceGraph.to_mermaid/to_dict` | 由权威 `RunState` 按需生成的报告视图，不在执行期维护第二份事实状态 |
-| `trina.bench` | `BenchmarkRunner.run`、`BenchmarkClient.fork` | 平台适配层；每题映射为 Task，由 Swarm Worker Pool 并发执行（默认 2、上限 3）；独立控制面会话，submit 的 `correct` 是唯一成功判据 |
+| `trina.bench` | `BenchmarkRunner.run`、`BenchmarkClient.fork`、`BenchCommander` | 平台适配层；每题映射为 Task，由 Swarm Worker Pool 并发执行（默认 2、上限 3）；独立控制面会话，submit 的 `correct` 是唯一成功判据；轮次边界 Commander 按部分 Flag/新增事实决定续做或加时（ADR-0039） |
 | `trina.board` | `render_board(state, hypotheses=)`、`summarise`、`latest_state_file`、`load_run_state` | 工作台视图的**唯一**渲染实现（控制台 `/board` 与 `trina watch` 共用）；`load_run_state` 把 state.json 还原成 `RunState` |
 | `trina.brain.prompts` | `action_example`、`render_system_prompt`、`build_system_prompt`、`build_runtime_context`、`build_step_prompt`、`parse_action` | 任务、对话与通用 Worker 共用七模块比赛 Agent system，覆盖多类 CTF；聊天允许直接回答，二进制说明按需适用；动作协议、范围、工具与任务事实仍由运行数据提供，详见 [提示词说明](PROMPTS.md) |
 | `trina.context` | `normalize_briefs`、`render_commander_briefs`、`brief_digest` | 只处理 Commander 定向情报；不合并其他题目的事实、证据、Flag、假设或历史；接收方重新验证后才可写入本题状态 |

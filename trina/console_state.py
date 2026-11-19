@@ -62,6 +62,7 @@ class ConsoleContext:
     progress: str = ""
     context_tokens: int | None = None
     context_window: int = 0
+    duration_seconds: float | None = None
     role: str = "Commander"
     branch: str = ""
     preset: str = "default"
@@ -83,8 +84,8 @@ class ConsoleContext:
         elif "停止" in self.status:
             icon = "■"
         role = _fit_cells(self.role, min(18, max(4, width // 3)))
-        groups = [[("class:context.role", f" {role} ")]]
-        remaining = width - _cells(role) - 2
+        groups = [[("class:context.role", role)]]
+        remaining = width - _cells(role)
         progress = self.progress.split(" · 工具", 1)[0]
         progress_width = _cells(progress) + 3 if progress and width >= 56 else 0
         right: list[tuple[str, str]] = []
@@ -113,7 +114,7 @@ class ConsoleContext:
             used = sum(_cells(text) for _, text in result)
             result.extend([("", " " * max(2, width - used - right_width)), *right])
         if sum(_cells(text) for _, text in result) > width:
-            return [("class:context.role", _fit_cells(f" {self.role} ", width))]
+            return [("class:context.role", _fit_cells(self.role, width))]
         return result
 
     def rail(self, width: int) -> list[tuple[str, str]]:
@@ -135,16 +136,22 @@ class ConsoleContext:
                     filled = min(8, max(0, round(min(1.0, ratio) * 8)))
                     gauge = "▰" * filled + "▱" * (8 - filled)
                     context_text = f"◔ {percent}% {gauge} "
+        duration_text = ""
+        if self.duration_seconds is not None and width >= 64:
+            from .board import _seconds
+            duration_text = f" ⏱ {_seconds(self.duration_seconds)} "
         branch = ""
         if self.branch and width >= 80:
             branch = " ⎇ " + _fit_cells(self.branch, min(20, width // 6)) + " "
         workers = f" ⠿ {self.workers} " if self.workers and width >= 96 else ""
-        remaining = max(0, width - _cells(path_text) - _cells(context_text) - _cells(branch) - _cells(workers))
+        remaining = max(0, width - _cells(path_text) - _cells(context_text) - _cells(duration_text) - _cells(branch) - _cells(workers))
         fragments: list[tuple[str, str]] = []
         if context_text:
             ratio = (self.context_tokens or 0) / max(1, self.context_window)
             tone = "context.hot" if ratio >= .85 else "context.warn" if ratio >= .65 else "context.meter"
             fragments.append(("class:" + tone, context_text))
+        if duration_text:
+            fragments.append(("class:context.duration", duration_text))
         if branch:
             fragments.append(("class:context.branch", branch))
         if workers:

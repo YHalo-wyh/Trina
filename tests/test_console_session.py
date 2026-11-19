@@ -367,6 +367,22 @@ class ConsoleSessionTests(unittest.TestCase):
                 self.assertNotIn("Enter 发送补充", visible)
                 self.assertNotIn("已上翻历史", visible)
 
+    def test_footer_role_starts_flush_left(self):
+        from trina.console_state import ConsoleContext
+
+        footer = ConsoleContext("运行中", "model", "/workspace", "任务").footer(80)
+        self.assertEqual(footer[0], ("class:context.role", "Commander"))
+        self.assertTrue("".join(value for _, value in footer).startswith("Commander"))
+
+    def test_rail_shows_task_total_duration(self):
+        from trina.console_state import ConsoleContext
+
+        context = ConsoleContext("运行中", "model", "/workspace", "任务", duration_seconds=125)
+        text = "".join(value for _, value in context.rail(88))
+        self.assertIn("⏱ 2m05s", text)
+        plain = ConsoleContext("运行中", "model", "/workspace", "任务")
+        self.assertNotIn("⏱", "".join(value for _, value in plain.rail(88)))
+
     def test_context_meter_is_left_aligned_and_directory_stays_right(self):
         from trina.console_state import ConsoleContext, _cells
 

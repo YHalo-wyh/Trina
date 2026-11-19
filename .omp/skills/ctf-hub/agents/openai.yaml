@@ -1,0 +1,4 @@
+interface:
+  display_name: "CTF Hub"
+  short_description: "Unified CTF routing and PHP/Java audit playbooks"
+  default_prompt: "Use $ctf-hub to triage this challenge and load the right local CTF or code-audit playbook."

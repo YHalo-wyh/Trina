@@ -173,6 +173,30 @@ class TranscriptTests(unittest.TestCase):
         self.assertEqual(self.editor._scrollback, 0)
         self.assertEqual(self.editor._queue.get_nowait(), "继续")
 
+    def test_scrollbar_thumb_tracks_viewport_and_drag_to_bottom_follows(self):
+        self.editor.write("\n".join(f"line {index}" for index in range(100)))
+        control = self.editor.transcript_control
+        control.create_content(80, 10)
+        bar = self.editor.scrollbar_control
+
+        def thumb() -> int:
+            rows = [text for _, text in bar._render() if text in {"█", "│"}]
+            return rows.index("█")
+
+        self.assertGreater(thumb(), 0, "底部时滑块应在下方")
+        self.editor._scroll_to_oldest()
+        control.create_content(80, 10)
+        self.assertEqual(thumb(), 0, "顶部时滑块应贴顶")
+        self.assertFalse(self.editor._follow_latest)
+
+        bar.mouse_handler(MouseEvent(Point(x=0, y=9), MouseEventType.MOUSE_DOWN,
+                                     MouseButton.LEFT, frozenset()))
+        self.assertEqual(self.editor._scrollback, 0)
+        self.assertTrue(self.editor._follow_latest)
+        control.create_content(80, 10)
+        self.assertEqual(control.viewport_start(), control.max_scrollback())
+        self.assertGreater(thumb(), 0, "拖动到底部后滑块仍在下方")
+
     def test_drag_selection_copies_chinese_lines_and_keeps_input_draft(self):
         self.editor.write("第一行 abc\n第二行 xyz")
         control = self.editor.transcript_control

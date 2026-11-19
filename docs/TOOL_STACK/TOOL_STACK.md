@@ -42,6 +42,7 @@ Node 低于20时从官方发行包安装固定 Node 22.21.1并校验 SHA-256；P
 | `record_finding_retest_result` | 登记 reproduced/fixed/inconclusive，检查新证据、一次性token、版本、环境和正常对照 |
 
 `terminal_exec` 返回稳定 `evidence_id`，原始命令结果保存为 JSON，并记录 SHA-256；修改工件后不能沿用旧证明。
+后台命令使用 `terminal_start`；指定 job_id 查询 `terminal_status` 时，仅在进程及输出流收尾后归档稳定 `evidence_id`。工件包含真实终态、退出码和每路最多 16000 字符的输出尾部，明确标记 `output_is_tail`，完整输出事件仍在任务事件库。重复查询复用证据；运行中不生成完成证据，失败/超时/取消工件不能作为成功证明。
 证据必须存在于当前任务，不能用任意路径或模型自造编号代替。浏览器证据使用 `evidence_ref`，HTTP 使用 `traffic_id`。
 verified与复测结论仍由 Agent 判断语义，程序约束的是来源、版本和比较条件，不是任意漏洞的通用自动证明器。
 失败路径继续保存在步骤与审计中；工具失败、请求未命中不能当修复或安全证明。

@@ -66,6 +66,7 @@ class CacheRuntimeTests(unittest.TestCase):
         self.assertEqual(third["set"], {"/hypotheses/H03/status": "confirmed"})
         self.assertEqual(third["remove"], ["/facts/version"])
         self.assertEqual(fourth["state"], state)
+        self.assertGreater(context.stats["state_delta_updates"], 0)
 
     def test_compaction_archives_original_and_preserves_constraints_facts_and_tool_pairs(self):
         context = ConversationContext(self.ctx)
@@ -93,6 +94,7 @@ class CacheRuntimeTests(unittest.TestCase):
         observed = {row["tool_call_id"] for row in messages if row["role"] == "tool"}
         self.assertTrue(declared, "最近工具链必须保留，不能通过全部删除规避配对检查")
         self.assertEqual(declared, observed)
+        self.assertGreater(context.stats["tokens_reclaimed"], 0)
         self.assertTrue(self.audit.verify()[0])
 
     def test_archive_failure_keeps_original_messages_and_epoch(self):
@@ -184,7 +186,10 @@ class CacheRuntimeTests(unittest.TestCase):
         self.assertEqual(chat.context.instructions[0], "仅处理题目 A，补充 0")
 
     def test_task_agent_uses_same_compaction_and_persists_diagnostics(self):
-        self.config.llm.context_window, self.config.llm.max_tokens = 10000, 1024
+        # Task Agent 会保留稳定 system/contract 前缀及工具 Schema；当前完整
+        # Binary/安全工程提示词约 8.7K token，10K 窗口扣除输出预算后不足以
+        # 触发可安全压缩的预算，应该验证的是“可压缩的长历史”而不是预算拒绝。
+        self.config.llm.context_window, self.config.llm.max_tokens = 20000, 1024
         self.config.policy.stop_on_no_new_evidence = 30
         class Observe(Tool):
             spec = ToolSpec(name="observe", summary="离线检查", action_level="detect")

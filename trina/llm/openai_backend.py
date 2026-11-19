@@ -643,8 +643,9 @@ def _decode_stream_event(
             terminal = terminal or finish_reason is not None
             if finish_reason == "length":
                 error = (
-                    "模型输出未完整结束: length（达到 max_tokens；"
-                    "请提高 llm.max_tokens 或降低 llm.reasoning_effort 后重试）"
+                    "模型输出未完整结束: length（达到输出 Token 上限；"
+                    "请提高供应商输出上限，或显式设置更大的 llm.max_tokens，"
+                    "或降低 llm.reasoning_effort 后重试）"
                 )
             elif finish_reason == "content_filter":
                 error = "模型输出未完整结束: content_filter（被供应商内容过滤）"
