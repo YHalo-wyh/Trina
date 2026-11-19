@@ -44,7 +44,7 @@ python -m trina doctor
 
 浏览器页面可自动加载脚本、图片和跨源子资源，CLI 目前不能在每个子请求发出前调用 Trina 的逐 URL 裁决。因此浏览器工具仅在默认 `scope.trust_mode=full` 下运行；切到 `restricted` 时明确返回 `RESTRICTED_UNSUPPORTED`，避免把初始 URL 校验误当成完整的跨源边界。
 
-显式 URL 仍经过目标格式、动作等级、速率和审计检查。资料检索使用 Google / Bing 找到来源后，应打开原文核对；搜索引擎选择不写入授权提示词。
+显式 URL 仍经过目标格式、动作等级、速率和审计检查。资料检索使用 `web_search` 的 Google / Bing 免费路径或 DeepSeek Search 适配器找到来源后，应打开原文核对；查询可使用 `site:`、日期和文件类型条件，统一结果引用为 `[n]`。搜索引擎选择不写入授权提示词。
 
 ## 验证
 

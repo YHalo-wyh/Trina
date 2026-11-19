@@ -95,6 +95,7 @@ ScopeSentry由外置Capability通过 `mcp_http` 复用 `ctx.http`；浏览器采
 | `trina.state` | `RunState.absorb(facts)`、`add_finding`、`knowledge_digest`、`summary_for_prompt`、`to_dict/from_dict` | 工具声明 facts，状态集中合并；`knowledge_digest` 排除时间、重复条目与笔记，用事实变化计算进展；`from_dict` 供工作台/复核读历史运行 |
 | `trina.tools.registry` | `ToolSpec`/`ParamSpec`/`ToolResult`/`ToolContext`/`Tool`/`ToolRegistry.execute` | 执行链是**唯一**入口；工具实现 `run(ctx, **params)`，返回 `ToolResult`；超时结果给出当前工作目录和缩小范围提示 |
 | `trina.tools.workspace` | `terminal_exec`、`workspace_read/write/edit` | 前台 argv 命令和项目文件编码工具；命令经 `run_external`，路径经 `ScopeGuard.check_workspace_path`，写入原子替换，编辑要求精确匹配数 |
+| `trina.tools.web_search` | `web_search` | Google/Bing 免费搜索与 DeepSeek Search 适配；查询过滤、结构化结果、统一 `[n]` 引用和原始交通证据 |
 | `trina.coordination` / `trina.tools.coordination` | `CoordinationRuntime.plan/claim/settle/publish_state/search_traces`、`shared_context/shared_trace_*` | Intent 是唯一任务状态；事件驱动规划、共享 Todo 派生视图、租约/去重/恢复、事实索引与探索视图、跨 Worker 可追踪观察和失败；不共享完整对话或直接合并当前题事实 |
 | `trina.binary` / `trina.tools.binary` | `BinarySessions`、`R2Backend`、`GDBBackend`、`AddressRef`、10 个语义化工具 | r2 stdio JSON 与 GDB/MI3 持久会话；按任务和能力租约隔离，地址空间显式，完整协议写证据；见 [二进制工具链](BINARY_TOOLS.md) |
 | `trina.browser` / `trina.tools.browser` | `BrowserSessions`、7 个结构化工具 | Playwright CLI 命名会话；快照 ref、交互、存储、网络记录与截图；完整输出写证据，恢复不复活进程；见[浏览器工具链](BROWSER_TOOLS.md) |

@@ -340,6 +340,11 @@ class TestScopeAwareToolBehaviour(unittest.TestCase):
                 self.assertIn("job_id", spec.params, "作业控制按当前会话 job_id 定位")
                 self.assertNotIn("target", spec.params, "不能给纯作业控制伪造网络目标")
                 continue
+            if name == "web_search":
+                self.assertIn("query", spec.params, "资料检索按 query 定位，不伪造目标地址")
+                self.assertNotIn("target", spec.params)
+                self.assertNotIn("url", spec.params)
+                continue
             if spec.category == "binary":
                 self.assertNotIn("target", spec.params)
                 self.assertNotIn("url", spec.params)
