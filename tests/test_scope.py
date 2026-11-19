@@ -57,6 +57,21 @@ class TestFullTrust(unittest.TestCase):
         self.assertTrue(g.check_http("https://example.invalid/x", method="DELETE", body="DELETE FROM users"))
         self.assertTrue(g.check_brute_scale(100_000))
 
+    def test_full_trust_allows_paths_outside_project_and_challenge_dirs(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            outside = root / "external" / "pwn1"
+            outside.parent.mkdir()
+            outside.write_bytes(b"ELF test fixture")
+            guard_instance = ScopeGuard(ScopeConfig(trust_mode="full"))
+
+            resolved = guard_instance.check_workspace_path(str(outside), workspace, root / "runs")
+
+            self.assertEqual(resolved, outside.resolve())
+            self.assertEqual(guard_instance.stats["denied"], 0)
+
 
 class TestScopeDecisions(unittest.TestCase):
     def test_allow_paths_grants_recursive_ctf_reads_without_widening_project_paths(self):
@@ -68,7 +83,10 @@ class TestScopeDecisions(unittest.TestCase):
             goal.write_text("port:23018\n", encoding="utf-8")
             workspace = root / "workspace"
             workspace.mkdir()
-            guard_instance = ScopeGuard(ScopeConfig(allow_paths=[str(root / "state" / "challenges" / "**")]))
+            guard_instance = ScopeGuard(ScopeConfig(
+                trust_mode="restricted",
+                allow_paths=[str(root / "state" / "challenges" / "**")],
+            ))
 
             resolved = guard_instance.check_workspace_path(str(goal), workspace, root / "runs")
             self.assertEqual(resolved, goal.resolve())

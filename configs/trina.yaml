@@ -48,7 +48,7 @@ llm:
   # openai: 标准 OpenAI/Anthropic/Responses API；replay: 离线回放（测试）
   # 当前接 DeepSeek 官方 API（OpenAI 兼容）；密钥由 /model 供应商配置或 DEEPSEEK_API_KEY 提供。
   backend: openai
-  model: deepseek-flash
+  model: deepseek-v4.1-flash
   timeout: 180
   temperature: 0.2
   # 0 不发送客户端输出 Token 上限；实际容量仍由供应商决定。
@@ -61,7 +61,7 @@ llm:
   # 连续 N 步动作完全重复则注入纠正提示
   stall_limit: 3
   # OpenAI 兼容后端参数（backend=openai 时生效）
-  base_url: "https://api.deepseek.com/v1"
+  base_url: "https://opencode.ai/zen/v1"
   api_key_env: "DEEPSEEK_API_KEY"
   # 模型协议：auto=后端支持就用原生 Tool Calling；json=只用 JSON Action；native=强制原生
   tool_protocol: auto

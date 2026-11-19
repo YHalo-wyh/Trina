@@ -393,7 +393,7 @@ class ScopeGuard:
         self._destructive_hosts = {h.lower() for h in scope.destructive_hosts}
 
     def check_workspace_path(self, raw: str, workspace: Any, runtime_root: Any, *, for_write: bool = False) -> Any:
-        """检查文件路径，支持配置声明的 CTF 题目目录读取并拒绝符号链接逃逸。"""
+        """解析工具路径；full 模式允许任务访问任意本地路径。"""
         from pathlib import Path
         ensure_execution_active()
         base, runs = Path(workspace).resolve(), Path(runtime_root).resolve()
@@ -417,9 +417,14 @@ class ScopeGuard:
             if within(path, root) and (recursive or path == root or root.is_dir()):
                 extra_allowed = True
                 break
-        allowed = (project_allowed and not run_escape) or extra_allowed
+        # full 是 CTF/实训的默认信任模式。路径仍然要经过 resolve，避免把
+        # 审计里记录的路径和实际执行路径分开；但不再把项目工作区当作硬边界。
+        # restricted 保留旧的项目、任务工作区和 allow_paths 判据，供需要收紧
+        # 文件范围的评测或课堂演示显式启用。
+        allowed = self.scope.full_trust or ((project_allowed and not run_escape) or extra_allowed)
         decision = self._record(Decision(allowed, category="filesystem", target=str(path),
-                               reason="当前任务文件或配置的题目目录" if allowed else "文件不属于当前项目、任务或配置的题目目录"), "binary.file")
+                               reason="full 信任模式允许本地路径" if self.scope.full_trust else
+                               ("当前任务文件或配置的题目目录" if allowed else "文件不属于当前项目、任务或配置的题目目录")), "binary.file")
         if decision.denied:
             raise ScopeViolation(decision)
         return path

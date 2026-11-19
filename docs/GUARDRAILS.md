@@ -73,7 +73,7 @@ trina run --target <目标> --set scope.trust_mode=restricted
 
 ## 6. 原生二进制边界
 
-`full` 只放开网络和动作授权判断，不改变文件路径检查。`ScopeGuard.check_workspace_path` 解析符号链接，接受当前项目、当前任务工作区以及 `scope.allow_paths` 声明的 CTF 题目目录；另一个任务目录即使位于同一 runs 根目录也拒绝。GDB 不提供 attach PID，r2/GDB 只接受注册 Schema 和固定查询模板。
+`full` 同时放开本地文件路径的项目边界。`ScopeGuard.check_workspace_path` 仍会解析路径并把实际路径写入审计，但不再因为路径位于项目工作区和题目目录之外而拒绝，因此可以直接分析用户指定的 WSL、临时目录或其他题目目录。`restricted` 保留旧判据，只接受当前项目、当前任务工作区以及 `scope.allow_paths` 声明的 CTF 题目目录，并拒绝符号链接逃逸。GDB 不提供 attach PID，r2/GDB 只接受注册 Schema 和固定查询模板。
 
 Linux 默认 `binary.sandbox=bwrap`：项目目录只读、当前任务目录可写、其他任务目录被隐藏、网络和宿主 HOME 不挂载。隔离器不可用时返回 `SANDBOX_UNAVAILABLE`，不会自动裸奔。只有操作者显式配置 `binary.sandbox=none` 才依赖平台或容器的外层隔离；此模式仍保留路径所有权、参数、超时、进程树回收、能力租约和审计，但不构成 Trina 文件系统/网络沙箱。详细边界见[二进制工具链](BINARY_TOOLS.md)。
 
