@@ -30,7 +30,9 @@ Worker 的可变调试进程与事实隔离；Commander 可转发带来源的已
 </delivery_contract>"""
 
 
-def role_for_registry(registry, configured: str = "") -> str:
+def role_for_registry(registry, configured: str = "", *, include=None) -> str:
     """按固定任务工具快照选择角色，两种 prompt_layers 路径保持一致。"""
-    binary = any(spec.category == "binary" for spec in registry.specs())
+    allowed = set(include) if include is not None else None
+    binary = any(spec.category == "binary" and (allowed is None or spec.name in allowed)
+                 for spec in registry.specs())
     return "\n\n".join(value for value in (BINARY_WORKER_ROLE if binary else "", configured.strip()) if value)

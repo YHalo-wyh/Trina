@@ -302,15 +302,30 @@ class ChatAgent:
         """固定 system 与初始运行合同只写一次，后续严格追加，稳定缓存前缀。"""
         if self._messages_ready:
             return
-        tool_block = self.registry.prompt_block(exclude=() if self.ctx.extra.get("subworkers") else ("worker_tasks",))
+        hidden_tools = () if self.ctx.extra.get("subworkers") else ("worker_tasks",)
         from .prompts import build_runtime_context
-        from .prompts import infer_task_route
+        from .prompts import infer_task_route, infer_task_route_key
         from .binary_prompt import role_for_registry
-        role = role_for_registry(self.registry, self.config.llm.role_profile)
         from ..worker_roles import WORKER_ROLES
+        protocol = "native" if self._native_tools_enabled() else "json"
+        task_route_key = infer_task_route_key(
+            goal=self.current_request,
+            target=self.state.target,
+            tool_names=self.registry.names(),
+            categories=self.registry.by_category().keys(),
+        )
+        browser_needed = any(term in f"{self.current_request} {self.state.target}".casefold()
+                            for term in ("browser", "playwright", "浏览器", "网页交互"))
+        terminal_session_needed = any(term in f"{self.current_request} {self.state.target}".casefold()
+                                     for term in ("后台", "后台执行", "等待期间", "启动测试程序", "作业", "background", "job_id", "terminal_status", "terminal_start"))
+        from ..tools.profile import visible_tool_names
+        visible_names = visible_tool_names(self.registry, task_route_key, browser=browser_needed,
+                                           terminal_session=terminal_session_needed)
+        self.ctx.extra["tool_allowlist"] = set(visible_names)
+        role = role_for_registry(self.registry, self.config.llm.role_profile, include=visible_names)
         if self.worker_role != "commander":
             role += "\n\n# 当前 Worker\n" + WORKER_ROLES[self.worker_role][1]
-        protocol = "native" if self._native_tools_enabled() else "json"
+        tool_block = self.registry.prompt_block(include=visible_names, exclude=hidden_tools)
         task_route = infer_task_route(
             goal=self.current_request,
             target=self.state.target,
@@ -361,6 +376,7 @@ class ChatAgent:
         self._messages.append({"role": "user", "content": "\n\n".join(runtime_parts)})
         tool_payload = (tool_schemas(
             self.registry,
+            include=self.ctx.extra.get("tool_allowlist"),
             exclude=() if self.ctx.extra.get("subworkers") else ("worker_tasks",),
         ) if allow_tools and self._native_tools_enabled() else None)
         from ..events import ModelEventStream

@@ -121,7 +121,7 @@ def tool_schemas(
 
     ``include`` 给出白名单时只导出这些工具（阶段裁剪用），``exclude`` 优先。
     """
-    allowed = set(include) if include else None
+    allowed = set(include) if include is not None else None
     blocked = set(exclude)
     rows: list[dict[str, Any]] = []
     for name in registry.names():

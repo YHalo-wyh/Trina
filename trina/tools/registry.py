@@ -490,10 +490,11 @@ class ToolRegistry:
 
     def prompt_block(
         self, categories: Iterable[str] | None = None, verbose: bool = False,
-        *, exclude: Iterable[str] = (),
+        *, include: Iterable[str] | None = None, exclude: Iterable[str] = (),
     ) -> str:
         """渲染工具清单给大模型（分组、紧凑）。"""
         grouped = self.by_category()
+        included = set(include) if include is not None else None
         excluded = set(exclude)
         blocks: list[str] = []
         order = ["recon", "web", "browser", "vuln", "exploit", "utility"]
@@ -501,7 +502,8 @@ class ToolRegistry:
         for category in keys:
             if categories and category not in categories:
                 continue
-            visible = [spec for spec in grouped[category] if spec.name not in excluded]
+            visible = [spec for spec in grouped[category]
+                       if (included is None or spec.name in included) and spec.name not in excluded]
             if not visible:
                 continue
             blocks.append(f"## {category}")
@@ -589,6 +591,19 @@ class ToolRegistry:
                 category="invalid",
                 data={"available_tools": self.names()},
                 next_hints=["请从工具清单里选择合法工具名"],
+                duration=time.monotonic() - started,
+            )
+        allowlist = ctx.extra.get("tool_allowlist")
+        if allowlist is not None and name not in set(allowlist):
+            reason = f"工具 {name} 未按本题能力快照绑定"
+            ctx.audit.append("tool.not_bound", tool=name, decision="deny", reason=reason)
+            return ToolResult(
+                ok=False,
+                denied=True,
+                error=reason,
+                summary=reason,
+                category="invalid",
+                next_hints=["使用当前工具 Schema 中的工具，或由 Commander 先绑定对应能力"],
                 duration=time.monotonic() - started,
             )
 

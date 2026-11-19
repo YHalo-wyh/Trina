@@ -46,6 +46,7 @@ from .prompts import (
     build_step_prompt,
     build_system_prompt,
     infer_task_route,
+    infer_task_route_key,
     parse_action,
 )
 
@@ -370,7 +371,26 @@ class PentestAgent:
         # ---- 协议：原生 Tool Calling 与 JSON Action 共用同一条执行链 ----
         native_mode = self._native_tools_enabled()
         hidden_tools = () if ctx.extra.get("subworkers") else ("worker_tasks",)
-        tool_payload: list[dict[str, Any]] | None = tool_schemas(self.registry, exclude=hidden_tools) if native_mode else None
+        task_route_key = infer_task_route_key(
+            goal=goal,
+            target=target,
+            tool_names=self.registry.names(),
+            categories=self.registry.by_category().keys(),
+        )
+        browser_needed = any(term in f"{goal} {target}".casefold()
+                            for term in ("browser", "playwright", "浏览器", "网页交互"))
+        terminal_session_needed = any(term in f"{goal} {target}".casefold()
+                                     for term in ("后台", "后台执行", "等待期间", "启动测试程序", "作业", "background", "job_id", "terminal_status", "terminal_start"))
+        from ..tools.profile import visible_tool_names
+        visible_names = visible_tool_names(self.registry, task_route_key, browser=browser_needed,
+                                           terminal_session=terminal_session_needed)
+        if target_id:
+            visible_names.update(test.tool for test in controller.registry.tests_for(target_id)
+                                 if test.tool in self.registry.names())
+        ctx.extra["tool_allowlist"] = set(visible_names)
+        tool_payload: list[dict[str, Any]] | None = (
+            tool_schemas(self.registry, include=visible_names, exclude=hidden_tools) if native_mode else None
+        )
         if native_mode:
             audit.append(
                 "protocol.native", decision="allow", tools=len(tool_payload or []),
@@ -379,7 +399,8 @@ class PentestAgent:
             state.note("protocol", f"使用原生工具调用（{len(tool_payload or [])} 个 schema，含 finish）")
         # ---- 提示词分层（P0）：Core/Role 进 system，任务契约进首条 user ----
         from .binary_prompt import role_for_registry
-        role = role_for_registry(self.registry, str(getattr(self.config.llm, "role_profile", "") or ""))
+        role = role_for_registry(self.registry, str(getattr(self.config.llm, "role_profile", "") or ""),
+                                 include=visible_names)
         task_route = infer_task_route(
             goal=goal,
             target=target,
@@ -389,7 +410,7 @@ class PentestAgent:
         if bool(getattr(self.config.llm, "prompt_layers", False)):
             layers = build_prompt_layers(
                 self.config.scope_prompt_block(),
-                self.registry.prompt_block(exclude=hidden_tools),
+                self.registry.prompt_block(include=visible_names, exclude=hidden_tools),
                 extra_rules,
                 policy_block,
                 role_profile=role,
@@ -403,13 +424,13 @@ class PentestAgent:
         else:
             system_prompt = build_system_prompt(
                 self.config.scope_prompt_block(),
-                self.registry.prompt_block(exclude=hidden_tools),
+                self.registry.prompt_block(include=visible_names, exclude=hidden_tools),
                 extra_rules,
                 include_hypothesis=use_ledger,
             )
             runtime_context = build_runtime_context(
                 self.config.scope_prompt_block(),
-                self.registry.prompt_block(exclude=hidden_tools),
+                self.registry.prompt_block(include=visible_names, exclude=hidden_tools),
                 extra_rules,
                 include_hypothesis=use_ledger,
                 task_route=task_route,

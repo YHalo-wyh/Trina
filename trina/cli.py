@@ -208,16 +208,20 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 
 def cmd_tools(args: argparse.Namespace) -> int:
     from .tools import LOAD_ERRORS, build_registry
+    from .tools.profile import visible_tool_names
 
     registry = build_registry()
+    show_all = bool(getattr(args, "all", False))
+    visible = set(registry.names()) if show_all else visible_tool_names(registry, getattr(args, "route", "general"))
     if args.json:
-        print(json.dumps(registry.describe(), ensure_ascii=False, indent=2))
+        rows = [item for item in registry.describe() if item["name"] in visible]
+        print(json.dumps(rows, ensure_ascii=False, indent=2))
         return 0
     if LOAD_ERRORS:
         for module, error in LOAD_ERRORS.items():
             out(f"[警告] 工具模块 {module} 未加载: {error}", "yellow")
-    rule(f"已封装工具（{len(registry.names())} 个）")
-    print(registry.prompt_block(verbose=args.verbose))
+    rule(f"已封装工具（{len(visible)} 个" + ("，完整注册表" if show_all else "，CTF 按需面") + "）")
+    print(registry.prompt_block(include=visible, verbose=args.verbose))
     return 0
 
 
@@ -1041,6 +1045,9 @@ def build_parser() -> argparse.ArgumentParser:
     tools = sub.add_parser("tools", help="列出已封装工具")
     tools.add_argument("--verbose", "-v", action="store_true")
     tools.add_argument("--json", action="store_true")
+    tools.add_argument("--all", action="store_true", help="显示完整注册表，默认只显示 CTF 按需工具面")
+    tools.add_argument("--route", choices=["general", "web", "binary"], default="general",
+                       help="CTF 按需工具题型，默认 general")
     tools.set_defaults(func=cmd_tools)
 
     single = sub.add_parser("tool", help="执行单个工具（带护栏与审计）")

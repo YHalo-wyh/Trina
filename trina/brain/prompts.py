@@ -64,12 +64,9 @@ _TASK_ROUTE_PROFILES = {
 }
 
 
-def infer_task_route(goal: str = "", target: str = "", *, tool_names: Iterable[str] = (),
-                     categories: Iterable[str] = ()) -> str:
-    """按目标语义和已绑定工具选择一个短的任务级提示模块。
-
-    路由只影响首条任务合同，不改变稳定 system，也不授予额外工具权限。
-    """
+def infer_task_route_key(goal: str = "", target: str = "", *, tool_names: Iterable[str] = (),
+                         categories: Iterable[str] = ()) -> str:
+    """返回任务级路由键，供提示词和按需工具绑定共同使用。"""
     text = f"{goal} {target}".casefold()
     names = {str(item).casefold() for item in tool_names}
     available = {str(item).casefold() for item in categories}
@@ -78,7 +75,7 @@ def infer_task_route(goal: str = "", target: str = "", *, tool_names: Iterable[s
         "binary": ("elf", "binary", "二进制", "逆向", "pwn", "gdb", "radare", "ret2", "rop"),
         "crypto": ("crypto", "密码", "加密", "解密", "rsa", "aes", "ecc", "xor", "hash"),
         "forensics": ("forensic", "取证", "隐写", "stego", "pcap", "内存", "磁盘", "图片", "metadata"),
-        "web": ("http", "https", "web", "api", "网页", "接口", "sql", "xss", "ssrf", "登录", "路由"),
+        "web": ("http", "https", "web", "api", "网页", "浏览器", "browser", "playwright", "接口", "sql", "xss", "ssrf", "登录", "路由"),
         "code": ("代码", "仓库", "repo", "git", "bug", "修复", "测试", "实现", "编程"),
     }
     for route, terms in keywords.items():
@@ -92,6 +89,13 @@ def infer_task_route(goal: str = "", target: str = "", *, tool_names: Iterable[s
     selected = max(scores, key=lambda item: (scores[item], item == "general"))
     if scores[selected] <= 0:
         selected = "general"
+    return selected
+
+
+def infer_task_route(goal: str = "", target: str = "", *, tool_names: Iterable[str] = (),
+                     categories: Iterable[str] = ()) -> str:
+    """按目标语义和已绑定工具选择一个短的任务级提示模块。"""
+    selected = infer_task_route_key(goal, target, tool_names=tool_names, categories=categories)
     label = {"web": "Web/API", "binary": "Binary/Pwn/Reverse", "crypto": "Crypto",
              "forensics": "Forensics/Stego", "code": "Code/Repository", "general": "General"}[selected]
     return f"[{label}]\n{_TASK_ROUTE_PROFILES[selected]}"
