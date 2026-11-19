@@ -52,8 +52,26 @@ class TestParseAction(unittest.TestCase):
         self.assertIn("真实回执", task_prompt)
         self.assertIn("两个及以上互不依赖的分支", task_prompt)
         self.assertIn("主动分别 spawn", task_prompt)
+        self.assertIn("统一结果契约", task_prompt)
+        self.assertIn("同批调用由执行器按顺序处理", task_prompt)
         for section in ("Engineering", "Tool Policy", "Exploration", "Delegation", "Workflow", "Delivery", "Completeness"):
             self.assertIn(f"# {section}", task_prompt)
+
+    def test_task_route_is_task_scoped_and_selects_binary_or_web_guidance(self):
+        from trina.brain.prompts import build_prompt_layers, infer_task_route
+
+        binary = infer_task_route("用 gdb 分析 ELF 并验证 ROP", "challenge.elf",
+                                  tool_names=("binary_open", "debug_start"), categories=("binary",))
+        web = infer_task_route("检查登录接口和 SQL 参数", "https://example.test",
+                               tool_names=("http_fingerprint", "sqli_test"), categories=("web", "browser"))
+        self.assertIn("Binary/Pwn/Reverse", binary)
+        self.assertIn("Web/API", web)
+        self.assertIn("确认文件类型", binary)
+        self.assertIn("HTTP/API 入口", web)
+
+        layers = build_prompt_layers(protocol="native", task_route=binary)
+        self.assertNotIn("Binary/Pwn/Reverse", layers.system())
+        self.assertIn("Binary/Pwn/Reverse", layers.first_user())
 
     def test_plain_json(self):
         action = parse_action('{"thought": "扫端口", "action": "port_scan", "params": {"target": "127.0.0.1"}}')

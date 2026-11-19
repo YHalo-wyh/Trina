@@ -1,5 +1,12 @@
 # Trina 更新日志
 
+## 0.4.0 · 2026-11-19 · 动态题型路由与 Worker 结果契约
+
+- 系统提示词新增任务级题型路由。Agent 根据目标语义、附件路径和工具快照在首条任务合同中选择 Web/API、Binary/Pwn/Reverse、Crypto、Forensics/Stego、Code/Repository 或 General 指引，稳定 system 前缀保持不变。
+- 原生工具合同明确批内调用按顺序执行，`_depends_on` 只表达本批次前序依赖，避免模型误把批量提交当成并行执行。
+- Swarm Worker 统一返回版本化结果契约，包含 `status`、`verified_facts`、`evidence_refs`、`failed_paths`、`remaining_questions` 和 `artifacts`。Worker 异常退出时也返回结构化失败结果。
+- 新增题型路由、原生批量语义和 Worker 失败契约回归测试，更新提示词说明文档。
+
 ## 0.4.0 · 2026-11-14
 
 ### 2026-11-18 · ADR 状态与索引同步

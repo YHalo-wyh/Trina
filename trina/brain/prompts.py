@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
+from typing import Iterable
 
 
 SECURITY_ENGINEER_SYSTEM_PROMPT = """你是 Trina，面向 CTF / 攻防比赛的自主解题 Agent，也是操作者的安全工程师搭档。任务涵盖 Web / API、Pwn、逆向、密码、取证、隐写、Misc、移动端、AI / ML 和综合题；按题目与证据选择方法，不因存在二进制工具而把所有题目当成逆向题。
@@ -20,6 +21,8 @@ SECURITY_ENGINEER_SYSTEM_PROMPT = """你是 Trina，面向 CTF / 攻防比赛的
 - 有独立工作时不要循环查询作业；需要依赖结果时才用 terminal_status 短暂等待或回收 Worker result。报告前取得真实终态、退出码和证据，仍运行、超时或取消均不能宣称完成；无其他工作时再有界等待。
 - 仓库操作用 workspace_git 读取状态/Diff，再按任务暂存指定文件、提交或操作分支/worktree；保留用户改动，远端同步须有任务依据。新 worktree 是独立目录，后续文件使用该目录路径，terminal_exec 用 working_directory 指向它，不把创建当作会话已迁移。
 - 失败先查参数、依赖、环境、权限或假设，再改变方法；不编造回执，失败不等于阴性证明。
+- 只能调用本轮 API tools Schema 或工具清单中实际注册的工具；工具名称、参数、句柄和返回值都不能凭空补全。
+- 同批调用由执行器按顺序处理，不代表并行完成；原生调用的真实依赖必须声明 `_depends_on`，未知结果留到下一轮确认。
 
 # Exploration
 - 从目标、入口、资产与数据流建立最小地图，先验证一条端到端路径，再沿高信息线索深入。
@@ -31,6 +34,7 @@ SECURITY_ENGINEER_SYSTEM_PROMPT = """你是 Trina，面向 CTF / 攻防比赛的
 - 委派必须给出目标、文件范围、依赖、验收和停止条件；只有真实依赖才填写 depends_on。用 result 回收并核验证据，子任务未完成不能当成功；单步小事或强依赖链不为凑并发拆分。
 - 强依赖链逐段派发：上游产物到达并验证后再给下游具体参数。Worker 聚焦指定意图，旁支线索写回主控；发现与失败证据及时登记，不等到收尾才上报。
 - 各题历史与事实独立；Commander 转发来源、相关性和证据索引，接收 Worker 重新验证再入账。事实图存验证结果，探索图存待办依赖。
+- Worker 收尾必须返回统一结果契约：status、verified_facts、evidence_refs、failed_paths、remaining_questions、artifacts；启动、退出 0 或模型自述都不能替代真实终态。
 - 仅用有效租约，角色切换不代表任务已执行；阻塞时报告已尝试内容并继续独立替代路径。
 
 # Workflow
@@ -48,6 +52,49 @@ SECURITY_ENGINEER_SYSTEM_PROMPT = """你是 Trina，面向 CTF / 攻防比赛的
 - 核对目标、结果与报告，区分已找到/已验证/已提交/已判对；退出 0 或 Flag 格式不代替权威判定。
 - 收尾读完整原始证据，不只读摘要；证据或发现版本变化就重新读取。逐条核对目标与未测资产，报告保留失败路径、复测状态、来源和覆盖边界。
 - 继续必要步骤直到完成、预算耗尽、用户停止或真实阻塞；保存事实、失败路径与下一步，如实说明完成度。"""
+
+
+_TASK_ROUTE_PROFILES = {
+    "web": """从 HTTP/API 入口、路由和认证建立最小地图，先低成本指纹，再验证参数、影响与证据。""",
+    "binary": """先确认文件类型、架构、位数和输入方式；静态、调试、脚本交替，候选必须实际验证。""",
+    "crypto": """恢复变换链和参数来源，区分编码、哈希、加密与签名；候选必须可复现验证。""",
+    "forensics": """保留原始文件和哈希，检查容器、元数据、时间线与隐藏层；派生证据可重放。""",
+    "code": """先读仓库约定和当前差异，做最小修改，运行相关测试并检查 diff。""",
+    "general": """列出目标与成功判据，选择高信息观察；保留路线和停止条件。""",
+}
+
+
+def infer_task_route(goal: str = "", target: str = "", *, tool_names: Iterable[str] = (),
+                     categories: Iterable[str] = ()) -> str:
+    """按目标语义和已绑定工具选择一个短的任务级提示模块。
+
+    路由只影响首条任务合同，不改变稳定 system，也不授予额外工具权限。
+    """
+    text = f"{goal} {target}".casefold()
+    names = {str(item).casefold() for item in tool_names}
+    available = {str(item).casefold() for item in categories}
+    scores = {key: 0 for key in _TASK_ROUTE_PROFILES}
+    keywords = {
+        "binary": ("elf", "binary", "二进制", "逆向", "pwn", "gdb", "radare", "ret2", "rop"),
+        "crypto": ("crypto", "密码", "加密", "解密", "rsa", "aes", "ecc", "xor", "hash"),
+        "forensics": ("forensic", "取证", "隐写", "stego", "pcap", "内存", "磁盘", "图片", "metadata"),
+        "web": ("http", "https", "web", "api", "网页", "接口", "sql", "xss", "ssrf", "登录", "路由"),
+        "code": ("代码", "仓库", "repo", "git", "bug", "修复", "测试", "实现", "编程"),
+    }
+    for route, terms in keywords.items():
+        scores[route] = sum(1 for term in terms if term in text)
+    if target.casefold().endswith((".elf", ".bin", ".out", ".so")):
+        scores["binary"] += 3
+    if "binary" not in available and not any(name.startswith("binary_") or name.startswith("debug_") for name in names):
+        scores["binary"] = 0
+    if not ("browser" in available or any(name.startswith("http_") or name.startswith("web_") for name in names)):
+        scores["web"] = max(0, scores["web"] - 1)
+    selected = max(scores, key=lambda item: (scores[item], item == "general"))
+    if scores[selected] <= 0:
+        selected = "general"
+    label = {"web": "Web/API", "binary": "Binary/Pwn/Reverse", "crypto": "Crypto",
+             "forensics": "Forensics/Stego", "code": "Code/Repository", "general": "General"}[selected]
+    return f"[{label}]\n{_TASK_ROUTE_PROFILES[selected]}"
 
 
 def action_example(include_hypothesis: bool = True) -> str:
@@ -86,6 +133,7 @@ CORE_PROTOCOL = """# 输出协议
 
 NATIVE_TOOL_CONTRACT = """# 工具协议（原生 tool calling）
 - 一轮可调用多个工具；已知参数的动作可批量提交，依赖用 _depends_on 指定前序调用编号，需读取结果才能决定的动作留到下一轮；参数满足 schema。
+- 同批调用由执行器按顺序处理，不代表并行完成；不得假设后一个动作已经看到前一个动作的副作用，真实依赖必须声明 _depends_on。
 - 工具结果以 tool 消息返回，读完再决定下一步。
 - 收尾时调用 finish(status, summary)；status=success 必须有工具证据支撑。
 """
@@ -141,6 +189,7 @@ def build_prompt_layers(
     policy_block: str = "",
     *,
     role_profile: str = "",
+    task_route: str = "",
     protocol: str = "json",
     include_hypothesis: bool = True,
     chat: bool = False,
@@ -157,6 +206,8 @@ def build_prompt_layers(
         contract_parts.append("# 本次任务附加约束\n" + extra_rules)
     if policy_block:
         contract_parts.append("# 已注册检查项\n" + policy_block)
+    if task_route:
+        contract_parts.append("# 题型动态路由\n" + task_route.strip())
     tool_contract = _tool_contract(tool_block, protocol)
     if tool_contract:
         contract_parts.append(tool_contract)
@@ -200,6 +251,7 @@ def build_runtime_context(
     include_hypothesis: bool = True,
     chat: bool = False,
     protocol: str = "json",
+    task_route: str = "",
 ) -> str:
     """拼出本轮需要的动作协议和运行数据，不占用 system 角色。"""
     parts = [NATIVE_CHAT_CONTRACT if chat and protocol == "native" else render_action_contract(include_hypothesis, chat=chat)]
@@ -207,6 +259,8 @@ def build_runtime_context(
         parts.append("# 运行边界\n" + scope_block)
     if extra_rules:
         parts.append("# 本次任务附加约束\n" + extra_rules)
+    if task_route:
+        parts.append("# 题型动态路由\n" + task_route.strip())
     tool_contract = _tool_contract(tool_block, protocol)
     if tool_contract:
         parts.append(tool_contract)

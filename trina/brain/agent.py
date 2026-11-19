@@ -45,6 +45,7 @@ from .prompts import (
     build_runtime_context,
     build_step_prompt,
     build_system_prompt,
+    infer_task_route,
     parse_action,
 )
 
@@ -379,6 +380,12 @@ class PentestAgent:
         # ---- 提示词分层（P0）：Core/Role 进 system，任务契约进首条 user ----
         from .binary_prompt import role_for_registry
         role = role_for_registry(self.registry, str(getattr(self.config.llm, "role_profile", "") or ""))
+        task_route = infer_task_route(
+            goal=goal,
+            target=target,
+            tool_names=self.registry.names(),
+            categories=self.registry.by_category().keys(),
+        )
         if bool(getattr(self.config.llm, "prompt_layers", False)):
             layers = build_prompt_layers(
                 self.config.scope_prompt_block(),
@@ -386,6 +393,7 @@ class PentestAgent:
                 extra_rules,
                 policy_block,
                 role_profile=role,
+                task_route=task_route,
                 protocol="native" if native_mode else "json",
                 include_hypothesis=use_ledger,
             )
@@ -404,6 +412,7 @@ class PentestAgent:
                 self.registry.prompt_block(exclude=hidden_tools),
                 extra_rules,
                 include_hypothesis=use_ledger,
+                task_route=task_route,
             ) + ("\n\n# 已注册检查项\n" + policy_block if policy_block else "")
             if role:
                 system_prompt += "\n\n" + role

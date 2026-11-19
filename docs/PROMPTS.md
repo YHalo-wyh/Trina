@@ -1,5 +1,13 @@
 # 比赛 Agent 提示词
 
+## 2026-11-19 · 题型路由与 Worker 交接契约
+
+当前稳定 system 继续只放跨任务规则。任务首条 user 合同根据目标、附件路径和已绑定工具选择一个短路由模块，覆盖 Web/API、Binary/Pwn/Reverse、Crypto、Forensics/Stego、Code/Repository 和 General。路由只提供首个低成本观察、验证重点和收尾方向，不改变 ToolRegistry、ScopeGuard 或 Capability 租约。
+
+原生工具合同明确同批调用由执行器按顺序处理。`_depends_on` 表示本批次前序调用依赖，未知结果必须留到下一轮，模型不能把批量提交理解成并行完成。
+
+Commander 与 Worker 使用版本化结果契约 `contract_version=1`。每个 Worker 终态都必须提供 `status`、`verified_facts`、`evidence_refs`、`failed_paths`、`remaining_questions` 和 `artifacts`。Worker 在返回 `RunState` 前异常时也生成失败契约，避免 Commander 收到空结果。旧的 `facts`、`intelligence`、`counters` 和 `performance` 字段继续保留以兼容报告与恢复。
+
 Tool Policy 明确等待期间的推进方式：耗时命令先用 `terminal_start` 取得 job_id，再分析已有证据、调用独立工具或委派 Worker；有其他工作时不忙轮询，依赖输出时才查询/有界等待，交付前回收真实终态和证据。同步工具返回前不会发起下一次模型决策，批内调用也不因此并发。新规则随新会话加载；旧会话使用 `/new` 生效。
 
 Delegation 现在明确调用 `worker_tasks(spawn)` 分派独立分析/编码分支，并用 `result` 回收证据；主 Agent 继续关键路径。请求同时包含两个及以上互不依赖的交付物、目标或验证分支时，应在当前并发额度内主动分别 spawn，不无故串行，也不把单步小事拆成 Worker。仅在本入口真实提供委派宿主时适用，未接受或未完成的子任务不能作为成功结果。模型末尾运行状态列出最多 8 个当前子任务的 ID/状态/模型，保持稳定 system 前缀，避免反复复制完整对话。旧会话保留已有 system，更新需 `/new`。决策见 [ADR-0030](../design/adr/0030-commander-delegation-and-live-grid.md) 与 [ADR-0037](../design/adr/0037-proactive-workers-and-pluggable-task-modules.md)。

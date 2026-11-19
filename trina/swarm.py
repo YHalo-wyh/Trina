@@ -33,6 +33,7 @@ from .tools import ToolRegistry, build_registry
 
 _TASK_ID = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$")
 TERMINAL = {"completed", "blocked", "failed", "skipped", "timed_out", "cancelled"}
+WORKER_RESULT_CONTRACT_VERSION = 1
 
 
 @dataclass(frozen=True)
@@ -685,6 +686,8 @@ class SwarmRuntime:
             commander_brief_provider=lambda: self._briefs(task),
             extra_rules=("本次只完成指定意图，旁支线索及时用 record_intelligence 登记交主控，不自行扩大任务。"
                          "发现时立即用 report_finding/record_fact 写回证据；收尾前独立复核成功结果。\n"
+                         "Worker 收尾必须让结果可交接：返回真实 status、verified_facts、evidence_refs、failed_paths、"
+                         "remaining_questions 和 artifacts；未完成、超时、取消或证据不足要保留对应状态。\n"
                          + getattr(registry, "capability_guidance", "")),
             run_id=run_id,
         )
@@ -699,16 +702,82 @@ class SwarmRuntime:
 
     @staticmethod
     def _result(state: RunState) -> dict[str, Any]:
+        """生成 Commander 与后续 Worker 共用的紧凑结果契约。"""
         facts = {
             "hosts": [{"host": host, "ports": sorted(hs.ports), "technologies": hs.technologies[:8], "web_paths": hs.web_paths[:20]} for host, hs in state.hosts.items()],
             "findings": [{"title": f.title, "class": f.vuln_class, "target": f.url or f.target, "status": f.status} for f in state.findings],
             "flags": [flag.get("value", "") for flag in state.flags],
         }
+        evidence_refs: list[str] = []
+        for item in state.evidence:
+            if not isinstance(item, dict):
+                continue
+            for key in ("id", "evidence_id", "evidence_ref", "traffic_id"):
+                value = str(item.get(key) or "").strip()
+                if value and value not in evidence_refs:
+                    evidence_refs.append(value)
+                    break
+        verified_facts: list[dict[str, Any]] = []
+        for host, host_state in sorted(state.hosts.items()):
+            if host_state.alive is not None:
+                verified_facts.append({"kind": "asset", "host": host, "alive": host_state.alive})
+            for port, info in sorted(host_state.ports.items()):
+                verified_facts.append({"kind": "port", "host": host, "port": port,
+                                       "service": info.get("service", ""), "version": info.get("version", "")})
+            for technology in host_state.technologies[:20]:
+                verified_facts.append({"kind": "technology", "host": host, "value": technology})
+            for path in host_state.web_paths[:50]:
+                verified_facts.append({"kind": "path", "host": host, "value": path})
+        for finding in state.findings:
+            if finding.status not in {"verified", "exploited"} or not finding.evidence:
+                continue
+            finding_refs = []
+            for item in finding.evidence:
+                if isinstance(item, dict):
+                    value = str(item.get("id") or item.get("evidence_id") or item.get("evidence_ref") or "").strip()
+                    if value and value not in finding_refs:
+                        finding_refs.append(value)
+            verified_facts.append({"kind": "finding", "id": finding.id, "title": finding.title,
+                                   "class": finding.vuln_class, "target": finding.url or finding.target,
+                                   "status": finding.status, "evidence_refs": finding_refs})
+            for value in finding_refs:
+                if value not in evidence_refs:
+                    evidence_refs.append(value)
+        for credential in state.credentials:
+            if credential.verified:
+                verified_facts.append({"kind": "credential", "target": credential.target,
+                                       "service": credential.service, "username": credential.username,
+                                       "verified": True})
+        for flag in state.flags:
+            value = str(flag.get("value") or "").strip()
+            if value:
+                verified_facts.append({"kind": "flag", "value": value, "source": flag.get("source", "")})
+        failed_paths: list[str] = []
+        for step in state.steps:
+            if not isinstance(step, dict) or step.get("ok", True):
+                continue
+            text = str(step.get("error") or step.get("summary") or step.get("action") or "未知失败").strip()
+            action = str(step.get("action") or "tool")
+            item = f"{action}: {text}"[:500]
+            if item not in failed_paths:
+                failed_paths.append(item)
+        remaining_questions: list[dict[str, Any]] = []
+        for item in state.hypotheses:
+            if not isinstance(item, dict) or item.get("status") in {"confirmed", "refuted"}:
+                continue
+            remaining_questions.append({key: item.get(key, "") for key in ("id", "statement", "status", "next_step")})
+        if not remaining_questions and state.status not in {"success", "completed"} and state.goal:
+            remaining_questions.append({"id": "goal", "statement": state.goal[:500], "status": "unresolved", "next_step": ""})
         return {
+            "contract_version": WORKER_RESULT_CONTRACT_VERSION,
             "run_id": state.run_id,
             "status": state.status,
             "verdict": state.verdict,
             "facts": facts,
+            "verified_facts": verified_facts[:200],
+            "evidence_refs": evidence_refs[:200],
+            "failed_paths": failed_paths[:100],
+            "remaining_questions": remaining_questions[:40],
             "counters": state.counters,
             "performance": state.performance,
             "ledger": state.ledger,
@@ -736,6 +805,27 @@ class SwarmRuntime:
                 "artifacts": dict(state.artifacts),
                 "verdict": state.verdict,
             },
+        }
+
+    @staticmethod
+    def _failed_result(error: str) -> dict[str, Any]:
+        """即使 Worker 在返回 RunState 前异常，也保持结果契约完整。"""
+        return {
+            "contract_version": WORKER_RESULT_CONTRACT_VERSION,
+            "run_id": "",
+            "status": "failed",
+            "verdict": "",
+            "facts": {"hosts": [], "findings": [], "flags": []},
+            "verified_facts": [],
+            "evidence_refs": [],
+            "failed_paths": [str(error)[:500]],
+            "remaining_questions": [],
+            "counters": {},
+            "performance": {},
+            "ledger": {},
+            "artifacts": {},
+            "duration": 0.0,
+            "intelligence": {},
         }
 
     def _save(self) -> None:
@@ -930,6 +1020,7 @@ class SwarmRuntime:
                         self._expand_from_facts(task.id, added)
                     except Exception as exc:  # noqa: BLE001 - 单任务失败不影响其余分支
                         record.error = f"{type(exc).__name__}: {exc}"
+                        record.result = self._failed_result(record.error)
                         final_status = "failed"
                     finally:
                         record.ended_at = time.time()

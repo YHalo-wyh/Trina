@@ -100,6 +100,10 @@ class SwarmTests(unittest.TestCase):
             ["verify"],
             "当前题目的事实图不能吸收前序 Worker 状态",
         )
+        worker_result = summary["tasks"]["verify"]["result"]
+        for key in ("contract_version", "verified_facts", "evidence_refs", "failed_paths", "remaining_questions", "artifacts"):
+            self.assertIn(key, worker_result)
+        self.assertEqual(worker_result["contract_version"], 1)
         recon = next(item for item in observed if item[0] == "recon")
         self.assertNotIn("sqli_test", recon[1])
         self.assertTrue(runtime.checkpoint.exists())
@@ -153,6 +157,8 @@ class SwarmTests(unittest.TestCase):
         self.assertTrue(brief["experience"]["failures"])
         self.assertGreaterEqual(summary["coordination"]["planner_rounds"], 2)
         self.assertIn("exploration", summary["graphs"])
+        self.assertEqual(summary["tasks"]["first"]["result"]["status"], "failed")
+        self.assertTrue(summary["tasks"]["first"]["result"]["failed_paths"])
 
     def test_new_asset_fact_generates_one_bounded_followup_intent(self) -> None:
         calls: list[str] = []

@@ -304,25 +304,33 @@ class ChatAgent:
             return
         tool_block = self.registry.prompt_block(exclude=() if self.ctx.extra.get("subworkers") else ("worker_tasks",))
         from .prompts import build_runtime_context
+        from .prompts import infer_task_route
         from .binary_prompt import role_for_registry
         role = role_for_registry(self.registry, self.config.llm.role_profile)
         from ..worker_roles import WORKER_ROLES
         if self.worker_role != "commander":
             role += "\n\n# 当前 Worker\n" + WORKER_ROLES[self.worker_role][1]
         protocol = "native" if self._native_tools_enabled() else "json"
+        task_route = infer_task_route(
+            goal=self.current_request,
+            target=self.state.target,
+            tool_names=self.registry.names(),
+            categories=self.registry.by_category().keys(),
+        )
 
         if self.config.llm.prompt_layers:
             from .prompts import build_prompt_layers
             layers = build_prompt_layers(self.config.scope_prompt_block(), tool_block,
                                          include_hypothesis=self.use_ledger, chat=True,
-                                         role_profile=role, protocol=protocol)
+                                         role_profile=role, task_route=task_route, protocol=protocol)
             system, contract = layers.system(), layers.first_user()
         else:
             system = render_chat_prompt(self.use_ledger)
             if role:
                 system += "\n\n" + role
             contract = build_runtime_context(self.config.scope_prompt_block(), tool_block,
-                                             include_hypothesis=self.use_ledger, chat=True, protocol=protocol)
+                                             include_hypothesis=self.use_ledger, chat=True, protocol=protocol,
+                                             task_route=task_route)
         self._messages = [
             {"role": "system", "content": system},
             {
