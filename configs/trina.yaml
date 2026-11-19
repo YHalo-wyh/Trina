@@ -20,6 +20,11 @@ scope:
     - 192.168.0.0/16
   # 精确主机白名单（域名/IP，端口无关），优先级高于网段，用于放行特例。
   authorized_hosts: []
+  # CTF 题目文件的额外读取目录；/** 表示递归目录。写入仍需使用项目或任务工作区。
+  allow_paths:
+    - /root/TPCTF2026-Agent/state/challenges/**
+    - /root/trina-vps/runs/**
+    - /root/trina-vps/capabilities/ctf-mode/**
   # 显式拒绝网段，即使落在 authorized_cidrs 内也会被拒（如隔离某台机器）。
   deny_cidrs: []
   # 受限模式是否允许公网目标。

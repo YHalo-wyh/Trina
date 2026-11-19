@@ -1,5 +1,13 @@
 # Trina 更新日志
 
+## 0.4.0 · 2026-11-19 · CTF 目标解析与题目目录读取
+
+- 控制台底栏移除聊天轮次显示，模型、角色、缓存和 Token 保持原有布局；内部轮次计数继续用于会话恢复、调度和评测统计。
+- `trina bench` 不再暴露 `--attempts` 轮次选项，续做由现有 Commander、进展和时间预算自动决定；环境变量与内部状态字段继续兼容旧检查点。
+- `GoalRequirements` 只从 `port:数字`、`端口:数字` 和明确的 `host:port` 提取端口，忽略 `AUTHORED-*`、UUID、普通数字串及文件路径中的数字。
+- `scope.allow_paths` 支持以 `/**` 声明递归 CTF 题目目录，文件读取继续经过路径解析、符号链接收敛和审计。
+- CTF playbook 规定 `--goal` 使用短合同，题目 ID、实例、目标和提交命令从 `CTF_GOAL.md` 通过 `terminal_exec` 读取。
+
 ## 0.4.0 · 2026-11-19 · 动态题型路由与 Worker 结果契约
 
 - 系统提示词新增任务级题型路由。Agent 根据目标语义、附件路径和工具快照在首条任务合同中选择 Web/API、Binary/Pwn/Reverse、Crypto、Forensics/Stego、Code/Repository 或 General 指引，稳定 system 前缀保持不变。

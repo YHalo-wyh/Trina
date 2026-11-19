@@ -103,7 +103,7 @@ ScopeSentry由外置Capability通过 `mcp_http` 复用 `ctx.http`；浏览器采
 | `trina.tools.external` | `run_external(argv, ctx, …)`、`which/have` | `shell=False`、先护栏后执行、命令与输出摘要进审计 |
 | `trina.brain.runtime` / `trina.brain.agent` / `trina.brain.chat` | `AgentRuntime.run/decode_batch`、`PentestAgent.run`、`ChatAgent.ask` | 同一核心循环执行原生批量调用并完整配对 tool 回执；依赖只引用本批前序编号；任务/聊天只适配状态、显示与收尾 |
 | `trina.brain.planner` | `Planner.tick/objective_met/force_advance/should_finish` | 旧 PTES 兼容模块；默认 `run.phases=[]` 不进入核心路径，显式配置阶段后才启用 |
-| `trina.brain.goal` | `GoalRequirements.parse(goal)`、`unsatisfied(state)/soft_hints/satisfied` | 漏洞类与端口形成硬条件；路径在没有类要求时为硬条件，否则为提示；凭据形成验证提示。最终成功依据已表达的条件，不读取 ground truth；关键词解析不能表达全部自然语言语义 |
+| `trina.brain.goal` | `GoalRequirements.parse(goal)`、`unsatisfied(state)/soft_hints/satisfied` | 漏洞类与显式 `port:数字` / `host:port` 形成硬条件；`AUTHORED-*`、UUID、文件路径数字不参与端口解析。路径在没有类要求时为硬条件，否则为提示；凭据形成验证提示。最终成功依据已表达的条件，不读取 ground truth；关键词解析不能表达全部自然语言语义 |
 | `trina.hypotheses` | `HypothesisLedger.add/from_action/record_tool_outcome/record_outcome/prompt_block/finalize/summary` | 假设的排序/状态机与证据判定；任务/对话共用验证对象匹配；`hypothesis_id` 复用台账；无新信息只降优先级，明确反证才能否定；默认不额外接管动作调度 |
 | `trina.brain.failure` | `classify_failure`、`LoopGuard.observe`、`advice_for`、`alternatives_for` | 失败归因（boundary/tool/environment/budget/hypothesis）+ 无新信息重复识别，给出递进建议（换参数→换工具→人工） |
 | `trina.brain.scheduler` | `HypothesisScheduler.decide(...)` | 显式兼容模块；默认 `run.hypothesis_scheduler=false`，假设台账记录证据但不再成为第二个逐步调度中心 |

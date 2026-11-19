@@ -34,7 +34,7 @@ def _is_unbounded_find(argv: list[str]) -> bool:
     return "/" in roots
 
 
-def _path(ctx, raw: str, root: str = "project") -> Path:
+def _path(ctx, raw: str, root: str = "project", *, for_write: bool = False) -> Path:
     """所有文件路径统一交给 ScopeGuard 裁决，禁止跨项目/跨任务逃逸。"""
     if not raw or "\x00" in raw:
         raise ValueError("path 不能为空且不能包含 NUL")
@@ -42,7 +42,7 @@ def _path(ctx, raw: str, root: str = "project") -> Path:
     candidate = Path(raw)
     if not candidate.is_absolute():
         candidate = base / candidate
-    return Path(ctx.guard.check_workspace_path(str(candidate), ctx.workspace, ctx.config.runtime_root))
+    return Path(ctx.guard.check_workspace_path(str(candidate), ctx.workspace, ctx.config.runtime_root, for_write=for_write))
 
 
 def _digest(data: str) -> str:
@@ -82,7 +82,7 @@ class TerminalExec(Tool):
             return ToolResult(ok=False, error="input 超过 64KiB")
         directory = Path.cwd() if cwd == "project" else ctx.workspace
         if working_directory:
-            directory = _path(ctx, working_directory)
+            directory = _path(ctx, working_directory, for_write=True)
         if not directory.is_dir():
             return ToolResult(ok=False, error="执行目录不存在或不是目录")
         if _is_unbounded_find(argv):
@@ -185,7 +185,7 @@ class WorkspaceWrite(Tool):
         try:
             if len(content.encode("utf-8")) > _TEXT_LIMIT:
                 return ToolResult(ok=False, error="content 超过 1MiB")
-            resolved = _path(ctx, path, root)
+            resolved = _path(ctx, path, root, for_write=True)
             before = resolved.read_text(encoding="utf-8", errors="replace") if resolved.is_file() else ""
             _atomic_write(resolved, content)
             ctx.audit.append(
@@ -215,7 +215,7 @@ class WorkspaceEdit(Tool):
 
     def run(self, ctx, path, old, new, expected=1, root="project"):
         try:
-            resolved = _path(ctx, path, root)
+            resolved = _path(ctx, path, root, for_write=True)
             if not resolved.is_file():
                 return ToolResult(ok=False, error="文件不存在或不是普通文件")
             if not old:

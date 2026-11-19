@@ -236,8 +236,6 @@ class Console:
             estimated = self.chat.context.stats.get("estimated_input_tokens")
             if isinstance(estimated, int):
                 context_tokens = estimated
-            tools = int(self.chat.state.counters.get("tool_calls", 0))
-            progress = f"轮次 {self.chat.turns}" + (f" · 工具 {tools}" if tools else "")
         else:
             stats = getattr(state, "context_stats", {}) if state is not None else {}
             estimated = stats.get("estimated_input_tokens") if isinstance(stats, dict) else None

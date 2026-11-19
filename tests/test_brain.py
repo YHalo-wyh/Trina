@@ -250,17 +250,21 @@ class TestGoalRequirements(unittest.TestCase):
     def test_port_requirements_extracted_and_ignored_when_unrelated(self):
         from trina.brain.goal import GoalRequirements
 
-        req = GoalRequirements.parse('枚举 127.0.0.1 的端口，必须覆盖 9099(HTTP) 与 2222(SSH)，例如 ports="2222,9099"')
+        req = GoalRequirements.parse('枚举 127.0.0.1 的端口，必须覆盖 port:9099(HTTP) 与 127.0.0.1:2222(SSH)')
         self.assertEqual(sorted(req.ports), [2222, 9099])
-        # 年份/时长/任务编号不是端口
-        for text in ("在 2026 年完成，限时 1800 秒", "复现 TSecBench 题 web-0001"):
+        # 年份/时长/任务编号、题目 ID、实例 UUID 和文件路径不是端口。
+        for text in (
+            "在 2026 年完成，限时 1800 秒",
+            "复现 TSecBench 题 web-0001",
+            "AUTHORED-31FB487C，实例 UUID 8105/23，文件 /root/TPCTF2026-Agent/state/challenges/8105",
+        ):
             self.assertEqual(GoalRequirements.parse(text).ports, [], text)
 
     def test_port_requirement_blocks_until_scanned(self):
         from trina.brain.goal import GoalRequirements
 
         state = RunState(run_id="p", target="127.0.0.1")
-        req = GoalRequirements.parse("必须覆盖 9099 与 2222 端口")
+        req = GoalRequirements.parse("必须覆盖 port:9099 与 127.0.0.1:2222")
         self.assertEqual(sorted(req.ports), [2222, 9099])
         self.assertEqual(len(req.unsatisfied(state)), 2)
         state.host("127.0.0.1").add_port(9099, service="http")

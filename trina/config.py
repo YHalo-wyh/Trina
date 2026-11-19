@@ -46,6 +46,8 @@ class ScopeConfig:
         ]
     )
     authorized_hosts: list[str] = field(default_factory=list)
+    #: 允许文件工具读取的额外目录。条目以 `/**` 结尾时递归覆盖该目录。
+    allow_paths: list[str] = field(default_factory=list)
     #: 基准平台控制面主机白名单（只允许答题 API，不允许作为扫描目标）。
     #: 由 `trina bench` 在启动时从 BENCHMARK_BASE_URL 写入并记入审计。
     control_plane_hosts: list[str] = field(default_factory=list)
@@ -65,6 +67,8 @@ class ScopeConfig:
             raise ConfigError(f"scope.trust_mode 必须是 {TRUST_MODES} 之一，得到 {self.trust_mode!r}")
         if self.exploit_level not in ACTION_LEVELS:
             raise ConfigError(f"scope.exploit_level 必须是 {ACTION_LEVELS} 之一，得到 {self.exploit_level!r}")
+        if not isinstance(self.allow_paths, list) or any(not isinstance(item, str) or not item.strip() for item in self.allow_paths):
+            raise ConfigError("scope.allow_paths 必须是非空字符串路径列表")
         import ipaddress
 
         for name in ("authorized_cidrs", "deny_cidrs"):
@@ -551,11 +555,13 @@ class TrinaConfig:
     def scope_prompt_block(self) -> str:
         """给运行协议看的信任模式摘要。"""
         s = self.scope
+        extra_paths = f"\n额外文件读取目录: {', '.join(s.allow_paths)}" if s.allow_paths else ""
         if s.full_trust:
             return (
                 "信任模式: full（默认完全信任）\n"
                 "已注册工具可直接执行；目标、动作等级、破坏性方法、载荷模式与尝试规模不触发授权拒绝。\n"
                 f"仍保留参数校验、执行超时、取消、审计与速率控制: {s.max_qps} req/s，单主机并发 {s.max_host_concurrency}。"
+                + extra_paths
             )
         lines = [
             "信任模式: restricted（显式受限）",
@@ -567,6 +573,8 @@ class TrinaConfig:
             f"破坏性动作: {'开启（仅限 ' + ', '.join(s.destructive_hosts) + '）' if s.destructive else '关闭'}",
             f"全局速率上限: {s.max_qps} req/s，单主机并发 {s.max_host_concurrency}，爆破尝试上限 {s.max_brute_attempts}",
         ]
+        if s.allow_paths:
+            lines.append("额外文件读取目录: " + ", ".join(s.allow_paths))
         return "\n".join(lines)
 
     def to_dict(self) -> dict[str, Any]:

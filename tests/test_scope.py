@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import unittest
+import tempfile
+from pathlib import Path
 
 from trina.config import ScopeConfig, TrinaConfig
 from trina.scope import RateLimiter, ScopeGuard, ScopeViolation, parse_target
@@ -57,6 +59,27 @@ class TestFullTrust(unittest.TestCase):
 
 
 class TestScopeDecisions(unittest.TestCase):
+    def test_allow_paths_grants_recursive_ctf_reads_without_widening_project_paths(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            challenge = root / "state" / "challenges" / "AUTHORED-1"
+            challenge.mkdir(parents=True)
+            goal = challenge / "CTF_GOAL.md"
+            goal.write_text("port:23018\n", encoding="utf-8")
+            workspace = root / "workspace"
+            workspace.mkdir()
+            guard_instance = ScopeGuard(ScopeConfig(allow_paths=[str(root / "state" / "challenges" / "**")]))
+
+            resolved = guard_instance.check_workspace_path(str(goal), workspace, root / "runs")
+            self.assertEqual(resolved, goal.resolve())
+            self.assertEqual(guard_instance.summary()["allow_paths"], [str(root / "state" / "challenges" / "**")])
+            with self.assertRaises(ScopeViolation):
+                guard_instance.check_workspace_path(str(goal), workspace, root / "runs", for_write=True)
+
+            outside = root / "secret.txt"
+            with self.assertRaises(ScopeViolation):
+                guard_instance.check_workspace_path(str(outside), workspace, root / "runs")
+
     def test_private_allowed_public_denied(self):
         g = guard()
         self.assertTrue(g.check_target("192.168.1.10"))

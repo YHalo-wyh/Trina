@@ -72,7 +72,7 @@ class ConsoleContext:
     workers: str = ""
 
     def footer(self, width: int) -> list[tuple[str, str]]:
-        """左侧角色/模型/轮次，右侧真实用量；按列预算收起低优先级字段。"""
+        """左侧角色/模型，右侧真实用量；按列预算收起低优先级字段。"""
         width = max(1, width)
         icon = "◌"
         if "运行" in self.status:

@@ -50,10 +50,14 @@ KEYWORD_CLASSES: dict[str, str] = {
 DETECTION_ONLY = {"information_disclosure", "open_port", "service_fingerprint", "security_misconfig_headers"}
 
 _PATH_RE = re.compile(r"(?<![\w.])/(?:\.?[A-Za-z0-9_\-]+/)*\.?[A-Za-z0-9_\-]+(?:\.[A-Za-z0-9]{1,5})?")
-#: 端口候选：2–5 位独立数字（前后不能是词字符/点/斜杠/百分号）
-_PORT_RE = re.compile(r"(?<![\w./%$])(\d{2,5})(?![\d.])")
-#: 明显不是端口的数字：年份、以及后面跟着时间/数量单位的数字
-_PORT_UNIT_RE = re.compile(r"\s*(?:年|月|日|秒|分|小时|次|步|个|条|台|元|%)")
+#: 端口只接受显式 `port:1234` / `端口:1234`，避免把题目 ID、UUID 和文件路径数字当成端口。
+_LABELED_PORT_RE = re.compile(r"(?:\bport|端口)\s*[:：=]\s*(?P<port>\d{1,5})(?!\d)", re.I)
+#: host:port 支持 URL、IPv4、域名和 localhost；普通标签、UUID 和文件路径不参与端口解析。
+_HOST_PORT_RE = re.compile(
+    r"(?<![\w-])(?P<host>(?:https?://)?(?:\[[^\]]+\]|(?:\d{1,3}\.){3}\d{1,3}|localhost|(?:[A-Za-z0-9-]+\.)+[A-Za-z0-9-]+))"
+    r":(?P<port>\d{1,5})(?!\d)", re.I,
+)
+_IGNORED_PORT_HOSTS = {"uuid", "id", "instance", "authored", "challenge", "challenge-id"}
 #: 从任务描述里识别「明文凭据」的两种常见写法
 _CRED_PAIR_RE = re.compile(r"(?<![\w/])([A-Za-z][\w.\-]{1,31})/([^\s/，,、）)]{2,64})")
 _CRED_LABELED_RE = re.compile(
@@ -92,19 +96,18 @@ class GoalRequirements:
                 continue
             if path not in req.paths:
                 req.paths.append(path)
-        for match in _PORT_RE.finditer(host_stripped):
-            literal = match.group(1)
-            if literal.startswith("0"):  # 任务 ID/编号（web-0001）不是端口
+        explicit_ports: list[int] = []
+        for match in _LABELED_PORT_RE.finditer(text):
+            explicit_ports.append(int(match.group("port")))
+        for match in _HOST_PORT_RE.finditer(text):
+            host = match.group("host").lower()
+            host_name = host.removeprefix("http://").removeprefix("https://").strip("[]")
+            if host_name in _IGNORED_PORT_HOSTS:
                 continue
-            port = int(literal)
-            if not (1 <= port <= 65535) or port in req.ports:
-                continue
-            tail = host_stripped[match.end() : match.end() + 3]
-            if 1900 <= port <= 2100:  # 年份，不是端口
-                continue
-            if _PORT_UNIT_RE.match(tail):  # "3600 秒"、"3 次" 这类数量
-                continue
-            req.ports.append(port)
+            explicit_ports.append(int(match.group("port")))
+        for port in explicit_ports:
+            if 1 <= port <= 65535 and port not in req.ports:
+                req.ports.append(port)
         for match in _CRED_PAIR_RE.finditer(text):
             user, password = match.group(1), match.group(2)
             if user and password and (user, password) not in req.credentials:

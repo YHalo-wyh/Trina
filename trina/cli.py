@@ -1084,7 +1084,6 @@ def build_parser() -> argparse.ArgumentParser:
     bench.add_argument("--max-steps", type=int, help="单轮决策步数上限（默认 0 不限制）")
     bench.add_argument("--per-task-seconds", type=int, help="单题时间预算（默认 0 不限制）")
     bench.add_argument("--total-seconds", type=int, help="整场时间预算（默认 0 不限制）")
-    bench.add_argument("--attempts", type=int, help="单题续做轮次（默认 0 不限制；无新增事实时释放）")
     bench.add_argument("--use-hints", action="store_true", help="补漏轮次前获取平台提示（会扣分）")
     bench.add_argument("--limit", type=int, help="只跑前 N 题（调试用）")
     bench.add_argument("--workers", type=int, choices=range(1, 4), help="并行题目数（默认 2，上限 3）")

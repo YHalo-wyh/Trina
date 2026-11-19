@@ -392,8 +392,8 @@ class ScopeGuard:
         self._control_plane_hosts = {h.lower() for h in scope.control_plane_hosts}
         self._destructive_hosts = {h.lower() for h in scope.destructive_hosts}
 
-    def check_workspace_path(self, raw: str, workspace: Any, runtime_root: Any) -> Any:
-        """二进制输入限当前项目或任务目录，拒绝其他任务产物与符号链接逃逸。"""
+    def check_workspace_path(self, raw: str, workspace: Any, runtime_root: Any, *, for_write: bool = False) -> Any:
+        """检查文件路径，支持配置声明的 CTF 题目目录读取并拒绝符号链接逃逸。"""
         from pathlib import Path
         ensure_execution_active()
         base, runs = Path(workspace).resolve(), Path(runtime_root).resolve()
@@ -403,9 +403,23 @@ class ScopeGuard:
             path = local if local.is_file() else Path.cwd() / path
         path = path.resolve()
         within = lambda child, parent: child == parent or parent in child.parents
-        allowed = (within(path, base) or within(path, Path.cwd().resolve())) and not (within(path, runs) and not within(path, base))
+        project_allowed = within(path, base) or within(path, Path.cwd().resolve())
+        run_escape = within(path, runs) and not within(path, base)
+        extra_allowed = False
+        for raw_root in (() if for_write else getattr(self.scope, "allow_paths", ())):
+            entry = str(raw_root).strip()
+            recursive = entry.endswith("/**") or entry.endswith("\\**")
+            if recursive:
+                entry = entry[:-3].rstrip("/\\")
+            if not entry:
+                continue
+            root = Path(entry).expanduser().resolve()
+            if within(path, root) and (recursive or path == root or root.is_dir()):
+                extra_allowed = True
+                break
+        allowed = (project_allowed and not run_escape) or extra_allowed
         decision = self._record(Decision(allowed, category="filesystem", target=str(path),
-                               reason="当前任务文件" if allowed else "文件不属于当前项目或任务"), "binary.file")
+                               reason="当前任务文件或配置的题目目录" if allowed else "文件不属于当前项目、任务或配置的题目目录"), "binary.file")
         if decision.denied:
             raise ScopeViolation(decision)
         return path
@@ -813,6 +827,7 @@ class ScopeGuard:
             "allow_public": self.scope.allow_public,
             "authorized_cidrs": list(self.scope.authorized_cidrs),
             "authorized_hosts": list(self.scope.authorized_hosts),
+            "allow_paths": list(self.scope.allow_paths),
             "deny_cidrs": list(self.scope.deny_cidrs),
             "stats": dict(self.stats),
             "denials": [d.to_dict() for d in self.denials[-20:]],

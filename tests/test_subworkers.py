@@ -201,7 +201,7 @@ class SubworkerTests(unittest.TestCase):
     def test_footer_metrics_share_one_row_and_survive_resize(self):
         view = ConsoleState()
         view.model_finished(LLMUsage(input_tokens=10000, output_tokens=1000, cache_read_tokens=8000))
-        context = ConsoleContext("运行中", "DeepSeek Flash Max", "C:/项目", "目标", "轮次 8", 10000, 500000,
+        context = ConsoleContext("运行中", "DeepSeek Flash Max", "C:/项目", "目标", "工具 8", 10000, 500000,
                                  metrics=view.metrics(), workers="2 运行 / 1 等待")
         for width in range(1, 201):
             text = "".join(value for _, value in context.footer(width))
@@ -209,7 +209,7 @@ class SubworkerTests(unittest.TestCase):
             self.assertNotIn("\n", text)
             self.assertLessEqual(sum(_cells(v) for _, v in context.rail(width)), width)
             if width >= 88:
-                self.assertLess(text.index("轮次"), text.index("缓存"))
+                self.assertLess(text.index("工具"), text.index("缓存"))
         self.assertEqual(ConsoleState().metrics(), ())
 
     def test_subworker_panel_keyboard_targets_selected_worker(self):

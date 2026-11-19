@@ -81,9 +81,11 @@ class WorkspaceGit(Tool):
             busy = ctx.extra.get("repository_busy")
             if action not in READ_ACTIONS and callable(busy) and busy():
                 raise ValueError("其他 Worker 正在使用项目；等待任务结束后再修改仓库")
+            write_scope = action not in READ_ACTIONS
             requested = Path(repository)
             directory = requested if requested.is_absolute() else Path.cwd() / requested
-            directory = Path(ctx.guard.check_workspace_path(str(directory), ctx.workspace, ctx.config.runtime_root))
+            directory = Path(ctx.guard.check_workspace_path(
+                str(directory), ctx.workspace, ctx.config.runtime_root, for_write=write_scope))
             if not directory.is_dir():
                 raise ValueError("仓库目录不存在")
 
@@ -97,14 +99,15 @@ class WorkspaceGit(Tool):
             if not root.ok:
                 return self._result(root, str(directory))
             directory = Path(root.stdout.strip()).resolve()
-            ctx.guard.check_workspace_path(str(directory), ctx.workspace, ctx.config.runtime_root)
+            ctx.guard.check_workspace_path(str(directory), ctx.workspace, ctx.config.runtime_root, for_write=write_scope)
             selected = []
             for item in paths or []:
                 if not isinstance(item, str) or not item or any(char in item for char in "\0\r\n"):
                     raise ValueError("paths 必须是非空字面路径数组")
                 candidate = Path(item)
                 resolved = (candidate if candidate.is_absolute() else directory / candidate).resolve()
-                ctx.guard.check_workspace_path(str(resolved), ctx.workspace, ctx.config.runtime_root)
+                ctx.guard.check_workspace_path(
+                    str(resolved), ctx.workspace, ctx.config.runtime_root, for_write=write_scope)
                 try:
                     selected.append(resolved.relative_to(directory).as_posix())
                 except ValueError as exc:
