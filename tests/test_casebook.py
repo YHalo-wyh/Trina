@@ -165,6 +165,25 @@ class CasebookTests(unittest.TestCase):
         self.assertFalse(result.ok)
         self.assertFalse(self.execute("record_fact", text="声称成功", evidence_refs=[result.data["evidence_id"]]).ok)
 
+    def test_authority_verifier_ok_becomes_structured_goal_fact(self):
+        verifier = Path(self.ctx.workspace) / "verifier.py"
+        verifier.write_text("print('OK')\n", encoding="utf-8")
+        result = self.execute("terminal_exec", argv=[sys.executable, "verifier.py", "flag{fixture_ok}"], cwd="run")
+        self.assertTrue(result.ok, result.error)
+        self.assertEqual(result.metadata["authority_verifier"]["status"], "passed")
+        self.assertEqual(self.ctx.state.flags[0]["value"], "flag{fixture_ok}")
+        self.assertTrue(any(item.get("status") == "passed" for item in self.ctx.state.casebook["goal_verifications"]))
+        goals = self.execute("list_goals").data["goals"]
+        self.assertTrue(any(item["id"] == "flag" and item["satisfied"] for item in goals))
+        proof = self.execute("prove_goal", goal_id="flag", evidence_refs=[result.data["evidence_id"]])
+        self.assertTrue(proof.ok, proof.error)
+
+    def test_plain_ok_output_is_not_authority_verifier(self):
+        result = self.execute("terminal_exec", argv=[sys.executable, "-c", "print('OK')"], cwd="run")
+        self.assertTrue(result.ok, result.error)
+        self.assertNotIn("authority_verifier", result.metadata)
+        self.assertEqual(self.ctx.state.flags, [])
+
     def test_finding_dedup_and_real_traffic_bindings(self):
         fid = self.finding()
         other = self.finding()

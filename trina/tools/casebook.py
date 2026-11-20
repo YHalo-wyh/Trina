@@ -27,6 +27,24 @@ def _version(finding: Any) -> str:
     return hashlib.sha256(json.dumps(finding.to_dict(), ensure_ascii=False, sort_keys=True).encode()).hexdigest()
 
 
+def _authority_verifications(ctx: Any, *, evidence_refs: list[str] | None = None,
+                             status: str = "passed") -> list[dict[str, Any]]:
+    """返回终端真实验证器登记的回执，不能由模型文本伪造。"""
+    refs = set(evidence_refs or [])
+    rows = ctx.state.casebook.get("goal_verifications", [])
+    return [
+        row for row in rows
+        if isinstance(row, dict)
+        and str(row.get("status") or "") == status
+        and (not refs or str(row.get("evidence_id") or "") in refs)
+    ]
+
+
+def authority_verifier_passed(ctx: Any) -> bool:
+    """判断本次运行是否取得了真实验证器的通过回执。"""
+    return bool(_authority_verifications(ctx))
+
+
 def resolve_evidence(ctx: Any, refs: list, *, after: float = 0, allow_synthetic: bool = False) -> list[dict[str, Any]]:
     """只接受本任务已归档的证据；拒绝模型自造 ID 和失败的请求。"""
     if not refs or not all(isinstance(ref, str) for ref in refs):
@@ -193,12 +211,16 @@ def _goals(ctx: Any) -> list[tuple[str, str, GoalRequirements]]:
             goals.append((f"{kind}-{index + 1}", label, sub))
     if req.explicit_flag:
         goals.append(("flag", "恢复任务要求的答案候选", GoalRequirements(raw=req.raw, explicit_flag=True)))
+    elif _authority_verifications(ctx):
+        # 有些 CTF 只把答案和验证命令写在题目合同中，goal 本身不含关键词。
+        # 真实 verifier 的 OK 回执仍可作为可审计的 flag 目标，不能靠模型自评触发。
+        goals.append(("flag", "题目验证器已确认答案候选", GoalRequirements(raw=req.raw, explicit_flag=True)))
     return goals
 
 
 def _goal_met(ctx: Any, goal_id: str, req: GoalRequirements) -> bool:
     if goal_id == "flag":
-        return bool(ctx.state.flags)
+        return bool(ctx.state.flags) or authority_verifier_passed(ctx)
     if goal_id.startswith("credentials-"):
         return all(any(c.verified and c.username == username and c.password == password for c in ctx.state.credentials)
                    for username, password in req.credentials)
@@ -215,8 +237,12 @@ def prove_goal(ctx: Any, goal_id: str, evidence_refs: list) -> ToolResult:
     matches = [(gid, req) for gid, _, req in _goals(ctx) if gid == goal_id]
     if not matches or not _goal_met(ctx, *matches[0]):
         raise ValueError("目标不存在或实际状态尚未满足条件；不能用文字覆盖验证器")
+    if goal_id == "flag" and _authority_verifications(ctx):
+        if not _authority_verifications(ctx, evidence_refs=evidence_refs):
+            raise ValueError("flag 目标必须引用通过的权威验证器证据")
     _bucket(ctx, "goal_proofs", dict)[goal_id] = {"evidence_refs": evidence_refs, "ts": time.time()}
-    return ToolResult(summary="当前事实满足该目标条件；答案候选仍需平台权威回执", data={"goal_id": goal_id, "evidence": evidence})
+    summary = "权威验证器已确认该目标；答案候选可交付" if goal_id == "flag" and _authority_verifications(ctx) else "当前事实满足该目标条件；答案候选仍需平台权威回执"
+    return ToolResult(summary=summary, data={"goal_id": goal_id, "evidence": evidence})
 
 
 def get_retest_context(ctx: Any, finding_id: str, environment: str) -> ToolResult:

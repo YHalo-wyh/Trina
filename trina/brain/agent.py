@@ -975,6 +975,9 @@ class PentestAgent:
             state.note("final_claim", "模型自评与 flag 声明仅作摘要；运行结果以工具事实判定")
         state.ended_at = time.time()
         verified = [f for f in state.findings if f.status in ("verified", "exploited") and f.evidence]
+        # 延迟导入，避免 casebook -> brain.goal 与本模块的装配循环。
+        from ..tools.casebook import authority_verifier_passed
+        authority_verified = authority_verifier_passed(ctx)
         if state.status == "stopped":
             pass
         elif not requirements.empty:
@@ -986,7 +989,7 @@ class PentestAgent:
             else:
                 state.status = "failed"
         elif state.status == "running":
-            if state.flags or verified:
+            if state.flags or verified or authority_verified:
                 state.status = "success"
             elif state.findings or state.hosts or state.counters.get("denied", 0):
                 state.status = "partial"
@@ -1025,7 +1028,7 @@ class PentestAgent:
         failures = state.counters.get("failures", 0)
         if state.status == "blocked" or not any(step.get("kind") == "tool" and step.get("ok") for step in state.steps):
             verdict = "INCONCLUSIVE"
-        elif verified:
+        elif verified or authority_verified:
             verdict = "CONFIRMED"
         elif error_count or failures or coverage.get("revoked") or state.counters.get("denied", 0) or state.counters.get("context_budget_errors"):
             # 工具失败/超时/撤权/被拒 → 无法形成判断（不能写成"没问题"）

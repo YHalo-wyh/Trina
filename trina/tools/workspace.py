@@ -2,13 +2,20 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from pathlib import Path
+from typing import Any
 
 from .external import run_external
 from .registry import ParamSpec, Tool, ToolResult, ToolSpec
 
 
 _TEXT_LIMIT = 1_000_000
+_FLAG_RE = re.compile(r"flag\{[^\r\n}]{1,256}\}", re.IGNORECASE)
+_VERIFIER_NAME_RE = re.compile(
+    r"(?:^|[\s/\\])(?:verifier|verify(?:[_-]?flag)?|check[_-]?flag|validate[_-]?flag)(?:\.py)?(?:$|[\s/\\])",
+    re.IGNORECASE,
+)
 
 
 def _command(argv: list[str]) -> tuple[str, list[str]]:
@@ -32,6 +39,34 @@ def _is_unbounded_find(argv: list[str]) -> bool:
             break
         roots.append(item)
     return "/" in roots
+
+
+def _authority_verifier_facts(argv: list[str], stdout: str, stderr: str, *, exit_code: int | None,
+                              evidence_id: str) -> tuple[dict[str, Any], dict[str, Any]]:
+    """识别本地题目验证器的确定性回执，不把普通命令输出当成成功证明。
+
+    只有命令参数明确包含 verifier/verify/check_flag/validate_flag 入口、进程正常退出，
+    并且输出存在独立的 ``OK`` 行时才登记权威验证结果。完整命令和输出仍保存在原始证据中。
+    """
+    command_text = " ".join(argv)
+    if not _VERIFIER_NAME_RE.search(command_text) or exit_code != 0:
+        return {}, {}
+    combined = "\n".join((stdout or "", stderr or ""))
+    passed = bool(re.search(r"(?m)^\s*OK\s*$", combined))
+    status = "passed" if passed else "failed"
+    candidates = list(dict.fromkeys(_FLAG_RE.findall(command_text + "\n" + combined)))
+    verification = {
+        "status": status,
+        "verifier": command_text[:600],
+        "evidence_id": evidence_id,
+        "flag_candidates": candidates[:8],
+    }
+    facts = {"goal_verifications": [verification]}
+    if passed and candidates:
+        facts["flags"] = [{"value": value, "source": "authority_verifier", "evidence_id": evidence_id}
+                           for value in candidates]
+    metadata = {"authority_verifier": verification}
+    return facts, metadata
 
 
 def _path(ctx, raw: str, root: str = "project", *, for_write: bool = False) -> Path:
@@ -119,15 +154,30 @@ class TerminalExec(Tool):
         transcript = json.dumps({"argv": argv, "cwd": str(directory), "exit_code": call.code,
                                  "stdout": call.stdout, "stderr": call.stderr}, ensure_ascii=False)
         artifact = ctx.save_artifact(evidence_id + ".json", transcript)
+        verifier_facts, verifier_metadata = _authority_verifier_facts(
+            argv, call.stdout or "", call.stderr or "", exit_code=call.code, evidence_id=evidence_id,
+        )
+        authority = verifier_metadata.get("authority_verifier")
+        summary = f"命令完成，退出码 {call.code}" if call.ok else (error or "命令执行失败")
+        key_findings: list[str] = []
+        if authority:
+            if authority["status"] == "passed":
+                summary += "；权威验证器回执 OK"
+                key_findings.append("权威验证器已通过，结果已写入事实库")
+            else:
+                key_findings.append("检测到验证器入口，但没有独立 OK 回执")
         return ToolResult(
             ok=call.ok,
             category="timed_out" if call.timed_out else "",
-            summary=f"命令完成，退出码 {call.code}" if call.ok else (error or "命令执行失败"),
+            summary=summary,
             error=error,
             command=call.command,
             data={"exit_code": call.code, "stdout": output, "stderr": stderr, "cwd": str(directory), "evidence_id": evidence_id},
             evidence=[{"id": evidence_id, "kind": "command", "path": str(artifact), "sha256": _digest(transcript),
                        "exit_code": call.code, "target": target, "successful": call.ok}],
+            facts=verifier_facts,
+            metadata=verifier_metadata,
+            key_findings=key_findings,
             next_hints=hints,
         )
 

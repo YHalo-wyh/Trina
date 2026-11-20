@@ -323,6 +323,18 @@ class RunState:
             if value and not any(f.get("value") == value for f in self.flags):
                 self.flags.append({"value": value, "source": flag.get("source", ""), "ts": _now()})
                 changed.append(f"获取 flag: {value[:40]}")
+        for verification in facts.get("goal_verifications", []) or []:
+            if not isinstance(verification, dict):
+                continue
+            evidence_id = str(verification.get("evidence_id") or "").strip()
+            if not evidence_id:
+                continue
+            rows = self.casebook.setdefault("goal_verifications", [])
+            if any(str(item.get("evidence_id") or "") == evidence_id for item in rows if isinstance(item, dict)):
+                continue
+            rows.append(dict(verification))
+            status = str(verification.get("status") or "unknown")
+            changed.append(f"权威验证器回执: {status} ({evidence_id})")
         for finding in facts.get("findings", []) or []:
             result = self.add_finding(finding)
             changed.append(f"记录漏洞: [{result.severity}] {result.vuln_class} @ {result.url or result.target}")
