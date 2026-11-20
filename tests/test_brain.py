@@ -80,6 +80,23 @@ class TestParseAction(unittest.TestCase):
         self.assertNotIn("Binary/Pwn/Reverse", layers.system())
         self.assertIn("Binary/Pwn/Reverse", layers.first_user())
 
+    def test_code_route_uses_small_edit_and_test_surface(self):
+        from trina.brain.prompts import infer_task_route_key
+        from trina.tools import build_registry
+        from trina.tools.profile import visible_tool_names
+
+        registry = build_registry()
+        route = infer_task_route_key(
+            "Fix buggy.py and run python3 -m unittest -v", "buggy.py",
+            tool_names=registry.names(), categories=registry.by_category().keys(),
+        )
+        self.assertEqual(route, "code")
+        visible = visible_tool_names(registry, route)
+        self.assertIn("workspace_edit", visible)
+        self.assertIn("terminal_exec", visible)
+        self.assertNotIn("http_fingerprint", visible)
+        self.assertNotIn("record_finding", visible)
+
     def test_plain_json(self):
         action = parse_action('{"thought": "扫端口", "action": "port_scan", "params": {"target": "127.0.0.1"}}')
         self.assertEqual(action["action"], "port_scan")

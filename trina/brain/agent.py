@@ -69,6 +69,41 @@ def _usage_from_dict(data: dict[str, Any]):
     return LLMUsage(**payload)
 
 
+def _code_tests_passed(state: RunState) -> bool:
+    """检查代码任务是否有真实测试回执，不能仅凭模型正文或退出码判断。"""
+    for item in state.evidence:
+        if not isinstance(item, dict) or item.get("tool") != "terminal_exec" or not item.get("successful"):
+            continue
+        path = str(item.get("path") or "")
+        if not path:
+            continue
+        try:
+            payload = json.loads(Path(path).read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, ValueError):
+            continue
+        argv = " ".join(str(value) for value in payload.get("argv", []))
+        output = f"{payload.get('stdout', '')}\n{payload.get('stderr', '')}"
+        if any(token in argv for token in ("unittest", "pytest", "cargo test", "npm test", "go test")) and (
+            "\nOK" in output or " passed" in output or " passed\n" in output
+        ):
+            return True
+    return False
+
+
+def _code_test_argv(text: str) -> list[str] | None:
+    """从题面/README 识别无参数测试入口，只返回固定安全命令。"""
+    lowered = text.casefold()
+    if "python3 -m unittest" in lowered or "python -m unittest" in lowered:
+        return ["python3", "-m", "unittest", "-v"]
+    if "pytest" in lowered:
+        return ["python3", "-m", "pytest", "-q"]
+    if "cargo test" in lowered:
+        return ["cargo", "test"]
+    if "npm test" in lowered:
+        return ["npm", "test"]
+    return None
+
+
 @dataclass
 class StepRecord:
     index: int
@@ -391,6 +426,13 @@ class PentestAgent:
                 name for name in ("shared_context", "shared_trace_search", "shared_trace_get")
                 if name in self.registry.names()
             )
+        if task_route_key == "code":
+            # 独立题目目录没有有效 Git 仓库时，隐藏仓库工具，避免模型对
+            # Desktop 根目录执行昂贵的仓库探测。
+            from pathlib import Path as _RoutePath
+            current = _RoutePath.cwd()
+            if not any((parent / ".git").exists() for parent in (current, *current.parents)):
+                visible_names.discard("workspace_git")
         if target_id:
             visible_names.update(test.tool for test in controller.registry.tests_for(target_id)
                                  if test.tool in self.registry.names())
@@ -470,16 +512,32 @@ class PentestAgent:
         context = ConversationContext(ctx)
         context.remember_user(goal)
         observation = ""
-        if (task_route_key == "ctf" and "workspace_read_many" in visible_names and not state.steps
+        if (task_route_key in {"ctf", "code"} and "workspace_read_many" in visible_names and not state.steps
                 and not self.shared_context.get("worker_id") and not ctx.extra.get("subworkers")):
             # 题目文件型 CTF 的首轮预取仍经 ToolRegistry、范围解析和审计。
             # 只读取当前目录中明确存在的常见题面文件，避免模型先做低信息 ls/find。
             from pathlib import Path as _Path
+            project_directory = _Path.cwd()
 
-            prefetch_candidates = [
-                "README.md", "challenge.py", "verifier.py", "puzzle.py", "check.py", "verify.py",
-                "solve.py", "solver.py", "main.py", "decode.py",
-            ]
+            if task_route_key == "code":
+                prefetch_candidates = [
+                    "README.md", "AGENTS.md", "pyproject.toml", "package.json", "Cargo.toml",
+                    "setup.cfg", "Makefile",
+                ]
+                target_name = _Path(target).name
+                if target_name:
+                    prefetch_candidates.insert(1, target_name)
+                prefetch_candidates.extend(
+                    item.name for item in sorted(_Path.cwd().iterdir())
+                    if item.is_file() and (
+                        item.name.startswith("test") or item.name.endswith(("_test.py", ".spec.ts", ".test.ts"))
+                    )
+                )
+            else:
+                prefetch_candidates = [
+                    "README.md", "challenge.py", "verifier.py", "puzzle.py", "check.py", "verify.py",
+                    "solve.py", "solver.py", "main.py", "decode.py",
+                ]
             prefetch_candidates.extend(
                 item.name for item in sorted(_Path.cwd().glob("*.py"))
                 if not item.name.startswith("__") and item.name not in prefetch_candidates
@@ -506,6 +564,29 @@ class PentestAgent:
                     error=prefetch.error,
                 ).to_dict())
                 state.note("prefetch", f"首轮批量读取题目文件：{', '.join(prefetch_paths)}")
+                if task_route_key == "code" and prefetch.ok and self.config.scope.full_trust:
+                    test_argv = _code_test_argv(str(prefetch.data.get("text", "")))
+                    if test_argv:
+                        baseline = self.registry.execute(
+                            "terminal_exec", {
+                                "argv": test_argv,
+                                "cwd": "project",
+                                "working_directory": str(project_directory),
+                            }, ctx,
+                            call_id=f"baseline-{run_id}",
+                        )
+                        observation += "\n\n## Baseline test\n" + baseline.to_observation()
+                        state.log_step(StepRecord(
+                            index=previous_steps + 1,
+                            phase="execute",
+                            action="terminal_exec",
+                            params={"argv": test_argv, "cwd": "project"},
+                            ok=baseline.ok,
+                            summary=baseline.summary or baseline.error,
+                            duration=baseline.duration,
+                            error=baseline.error,
+                        ).to_dict())
+                        state.note("baseline", "代码题已自动运行题面声明的基线测试，后续模型直接进入修复")
         last_action_key = ""
         stall = 0
         new_facts = True
@@ -1038,6 +1119,7 @@ class PentestAgent:
         # 延迟导入，避免 casebook -> brain.goal 与本模块的装配循环。
         from ..tools.casebook import authority_verifier_passed
         authority_verified = authority_verifier_passed(ctx)
+        code_tests_passed = task_route_key == "code" and _code_tests_passed(state)
         if state.status == "stopped":
             pass
         elif not requirements.empty:
@@ -1049,7 +1131,7 @@ class PentestAgent:
             else:
                 state.status = "failed"
         elif state.status == "running":
-            if state.flags or verified or authority_verified:
+            if state.flags or verified or authority_verified or code_tests_passed:
                 state.status = "success"
             elif state.findings or state.hosts or state.counters.get("denied", 0):
                 state.status = "partial"
@@ -1088,7 +1170,7 @@ class PentestAgent:
         failures = state.counters.get("failures", 0)
         if state.status == "blocked" or not any(step.get("kind") == "tool" and step.get("ok") for step in state.steps):
             verdict = "INCONCLUSIVE"
-        elif verified or authority_verified:
+        elif verified or authority_verified or code_tests_passed:
             verdict = "CONFIRMED"
         elif error_count or failures or coverage.get("revoked") or state.counters.get("denied", 0) or state.counters.get("context_budget_errors"):
             # 工具失败/超时/撤权/被拒 → 无法形成判断（不能写成"没问题"）

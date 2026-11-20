@@ -55,6 +55,11 @@ CTF_BINARY_WEB_TOOLS = frozenset({
 
 CTF_BINARY_COORDINATION_TOOLS = frozenset({"list_goals", "workspace_git", "worker_tasks"})
 
+CODE_CORE_TOOLS = frozenset({
+    "terminal_exec", "workspace_read", "workspace_read_many", "workspace_search",
+    "workspace_write", "workspace_edit", "workspace_git",
+})
+
 
 def visible_tool_names(registry: Any, route: str = "general", *, browser: bool = False,
                        terminal_session: bool = False) -> set[str]:
@@ -73,6 +78,9 @@ def visible_tool_names(registry: Any, route: str = "general", *, browser: bool =
         selected = available & CTF_FILE_TOOLS
     if route == "web":
         selected.update(available & CTF_WEB_TOOLS)
+    if route == "code":
+        # 编程任务只需要读、搜、改、测试和可选 Git 操作。
+        selected = available & CODE_CORE_TOOLS
     if route == "binary":
         selected.update(name for name in available if name.startswith("binary_") or name.startswith("debug_"))
         # Binary/Pwn/Reverse 任务走本地文件、终端、r2 和 GDB。把 Web 搜索、

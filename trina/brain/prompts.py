@@ -61,7 +61,7 @@ _TASK_ROUTE_PROFILES = {
     "binary": """先确认文件类型、架构、位数和输入方式；静态、调试、脚本交替，候选必须实际验证。把互不依赖的 file/readelf/strings/ldd/checksec 等只读检查合并到一次 terminal_exec；已取得的函数、保护和运行库事实不要重复查询。Binary 任务不要调用目标清单、仓库管理或 Worker 管理工具。需要利用时先一次写入完整脚本，再运行并根据真实输出调整；连续三次探针没有新事实就停止探针并进入利用验证，避免为同一假设反复执行只改变截断长度的命令。""",
     "crypto": """恢复变换链和参数来源，区分编码、哈希、加密与签名；候选必须可复现验证。""",
     "forensics": """保留原始文件和哈希，检查容器、元数据、时间线与隐藏层；派生证据可重放。""",
-    "code": """先读仓库约定和当前差异，做最小修改，运行相关测试并检查 diff。""",
+    "code": """按代码修复闭环执行：先批量读取 README、目标源码和测试；先运行基线测试确认失败，再做最小修改，重新运行完整测试。只修改用户要求的源码，不改测试或配置。没有 `.git` 时不要调用 workspace_git，也不要执行 git status、git diff 或扫描父目录；测试通过且 diff 可核对后立即收尾，不登记漏洞、Flag 或资产台账。""",
     "general": """列出目标与成功判据，选择高信息观察；保留路线和停止条件。""",
 }
 
@@ -79,7 +79,7 @@ def infer_task_route_key(goal: str = "", target: str = "", *, tool_names: Iterab
         "crypto": ("crypto", "密码", "加密", "解密", "rsa", "aes", "ecc", "xor", "hash"),
         "forensics": ("forensic", "取证", "隐写", "stego", "pcap", "内存", "磁盘", "图片", "metadata"),
         "web": ("http", "https", "web", "api", "网页", "浏览器", "browser", "playwright", "接口", "sql", "xss", "ssrf", "登录", "路由"),
-        "code": ("代码", "仓库", "repo", "git", "bug", "修复", "测试", "实现", "编程"),
+        "code": ("代码", "仓库", "repo", "git", "bug", "fix", "repair", "edit", "tests", "test", "unittest", "function", "refactor", "修复", "测试", "实现", "编程"),
     }
     for route, terms in keywords.items():
         scores[route] = sum(1 for term in terms if term in text)
