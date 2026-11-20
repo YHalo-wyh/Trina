@@ -18,6 +18,9 @@ venv/
 .pytest_cache/
 .playwright-mcp/
 
+# ---- Rust native helper build output ----
+native/target/
+
 # ---- 编辑器 / 系统 ----
 .DS_Store
 Thumbs.db

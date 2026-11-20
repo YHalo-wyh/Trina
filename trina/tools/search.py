@@ -9,6 +9,7 @@ import shutil
 
 from .external import run_external
 from .registry import ParamSpec, Tool, ToolResult, ToolSpec
+from ..native_tools import native_search
 
 
 _SKIP_DIRS = {".git", ".hg", ".svn", ".venv", "node_modules", "__pycache__"}
@@ -130,6 +131,17 @@ class WorkspaceSearch(Tool):
             if not 1 <= limit <= 500:
                 return ToolResult(ok=False, category="invalid", error="max_results 必须在 [1,500] 内")
             root = _root(ctx, path)
+            native = None
+            if fixed and not globs and not hidden:
+                native = native_search(ctx, root, query, limit, bool(case_sensitive))
+            if native is not None:
+                matches = native
+                rendered = "\n".join(f"{item['path']}:{item['line']}:{item['column']}: {item['text']}"
+                                       for item in matches)
+                return ToolResult(summary=f"Rust 检索完成，命中 {len(matches)} 处",
+                                  data={"engine": "rust", "root": str(root), "matches": matches,
+                                        "text": rendered, "truncated": len(matches) >= limit},
+                                  metadata={"engine": "rust"})
             rg = shutil.which("rg")
             if rg:
                 argv = [rg, "--json", "--max-filesize", "2M", "--max-columns", "1000",

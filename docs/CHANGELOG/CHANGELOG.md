@@ -1,5 +1,12 @@
 # Trina 更新日志
 
+## 0.5.0 · 2026-11-20 · Rust 原生只读工具层
+
+- 新增 `native/` Cargo 工程和 `trina-native` 二进制，提供 Rust 文件读取与固定字符串检索原语。
+- `workspace_read`、`workspace_read_many` 和固定字符串 `workspace_search` 会在 Rust 二进制可用时使用原生实现，缺失时自动回退到原有 Python 实现。
+- Python `ToolRegistry`、ScopeGuard、动作等级、审计、超时和证据链继续作为唯一控制边界；终端执行、网络、写入和编辑不由 Rust 绕过授权。
+- 包版本、首页版本和机器规约升级到 `0.5.0`。
+
 ## 0.4.0 · 2026-11-20 · 题目文件型 CTF 路由收窄
 
 - 新增题目文件型 CTF 动态路由，首条任务合同要求批量读取题面、源码和验证器，避免重复 `pwd/ls`、切片读取和无效探针。

@@ -8,6 +8,7 @@ from typing import Any
 
 from .external import run_external
 from .registry import ParamSpec, Tool, ToolResult, ToolSpec
+from ..native_tools import native_edit, native_read, native_write
 
 
 _TEXT_LIMIT = 1_000_000
@@ -215,6 +216,15 @@ class WorkspaceRead(Tool):
                 return ToolResult(ok=False, error="文件超过 1MiB，请使用命令行工具做分段检查")
             if int(start_line) < 1 or not 1 <= int(line_count) <= 1000:
                 return ToolResult(ok=False, error="start_line 必须大于 0，line_count 必须在 [1,1000]")
+            native = native_read(ctx, resolved, int(start_line), int(line_count))
+            if native is not None:
+                numbered, total_lines = native
+                end = min(total_lines, int(start_line) - 1 + int(line_count))
+                return ToolResult(
+                    summary=f"Rust 读取 {resolved.name} 第 {start_line}-{end} 行",
+                    data={"path": str(resolved), "text": numbered, "total_lines": total_lines},
+                    metadata={"engine": "rust"},
+                )
             lines = resolved.read_text(encoding="utf-8", errors="replace").splitlines()
             start = int(start_line) - 1
             selected = lines[start:start + int(line_count)]
@@ -259,6 +269,13 @@ class WorkspaceReadMany(Tool):
                     return ToolResult(ok=False, error=f"文件不存在或不是普通文件: {raw_path}")
                 if resolved.stat().st_size > _TEXT_LIMIT:
                     return ToolResult(ok=False, error=f"文件超过 1MiB: {raw_path}")
+                native = native_read(ctx, resolved, 1, int(line_count))
+                if native is not None:
+                    numbered, total_lines = native
+                    chunks.append(f"## {raw_path}\n{numbered}")
+                    files.append({"path": str(raw_path), "total_lines": total_lines,
+                                  "returned_lines": len(numbered.splitlines())})
+                    continue
                 lines = resolved.read_text(encoding="utf-8", errors="replace").splitlines()
                 selected = lines[:int(line_count)]
                 numbered = "\n".join(f"{index + 1:>6}  {line}" for index, line in enumerate(selected))
@@ -292,6 +309,15 @@ class WorkspaceWrite(Tool):
                 return ToolResult(ok=False, error="content 超过 1MiB")
             resolved = _path(ctx, path, root, for_write=True)
             before = resolved.read_text(encoding="utf-8", errors="replace") if resolved.is_file() else ""
+            native = native_write(ctx, resolved, content)
+            if native:
+                ctx.audit.append(
+                    "workspace.write", decision="allow", path=str(resolved), bytes=len(content.encode("utf-8")),
+                    before_sha256=_digest(before), after_sha256=_digest(content), engine="rust",
+                )
+                return ToolResult(summary=f"Rust 已写入 {resolved}",
+                                  data={"path": str(resolved), "bytes": len(content.encode("utf-8"))},
+                                  metadata={"engine": "rust"})
             _atomic_write(resolved, content)
             ctx.audit.append(
                 "workspace.write", decision="allow", path=str(resolved), bytes=len(content.encode("utf-8")),
@@ -329,6 +355,16 @@ class WorkspaceEdit(Tool):
             matches = source.count(old)
             if matches != int(expected) or int(expected) < 1:
                 return ToolResult(ok=False, error=f"匹配次数为 {matches}，期望 {expected}；未修改")
+            native = native_edit(ctx, resolved, old, new, int(expected))
+            if native:
+                updated = resolved.read_text(encoding="utf-8", errors="strict")
+                ctx.audit.append(
+                    "workspace.edit", decision="allow", path=str(resolved), replacements=int(expected),
+                    before_sha256=_digest(source), after_sha256=_digest(updated), engine="rust",
+                )
+                return ToolResult(summary=f"Rust 已修改 {resolved}（{expected} 处）",
+                                  data={"path": str(resolved), "replacements": int(expected)},
+                                  metadata={"engine": "rust"})
             updated = source.replace(old, new, int(expected))
             if len(updated.encode("utf-8")) > _TEXT_LIMIT:
                 return ToolResult(ok=False, error="修改后文件超过 1MiB")
