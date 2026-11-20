@@ -8,7 +8,7 @@
 
 交互入口为 `/subworker`。任务树直接复用下面的 Swarm Runtime，支持后台运行、模型/思考强度配置、追加任务、暂停/继续、停止、查看证据和检查点恢复；详见 [子 Worker 面板](CLI_UI.md#子-worker-面板)。主会话用量和子任务总用量分别显示，不能把主会话账本复制到每个 Worker。
 
-清单中的任务可填写 `model`、`reasoning_effort`、`profile`。优先级为任务配置、`subworker` 默认配置、主模型；选择供应商先载入其连接，再应用本层模型/档位。仅相同 LLM 配置的空闲后端优先复用，不相同则换后端；每项任务仍新建 Agent。有效模型身份固定在检查点，恢复不因主会话切模型而漂移；凭据由当前供应商存储解析，不写进任务快照。
+清单中的任务可填写 `model`、`reasoning_effort`、`profile` 和 `max_attempts`。`max_attempts` 只针对 Worker 异常退出或执行器抛错，默认 1。达到 2 或更高时，Commander 会回收租约、记录 `task.retry` 并重新领取，达到上限后才记为 `failed`。优先级为任务配置、`subworker` 默认配置、主模型；选择供应商先载入其连接，再应用本层模型/档位。仅相同 LLM 配置的空闲后端优先复用，不相同则换后端；每项任务仍新建 Agent。有效模型身份固定在检查点，恢复不因主会话切模型而漂移；凭据由当前供应商存储解析，不写进任务快照。
 
 ```powershell
 .\.venv\Scripts\python.exe -m trina swarm --target http://127.0.0.1:9099 --goal "验证目标并获取 flag" --workers 2
@@ -38,6 +38,7 @@ tasks:
     capabilities: [category.web]
     priority: 20
     max_steps: 8
+    max_attempts: 2
 
   - id: binary
     target: ./attachments/challenge
@@ -120,7 +121,7 @@ Flag、完整聊天、开放假设和来源题目的 `RunState` 不进入简报�
 .\.venv\Scripts\python.exe -m trina swarm --resume runs\<swarm-id>\swarm.json
 ```
 
-检查点版本 4 只保存权威 Intent、能力快照和完整 coordination 状态，不再保存第二份 TaskRecord；旧 v1–v3 在恢复时迁入 Intent。恢复保留终态任务；检查点中的 `running` Intent 释放旧 Worker/Intent 租约并回到 `pending`，下一次领取增加尝试号。已经消费过的事实规划键随 coordination 快照保存，恢复后不会重复生成分支。运行中的 `PentestAgent` 由任务 `max_seconds` 收尾；`expire_leases()` 只用于确认没有活跃执行器后的租约回收，不能并发杀死任意自定义 Python executor。
+检查点版本 4 只保存权威 Intent、能力快照和完整 coordination 状态，不再保存第二份 TaskRecord；旧 v1–v3 在恢复时迁入 Intent。恢复保留终态任务；检查点中的 `running` Intent 释放旧 Worker/Intent 租约并回到 `pending`，下一次领取增加尝试号。运行中执行器异常时按任务 `max_attempts` 有界重试，租约、能力和 Worker 槽位先释放再重新领取。已经消费过的事实规划键随 coordination 快照保存，恢复后不会重复生成分支。运行中的 `PentestAgent` 由任务 `max_seconds` 收尾；`expire_leases()` 只用于确认没有活跃执行器后的租约回收，不能并发杀死任意自定义 Python executor。
 
 | 产物 | 路径 |
 |---|---|

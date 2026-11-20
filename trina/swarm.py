@@ -52,6 +52,7 @@ class TaskSpec:
     model: str = ""
     reasoning_effort: str = ""
     profile: str = ""
+    max_attempts: int = 1
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "TaskSpec":
@@ -205,6 +206,8 @@ def validate_tasks(tasks: list[TaskSpec]) -> None:
             raise ValueError(f"任务 {task.id} 缺少目标或预算非法")
         if any(not isinstance(value, str) for value in (task.model, task.reasoning_effort, task.profile)):
             raise ValueError(f"任务 {task.id} 模型配置必须为字符串")
+        if type(task.max_attempts) is not int or task.max_attempts < 1:
+            raise ValueError(f"任务 {task.id} 的 max_attempts 必须为正整数")
         if any(not isinstance(name, str) or not name.strip() for name in task.capabilities):
             raise ValueError(f"任务 {task.id} 的能力约束非法")
         if any(dep not in ids or dep == task.id for dep in task.depends_on):
@@ -999,6 +1002,8 @@ class SwarmRuntime:
                     if record.lease_id != lease:
                         raise RuntimeError("任务租约不匹配")
                     state: RunState | None = None
+                    retry_reason = ""
+                    retry_requested = False
                     try:
                         state = future.result()
                         record.result = self._result(state)
@@ -1021,14 +1026,27 @@ class SwarmRuntime:
                     except Exception as exc:  # noqa: BLE001 - 单任务失败不影响其余分支
                         record.error = f"{type(exc).__name__}: {exc}"
                         record.result = self._failed_result(record.error)
-                        final_status = "failed"
+                        retry_requested = record.attempt < task.max_attempts
+                        retry_reason = record.error
+                        final_status = "retry" if retry_requested else "failed"
                     finally:
                         record.ended_at = time.time()
-                        self.coordination.settle(task.id, lease, final_status, error=record.error)
-                        self.events.append({"event": "task.end", "task": task.id, "worker": worker.id, "status": record.status, "time": record.ended_at})
-                        self.event_bus.publish("task.finished", source="commander", task_id=task.id,
-                                               worker_id=worker.id, status=record.status, error=record.error)
-                        self.audit.append("swarm.task.end", task=task.id, worker=worker.id, status=record.status, error=record.error)
+                        if retry_requested:
+                            self.coordination.retry(task.id, lease, retry_reason)
+                            self.events.append({"event": "task.retry", "task": task.id, "worker": worker.id,
+                                                "attempt": record.attempt, "time": record.ended_at})
+                            self.event_bus.publish("task.retry", source="commander", task_id=task.id,
+                                                   worker_id=worker.id, attempt=record.attempt, error=retry_reason)
+                            self.audit.append("swarm.task.retry", task=task.id, worker=worker.id,
+                                              attempt=record.attempt, error=retry_reason)
+                        else:
+                            self.coordination.settle(task.id, lease, final_status, error=record.error)
+                            self.events.append({"event": "task.end", "task": task.id, "worker": worker.id,
+                                                "status": record.status, "time": record.ended_at})
+                            self.event_bus.publish("task.finished", source="commander", task_id=task.id,
+                                                   worker_id=worker.id, status=record.status, error=record.error)
+                            self.audit.append("swarm.task.end", task=task.id, worker=worker.id,
+                                              status=record.status, error=record.error)
                         self.fabric.release(capability_lease)
                         self.audit.append("capability.release", task=task.id, worker=worker.id, lease=capability_lease)
                         worker.capability_lease_id = ""
@@ -1036,6 +1054,8 @@ class SwarmRuntime:
                         record.capability_lease_id = ""
                         self.pool.release(worker, lease)
                         record.lease_id = ""
+                        if retry_requested:
+                            record.ended_at = 0.0
                         self._save()
                         self._commander_events.ack()
         self.audit.append("swarm.run.end", statuses={key: value.status for key, value in self.records.items()})

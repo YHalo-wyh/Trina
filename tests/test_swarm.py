@@ -333,6 +333,36 @@ class SwarmTests(unittest.TestCase):
             pool.release(worker, "stale")
         pool.release(worker, worker.lease_id)
 
+    def test_worker_exception_is_requeued_when_attempt_budget_allows(self) -> None:
+        calls = 0
+
+        def execute(worker, task, run_id, hints, registry):
+            nonlocal calls
+            del worker, hints, registry
+            calls += 1
+            if calls == 1:
+                raise RuntimeError("worker process crashed")
+            state = RunState(run_id=run_id, target=task.target, goal=task.goal, status="success")
+            state.ended_at = time.time()
+            return state
+
+        runtime = SwarmRuntime(
+            self.config,
+            [TaskSpec("recover", "127.0.0.1", "恢复 Worker 任务", max_attempts=2)],
+            max_workers=1,
+            executor=execute,
+        )
+        summary = runtime.run()
+        self.assertEqual(calls, 2)
+        self.assertEqual(summary["tasks"]["recover"]["status"], "completed")
+        self.assertEqual(summary["tasks"]["recover"]["attempt"], 2)
+        self.assertTrue(any(item["event"] == "task.retry" for item in runtime.events))
+        self.assertTrue(runtime.audit.verify()[0])
+
+    def test_task_attempt_budget_must_be_positive(self) -> None:
+        with self.assertRaisesRegex(ValueError, "max_attempts"):
+            validate_tasks([TaskSpec("bad", "127.0.0.1", "任务", max_attempts=0)])
+
 
 if __name__ == "__main__":
     unittest.main()

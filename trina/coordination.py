@@ -30,6 +30,7 @@ def _task_data(task: Any) -> dict[str, Any]:
         "priority": int(task.priority),
         "max_seconds": int(task.max_seconds),
         "capabilities": list(task.capabilities),
+        "max_attempts": int(getattr(task, "max_attempts", 1)),
     }
 
 
@@ -169,6 +170,22 @@ class CoordinationRuntime:
             self.exploration["nodes"][f"intent:{intent_id}"]["status"] = status
             self._trace(intent_id, worker, "intent.end", status, error, status == "completed")
             self.emit("intent.settled", intent_id=intent_id, status=status, error=error[:300])
+
+    def retry(self, intent_id: str, lease_id: str, reason: str) -> None:
+        """回收异常 Worker 的租约并把 Intent 重新放回 ready 队列。"""
+        with self.lock:
+            intent = self.intents[intent_id]
+            if intent["status"] != "running" or intent["lease_id"] != lease_id:
+                raise RuntimeError("Intent 租约不匹配")
+            worker = intent["worker_id"]
+            intent.update({
+                "status": "pending", "worker_id": "", "lease_id": "", "deadline": 0.0,
+                "error": reason[:500],
+            })
+            self.todo[intent_id]["status"] = "ready"
+            self.exploration["nodes"][f"intent:{intent_id}"]["status"] = "pending"
+            self._trace(intent_id, worker, "intent.retry", "Worker 异常，重新排队", reason, False)
+            self.emit("intent.retry", intent_id=intent_id, worker_id=worker, reason=reason[:300])
 
     def block(self, intent_id: str, reason: str) -> None:
         self.terminate_unclaimed(intent_id, "blocked", reason)

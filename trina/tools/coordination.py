@@ -89,6 +89,7 @@ class WorkerTasks(Tool):
             "model": ParamSpec("str", "空则继承子模型设置", required=False, default=""),
             "reasoning_effort": ParamSpec("str", "空则继承；实际支持档位由模型校验", required=False, default=""),
             "profile": ParamSpec("str", "已保存供应商名称", required=False, default=""),
+            "max_attempts": ParamSpec("int", "Worker 异常后的最大执行尝试次数", required=False, default=1),
             "text": ParamSpec("str", "给指定任务的补充", required=False, default=""),
             "wait_seconds": ParamSpec("float", "有界等待秒数，最多10", required=False, default=1),
         },
@@ -97,7 +98,7 @@ class WorkerTasks(Tool):
     def required_level(self, params):
         return "detect" if params.get("action") in {"list", "result", "wait"} else "exploit"
 
-    def run(self, ctx, action, task_id="", target="", goal="", depends_on=None, model="", reasoning_effort="", profile="", text="", wait_seconds=1):
+    def run(self, ctx, action, task_id="", target="", goal="", depends_on=None, model="", reasoning_effort="", profile="", max_attempts=1, text="", wait_seconds=1):
         manager = ctx.extra.get("subworkers")
         if manager is None:
             return ToolResult(ok=False, error="此入口没有 Commander 委派宿主；不可递归创建子 Worker")
@@ -110,7 +111,8 @@ class WorkerTasks(Tool):
                 budget = ctx.config.subworker
                 task = TaskSpec(task_id, target, goal, depends_on=tuple(depends_on or ()),
                                 max_steps=budget.max_steps, max_seconds=budget.max_seconds,
-                                model=model, reasoning_effort=reasoning_effort, profile=profile)
+                                model=model, reasoning_effort=reasoning_effort, profile=profile,
+                                max_attempts=max(1, int(max_attempts)))
                 accepted = manager.submit(ctx.config, task, backend_factory=ctx.extra.get("subworker_backend_factory") or make_backend)
                 return ToolResult(summary="已接收委派，尚未完成" if accepted else "等价任务已存在，未重复执行",
                                   data={"accepted": accepted, "task_id": task_id if accepted else next(

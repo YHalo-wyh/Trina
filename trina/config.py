@@ -342,6 +342,7 @@ class SubworkerConfig:
     model: str = ""
     reasoning_effort: str = ""
     profile: str = ""
+    max_attempts: int = 1
 
     def validate(self) -> None:
         from .llm.reasoning import LEVEL_LABELS
@@ -356,6 +357,8 @@ class SubworkerConfig:
         for name in ("max_steps", "max_seconds"):
             if type(getattr(self, name)) is not int or getattr(self, name) < 0:
                 raise ConfigError(f"subworker.{name} 必须为非负整数，0 不限制")
+        if type(self.max_attempts) is not int or self.max_attempts < 1:
+            raise ConfigError("subworker.max_attempts 必须为正整数")
 
 
 @dataclass

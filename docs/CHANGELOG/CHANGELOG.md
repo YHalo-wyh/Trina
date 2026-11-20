@@ -1,5 +1,11 @@
 # Trina 更新日志
 
+## 0.5.0 · 2026-11-20 · Worker 异常回收与有界重试
+
+- `TaskSpec.max_attempts` 支持显式配置 Worker 异常后的最大尝试次数，默认 1 保持原有任务语义。
+- Commander 捕获 Worker 异常时会回收能力租约、记录 `task.retry` 事件并将 Intent 重新放回 ready 队列，达到尝试上限后才进入 `failed`。
+- `shared_context` 的委派参数支持为新 Worker 指定 `max_attempts`，重试过程继续使用独立上下文、审计和结果契约。
+
 ## 0.5.0 · 2026-11-20 · 代码任务路由与基线测试闭环
 
 - 新增 Code/Repository 动态路由，代码任务只加载读写、搜索、测试和必要的 Git 工具，避免安全测试工具污染编程上下文。
