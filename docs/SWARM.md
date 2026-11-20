@@ -121,6 +121,12 @@ Flag、完整聊天、开放假设和来源题目的 `RunState` 不进入简报�
 .\.venv\Scripts\python.exe -m trina swarm --resume runs\<swarm-id>\swarm.json
 ```
 
+长时间运行可由独立 Watchdog 保活。Watchdog 只启动 `swarm --resume --json` 子进程，解析正常终态；子进程没有任务摘要而异常退出时，才按次数从同一检查点重启，不参与模型决策或工具授权：
+
+```powershell
+.\.venv\Scripts\python.exe -m trina watchdog runs\<swarm-id>\swarm.json --max-restarts 3 --interval 2
+```
+
 检查点版本 4 只保存权威 Intent、能力快照和完整 coordination 状态，不再保存第二份 TaskRecord；旧 v1–v3 在恢复时迁入 Intent。恢复保留终态任务；检查点中的 `running` Intent 释放旧 Worker/Intent 租约并回到 `pending`，下一次领取增加尝试号。运行中执行器异常时按任务 `max_attempts` 有界重试，租约、能力和 Worker 槽位先释放再重新领取。已经消费过的事实规划键随 coordination 快照保存，恢复后不会重复生成分支。运行中的 `PentestAgent` 由任务 `max_seconds` 收尾；`expire_leases()` 只用于确认没有活跃执行器后的租约回收，不能并发杀死任意自定义 Python executor。
 
 | 产物 | 路径 |
@@ -139,7 +145,7 @@ Flag、完整聊天、开放假设和来源题目的 `RunState` 不进入简报�
 
 ## 当前边界
 
-已实现：事件驱动调度、共享 Todo、Intent 去重/租约/恢复、双图、跨 Worker 观察与失败检索、任务留痕、并行 Worker、能力装配、任务级恢复，以及针对三类已验证事实的有界后继 Intent 生成。
+已实现：事件驱动调度、共享 Todo、Intent 去重/租约/恢复、双图、跨 Worker 观察与失败检索、任务留痕、并行 Worker、能力装配、任务级恢复、Worker 异常有界重试、进程级 Watchdog，以及针对三类已验证事实的有界后继 Intent 生成。
 
 尚未实现：LLM 自动生成和裁剪任意探索分支、跨运行向量经验库、运行中 Worker 完整对话接管、长驻 MCP 服务池、跨 Worker 自动冲突裁决，以及同模型同预算的完整 A/B/C/D 协作收益实验。`/subworker` 现已提供运行中任务查看、队列追加、定向补充/取消、等待任务改配置及整场暂停/停止。
 

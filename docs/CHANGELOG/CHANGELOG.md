@@ -1,5 +1,11 @@
 # Trina 更新日志
 
+## 0.5.0 · 2026-11-20 · Swarm 进程级 Watchdog
+
+- 新增 `trina watchdog <swarm.json>`，以零策略子进程监视 Swarm，只有子进程无摘要异常退出时才从同一检查点恢复。
+- 正常任务终态不会被 Watchdog 重启，恢复次数和间隔可通过 `--max-restarts`、`--interval` 配置。
+- 增加 stdout 摘要解析、崩溃重启和正常终态停止测试，不改变模型调度或工具授权边界。
+
 ## 0.5.0 · 2026-11-20 · Worker 异常回收与有界重试
 
 - `TaskSpec.max_attempts` 支持显式配置 Worker 异常后的最大尝试次数，默认 1 保持原有任务语义。

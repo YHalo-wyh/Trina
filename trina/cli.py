@@ -926,6 +926,26 @@ def cmd_watch(args: argparse.Namespace) -> int:
         return 0
 
 
+def cmd_watchdog(args: argparse.Namespace) -> int:
+    """只负责恢复崩溃的 Swarm 子进程，不参与任务决策。"""
+    config = build_config(args)
+    from .watchdog import run_watchdog
+
+    command_args = [sys.executable, "-m", "trina", "swarm", "--resume",
+                    str(Path(args.checkpoint).resolve()), "--json"]
+    if args.config:
+        command_args.extend(["--config", args.config])
+    for item in args.set or ():
+        command_args.extend(["--set", item])
+    return run_watchdog(
+        args.checkpoint,
+        max_restarts=args.max_restarts,
+        interval=args.interval,
+        command_factory=lambda _attempt: list(command_args),
+        cwd=str(config.runtime_root),
+    )
+
+
 def cmd_report(args: argparse.Namespace) -> int:
     config = build_config(args)
     path = Path(args.state)
@@ -1220,6 +1240,13 @@ def build_parser() -> argparse.ArgumentParser:
     watch.add_argument("--interval", type=float, default=2.0, help="刷新间隔秒（默认 2）")
     watch.add_argument("--once", action="store_true", help="只打印一次")
     watch.set_defaults(func=cmd_watch)
+
+    watchdog = sub.add_parser("watchdog", help="保活并恢复崩溃的 Swarm 子进程")
+    add_common(watchdog)
+    watchdog.add_argument("checkpoint", help="runs/<swarm-id>/swarm.json")
+    watchdog.add_argument("--max-restarts", type=int, default=3, help="最多自动恢复次数（默认 3）")
+    watchdog.add_argument("--interval", type=float, default=2.0, help="恢复前等待秒数（默认 2）")
+    watchdog.set_defaults(func=cmd_watchdog)
 
     review = sub.add_parser("review", help="评价 Agent：只读复核一次运行的声明与证据")
     add_common(review)
