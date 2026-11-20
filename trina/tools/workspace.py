@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import os
 import re
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +14,7 @@ from ..native_tools import native_edit, native_read, native_write
 
 
 _TEXT_LIMIT = 1_000_000
+_WORKSPACE_EDIT_LOCK = threading.RLock()
 _FLAG_RE = re.compile(r"flag\{[^\r\n}]{1,256}\}", re.IGNORECASE)
 _VERIFIER_NAME_RE = re.compile(
     r"(?:^|[\s/\\'\"(\[])"
@@ -432,6 +434,12 @@ class WorkspaceEditMany(Tool):
     )
 
     def run(self, ctx, edits):
+        # 多 Worker 可能共享同一项目目录。锁住“读取—校验—提交”整个事务，
+        # 避免两个 Worker 同时通过旧内容校验后，后写入者静默覆盖先写入者。
+        with _WORKSPACE_EDIT_LOCK:
+            return self._run_locked(ctx, edits)
+
+    def _run_locked(self, ctx, edits):
         if not isinstance(edits, list) or not 1 <= len(edits) <= 12:
             return ToolResult(ok=False, error="edits 需要1..12个编辑对象")
         prepared: list[dict[str, Any]] = []

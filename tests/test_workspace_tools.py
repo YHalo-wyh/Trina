@@ -4,10 +4,12 @@ from __future__ import annotations
 import sys
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from trina.audit import AuditLog
 from trina.config import TrinaConfig
+from trina.events import EventBus
 from trina.scope import ScopeGuard
 from trina.state import RunState
 from trina.tools import build_registry
@@ -104,6 +106,35 @@ class WorkspaceToolTests(unittest.TestCase):
         self.assertFalse(result.ok)
         self.assertEqual((self.ctx.workspace / "a.py").read_text(encoding="utf-8"), "VALUE = 1\n")
         self.assertEqual((self.ctx.workspace / "b.py").read_text(encoding="utf-8"), "VALUE = 2\n")
+
+    def test_edit_many_serializes_conflicting_worker_commits(self):
+        path = self.ctx.workspace / "shared.py"
+        path.write_text("VALUE = 1\n", encoding="utf-8")
+        other = ToolContext(
+            config=self.config, guard=ScopeGuard(self.config.scope),
+            audit=AuditLog.open(self.config.audit_dir, "coding-other"),
+            state=RunState("coding-other", "", "code"), http=HttpClient(ScopeGuard(self.config.scope)),
+            workspace=self.ctx.workspace, tools=self.registry,
+            event_bus=EventBus(Path(self.temp.name) / "other-events.sqlite3", "coding-other"),
+        )
+        try:
+            def edit(ctx, value):
+                return self.registry.execute("workspace_edit_many", {
+                    "edits": [{"path": "shared.py", "old": "VALUE = 1", "new": f"VALUE = {value}", "root": "run"}],
+                }, ctx)
+
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                first, second = [future.result() for future in (
+                    pool.submit(edit, self.ctx, 2), pool.submit(edit, other, 3),
+                )]
+            self.assertEqual(sum(result.ok for result in (first, second)), 1)
+            self.assertIn(path.read_text(encoding="utf-8"), ("VALUE = 2\n", "VALUE = 3\n"))
+            failed = second if first.ok else first
+            self.assertTrue("发生变化" in failed.error or "匹配次数为 0" in failed.error)
+        finally:
+            other.extra["background_jobs"].close()
+            other.extra["binary_sessions"].close()
+            other.extra["browser_sessions"].close()
 
     def test_read_many_keeps_short_ctf_sources_in_one_observation(self):
         for name, text in (("README.md", "# fixture\nread me\n"), ("challenge.py", "print('candidate')\n"),

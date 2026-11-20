@@ -6,6 +6,7 @@
 - 保留 Engineering、Tool Policy、Exploration、Delegation、Workflow、Delivery、Completeness 七个执行模块，继续约束代码编辑、工具调用、Worker 协作、后台作业和真实结果交付。
 - `terminal_start` 增加 `cwd=project/run`，代码仓库后台任务可以与前台编辑、测试使用同一项目目录；省略作业 ID 的有界等待会完整回收当前会话作业。
 - Pwn 语义优先于泛 CTF 文件规则，带 `exploit.py` 的题目会进入 Binary 路由并执行一次真实脚本预检。
+- `workspace_edit_many` 对共享项目目录使用进程内事务锁，两个 Worker 同时编辑同一文件时只允许一个提交，另一个保留可解释的冲突结果。
 
 ## 0.5.0 · 2026-11-20 · 批量代码编辑与后台作业汇总
 
