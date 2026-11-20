@@ -513,6 +513,8 @@ class PentestAgent:
         context.remember_user(goal)
         observation = ""
         binary_prefetch_context = ""
+        binary_script_paths: tuple[str, ...] = ()
+        binary_script_attempted = False
         if (task_route_key in {"ctf", "binary", "code"} and "workspace_read_many" in visible_names and not state.steps
                 and not self.shared_context.get("worker_id") and not ctx.extra.get("subworkers")):
             # 题目文件和 Binary 的首轮预取仍经 ToolRegistry、范围解析和审计。
@@ -564,6 +566,10 @@ class PentestAgent:
                     # ToolResultView 会按字段压缩正文。把已审计的文本作为
                     # 一次性任务上下文保留，避免模型随后为同一脚本反复读取。
                     binary_prefetch_context = str(prefetch.data.get("text", ""))[:12000]
+                    binary_script_paths = tuple(
+                        path for path in prefetch_paths
+                        if _Path(path).name.casefold() in {"exploit.py", "solve.py", "exploit.sh", "solve.sh"}
+                    )
                     observation = "Binary 题目目录文件已批量预取，完整文本已放入任务上下文；先利用其中的脚本和回执验证。"
                 else:
                     observation = prefetch.to_observation()
@@ -828,7 +834,7 @@ class PentestAgent:
             return response
 
         def execute(action, index, response, *, llm_seconds):
-            nonlocal steps, observation, new_facts, final, final_rejects, stall, last_action_key, hints
+            nonlocal steps, observation, new_facts, final, final_rejects, stall, last_action_key, hints, binary_script_attempted
             steps = index
             history_index = previous_steps + index
             if "error" in action:
@@ -974,6 +980,22 @@ class PentestAgent:
             before_knowledge = state.knowledge_digest()
 
             result = self.registry.execute(tool_name, params, ctx, call_id=call_id, request_emitted=True)
+            if task_route_key == "binary" and binary_script_paths and not binary_script_attempted:
+                command_text = " ".join(str(value) for value in (params.get("argv") or []))
+                lowered_command = command_text.casefold()
+                script_run = any(
+                    script.casefold() in lowered_command
+                    and any(token in lowered_command for token in ("python", "pypy", "bash", "sh "))
+                    for script in binary_script_paths
+                )
+                if script_run:
+                    binary_script_attempted = True
+                    state.note("binary", "已检测到题目提供的利用/求解脚本实际运行")
+                else:
+                    hints.append(
+                        "题目目录已提供可执行脚本，但尚未看到真实运行回执；先运行 exploit.py/solve.py，"
+                        "再根据退出码和目标输出修正，不要继续扩展静态探针。"
+                    )
             state.coverage = controller.coverage()
             observation = result.to_observation()
             new_facts = before_knowledge != state.knowledge_digest()
