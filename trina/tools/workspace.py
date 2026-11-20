@@ -236,13 +236,16 @@ class WorkspaceReadMany(Tool):
         category="workspace",
         action_level="detect",
         params={
-            "paths": ParamSpec("list", "相对路径或允许范围内的绝对路径，最多 12 个"),
+            "paths": ParamSpec("list", "相对路径或允许范围内的绝对路径，最多 12 个", required=False, default=[]),
+            "path": ParamSpec("str", "兼容单文件读取的相对路径；批量场景优先使用 paths", required=False, default=""),
             "line_count": ParamSpec("int", "每个文件最多返回行数", required=False, default=240),
             "root": ParamSpec("str", "相对路径基准", required=False, default="project", enum=["project", "run"]),
         },
     )
 
-    def run(self, ctx, paths, line_count=240, root="project"):
+    def run(self, ctx, paths=None, path="", line_count=240, root="project"):
+        if not paths and path:
+            paths = [path]
         if not isinstance(paths, list) or not 1 <= len(paths) <= 12:
             return ToolResult(ok=False, error="paths 需要1..12个文件路径")
         if not 1 <= int(line_count) <= 1000:
