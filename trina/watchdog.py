@@ -65,8 +65,16 @@ def run_watchdog(
             factory(attempt), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             text=True, encoding="utf-8", errors="replace", env=env, cwd=cwd,
         )
-        output, _ = process.communicate()
-        if output:
+        chunks: list[str] = []
+        if process.stdout is not None:
+            for line in process.stdout:
+                chunks.append(line)
+                output_stream.write(line)
+                output_stream.flush()
+            process.stdout.close()
+        process.wait()
+        output = "".join(chunks)
+        if output and not chunks:
             output_stream.write(output)
             output_stream.flush()
         summary = parse_summary(output)
