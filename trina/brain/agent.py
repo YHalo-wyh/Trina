@@ -993,6 +993,18 @@ class PentestAgent:
             if self.on_step:
                 self.on_step(step)
 
+            # 代码任务的真实测试回执已经是完成判据。不要再发一次模型请求
+            # 让模型重复读取源码或编造总结，交付由稳定的本地结果收尾。
+            if task_route_key == "code" and tool_name == "terminal_exec" and result.ok and _code_tests_passed(state):
+                state.note("code", "题面测试已通过，按真实测试工件自动收尾")
+                return ActionOutcome(
+                    observation=observation,
+                    answer="代码修改已完成，题面测试全部通过。",
+                    ok=True,
+                    stop=True,
+                    data=result.data,
+                )
+
             # 调度遵从性：模型是否按"这一步该验证谁"执行（未遵从只升级提示，不阻断、不代编证据）
             if schedule is not None:
                 followed = scheduler.observe(schedule, test_id=test_id, tool=tool_name)
