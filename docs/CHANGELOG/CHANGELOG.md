@@ -5,6 +5,7 @@
 - Binary 路由在识别到 Pwn、堆、ROP、Shellcode 或格式化字符串语义时，增加一次性的利用执行指引，要求批量确认保护与输入模型、优先复用已有利用脚本、尽快运行完整候选，并以目标进程或权威 checker 的真实回执收尾。
 - 该指引只进入任务级 user 合同，不改变稳定 system 前缀、工具白名单或通用 Agent Loop，也不把逆向和静态分析题强行套入固定流水线。
 - Binary 首轮按需暴露 `workspace_read_many`，批量预取 README、利用脚本、checker 和构建说明；不读取 ELF 原文，不恢复 Web/浏览器工具，减少低信息目录探针和重复读取。
+- Binary 预取成功后把已审计的脚本文本作为一次性任务上下文保留，并撤掉同一批量读取 Schema，避免模型为同一利用脚本再次发起读取调用。
 - 修复 `port_scan` 在 Nmap 成功分支把 `ExternalRun.output` 属性误当作函数调用的问题。Nmap 可用时不再因该异常把成功扫描标记为失败或把结论降为 `INCONCLUSIVE`。
 - 新增路由回归覆盖 Pwn 指引，沿用既有策略回归验证 Nmap 成功路径。
 

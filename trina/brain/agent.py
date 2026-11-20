@@ -512,6 +512,7 @@ class PentestAgent:
         context = ConversationContext(ctx)
         context.remember_user(goal)
         observation = ""
+        binary_prefetch_context = ""
         if (task_route_key in {"ctf", "binary", "code"} and "workspace_read_many" in visible_names and not state.steps
                 and not self.shared_context.get("worker_id") and not ctx.extra.get("subworkers")):
             # 题目文件和 Binary 的首轮预取仍经 ToolRegistry、范围解析和审计。
@@ -558,7 +559,31 @@ class PentestAgent:
                     ctx,
                     call_id=f"prefetch-{run_id}",
                 )
-                observation = prefetch.to_observation()
+                if task_route_key == "binary" and prefetch.ok:
+                    # Binary 题的利用脚本通常短于源码输出上限，但结构化
+                    # ToolResultView 会按字段压缩正文。把已审计的文本作为
+                    # 一次性任务上下文保留，避免模型随后为同一脚本反复读取。
+                    binary_prefetch_context = str(prefetch.data.get("text", ""))[:12000]
+                    observation = "Binary 题目目录文件已批量预取，完整文本已放入任务上下文；先利用其中的脚本和回执验证。"
+                else:
+                    observation = prefetch.to_observation()
+                if binary_prefetch_context:
+                    messages.append({
+                        "role": "user",
+                        "content": "## Binary 题目目录预取（已通过 ToolRegistry 读取）\n" + binary_prefetch_context,
+                    })
+                    # 预取完成后撤掉同一批量读取 Schema，避免模型把已经
+                    # 提供的脚本再次读取。其余 Binary 工具保持不变。
+                    visible_names.discard("workspace_read_many")
+                    ctx.extra["tool_allowlist"] = set(visible_names)
+                    if native_mode:
+                        tool_payload = tool_schemas(
+                            self.registry,
+                            include=visible_names,
+                            exclude=hidden_tools,
+                            compact=False,
+                        )
+                    hints.append("Binary 文件已完成首轮批量预取，禁止重复调用 workspace_read_many，直接使用上下文中的脚本和证据。")
                 state.log_step(StepRecord(
                     index=previous_steps,
                     phase="execute",
