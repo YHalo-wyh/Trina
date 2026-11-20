@@ -512,10 +512,10 @@ class PentestAgent:
         context = ConversationContext(ctx)
         context.remember_user(goal)
         observation = ""
-        if (task_route_key in {"ctf", "code"} and "workspace_read_many" in visible_names and not state.steps
+        if (task_route_key in {"ctf", "binary", "code"} and "workspace_read_many" in visible_names and not state.steps
                 and not self.shared_context.get("worker_id") and not ctx.extra.get("subworkers")):
-            # 题目文件型 CTF 的首轮预取仍经 ToolRegistry、范围解析和审计。
-            # 只读取当前目录中明确存在的常见题面文件，避免模型先做低信息 ls/find。
+            # 题目文件和 Binary 的首轮预取仍经 ToolRegistry、范围解析和审计。
+            # 只读取当前目录中明确存在的常见说明/脚本文件，避免模型先做低信息 ls/find。
             from pathlib import Path as _Path
             project_directory = _Path.cwd()
 
@@ -533,6 +533,11 @@ class PentestAgent:
                         item.name.startswith("test") or item.name.endswith(("_test.py", ".spec.ts", ".test.ts"))
                     )
                 )
+            elif task_route_key == "binary":
+                prefetch_candidates = [
+                    "README.md", "AGENTS.md", "exploit.py", "solve.py", "check.py",
+                    "verifier.py", "Dockerfile", "Makefile",
+                ]
             else:
                 prefetch_candidates = [
                     "README.md", "challenge.py", "verifier.py", "puzzle.py", "check.py", "verify.py",

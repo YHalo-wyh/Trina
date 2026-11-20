@@ -99,6 +99,17 @@ class TestParseAction(unittest.TestCase):
         self.assertNotIn("http_fingerprint", visible)
         self.assertNotIn("record_finding", visible)
 
+    def test_binary_route_prefetches_existing_scripts_without_web_tools(self):
+        from trina.tools import build_registry
+        from trina.tools.profile import visible_tool_names
+
+        registry = build_registry()
+        visible = visible_tool_names(registry, "binary")
+        self.assertIn("workspace_read_many", visible)
+        self.assertIn("terminal_exec", visible)
+        self.assertNotIn("web_search", visible)
+        self.assertNotIn("browser_open", visible)
+
     def test_plain_json(self):
         action = parse_action('{"thought": "扫端口", "action": "port_scan", "params": {"target": "127.0.0.1"}}')
         self.assertEqual(action["action"], "port_scan")

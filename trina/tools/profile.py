@@ -82,6 +82,9 @@ def visible_tool_names(registry: Any, route: str = "general", *, browser: bool =
         # 编程任务只需要读、搜、改、测试和可选 Git 操作。
         selected = available & CODE_CORE_TOOLS
     if route == "binary":
+        # Binary/Pwn 题也需要一次性读取题目目录里的说明和已有利用脚本，
+        # 否则模型只能先调用低信息目录探针，再重复读取同一份脚本。
+        selected.update(available & {"workspace_read_many"})
         selected.update(name for name in available if name.startswith("binary_") or name.startswith("debug_"))
         # Binary/Pwn/Reverse 任务走本地文件、终端、r2 和 GDB。把 Web 搜索、
         # 浏览器和 HTTP 测试工具从本轮 Schema 移除，避免模型在无关分支上
