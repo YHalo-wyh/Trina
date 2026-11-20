@@ -1,0 +1,776 @@
+{
+ "run_id": "20261120-094206-12ca17",
+ "target": "127.0.0.1",
+ "goal": "Read README.md and puzzle.py from the current challenge directory, recover the token, run check.py with it until the output is exactly OK, then report the flag. Do not use network.",
+ "status": "partial",
+ "phase": "execute",
+ "phase_history": [],
+ "started_at": 1795138926.712,
+ "ended_at": 1795138961.6768186,
+ "duration": 35.0,
+ "hosts": {
+  "127.0.0.1": {
+   "host": "127.0.0.1",
+   "alive": null,
+   "ports": {},
+   "technologies": [],
+   "web_paths": [],
+   "notes": [
+    "puzzle.py 的 recover() 将 PAYLOAD base85 解码、反转并对大写字母做 -5 位移，得到候选 flag{violet_cache_route}，且 valid() 的 SHA-256 校验为 True；运行 python3 check.py 'flag{violet_cache_route}' 输出恰为 OK。"
+   ]
+  }
+ },
+ "findings": [],
+ "credentials": [],
+ "flags": [],
+ "evidence": [
+  {
+   "id": "cmd-bc4f4561fb904253a6b00dab2f24a41f",
+   "kind": "command",
+   "path": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/eval-20261120-generalization/trina-work/20261120-094206-12ca17/cmd-bc4f4561fb904253a6b00dab2f24a41f.json",
+   "sha256": "eb19205e509a0d4edda6969aaae44ddf7f2812b7603d256298be929ee22e12ff",
+   "exit_code": 0,
+   "target": "",
+   "successful": true,
+   "tool": "terminal_exec",
+   "ts": 1795138934.065,
+   "clock": "09:42:14"
+  },
+  {
+   "id": "cmd-9c04d3736175411f9ee7c5c329141171",
+   "kind": "command",
+   "path": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/eval-20261120-generalization/trina-work/20261120-094206-12ca17/cmd-9c04d3736175411f9ee7c5c329141171.json",
+   "sha256": "d54d9b26126dae38f1affabdbb78190c9f8c82462f5218dcc6fa439b51a2d0b5",
+   "exit_code": 0,
+   "target": "",
+   "successful": true,
+   "tool": "terminal_exec",
+   "ts": 1795138934.647,
+   "clock": "09:42:14"
+  },
+  {
+   "id": "cmd-18892e17e4124ccf8260dc15db8d2af6",
+   "kind": "command",
+   "path": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/eval-20261120-generalization/trina-work/20261120-094206-12ca17/cmd-18892e17e4124ccf8260dc15db8d2af6.json",
+   "sha256": "ea7f70d2ec14b8fdefa6a0b27db8ebb5801ddfb7d292d3d8fe8829bf6d2966d5",
+   "exit_code": 0,
+   "target": "",
+   "successful": true,
+   "tool": "terminal_exec",
+   "ts": 1795138939.154,
+   "clock": "09:42:19"
+  },
+  {
+   "id": "cmd-25169e95baee40569c35b665437d4521",
+   "kind": "command",
+   "path": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/eval-20261120-generalization/trina-work/20261120-094206-12ca17/cmd-25169e95baee40569c35b665437d4521.json",
+   "sha256": "1636a6280fffe4df29dad9ef2a4abf792568e5e8c6c8630f90f8a7d0bfa5cbec",
+   "exit_code": 0,
+   "target": "",
+   "successful": true,
+   "tool": "terminal_exec",
+   "ts": 1795138945.555,
+   "clock": "09:42:25"
+  },
+  {
+   "id": "cmd-abbf4c5b794a4f398f8c718fd8f1a745",
+   "kind": "command",
+   "path": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/eval-20261120-generalization/trina-work/20261120-094206-12ca17/cmd-abbf4c5b794a4f398f8c718fd8f1a745.json",
+   "sha256": "59f97e82248f5eb2e58e70d5a0c38b95bf34e9262dd48802aec4e663089a666e",
+   "exit_code": 0,
+   "target": "",
+   "successful": true,
+   "tool": "terminal_exec",
+   "ts": 1795138949.759,
+   "clock": "09:42:29"
+  }
+ ],
+ "timeline": [
+  {
+   "ts": 1795138927.746,
+   "clock": "09:42:07",
+   "kind": "run",
+   "text": "开始对 127.0.0.1 的自动化渗透测试",
+   "goal": "Read README.md and puzzle.py from the current challenge directory, recover the token, run check.py with it until the output is exactly OK, then report the flag. Do not use network."
+  },
+  {
+   "ts": 1795138927.793,
+   "clock": "09:42:07",
+   "kind": "protocol",
+   "text": "使用原生工具调用（20 个 schema，含 finish）"
+  },
+  {
+   "ts": 1795138927.809,
+   "clock": "09:42:07",
+   "kind": "prompt",
+   "text": "使用分层提示词：Core+Role(system) / Contract(user) / Dynamic(按步)"
+  },
+  {
+   "ts": 1795138949.933,
+   "clock": "09:42:29",
+   "kind": "artifact",
+   "text": "状态已保存: /mnt/c/Users/WYH/Desktop/网安实训中级/runs/eval-20261120-generalization/trina-work/20261120-094206-12ca17/state.json"
+  },
+  {
+   "ts": 1795138956.777,
+   "clock": "09:42:36",
+   "kind": "observation",
+   "text": "puzzle.py 的 recover() 将 PAYLOAD base85 解码、反转并对大写字母做 -5 位移，得到候选 flag{violet_cache_route}，且 valid() 的 SHA-256 校验为 True；运行 python3 check.py 'flag{violet_cache_route}' 输出恰为 OK。",
+   "record_id": "note-2811acb31ecc"
+  },
+  {
+   "ts": 1795138956.972,
+   "clock": "09:42:36",
+   "kind": "artifact",
+   "text": "状态已保存: /mnt/c/Users/WYH/Desktop/网安实训中级/runs/eval-20261120-generalization/trina-work/20261120-094206-12ca17/state.json"
+  },
+  {
+   "ts": 1795138961.677,
+   "clock": "09:42:41",
+   "kind": "final",
+   "text": "已恢复 token 并通过本地校验。\n\n- 分析：README.md / puzzle.py / check.py 均读取。recover() 对 PAYLOAD 做 base85 解码 → 字符串反转 → 对每个大写字母相对 'A' 做 -5 (mod 26) 位移；valid() 用 EXPECTED_SHA256 校验。\n- 执行：`python3 puzzle.py` 输出 `candidate: flag{violet_cache_route}`、`verified: True`。\n- 权威校验：`python3 check.py 'flag{violet_cache_route}'` 输出恰为 `OK`（退出码 0）。\n\nFlag: flag{violet_cache_route}"
+  },
+  {
+   "ts": 1795138961.677,
+   "clock": "09:42:41",
+   "kind": "final_claim",
+   "text": "模型自评与 flag 声明仅作摘要；运行结果以工具事实判定"
+  },
+  {
+   "ts": 1795138961.677,
+   "clock": "09:42:41",
+   "kind": "verdict",
+   "text": "结论状态 NOT_CONFIRMED（范围内未确认（仅限已执行检查，不代表全系统安全））；已测 0 项，未测 0 项，停止原因：正常收敛"
+  },
+  {
+   "ts": 1795138961.677,
+   "clock": "09:42:41",
+   "kind": "hypotheses",
+   "text": "假设台账：共 0 条（待验证 0、已确认 0、已否定 0、被阻断 0）"
+  },
+  {
+   "ts": 1795138961.686,
+   "clock": "09:42:41",
+   "kind": "run.end",
+   "text": "任务结束：状态=partial，步数=7，漏洞=0，flag=0"
+  }
+ ],
+ "steps": [
+  {
+   "kind": "tool",
+   "tool": "terminal_exec",
+   "params": {
+    "argv": [
+     "bash",
+     "-lc",
+     "pwd; ls -la; echo ---; ls -la .. | head -50"
+    ],
+    "timeout": 120.0,
+    "input": "",
+    "cwd": "project",
+    "working_directory": "",
+    "target": ""
+   },
+   "ok": true,
+   "summary": "命令完成，退出码 0",
+   "duration": 0.357,
+   "ts": 1795138934.074
+  },
+  {
+   "index": 1,
+   "phase": "execute",
+   "thought": "",
+   "action": "terminal_exec",
+   "params": {
+    "argv": [
+     "bash",
+     "-lc",
+     "pwd; ls -la; echo ---; ls -la .. | head -50"
+    ]
+   },
+   "ok": true,
+   "denied": false,
+   "summary": "命令完成，退出码 0",
+   "duration": 0.357,
+   "llm_seconds": 5.37,
+   "error": "",
+   "ts": 1795138934.203
+  },
+  {
+   "kind": "tool",
+   "tool": "terminal_exec",
+   "params": {
+    "argv": [
+     "bash",
+     "-lc",
+     "ls -la /root/TPCTF2026-Agent/state/challenges/ 2>&1 | head -50"
+    ],
+    "timeout": 120.0,
+    "input": "",
+    "cwd": "project",
+    "working_directory": "",
+    "target": ""
+   },
+   "ok": true,
+   "summary": "命令完成，退出码 0",
+   "duration": 0.362,
+   "ts": 1795138934.657
+  },
+  {
+   "index": 2,
+   "phase": "execute",
+   "thought": "",
+   "action": "terminal_exec",
+   "params": {
+    "argv": [
+     "bash",
+     "-lc",
+     "ls -la /root/TPCTF2026-Agent/state/challenges/ 2>&1 | head -50"
+    ]
+   },
+   "ok": true,
+   "denied": false,
+   "summary": "命令完成，退出码 0",
+   "duration": 0.362,
+   "llm_seconds": 0.0,
+   "error": "",
+   "ts": 1795138934.826
+  },
+  {
+   "kind": "tool",
+   "tool": "terminal_exec",
+   "params": {
+    "argv": [
+     "bash",
+     "-lc",
+     "cd '/mnt/c/Users/WYH/Desktop/网安实训中级/runs/eval-20261120-generalization/trina' && echo '=== README.md ==='; cat README.md; echo; echo '=== puzzle.py ==='; cat puzzle.py; echo; echo '=== check.py ==='; cat check.py"
+    ],
+    "timeout": 120.0,
+    "input": "",
+    "cwd": "project",
+    "working_directory": "",
+    "target": ""
+   },
+   "ok": true,
+   "summary": "命令完成，退出码 0",
+   "duration": 0.393,
+   "ts": 1795138939.161
+  },
+  {
+   "index": 3,
+   "phase": "execute",
+   "thought": "",
+   "action": "terminal_exec",
+   "params": {
+    "argv": [
+     "bash",
+     "-lc",
+     "cd '/mnt/c/Users/WYH/Desktop/网安实训中级/runs/eval-20261120-generalization/trina' && echo '=== README.md ==='; cat README.md; echo; echo '=== puzzle.py ==='; cat puzzle.py; echo; echo '=== check.py ==='; cat check.py"
+    ]
+   },
+   "ok": true,
+   "denied": false,
+   "summary": "命令完成，退出码 0",
+   "duration": 0.393,
+   "llm_seconds": 3.57,
+   "error": "",
+   "ts": 1795138939.345
+  },
+  {
+   "kind": "tool",
+   "tool": "terminal_exec",
+   "params": {
+    "argv": [
+     "bash",
+     "-lc",
+     "cd '/mnt/c/Users/WYH/Desktop/网安实训中级/runs/eval-20261120-generalization/trina' && python3 puzzle.py"
+    ],
+    "timeout": 120.0,
+    "input": "",
+    "cwd": "project",
+    "working_directory": "",
+    "target": ""
+   },
+   "ok": true,
+   "summary": "命令完成，退出码 0",
+   "duration": 0.314,
+   "ts": 1795138945.565
+  },
+  {
+   "index": 4,
+   "phase": "execute",
+   "thought": "",
+   "action": "terminal_exec",
+   "params": {
+    "argv": [
+     "bash",
+     "-lc",
+     "cd '/mnt/c/Users/WYH/Desktop/网安实训中级/runs/eval-20261120-generalization/trina' && python3 puzzle.py"
+    ]
+   },
+   "ok": true,
+   "denied": false,
+   "summary": "命令完成，退出码 0",
+   "duration": 0.314,
+   "llm_seconds": 5.53,
+   "error": "",
+   "ts": 1795138945.678
+  },
+  {
+   "kind": "tool",
+   "tool": "terminal_exec",
+   "params": {
+    "argv": [
+     "bash",
+     "-lc",
+     "cd '/mnt/c/Users/WYH/Desktop/网安实训中级/runs/eval-20261120-generalization/trina' && python3 check.py 'flag{violet_cache_route}'"
+    ],
+    "timeout": 120.0,
+    "input": "",
+    "cwd": "project",
+    "working_directory": "",
+    "target": ""
+   },
+   "ok": true,
+   "summary": "命令完成，退出码 0",
+   "duration": 0.409,
+   "ts": 1795138949.767
+  },
+  {
+   "index": 5,
+   "phase": "execute",
+   "thought": "",
+   "action": "terminal_exec",
+   "params": {
+    "argv": [
+     "bash",
+     "-lc",
+     "cd '/mnt/c/Users/WYH/Desktop/网安实训中级/runs/eval-20261120-generalization/trina' && python3 check.py 'flag{violet_cache_route}'"
+    ]
+   },
+   "ok": true,
+   "denied": false,
+   "summary": "命令完成，退出码 0",
+   "duration": 0.409,
+   "llm_seconds": 3.42,
+   "error": "",
+   "ts": 1795138949.913
+  },
+  {
+   "kind": "tool",
+   "tool": "record_fact",
+   "params": {
+    "text": "puzzle.py 的 recover() 将 PAYLOAD base85 解码、反转并对大写字母做 -5 位移，得到候选 flag{violet_cache_route}，且 valid() 的 SHA-256 校验为 True；运行 python3 check.py 'flag{violet_cache_route}' 输出恰为 OK。",
+    "evidence_refs": [
+     "cmd-25169e95baee40569c35b665437d4521",
+     "cmd-abbf4c5b794a4f398f8c718fd8f1a745"
+    ],
+    "kind": "observation"
+   },
+   "ok": true,
+   "summary": "已登记有来源的观察；不自动升级为已验证漏洞",
+   "duration": 0.203,
+   "ts": 1795138956.785
+  },
+  {
+   "index": 6,
+   "phase": "execute",
+   "thought": "",
+   "action": "record_fact",
+   "params": {
+    "text": "puzzle.py 的 recover() 将 PAYLOAD base85 解码、反转并对大写字母做 -5 位移，得到候选 flag{violet_cache_route}，且 valid() 的 SHA-256 校验为 True；运行 python3 check.py 'flag{violet_cache_route}' 输出恰为 OK。",
+    "evidence_refs": [
+     "cmd-25169e95baee40569c35b665437d4521",
+     "cmd-abbf4c5b794a4f398f8c718fd8f1a745"
+    ]
+   },
+   "ok": true,
+   "denied": false,
+   "summary": "已登记有来源的观察；不自动升级为已验证漏洞",
+   "duration": 0.203,
+   "llm_seconds": 6.74,
+   "error": "",
+   "ts": 1795138956.962
+  },
+  {
+   "index": 7,
+   "phase": "execute",
+   "thought": "",
+   "action": "final",
+   "params": {},
+   "ok": true,
+   "denied": false,
+   "summary": "已恢复 token 并通过本地校验。\n\n- 分析：README.md / puzzle.py / check.py 均读取。recover() 对 PAYLOAD 做 base85 解码 → 字符串反转 → 对每个大写字母相对 'A' 做 -5 (mod 26) 位移；valid() 用 EXPECTED_SHA256 校验。\n- 执行：`python3 puzzle.py` 输出 `candid",
+   "duration": 0.0,
+   "llm_seconds": 0.0,
+   "error": "",
+   "ts": 1795138961.677
+  }
+ ],
+ "ledger": {
+  "calls": 6,
+  "input_tokens": 67118,
+  "output_tokens": 1338,
+  "cache_read_tokens": 53120,
+  "cache_write_tokens": 0,
+  "total_tokens": 68456,
+  "tokens_reported": true,
+  "cache_reported": true,
+  "cost_reported": true,
+  "input_reported": true,
+  "output_reported": true,
+  "cache_read_reported": true,
+  "cache_write_reported": false,
+  "input_reported_calls": 6,
+  "output_reported_calls": 6,
+  "cache_read_reported_calls": 6,
+  "cache_write_reported_calls": 0,
+  "cost_reported_calls": 6,
+  "cache_input_tokens": 67118,
+  "cache_hit_rate": 0.7914419380792038,
+  "cost_usd": 0,
+  "model": "deepseek-v4.1-flash"
+ },
+ "counters": {
+  "steps": 13,
+  "llm_calls": 6,
+  "tool_calls": 6,
+  "denied": 0,
+  "errors": 0,
+  "failures": 0,
+  "model_milliseconds": 30497,
+  "native_calls": 7,
+  "decision_rounds": 6
+ },
+ "artifacts": {
+  "events_path": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/eval-20261120-generalization/trina-work/20261120-094206-12ca17/events.sqlite3",
+  "traffic_path": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/eval-20261120-generalization/trina-work/20261120-094206-12ca17/traffic.sqlite3",
+  "workspace": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/eval-20261120-generalization/trina-work/20261120-094206-12ca17",
+  "audit_path": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/eval-20261120-generalization/trina-logs/20261120-094206-12ca17.jsonl",
+  "state_file": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/eval-20261120-generalization/trina-work/20261120-094206-12ca17/state.json",
+  "performance": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/eval-20261120-generalization/trina-work/20261120-094206-12ca17/performance.json"
+ },
+ "verdict": "NOT_CONFIRMED",
+ "coverage": {
+  "mode": "free",
+  "stop_contract": {
+   "stop_on_no_new_evidence": 0
+  },
+  "checks_used": 6,
+  "executed": [],
+  "unregistered": [],
+  "untested": [],
+  "skipped": [],
+  "denied": [],
+  "revoked": [],
+  "stop_reason": ""
+ },
+ "boundary_events": [],
+ "hypotheses": [],
+ "graph": {},
+ "loop": {
+  "total_steps": 6,
+  "redundant_steps": 0,
+  "redundant_action_rate": 0.0,
+  "last_advice": ""
+ },
+ "scheduler": {},
+ "runtime_status": {
+  "version": 1,
+  "task": {
+   "run_id": "20261120-094206-12ca17",
+   "goal": "Read README.md and puzzle.py from the current challenge directory, recover the token, run check.py with it until the output is exactly OK, then report the flag. Do not use network.",
+   "phase": "execute",
+   "status": "partial"
+  },
+  "progress": {
+   "step": 7,
+   "max_steps": 0,
+   "turn": 0,
+   "elapsed_seconds": 35.0,
+   "remaining_seconds": 565.4143012399995
+  },
+  "tools": {
+   "calls": 6,
+   "failures": 0,
+   "errors": 0,
+   "denied": 0
+  },
+  "environment": {
+   "workspace": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/eval-20261120-generalization/trina-work/20261120-094206-12ca17",
+   "platform": "linux",
+   "os_name": "posix",
+   "python_executable": "/usr/bin/python3",
+   "observed_hosts": 1,
+   "findings": 0,
+   "evidence": 5
+  },
+  "last_observation": "over() 将 PAYLOAD base85 解码、反转并对大写字母做 -5 位移，得到候选 flag{violet_cache_route}，且 valid() 的 SHA-256 校验为 True；运行 python3 check.py 'flag{violet_cache_route}' 输出恰为 OK。\",\"kind\":\"observation\",\"evidence_refs\":[\"cmd-25169e95baee40569c35b665437d4521\",\"cmd-abbf4c5b794a4f398f8c718fd8f1a745\"],\"ts\":1795138956.7769704}",
+  "background_jobs": [],
+  "binary_sessions": [],
+  "browser_sessions": []
+ },
+ "context_stats": {
+  "compactions": 0,
+  "estimator": "utf8_bytes/2 + framing",
+  "state_revision": 6,
+  "state_full_updates": 1,
+  "state_delta_updates": 5,
+  "state_full_bytes": 572,
+  "state_delta_bytes": 2168,
+  "estimated_input_tokens": 14066,
+  "input_budget": 479961,
+  "prepare_seconds": 0.002,
+  "last_request": {
+   "reason": "append",
+   "visible_prefix_bytes": 24165,
+   "visible_input_bytes": 27500,
+   "suffix_visible_bytes": 3335,
+   "appended_visible_bytes": 3335,
+   "epoch": 0,
+   "stable_core_id": "89b3a614dc9fa7dde44a76d5",
+   "input_tokens": 13651,
+   "cache_read_tokens": 12672,
+   "cache_write_tokens": null,
+   "uncached_input_tokens": 979,
+   "duration_seconds": 4.3,
+   "ok": true,
+   "cache_policy": {
+    "mode": "auto",
+    "source": "passive",
+    "stable_prefix_id": "1495e3762d7745c062830dfcdab812a1",
+    "features": [],
+    "ttl": null
+   }
+  },
+  "recent_requests": [
+   {
+    "reason": "cold",
+    "visible_prefix_bytes": 0,
+    "visible_input_bytes": 10039,
+    "suffix_visible_bytes": 10039,
+    "appended_visible_bytes": null,
+    "epoch": 0,
+    "stable_core_id": "89b3a614dc9fa7dde44a76d5",
+    "input_tokens": 8277,
+    "cache_read_tokens": 0,
+    "cache_write_tokens": null,
+    "uncached_input_tokens": 8277,
+    "duration_seconds": 5.37,
+    "ok": true,
+    "cache_policy": {
+     "mode": "auto",
+     "source": "passive",
+     "stable_prefix_id": "1495e3762d7745c062830dfcdab812a1",
+     "features": [],
+     "ttl": null
+    }
+   },
+   {
+    "reason": "append",
+    "visible_prefix_bytes": 10039,
+    "visible_input_bytes": 14122,
+    "suffix_visible_bytes": 4083,
+    "appended_visible_bytes": 4083,
+    "epoch": 0,
+    "stable_core_id": "89b3a614dc9fa7dde44a76d5",
+    "input_tokens": 9666,
+    "cache_read_tokens": 8192,
+    "cache_write_tokens": null,
+    "uncached_input_tokens": 1474,
+    "duration_seconds": 3.57,
+    "ok": true,
+    "cache_policy": {
+     "mode": "auto",
+     "source": "passive",
+     "stable_prefix_id": "1495e3762d7745c062830dfcdab812a1",
+     "features": [],
+     "ttl": null
+    }
+   },
+   {
+    "reason": "append",
+    "visible_prefix_bytes": 14122,
+    "visible_input_bytes": 18223,
+    "suffix_visible_bytes": 4101,
+    "appended_visible_bytes": 4101,
+    "epoch": 0,
+    "stable_core_id": "89b3a614dc9fa7dde44a76d5",
+    "input_tokens": 10933,
+    "cache_read_tokens": 9600,
+    "cache_write_tokens": null,
+    "uncached_input_tokens": 1333,
+    "duration_seconds": 5.53,
+    "ok": true,
+    "cache_policy": {
+     "mode": "auto",
+     "source": "passive",
+     "stable_prefix_id": "1495e3762d7745c062830dfcdab812a1",
+     "features": [],
+     "ttl": null
+    }
+   },
+   {
+    "reason": "append",
+    "visible_prefix_bytes": 18223,
+    "visible_input_bytes": 21460,
+    "suffix_visible_bytes": 3237,
+    "appended_visible_bytes": 3237,
+    "epoch": 0,
+    "stable_core_id": "89b3a614dc9fa7dde44a76d5",
+    "input_tokens": 11876,
+    "cache_read_tokens": 10880,
+    "cache_write_tokens": null,
+    "uncached_input_tokens": 996,
+    "duration_seconds": 3.42,
+    "ok": true,
+    "cache_policy": {
+     "mode": "auto",
+     "source": "passive",
+     "stable_prefix_id": "1495e3762d7745c062830dfcdab812a1",
+     "features": [],
+     "ttl": null
+    }
+   },
+   {
+    "reason": "append",
+    "visible_prefix_bytes": 21460,
+    "visible_input_bytes": 24165,
+    "suffix_visible_bytes": 2705,
+    "appended_visible_bytes": 2705,
+    "epoch": 0,
+    "stable_core_id": "89b3a614dc9fa7dde44a76d5",
+    "input_tokens": 12715,
+    "cache_read_tokens": 11776,
+    "cache_write_tokens": null,
+    "uncached_input_tokens": 939,
+    "duration_seconds": 6.74,
+    "ok": true,
+    "cache_policy": {
+     "mode": "auto",
+     "source": "passive",
+     "stable_prefix_id": "1495e3762d7745c062830dfcdab812a1",
+     "features": [],
+     "ttl": null
+    }
+   },
+   {
+    "reason": "append",
+    "visible_prefix_bytes": 24165,
+    "visible_input_bytes": 27500,
+    "suffix_visible_bytes": 3335,
+    "appended_visible_bytes": 3335,
+    "epoch": 0,
+    "stable_core_id": "89b3a614dc9fa7dde44a76d5",
+    "input_tokens": 13651,
+    "cache_read_tokens": 12672,
+    "cache_write_tokens": null,
+    "uncached_input_tokens": 979,
+    "duration_seconds": 4.3,
+    "ok": true,
+    "cache_policy": {
+     "mode": "auto",
+     "source": "passive",
+     "stable_prefix_id": "1495e3762d7745c062830dfcdab812a1",
+     "features": [],
+     "ttl": null
+    }
+   }
+  ]
+ },
+ "performance": {
+  "version": 1,
+  "status": "enabled",
+  "run_id": "20261120-094206-12ca17",
+  "worker_id": "",
+  "started_at": 1795138927.012356,
+  "wall_time_seconds": 35.208499,
+  "counters": {
+   "agent_rounds": 6,
+   "agent_steps": 7,
+   "llm_requests": 6,
+   "tool_calls": 6
+  },
+  "llm": {
+   "calls": 6,
+   "total_seconds": 30.06847,
+   "p50_seconds": 4.523053,
+   "p95_seconds": 6.880766,
+   "input_tokens": 67118,
+   "output_tokens": 1338,
+   "cache_read_tokens": 53120,
+   "first_token_p50_seconds": 2.571541,
+   "first_token_p95_seconds": 3.230579,
+   "duration_availability": "reported",
+   "token_usage_availability": "reported"
+  },
+  "tools": {
+   "calls": 6,
+   "total_seconds": 2.038,
+   "p50_seconds": 0.357,
+   "p95_seconds": 0.409,
+   "failed": 0,
+   "by_tool": {
+    "record_fact": {
+     "calls": 1,
+     "total_seconds": 0.203,
+     "p50_seconds": 0.203,
+     "p95_seconds": 0.203
+    },
+    "terminal_exec": {
+     "calls": 5,
+     "total_seconds": 1.835,
+     "p50_seconds": 0.362,
+     "p95_seconds": 0.409
+    }
+   }
+  },
+  "subworkers": {
+   "calls": 0,
+   "total_seconds": 0,
+   "p50_seconds": null,
+   "p95_seconds": null,
+   "completed": 0,
+   "startup_seconds": 0,
+   "execution_seconds": 0,
+   "waiting_seconds": null,
+   "waiting_availability": "unavailable",
+   "availability": "unavailable"
+  },
+  "phases": {
+   "prompt_build": {
+    "calls": 6,
+    "total_seconds": 0.012862,
+    "p50_seconds": 0.000183,
+    "p95_seconds": 0.011863
+   },
+   "context_prepare": {
+    "calls": 6,
+    "total_seconds": 0.002,
+    "p50_seconds": 0.000283,
+    "p95_seconds": 0.000492
+   },
+   "context_diagnostic": {
+    "calls": 6,
+    "total_seconds": 0.004477,
+    "p50_seconds": 0.000563,
+    "p95_seconds": 0.001326
+   }
+  },
+  "path": "/mnt/c/Users/WYH/Desktop/网安实训中级/runs/eval-20261120-generalization/trina-work/20261120-094206-12ca17/performance.json"
+ },
+ "casebook": {
+  "facts": [
+   {
+    "id": "note-2811acb31ecc",
+    "text": "puzzle.py 的 recover() 将 PAYLOAD base85 解码、反转并对大写字母做 -5 位移，得到候选 flag{violet_cache_route}，且 valid() 的 SHA-256 校验为 True；运行 python3 check.py 'flag{violet_cache_route}' 输出恰为 OK。",
+    "kind": "observation",
+    "evidence_refs": [
+     "cmd-25169e95baee40569c35b665437d4521",
+     "cmd-abbf4c5b794a4f398f8c718fd8f1a745"
+    ],
+    "ts": 1795138956.7769704
+   }
+  ]
+ }
+}

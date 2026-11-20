@@ -55,7 +55,7 @@ SECURITY_ENGINEER_SYSTEM_PROMPT = """你是 Trina，面向 CTF / 攻防比赛的
 
 
 _TASK_ROUTE_PROFILES = {
-    "ctf": """按题目文件建立最小解题闭环。首轮优先一次调用 workspace_read_many 批量读取 README、源码、验证器或题目附件，不要先执行 pwd/ls，也不要把短文件切片后反复重读。先从真实代码恢复候选，再只运行必要的本地脚本和权威验证器；验证器输出未通过前不能交付 flag。题目文件型 CTF 不需要 record_fact、report_finding 或目标台账调用，验证器结果会自动写入事实库。已读取且未变化的文件不要再次读取。""",
+    "ctf": """按题目文件建立最小解题闭环。首轮优先一次调用 workspace_read_many 批量读取 README、源码、验证器、checker 或题目附件，不要先执行 pwd/ls，也不要把短文件切片后反复重读。先从真实代码恢复候选，再只运行必要的本地脚本和权威校验入口；校验输出未通过前不能交付 flag 或 token。题目文件型 CTF 不需要 record_fact、report_finding 或目标台账调用，校验器结果会自动写入事实库。已读取且未变化的文件不要再次读取。""",
     "web": """从 HTTP/API 入口、路由和认证建立最小地图，先低成本指纹，再验证参数、影响与证据。""",
     "binary": """先确认文件类型、架构、位数和输入方式；静态、调试、脚本交替，候选必须实际验证。把互不依赖的 file/readelf/strings/ldd/checksec 等只读检查合并到一次 terminal_exec；已取得的函数、保护和运行库事实不要重复查询。Binary 任务不要调用目标清单、仓库管理或 Worker 管理工具。需要利用时先一次写入完整脚本，再运行并根据真实输出调整；连续三次探针没有新事实就停止探针并进入利用验证，避免为同一假设反复执行只改变截断长度的命令。""",
     "crypto": """恢复变换链和参数来源，区分编码、哈希、加密与签名；候选必须可复现验证。""",
@@ -82,8 +82,12 @@ def infer_task_route_key(goal: str = "", target: str = "", *, tool_names: Iterab
     }
     for route, terms in keywords.items():
         scores[route] = sum(1 for term in terms if term in text)
-    if any(term in text for term in ("challenge.py", "verifier.py", "题目文件", "题目附件")):
+    if any(term in text for term in ("challenge.py", "verifier.py", "puzzle.py", "check.py", "verify.py", "题目文件", "题目附件")):
         scores["ctf"] += 4
+    if re.search(r"\b[\w.-]+\.(?:py|py3|txt|md)\b", text) and any(
+        term in text for term in ("校验", "验证", "checker", "validator", "verify", "check", "flag", "token")
+    ):
+        scores["ctf"] += 3
     if target.casefold().endswith((".elf", ".bin", ".out", ".so")):
         scores["binary"] += 3
     if "binary" not in available and not any(name.startswith("binary_") or name.startswith("debug_") for name in names):

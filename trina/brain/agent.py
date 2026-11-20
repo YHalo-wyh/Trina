@@ -468,8 +468,16 @@ class PentestAgent:
             # 只读取当前目录中明确存在的常见题面文件，避免模型先做低信息 ls/find。
             from pathlib import Path as _Path
 
+            prefetch_candidates = [
+                "README.md", "challenge.py", "verifier.py", "puzzle.py", "check.py", "verify.py",
+                "solve.py", "solver.py", "main.py", "decode.py",
+            ]
+            prefetch_candidates.extend(
+                item.name for item in sorted(_Path.cwd().glob("*.py"))
+                if not item.name.startswith("__") and item.name not in prefetch_candidates
+            )
             prefetch_paths = [
-                name for name in ("README.md", "challenge.py", "verifier.py", "solve.py", "main.py")
+                name for name in prefetch_candidates[:12]
                 if (_Path.cwd() / name).is_file()
             ]
             if len(prefetch_paths) >= 2:

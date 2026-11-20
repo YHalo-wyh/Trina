@@ -197,6 +197,14 @@ class CasebookTests(unittest.TestCase):
         self.assertEqual(result.metadata["authority_verifier"]["status"], "passed")
         self.assertEqual(self.ctx.state.flags[0]["value"], "flag{embedded_ok}")
 
+    def test_checker_filename_is_authoritative_when_it_returns_ok(self):
+        checker = Path(self.ctx.workspace) / "check.py"
+        checker.write_text("print('OK')\n", encoding="utf-8")
+        result = self.execute("terminal_exec", argv=[sys.executable, "check.py", "flag{checker_ok}"], cwd="run")
+        self.assertTrue(result.ok, result.error)
+        self.assertEqual(result.metadata["authority_verifier"]["status"], "passed")
+        self.assertEqual(self.ctx.state.flags[0]["value"], "flag{checker_ok}")
+
     def test_finding_dedup_and_real_traffic_bindings(self):
         fid = self.finding()
         other = self.finding()

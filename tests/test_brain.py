@@ -71,6 +71,10 @@ class TestParseAction(unittest.TestCase):
         ctf = infer_task_route("读取 challenge.py 并用 verifier.py 校验 flag", "127.0.0.1")
         self.assertIn("CTF 文件题", ctf)
         self.assertIn("批量读取", ctf)
+        generalized_ctf = infer_task_route("读取 puzzle.py 并用 check.py 校验 token", "127.0.0.1")
+        self.assertIn("CTF 文件题", generalized_ctf)
+        generic_ctf = infer_task_route("读取 answer.py 并用 validator.py 验证 token", "127.0.0.1")
+        self.assertIn("CTF 文件题", generic_ctf)
 
         layers = build_prompt_layers(protocol="native", task_route=binary)
         self.assertNotIn("Binary/Pwn/Reverse", layers.system())

@@ -14,7 +14,7 @@ _TEXT_LIMIT = 1_000_000
 _FLAG_RE = re.compile(r"flag\{[^\r\n}]{1,256}\}", re.IGNORECASE)
 _VERIFIER_NAME_RE = re.compile(
     r"(?:^|[\s/\\'\"(\[])"
-    r"(?:verifier|verify(?:[_-]?flag)?|check[_-]?flag|validate[_-]?flag)(?:\.py)?"
+    r"(?:verifier|validator|verify(?:[_-]?flag)?|check(?:er)?(?:[_-]?flag)?|validate(?:[_-]?flag)?)(?:\.py)?"
     r"(?:$|[\s/\\'\"),.;:}])",
     re.IGNORECASE,
 )
@@ -47,14 +47,14 @@ def _authority_verifier_facts(argv: list[str], stdout: str, stderr: str, *, exit
                               evidence_id: str) -> tuple[dict[str, Any], dict[str, Any]]:
     """识别本地题目验证器的确定性回执，不把普通命令输出当成成功证明。
 
-    只有命令参数明确包含 verifier/verify/check_flag/validate_flag 入口、进程正常退出，
+    只有命令参数明确包含 verifier/validator/verify/check/checker/validate 入口、进程正常退出，
     并且输出存在独立的 ``OK`` 行时才登记权威验证结果。完整命令和输出仍保存在原始证据中。
     """
     command_text = " ".join(argv)
     verifier_match = _VERIFIER_NAME_RE.search(command_text)
     direct_execution = re.search(
         r"\b(?:python(?:\d+(?:\.\d+)?)?|pypy(?:\d+(?:\.\d+)?)?)(?:\.exe)?\s+[^\r\n]*"
-        r"(?:verifier|verify(?:[_-]?flag)?|check[_-]?flag|validate[_-]?flag)(?:\.py)?",
+        r"(?:verifier|validator|verify(?:[_-]?flag)?|check(?:er)?(?:[_-]?flag)?|validate(?:[_-]?flag)?)(?:\.py)?",
         command_text,
         re.IGNORECASE,
     )
