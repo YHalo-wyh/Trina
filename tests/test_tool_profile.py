@@ -33,7 +33,7 @@ class ToolProfileTests(unittest.TestCase):
         visible = visible_tool_names(registry, "ctf")
         self.assertEqual(
             visible,
-            {"terminal_exec", "workspace_read", "workspace_read_many", "workspace_search", "workspace_write", "workspace_edit"},
+            {"terminal_exec", "workspace_read", "workspace_read_many", "workspace_search", "workspace_write", "workspace_edit", "workspace_edit_many"},
         )
 
     def test_schema_export_uses_same_allowlist(self):

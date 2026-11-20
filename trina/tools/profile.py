@@ -31,7 +31,7 @@ CTF_CORE_TOOLS = frozenset({
 })
 
 CTF_FILE_TOOLS = frozenset({
-    "terminal_exec", "workspace_read", "workspace_read_many", "workspace_search", "workspace_write", "workspace_edit",
+    "terminal_exec", "workspace_read", "workspace_read_many", "workspace_search", "workspace_write", "workspace_edit", "workspace_edit_many",
 })
 
 CTF_WEB_TOOLS = frozenset({
@@ -57,7 +57,7 @@ CTF_BINARY_COORDINATION_TOOLS = frozenset({"list_goals", "workspace_git", "worke
 
 CODE_CORE_TOOLS = frozenset({
     "terminal_exec", "workspace_read", "workspace_read_many", "workspace_search",
-    "workspace_write", "workspace_edit", "workspace_git",
+    "workspace_write", "workspace_edit", "workspace_edit_many", "workspace_git",
 })
 
 

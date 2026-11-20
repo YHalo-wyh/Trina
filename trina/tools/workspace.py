@@ -378,8 +378,84 @@ class WorkspaceEdit(Tool):
             return ToolResult(ok=False, error=str(exc))
 
 
+class WorkspaceEditMany(Tool):
+    """先校验一组精确替换，再一次提交多个文件修改。"""
+
+    spec = ToolSpec(
+        name="workspace_edit_many",
+        summary="批量精确修改多个代码文件；全部匹配校验通过后提交，任一项失败则不写入",
+        category="workspace",
+        action_level="exploit",
+        params={
+            "edits": ParamSpec("list", "编辑对象数组，每项含 path、old、new，可选 expected/root", required=True),
+        },
+        produces=["files"],
+    )
+
+    def run(self, ctx, edits):
+        if not isinstance(edits, list) or not 1 <= len(edits) <= 12:
+            return ToolResult(ok=False, error="edits 需要1..12个编辑对象")
+        prepared: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        try:
+            for index, item in enumerate(edits, 1):
+                if not isinstance(item, dict):
+                    return ToolResult(ok=False, error=f"第 {index} 项不是对象")
+                raw_path = str(item.get("path") or "")
+                old = item.get("old")
+                new = item.get("new")
+                expected = int(item.get("expected", 1))
+                root = str(item.get("root", "project"))
+                if not raw_path or not isinstance(old, str) or not old or not isinstance(new, str) or expected < 1:
+                    return ToolResult(ok=False, error=f"第 {index} 项需要 path、非空 old/new 和正整数 expected")
+                resolved = _path(ctx, raw_path, root, for_write=True)
+                key = str(resolved)
+                if key in seen:
+                    return ToolResult(ok=False, error=f"第 {index} 项与前项修改同一文件，批量编辑要求每个文件只出现一次")
+                seen.add(key)
+                if not resolved.is_file():
+                    return ToolResult(ok=False, error=f"文件不存在或不是普通文件: {raw_path}")
+                source = resolved.read_text(encoding="utf-8", errors="strict")
+                matches = source.count(old)
+                if matches != expected:
+                    return ToolResult(ok=False, error=f"第 {index} 项匹配次数为 {matches}，期望 {expected}；未修改任何文件")
+                updated = source.replace(old, new, expected)
+                if len(updated.encode("utf-8")) > _TEXT_LIMIT:
+                    return ToolResult(ok=False, error=f"第 {index} 项修改后文件超过 1MiB")
+                prepared.append({
+                    "path": raw_path,
+                    "resolved": resolved,
+                    "source": source,
+                    "updated": updated,
+                    "expected": expected,
+                    "before_sha256": _digest(source),
+                    "after_sha256": _digest(updated),
+                })
+            for item in prepared:
+                _atomic_write(item["resolved"], item["updated"])
+        except (OSError, UnicodeError, ValueError) as exc:
+            for item in prepared:
+                try:
+                    _atomic_write(item["resolved"], item["source"])
+                except (OSError, UnicodeError):
+                    pass
+            return ToolResult(ok=False, error=f"批量编辑失败，已尝试回滚：{exc}")
+        for item in prepared:
+            ctx.audit.append(
+                "workspace.edit_many", decision="allow", path=str(item["resolved"]),
+                replacements=item["expected"], before_sha256=item["before_sha256"],
+                after_sha256=item["after_sha256"],
+            )
+        result_rows = [{key: item[key] for key in ("path", "expected", "before_sha256", "after_sha256")} for item in prepared]
+        return ToolResult(
+            summary=f"已批量修改 {len(prepared)} 个文件",
+            data={"edits": result_rows, "count": len(result_rows)},
+            metadata={"atomic_batch": True},
+        )
+
+
 from .git import WorkspaceGit
 from .search import WorkspaceSearch
 
 
-TOOLS = [TerminalExec(), WorkspaceRead(), WorkspaceReadMany(), WorkspaceWrite(), WorkspaceEdit(), WorkspaceSearch(), WorkspaceGit()]
+TOOLS = [TerminalExec(), WorkspaceRead(), WorkspaceReadMany(), WorkspaceWrite(), WorkspaceEdit(), WorkspaceEditMany(), WorkspaceSearch(), WorkspaceGit()]

@@ -28,7 +28,7 @@ class TerminalStart(Tool):
 
 class TerminalStatus(Tool):
     spec = ToolSpec(
-        name="terminal_status", summary="读取后台作业真实状态、退出码与输出尾部；指定已结束作业时归档 evidence_id，可短暂等待",
+        name="terminal_status", summary="读取后台作业真实状态、退出码与输出尾部；可等待指定作业或当前会话全部作业，结束后归档证据",
         category="utility", action_level="detect",
         params={"job_id": ParamSpec("str", "留空列出近期作业", required=False, default=""),
                 "wait_seconds": ParamSpec("float", "等待指定作业，最多 10 秒", required=False, default=0)},
@@ -38,24 +38,34 @@ class TerminalStatus(Tool):
         jobs = ctx.extra.get("background_jobs")
         if not 0 <= wait_seconds <= 10:
             return ToolResult(ok=False, error="wait_seconds 必须在 [0,10] 内")
-        if job_id and wait_seconds:
-            jobs.wait(job_id, wait_seconds)
+        if wait_seconds:
+            if job_id:
+                jobs.wait(job_id, wait_seconds)
+            else:
+                jobs.wait_all(wait_seconds)
         rows = jobs.snapshot(job_id, tail=1600)
         evidence = []
-        data = {"jobs": rows}
-        if job_id and rows and rows[0]["finished"]:
-            evidence_id = "bg-" + job_id
-            data["evidence_id"] = evidence_id
-            if not any(item.get("id") == evidence_id for item in ctx.state.evidence):
-                # 仅由前台注册表提交状态；后台线程不向事实库写入。
-                record = jobs.snapshot(job_id, tail=16_000)[0]
-                transcript = json.dumps({**record, "output_is_tail": True}, ensure_ascii=False)
-                artifact = ctx.save_artifact(evidence_id + ".json", transcript)
-                evidence.append({"id": evidence_id, "kind": "command", "path": str(artifact),
-                                 "sha256": hashlib.sha256(artifact.read_bytes()).hexdigest(),
-                                 "job_id": job_id, "exit_code": record["exit_code"],
-                                 "successful": record["status"] == "completed" and record["exit_code"] == 0,
-                                 "output_is_tail": True})
+        data = {"jobs": rows, "evidence_ids": []}
+        for row in rows:
+            # monitor 先更新状态再发布 job.finished，短窗口内 status 已是终态
+            # 而 done 事件尚未置位，终态状态仍然可以安全归档。
+            if row["status"] == "running" and not row["finished"]:
+                continue
+            evidence_id = "bg-" + row["id"]
+            data["evidence_ids"].append(evidence_id)
+            if job_id:
+                data["evidence_id"] = evidence_id
+            if any(item.get("id") == evidence_id for item in ctx.state.evidence):
+                continue
+            # 仅由前台注册表提交状态；后台线程不向事实库写入。
+            record = jobs.snapshot(row["id"], tail=16_000)[0]
+            transcript = json.dumps({**record, "output_is_tail": True}, ensure_ascii=False)
+            artifact = ctx.save_artifact(evidence_id + ".json", transcript)
+            evidence.append({"id": evidence_id, "kind": "command", "path": str(artifact),
+                             "sha256": hashlib.sha256(artifact.read_bytes()).hexdigest(),
+                             "job_id": row["id"], "exit_code": record["exit_code"],
+                             "successful": record["status"] == "completed" and record["exit_code"] == 0,
+                             "output_is_tail": True})
         failed = any(row["status"] in {"failed", "timed_out", "cancelled"} for row in rows)
         ctx.audit.append("external.background.status", jobs=[{k: v for k, v in row.items() if not k.endswith("_tail")} for row in rows])
         return ToolResult(ok=not failed, summary="；".join(f"{row['id']} {row['status']} code={row['exit_code']}" for row in rows) or "没有后台作业",

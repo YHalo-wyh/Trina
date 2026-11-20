@@ -61,6 +61,34 @@ class WorkspaceToolTests(unittest.TestCase):
         self.assertFalse(result.ok)
         self.assertEqual(path.read_text(encoding="utf-8"), "same same")
 
+    def test_edit_many_commits_independent_files_and_reports_hashes(self):
+        for name, text in (("a.py", "VALUE = 1\n"), ("b.py", "VALUE = 2\n")):
+            (self.ctx.workspace / name).write_text(text, encoding="utf-8")
+        result = self.registry.execute("workspace_edit_many", {
+            "edits": [
+                {"path": "a.py", "old": "VALUE = 1", "new": "VALUE = 10", "root": "run"},
+                {"path": "b.py", "old": "VALUE = 2", "new": "VALUE = 20", "root": "run"},
+            ],
+        }, self.ctx)
+        self.assertTrue(result.ok, result.error)
+        self.assertEqual(result.data["count"], 2)
+        self.assertTrue(all(item["before_sha256"] != item["after_sha256"] for item in result.data["edits"]))
+        self.assertIn("VALUE = 10", (self.ctx.workspace / "a.py").read_text(encoding="utf-8"))
+        self.assertIn("VALUE = 20", (self.ctx.workspace / "b.py").read_text(encoding="utf-8"))
+
+    def test_edit_many_validates_all_items_before_writing(self):
+        (self.ctx.workspace / "a.py").write_text("VALUE = 1\n", encoding="utf-8")
+        (self.ctx.workspace / "b.py").write_text("VALUE = 2\n", encoding="utf-8")
+        result = self.registry.execute("workspace_edit_many", {
+            "edits": [
+                {"path": "a.py", "old": "VALUE = 1", "new": "VALUE = 10", "root": "run"},
+                {"path": "b.py", "old": "MISSING", "new": "VALUE = 20", "root": "run"},
+            ],
+        }, self.ctx)
+        self.assertFalse(result.ok)
+        self.assertEqual((self.ctx.workspace / "a.py").read_text(encoding="utf-8"), "VALUE = 1\n")
+        self.assertEqual((self.ctx.workspace / "b.py").read_text(encoding="utf-8"), "VALUE = 2\n")
+
     def test_read_many_keeps_short_ctf_sources_in_one_observation(self):
         for name, text in (("README.md", "# fixture\nread me\n"), ("challenge.py", "print('candidate')\n"),
                            ("verifier.py", "print('OK')\n")):

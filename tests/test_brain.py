@@ -96,6 +96,7 @@ class TestParseAction(unittest.TestCase):
         self.assertEqual(route, "code")
         visible = visible_tool_names(registry, route)
         self.assertIn("workspace_edit", visible)
+        self.assertIn("workspace_edit_many", visible)
         self.assertIn("terminal_exec", visible)
         self.assertNotIn("http_fingerprint", visible)
         self.assertNotIn("record_finding", visible)

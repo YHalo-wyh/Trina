@@ -226,6 +226,17 @@ class BackgroundJobs:
             done = self._jobs[job_id]["done"]
         done.wait(max(0, min(seconds, 10)))
 
+    def wait_all(self, seconds: float) -> None:
+        """在有界时间内等待当前会话的所有运行中作业。"""
+        deadline = time.monotonic() + max(0.0, min(float(seconds), 10.0))
+        while time.monotonic() < deadline:
+            with self._lock:
+                running = [job["done"] for job in self._jobs.values() if job["status"] == "running"]
+            if not running:
+                return
+            remaining = max(0.0, deadline - time.monotonic())
+            running[0].wait(min(.05, remaining))
+
     def stop(self, job_id: str) -> None:
         with self._lock:
             if job_id not in self._jobs:

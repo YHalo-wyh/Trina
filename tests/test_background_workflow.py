@@ -106,6 +106,17 @@ class BackgroundWorkflowTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "执行失败"):
                     resolve_evidence(self.ctx, [result.data["evidence_id"]])
 
+    def test_status_waits_for_all_jobs_and_archives_each_evidence(self):
+        first = self.start("import time; time.sleep(.15); print('first')")
+        second = self.start("import time; time.sleep(.25); print('second')")
+        result = self.execute("terminal_status", wait_seconds=2)
+        self.assertTrue(result.ok, result.to_observation())
+        rows = {row["id"]: row for row in result.data["jobs"]}
+        self.assertEqual(rows[first]["status"], "completed")
+        self.assertEqual(rows[second]["status"], "completed")
+        self.assertEqual(set(result.data["evidence_ids"]), {"bg-" + first, "bg-" + second})
+        self.assertEqual({item["job_id"] for item in result.evidence}, {first, second})
+
 
 if __name__ == "__main__":
     unittest.main()
