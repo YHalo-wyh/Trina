@@ -1,0 +1,92 @@
+{
+  "version": 1,
+  "status": "enabled",
+  "run_id": "20261120-085554-12ca17",
+  "worker_id": "",
+  "started_at": 1795136154.6440315,
+  "wall_time_seconds": 70.707279,
+  "counters": {
+    "agent_rounds": 11,
+    "agent_steps": 14,
+    "llm_requests": 11,
+    "tool_calls": 13
+  },
+  "llm": {
+    "calls": 11,
+    "total_seconds": 60.310489,
+    "p50_seconds": 4.324857,
+    "p95_seconds": 13.329254,
+    "input_tokens": 152379,
+    "output_tokens": 2604,
+    "cache_read_tokens": 132608,
+    "first_token_p50_seconds": 2.703682,
+    "first_token_p95_seconds": 3.222162,
+    "duration_availability": "reported",
+    "token_usage_availability": "reported"
+  },
+  "tools": {
+    "calls": 13,
+    "total_seconds": 4.335,
+    "p50_seconds": 0.305,
+    "p95_seconds": 0.498,
+    "failed": 0,
+    "by_tool": {
+      "list_goals": {
+        "calls": 1,
+        "total_seconds": 0.191,
+        "p50_seconds": 0.191,
+        "p95_seconds": 0.191
+      },
+      "prove_goal": {
+        "calls": 1,
+        "total_seconds": 0.2,
+        "p50_seconds": 0.2,
+        "p95_seconds": 0.2
+      },
+      "terminal_exec": {
+        "calls": 8,
+        "total_seconds": 3.23,
+        "p50_seconds": 0.384,
+        "p95_seconds": 0.55
+      },
+      "workspace_read": {
+        "calls": 3,
+        "total_seconds": 0.714,
+        "p50_seconds": 0.236,
+        "p95_seconds": 0.255
+      }
+    }
+  },
+  "subworkers": {
+    "calls": 0,
+    "total_seconds": 0,
+    "p50_seconds": null,
+    "p95_seconds": null,
+    "completed": 0,
+    "startup_seconds": 0,
+    "execution_seconds": 0,
+    "waiting_seconds": null,
+    "waiting_availability": "unavailable",
+    "availability": "unavailable"
+  },
+  "phases": {
+    "prompt_build": {
+      "calls": 11,
+      "total_seconds": 0.016974,
+      "p50_seconds": 0.000197,
+      "p95_seconds": 0.014964
+    },
+    "context_prepare": {
+      "calls": 11,
+      "total_seconds": 0.004718,
+      "p50_seconds": 0.000418,
+      "p95_seconds": 0.000643
+    },
+    "context_diagnostic": {
+      "calls": 11,
+      "total_seconds": 0.012062,
+      "p50_seconds": 0.001218,
+      "p95_seconds": 0.00187
+    }
+  }
+}
