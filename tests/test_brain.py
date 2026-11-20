@@ -68,6 +68,9 @@ class TestParseAction(unittest.TestCase):
         self.assertIn("Web/API", web)
         self.assertIn("确认文件类型", binary)
         self.assertIn("HTTP/API 入口", web)
+        ctf = infer_task_route("读取 challenge.py 并用 verifier.py 校验 flag", "127.0.0.1")
+        self.assertIn("CTF 文件题", ctf)
+        self.assertIn("批量读取", ctf)
 
         layers = build_prompt_layers(protocol="native", task_route=binary)
         self.assertNotIn("Binary/Pwn/Reverse", layers.system())

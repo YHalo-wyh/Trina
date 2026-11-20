@@ -62,6 +62,15 @@ class ProfilerTests(unittest.TestCase):
         self.assertTrue(result.truncated)
         self.assertNotIn("full raw output" * 100, observation)
 
+    def test_workspace_text_field_is_not_artificially_cut_to_quarter_kilobyte(self):
+        source = "PAYLOAD = [" + ("7, " * 240) + "]\nprint('verified')\n"
+        observation = ToolResult(
+            summary="读取 challenge.py",
+            data={"path": "challenge.py", "text": source, "total_lines": 2},
+        ).to_observation()
+        self.assertIn("verified", observation)
+        self.assertGreater(len(observation), 700)
+
 
 if __name__ == "__main__":
     unittest.main()

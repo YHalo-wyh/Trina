@@ -30,6 +30,10 @@ CTF_CORE_TOOLS = frozenset({
     "browser_open", "browser_close", "worker_tasks",
 })
 
+CTF_FILE_TOOLS = frozenset({
+    "terminal_exec", "workspace_read", "workspace_read_many", "workspace_search", "workspace_write", "workspace_edit",
+})
+
 CTF_WEB_TOOLS = frozenset({
     "api_recon_static", "dir_bruteforce", "param_reflect_scan", "web_surface", "nuclei_scan",
 })
@@ -63,6 +67,10 @@ def visible_tool_names(registry: Any, route: str = "general", *, browser: bool =
     if not available.intersection(CTF_CORE_TOOLS | CTF_PRUNED_TOOLS | CTF_WEB_TOOLS):
         return available
     selected = (available & CTF_CORE_TOOLS) - CTF_PRUNED_TOOLS
+    if route == "ctf":
+        # 题目文件型 CTF 只需要读取、执行、登记和验证。隐藏 Web、浏览器、
+        # 爆破及企业台账 Schema，避免模型在首轮选择无关能力。
+        selected = available & CTF_FILE_TOOLS
     if route == "web":
         selected.update(available & CTF_WEB_TOOLS)
     if route == "binary":
@@ -85,5 +93,5 @@ def excluded_from_prompt(registry: Any, visible: Iterable[str], *, hidden: Itera
     return set(registry.names()) - set(visible) | set(hidden)
 
 
-__all__ = ["CTF_PRUNED_TOOLS", "CTF_CORE_TOOLS", "visible_tool_names", "excluded_from_prompt"]
+__all__ = ["CTF_PRUNED_TOOLS", "CTF_CORE_TOOLS", "CTF_FILE_TOOLS", "visible_tool_names", "excluded_from_prompt"]
 

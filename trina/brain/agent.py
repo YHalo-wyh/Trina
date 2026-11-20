@@ -387,9 +387,24 @@ class PentestAgent:
         if target_id:
             visible_names.update(test.tool for test in controller.registry.tests_for(target_id)
                                  if test.tool in self.registry.names())
+        if task_route_key == "ctf" and not requirements.empty:
+            # 题目合同明确提出漏洞类或路径时，再按需恢复证据登记和目标台账。
+            visible_names.update(
+                name for name in ("record_fact", "report_finding", "list_goals", "prove_goal")
+                if name in self.registry.names()
+            )
+        if requirements.empty and not controller.registry.tests_for(target_id):
+            # 没有可解析的硬性目标时，目标台账只会诱发一次无效查询。
+            # 权威验证器仍可通过 terminal_exec 进入事实库并参与最终判定。
+            visible_names.difference_update({"list_goals", "prove_goal"})
         ctx.extra["tool_allowlist"] = set(visible_names)
         tool_payload: list[dict[str, Any]] | None = (
-            tool_schemas(self.registry, include=visible_names, exclude=hidden_tools) if native_mode else None
+            tool_schemas(
+                self.registry,
+                include=visible_names,
+                exclude=hidden_tools,
+                compact=task_route_key == "ctf",
+            ) if native_mode else None
         )
         if native_mode:
             audit.append(
@@ -448,6 +463,33 @@ class PentestAgent:
         context = ConversationContext(ctx)
         context.remember_user(goal)
         observation = ""
+        if task_route_key == "ctf" and "workspace_read_many" in visible_names and not state.steps:
+            # 题目文件型 CTF 的首轮预取仍经 ToolRegistry、范围解析和审计。
+            # 只读取当前目录中明确存在的常见题面文件，避免模型先做低信息 ls/find。
+            from pathlib import Path as _Path
+
+            prefetch_paths = [
+                name for name in ("README.md", "challenge.py", "verifier.py", "solve.py", "main.py")
+                if (_Path.cwd() / name).is_file()
+            ]
+            if len(prefetch_paths) >= 2:
+                prefetch = self.registry.execute(
+                    "workspace_read_many",
+                    {"paths": prefetch_paths, "root": "project"},
+                    ctx,
+                    call_id=f"prefetch-{run_id}",
+                )
+                observation = prefetch.to_observation()
+                state.log_step(StepRecord(
+                    index=previous_steps,
+                    phase="execute",
+                    action="workspace_read_many",
+                    ok=prefetch.ok,
+                    summary=prefetch.summary or prefetch.error,
+                    duration=prefetch.duration,
+                    error=prefetch.error,
+                ).to_dict())
+                state.note("prefetch", f"首轮批量读取题目文件：{', '.join(prefetch_paths)}")
         last_action_key = ""
         stall = 0
         new_facts = True
@@ -576,7 +618,9 @@ class PentestAgent:
                     commander=commander_context_block() if (commander_briefs or commander_brief_provider) else "",
                     **({"continuation": continuation} if continuation else {}),
                     unsatisfied_requirements=missing_goal)),
-                last_observation="见前面的工具结果" if native_mode and state.steps else observation,
+                last_observation=("见前面的工具结果"
+                                  if native_mode and state.steps and state.counters.get("llm_calls", 0)
+                                  else observation),
                 hints=hints,
                 runtime_context="",
                 budget={

@@ -61,33 +61,33 @@ FINISH_SCHEMA: dict[str, Any] = {
 }
 
 
-def param_schema(spec: ParamSpec) -> dict[str, Any]:
+def param_schema(spec: ParamSpec, *, compact: bool = False) -> dict[str, Any]:
     """单个参数 → JSON Schema 片段。
 
     ``enum``/``default``/``example`` 都保留，让模型看到可选值而不是靠猜；
     ``bool`` 的 default 用 ``false`` 也要写出来（否则模型倾向于省略）。
     """
     node: dict[str, Any] = {"type": TYPE_MAP.get(spec.type, "string")}
-    bits = [spec.description] if spec.description else []
+    bits = [] if compact else ([spec.description] if spec.description else [])
     if spec.enum:
         node["enum"] = list(spec.enum)
         bits.append("取值: " + " | ".join(str(item) for item in spec.enum))
     if spec.default is not None:
         node["default"] = spec.default
         bits.append(f"默认 {spec.default!r}")
-    if spec.example is not None:
+    if spec.example is not None and not compact:
         node["examples"] = [spec.example]
     if bits:
         node["description"] = "；".join(bits)
     return node
 
 
-def function_schema(spec: ToolSpec) -> dict[str, Any]:
+def function_schema(spec: ToolSpec, *, compact: bool = False) -> dict[str, Any]:
     """一个 ``ToolSpec`` → OpenAI function 定义。"""
-    properties = {name: param_schema(param) for name, param in spec.params.items()}
+    properties = {name: param_schema(param, compact=compact) for name, param in spec.params.items()}
     properties["_depends_on"] = {
         "type": "array", "items": {"type": "integer", "minimum": 1},
-        "description": "可选：依赖本轮前序工具调用的1基编号；依赖失败则不执行，执行器消费该字段",
+        "description": "本轮前序调用编号；依赖失败则跳过" if compact else "可选：依赖本轮前序工具调用的1基编号；依赖失败则不执行，执行器消费该字段",
     }
     required = [name for name, param in spec.params.items() if param.required]
     parameters: dict[str, Any] = {
@@ -98,7 +98,9 @@ def function_schema(spec: ToolSpec) -> dict[str, Any]:
     if required:
         parameters["required"] = required
     description = spec.summary
-    if spec.notes:
+    if compact:
+        description = description.split("；", 1)[0][:120]
+    if spec.notes and not compact:
         description = f"{description}（{spec.notes}）"
     return {
         "type": "function",
@@ -116,6 +118,7 @@ def tool_schemas(
     include: Any = None,
     exclude: Any = (),
     include_finish: bool = True,
+    compact: bool = False,
 ) -> list[dict[str, Any]]:
     """注册表 → 原生工具 schema 列表。
 
@@ -132,7 +135,7 @@ def tool_schemas(
         tool = registry.get(name)
         if tool is None:
             continue
-        rows.append(function_schema(tool.spec))
+        rows.append(function_schema(tool.spec, compact=compact))
     if include_finish:
         rows.append(json.loads(json.dumps(FINISH_SCHEMA)))
     return rows

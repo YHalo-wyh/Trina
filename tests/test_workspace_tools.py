@@ -61,6 +61,20 @@ class WorkspaceToolTests(unittest.TestCase):
         self.assertFalse(result.ok)
         self.assertEqual(path.read_text(encoding="utf-8"), "same same")
 
+    def test_read_many_keeps_short_ctf_sources_in_one_observation(self):
+        for name, text in (("README.md", "# fixture\nread me\n"), ("challenge.py", "print('candidate')\n"),
+                           ("verifier.py", "print('OK')\n")):
+            path = self.ctx.workspace / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text, encoding="utf-8")
+        result = self.registry.execute("workspace_read_many", {
+            "paths": ["README.md", "challenge.py", "verifier.py"], "root": "run",
+        }, self.ctx)
+        self.assertTrue(result.ok, result.error)
+        self.assertIn("challenge.py", result.data["text"])
+        self.assertIn("candidate", result.data["text"])
+        self.assertIn("verifier.py", result.data["text"])
+
     def test_unbounded_find_is_rejected_before_process_start(self):
         self.assertTrue(_is_unbounded_find(["find", "/", "-name", "healthcheckd"]))
         self.assertFalse(_is_unbounded_find(["find", "/workspace", "-name", "healthcheckd"]))

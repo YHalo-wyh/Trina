@@ -28,6 +28,14 @@ class ToolProfileTests(unittest.TestCase):
         self.assertIn("browser_interact", browser)
         self.assertIn("browser_open", browser)
 
+    def test_file_ctf_route_keeps_only_local_analysis_tools(self):
+        registry = build_registry()
+        visible = visible_tool_names(registry, "ctf")
+        self.assertEqual(
+            visible,
+            {"terminal_exec", "workspace_read", "workspace_read_many", "workspace_search", "workspace_write", "workspace_edit"},
+        )
+
     def test_schema_export_uses_same_allowlist(self):
         registry = build_registry()
         visible = visible_tool_names(registry, "general")
@@ -37,6 +45,17 @@ class ToolProfileTests(unittest.TestCase):
         self.assertIn("terminal_exec", names)
         self.assertNotIn("port_scan", names)
         self.assertNotIn("binary_open", names)
+
+    def test_compact_schema_keeps_protocol_shape_and_reduces_text(self):
+        registry = build_registry()
+        visible = visible_tool_names(registry, "ctf")
+        full = tool_schemas(registry, include=visible)
+        compact = tool_schemas(registry, include=visible, compact=True)
+        self.assertEqual({item["function"]["name"] for item in full},
+                         {item["function"]["name"] for item in compact})
+        self.assertLess(len(str(compact)), len(str(full)))
+        terminal = next(item for item in compact if item["function"]["name"] == "terminal_exec")
+        self.assertIn("argv", terminal["function"]["parameters"]["properties"])
 
 
 if __name__ == "__main__":

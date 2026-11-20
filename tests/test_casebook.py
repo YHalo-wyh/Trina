@@ -184,6 +184,19 @@ class CasebookTests(unittest.TestCase):
         self.assertNotIn("authority_verifier", result.metadata)
         self.assertEqual(self.ctx.state.flags, [])
 
+    def test_embedded_verifier_process_is_authoritative_when_it_returns_ok(self):
+        verifier = Path(self.ctx.workspace) / "verifier.py"
+        verifier.write_text("print('OK')\n", encoding="utf-8")
+        code = (
+            "import subprocess,sys; "
+            "r=subprocess.run([sys.executable,'verifier.py','flag{embedded_ok}'], capture_output=True, text=True); "
+            "print(r.stdout.strip())"
+        )
+        result = self.execute("terminal_exec", argv=[sys.executable, "-c", code], cwd="run")
+        self.assertTrue(result.ok, result.error)
+        self.assertEqual(result.metadata["authority_verifier"]["status"], "passed")
+        self.assertEqual(self.ctx.state.flags[0]["value"], "flag{embedded_ok}")
+
     def test_finding_dedup_and_real_traffic_bindings(self):
         fid = self.finding()
         other = self.finding()

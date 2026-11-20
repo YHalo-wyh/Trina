@@ -13,7 +13,9 @@ from .registry import ParamSpec, Tool, ToolResult, ToolSpec
 _TEXT_LIMIT = 1_000_000
 _FLAG_RE = re.compile(r"flag\{[^\r\n}]{1,256}\}", re.IGNORECASE)
 _VERIFIER_NAME_RE = re.compile(
-    r"(?:^|[\s/\\])(?:verifier|verify(?:[_-]?flag)?|check[_-]?flag|validate[_-]?flag)(?:\.py)?(?:$|[\s/\\])",
+    r"(?:^|[\s/\\'\"(\[])"
+    r"(?:verifier|verify(?:[_-]?flag)?|check[_-]?flag|validate[_-]?flag)(?:\.py)?"
+    r"(?:$|[\s/\\'\"),.;:}])",
     re.IGNORECASE,
 )
 
@@ -49,7 +51,15 @@ def _authority_verifier_facts(argv: list[str], stdout: str, stderr: str, *, exit
     并且输出存在独立的 ``OK`` 行时才登记权威验证结果。完整命令和输出仍保存在原始证据中。
     """
     command_text = " ".join(argv)
-    if not _VERIFIER_NAME_RE.search(command_text) or exit_code != 0:
+    verifier_match = _VERIFIER_NAME_RE.search(command_text)
+    direct_execution = re.search(
+        r"\b(?:python(?:\d+(?:\.\d+)?)?|pypy(?:\d+(?:\.\d+)?)?)(?:\.exe)?\s+[^\r\n]*"
+        r"(?:verifier|verify(?:[_-]?flag)?|check[_-]?flag|validate[_-]?flag)(?:\.py)?",
+        command_text,
+        re.IGNORECASE,
+    )
+    embedded_execution = "subprocess.run" in command_text or "subprocess.call" in command_text
+    if not verifier_match or not (direct_execution or embedded_execution) or exit_code != 0:
         return {}, {}
     combined = "\n".join((stdout or "", stderr or ""))
     passed = bool(re.search(r"(?m)^\s*OK\s*$", combined))
@@ -217,6 +227,48 @@ class WorkspaceRead(Tool):
             return ToolResult(ok=False, error=str(exc))
 
 
+class WorkspaceReadMany(Tool):
+    """一次读取多个已知短文本文件，减少模型为独立读取反复往返。"""
+
+    spec = ToolSpec(
+        name="workspace_read_many",
+        summary="一次批量读取多个项目或任务目录文本文件；适合 CTF 题面、源码和验证器的首轮检查",
+        category="workspace",
+        action_level="detect",
+        params={
+            "paths": ParamSpec("list", "相对路径或允许范围内的绝对路径，最多 12 个"),
+            "line_count": ParamSpec("int", "每个文件最多返回行数", required=False, default=240),
+            "root": ParamSpec("str", "相对路径基准", required=False, default="project", enum=["project", "run"]),
+        },
+    )
+
+    def run(self, ctx, paths, line_count=240, root="project"):
+        if not isinstance(paths, list) or not 1 <= len(paths) <= 12:
+            return ToolResult(ok=False, error="paths 需要1..12个文件路径")
+        if not 1 <= int(line_count) <= 1000:
+            return ToolResult(ok=False, error="line_count 必须在 [1,1000]")
+        chunks: list[str] = []
+        files: list[dict[str, Any]] = []
+        try:
+            for raw_path in paths:
+                resolved = _path(ctx, str(raw_path), root)
+                if not resolved.is_file():
+                    return ToolResult(ok=False, error=f"文件不存在或不是普通文件: {raw_path}")
+                if resolved.stat().st_size > _TEXT_LIMIT:
+                    return ToolResult(ok=False, error=f"文件超过 1MiB: {raw_path}")
+                lines = resolved.read_text(encoding="utf-8", errors="replace").splitlines()
+                selected = lines[:int(line_count)]
+                numbered = "\n".join(f"{index + 1:>6}  {line}" for index, line in enumerate(selected))
+                chunks.append(f"## {raw_path}\n{numbered}")
+                files.append({"path": str(raw_path), "total_lines": len(lines), "returned_lines": len(selected)})
+        except (OSError, UnicodeError, ValueError) as exc:
+            return ToolResult(ok=False, error=str(exc))
+        return ToolResult(
+            summary=f"批量读取 {len(files)} 个文件",
+            data={"text": "\n\n".join(chunks), "files": files, "count": len(files)},
+        )
+
+
 class WorkspaceWrite(Tool):
     spec = ToolSpec(
         name="workspace_write",
@@ -291,4 +343,4 @@ from .git import WorkspaceGit
 from .search import WorkspaceSearch
 
 
-TOOLS = [TerminalExec(), WorkspaceRead(), WorkspaceWrite(), WorkspaceEdit(), WorkspaceSearch(), WorkspaceGit()]
+TOOLS = [TerminalExec(), WorkspaceRead(), WorkspaceReadMany(), WorkspaceWrite(), WorkspaceEdit(), WorkspaceSearch(), WorkspaceGit()]
