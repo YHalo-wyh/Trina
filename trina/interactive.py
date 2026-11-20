@@ -64,6 +64,7 @@ class Console:
         self.output = output or (lambda line: print(line, flush=True))
         self.color = use_color(plain=plain or output is not None)
         self._live_step: Any = None
+        self._live_action_hint = ""
         #: 注入的后端（测试用）或按当前会话配置构建的缓存
         self._backend_obj = backend
         self._tracked_backend = None
@@ -126,6 +127,12 @@ class Console:
 
     def _on_step(self, step: Any) -> None:
         self._live_step = step
+        self._set_live_action_hint(f"第 {getattr(step, 'index', '?')} 步 · {getattr(step, 'action', '动作')}")
+
+    def _set_live_action_hint(self, value: str) -> None:
+        self._live_action_hint = value
+        if self._enhanced_input is not None:
+            self._enhanced_input._live_action_hint = value
 
     def _on_runtime_event(self, event: Any) -> None:
         from .event_view import EventTranscript
@@ -137,6 +144,11 @@ class Console:
             self.view.set_activity("retry", f"等待重试 · 第 {event.payload.get('attempt')} 次")
         elif event.kind == "model.error":
             self.view.set_activity("error", "模型请求失败")
+        elif event.kind == "react.action":
+            step = event.payload.get("step") or event.payload.get("index") or "?"
+            tool = str(event.payload.get("tool") or event.payload.get("action") or "动作")
+            self._set_live_action_hint(f"第 {step} 步 · {tool}")
+            self.view.set_activity("tool", tool)
         elif event.kind == "tool.finished" and event.payload.get("tool") in {"terminal_exec", "workspace_git"}:
             self._branch = self._read_branch()
         self._event_transcript.consume(event)
@@ -1470,6 +1482,7 @@ class Console:
         self.view.set_activity("processing", "准备回复")
         self._task_title = chat.title or " ".join(text.split())[:80]
         self._live_step = None
+        self._set_live_action_hint("")
         chat.state.goal = self._goal_text
         self.session.state = chat.state
         self.session.started_at = time.monotonic()
@@ -1639,6 +1652,7 @@ class Console:
         self._plan = plan
         self._task_title = plan.goal or f"扫描 {plan.target}"
         self._task_max_steps = task_config.llm.max_steps if max_steps is None else max_steps
+        self._set_live_action_hint("")
         self.session.state = None
         self.session.started_at = time.monotonic()
         teardown_after = bool(plan.started_fixtures)

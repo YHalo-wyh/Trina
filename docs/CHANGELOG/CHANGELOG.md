@@ -8,6 +8,8 @@
 - Pwn 语义优先于泛 CTF 文件规则，带 `exploit.py` 的题目会进入 Binary 路由并执行一次真实脚本预检。
 - `workspace_edit_many` 对共享项目目录使用进程内事务锁，两个 Worker 同时编辑同一文件时只允许一个提交，另一个保留可解释的冲突结果。
 - Commander 在一个调度批次内合并检查点提交后再启动 Worker，减少连续磁盘 I/O 对并发领取的阻塞；本地 6 任务短基准观察到 3 Worker 峰值活动恢复为 3。
+- 输入框显式启用 bracketed paste，一次性保留多行、引号和斜杠文本；活动行增加 `↳ 第 N 步 · 工具名`，可在工具执行期间直接看到当前动作。
+- Shell 继续采用 Codex/OMP 类的结构化执行信息（argv、cwd、timeout、退出码、工件引用），Binary 路由继续通过 ToolRegistry 调用 r2 stdio JSON 与 GDB/MI3，不把原生进程绕过审计。
 
 ## 0.5.0 · 2026-11-20 · 批量代码编辑与后台作业汇总
 

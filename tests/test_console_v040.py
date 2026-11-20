@@ -116,6 +116,15 @@ class ConsoleV040Tests(unittest.TestCase):
                 self.assertIn("Code", "".join(t for _, t in context.footer(width)))
         self.assertIn("class:context.hot", {s for s, _ in context.rail(88)})
 
+    def test_activity_shows_current_step_hint_during_execution(self):
+        import threading
+
+        console = Console(self.config, output=lambda _: None, autostart_lab=False)
+        self.addCleanup(console._cleanup)
+        console.session.thread = threading.current_thread()
+        console._set_live_action_hint("第 3 步 · terminal_exec")
+        self.assertEqual(console._live_action_hint, "第 3 步 · terminal_exec")
+
     def test_ui_config_roundtrip_override_and_validation(self):
         config = TrinaConfig._from_mapping({"ui": {"status_line_preset": "compact", "motion": "none"}})
         config.validate()

@@ -507,6 +507,7 @@ class EnhancedConsoleInput:
         from prompt_toolkit.filters import Condition
         from prompt_toolkit.styles import Style
         from prompt_toolkit.output import ColorDepth
+        from prompt_toolkit.keys import Keys
         from .terminal import THEME
 
         self.status = status
@@ -588,6 +589,12 @@ class EnhancedConsoleInput:
                 self.buffer.reset()
                 self._scroll_to_latest()
                 self._queue.put_nowait(value)
+
+        @bindings.add(Keys.BracketedPaste)
+        def bracketed_paste(event):
+            """把整段粘贴作为一次输入插入，避免逐字符触发 Enter/补全。"""
+            data = str(event.data).replace("\r\n", "\n").replace("\r", "\n")
+            event.current_buffer.insert_text(data)
 
         @bindings.add("c-c")
         def cancel(event):
@@ -765,6 +772,7 @@ class EnhancedConsoleInput:
             layout=Layout(FloatContainer(content=content, floats=[Float(top=1, right=1, content=toast)]),
                           focused_element=control),
             key_bindings=bindings, style=style, full_screen=True,
+            paste_mode=True,
             refresh_interval=0.2 if motion == "full" else None,
             min_redraw_interval=1 / 120, max_render_postpone_time=0,
             mouse_support=Condition(lambda: self._mouse_enabled),
@@ -935,7 +943,11 @@ class EnhancedConsoleInput:
         if phase == "waiting" and seconds >= 15:
             label = "等待供应商响应"
         elapsed = f"  {seconds:.1f}s" if phase not in ("idle", "paused", "approval") else ""
-        return self._with_task([(style, f" {marker} {clean_text(label).replace(chr(10), ' ')}{elapsed}")])
+        fragments = [(style, f" {marker} {clean_text(label).replace(chr(10), ' ')}{elapsed}")]
+        action_hint = str(getattr(self, "_live_action_hint", "") or "")
+        if action_hint and phase not in {"idle", "paused", "approval"}:
+            fragments.append(("class:context.progress", f"  ↳ {clean_text(action_hint)}"))
+        return self._with_task(fragments)
 
     def _with_task(self, fragments: list[tuple[str, str]]) -> list[tuple[str, str]]:
         """活动和任务始终共用一行；窄窗口省略标题及较长状态。"""
