@@ -16,7 +16,7 @@ Delegation 现在明确调用 `worker_tasks(spawn)` 分派独立分析/编码分
 
 交互角色来自 `trina/worker_roles.py`。`/worker` 为每个角色建立独立 ChatAgent，仅在初始化时追加简短方向说明，不把角色切换解释为新的权限。角色随历史快照恢复；旧聊天保留已有 system，采用更新提示词需要 `/new`。
 
-2026-11-13：Trina 的稳定 system 定位为通用 CTF / 攻防比赛 Agent，涵盖 Web / API、Pwn、逆向、密码、取证、隐写、Misc、移动端、AI / ML 和综合题。题型决定验证方法，已注册工具决定可用能力。存在二进制工具只追加使用说明，不把对话和其他题型改成 Binary Worker。
+2026-11-13：Trina 的稳定 system 定位为通用自主 Agent；具体任务类型只在任务合同中动态路由，涵盖 Web / API、Pwn、逆向、密码、取证、隐写、Misc、移动端、AI / ML 和综合题。题型决定验证方法，已注册工具决定可用能力。存在二进制工具只追加使用说明，不把对话和其他题型改成 Binary Worker。
 
 系统保留 Engineering、Tool Policy、Exploration、Delegation、Workflow、Delivery、Completeness 七个模块。共同原则包括先读题和已有事实、验证一条端到端路径、按实际预算推进、停滞时改变方法、区分候选答案与权威判定，以及保存可复现工件和交接信息。跨题线索保留来源，并在当前题目上重新验证。
 

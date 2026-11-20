@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import re
 from pathlib import Path
 from typing import Any
@@ -447,12 +448,14 @@ class WorkspaceEditMany(Tool):
                 if not raw_path or not isinstance(old, str) or not old or not isinstance(new, str) or expected < 1:
                     return ToolResult(ok=False, error=f"第 {index} 项需要 path、非空 old/new 和正整数 expected")
                 resolved = _path(ctx, raw_path, root, for_write=True)
-                key = str(resolved)
+                key = os.path.normcase(str(resolved))
                 if key in seen:
                     return ToolResult(ok=False, error=f"第 {index} 项与前项修改同一文件，批量编辑要求每个文件只出现一次")
                 seen.add(key)
                 if not resolved.is_file():
                     return ToolResult(ok=False, error=f"文件不存在或不是普通文件: {raw_path}")
+                if resolved.stat().st_size > _TEXT_LIMIT:
+                    return ToolResult(ok=False, error=f"第 {index} 项文件超过 1MiB，未修改任何文件")
                 source = resolved.read_text(encoding="utf-8", errors="strict")
                 matches = source.count(old)
                 if matches != expected:
@@ -469,6 +472,13 @@ class WorkspaceEditMany(Tool):
                     "before_sha256": _digest(source),
                     "after_sha256": _digest(updated),
                 })
+            # 编辑窗口内如果有其他进程或 Worker 改写了文件，拒绝覆盖新内容。
+            # 这一步把批量编辑变成 compare-and-swap，避免后台测试与模型编辑
+            # 交错时静默丢失修改。
+            for item in prepared:
+                current = item["resolved"].read_text(encoding="utf-8", errors="strict")
+                if _digest(current) != item["before_sha256"]:
+                    return ToolResult(ok=False, error=f"文件在批量编辑期间发生变化：{item['path']}；未修改任何文件")
             for item in prepared:
                 _atomic_write(item["resolved"], item["updated"])
         except (OSError, UnicodeError, ValueError) as exc:

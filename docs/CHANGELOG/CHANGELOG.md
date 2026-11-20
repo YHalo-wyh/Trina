@@ -1,5 +1,12 @@
 # Trina 更新日志
 
+## 0.5.0 · 2026-11-20 · 通用 Agent 系统提示词与执行目录
+
+- 公共 system 提示词改为通用自主 Agent 运行协议，不再给所有会话预设安全工程师或 CTF 身份；题型和领域规则仍按任务路由动态注入。
+- 保留 Engineering、Tool Policy、Exploration、Delegation、Workflow、Delivery、Completeness 七个执行模块，继续约束代码编辑、工具调用、Worker 协作、后台作业和真实结果交付。
+- `terminal_start` 增加 `cwd=project/run`，代码仓库后台任务可以与前台编辑、测试使用同一项目目录；省略作业 ID 的有界等待会完整回收当前会话作业。
+- Pwn 语义优先于泛 CTF 文件规则，带 `exploit.py` 的题目会进入 Binary 路由并执行一次真实脚本预检。
+
 ## 0.5.0 · 2026-11-20 · 批量代码编辑与后台作业汇总
 
 - 新增 `workspace_edit_many`，先校验所有精确替换，再提交多个文件修改。任一文件匹配失败时不会写入其他文件，结果返回前后哈希和批量提交标识。

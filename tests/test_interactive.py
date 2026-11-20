@@ -219,7 +219,7 @@ class TestChatAgent(unittest.TestCase):
         self.assertIn("Trina", reply)
         self.assertEqual(chat.state.counters.get("tool_calls", 0), 0)
 
-    def test_chat_sends_security_system_and_contract_as_user_data(self):
+    def test_chat_sends_general_system_and_contract_as_user_data(self):
         chat = self._chat([{"response": "收到。"}])
         original = chat.backend.complete_messages
         calls: list[list[dict[str, str]]] = []
@@ -230,7 +230,8 @@ class TestChatAgent(unittest.TestCase):
 
         chat.backend.complete_messages = capture  # type: ignore[method-assign]
         self.assertEqual(chat.ask("你好"), "收到。")
-        self.assertIn("CTF / 攻防比赛", calls[0][0]["content"])
+        self.assertIn("通用的自主 Agent Runtime", calls[0][0]["content"])
+        self.assertNotIn("安全工程师", calls[0][0]["content"])
         self.assertIn("# Delivery", calls[0][0]["content"])
         self.assertIn("原生 tool calling", calls[0][1]["content"])
         self.assertIn("# 可用工具", calls[0][1]["content"])

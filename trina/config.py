@@ -114,7 +114,7 @@ class LLMConfig:
     tool_protocol_fallback: bool = True
     #: 提示词分层：true 使用 Core/Role/Contract/Dynamic 四层；false 保持旧拼装（对照实验用）
     prompt_layers: bool = True
-    #: 可选附加角色描述；默认使用共用安全工程师 Core。
+    #: 可选附加角色描述；默认使用共用通用 Agent Core。
     role_profile: str = ""
     #: 缓存扩展只发给已知官方接口或显式声明能力的连接。
     cache_mode: str = "auto"  # auto | explicit | off

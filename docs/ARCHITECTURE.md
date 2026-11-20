@@ -16,7 +16,7 @@ flowchart TB
     OMPEXT[".omp/extensions/trina.ts<br/>omp 工具桥接"]
     AGENT["trina.brain.runtime.AgentRuntime<br/>统一批量动作循环"]
     SCHED["SwarmRuntime / CoordinationRuntime<br/>任务队列、租约、Worker Pool"]
-    PROMPTS["trina.brain.prompts<br/>安全工程师 system + 运行协议 + 容错解析"]
+    PROMPTS["trina.brain.prompts<br/>通用 Agent system + 运行协议 + 容错解析"]
     POLICY["AuthorizationController<br/>注册、预算、撤权"]
     APPROVAL["可选人工审批<br/>批准 / 拒绝"]
     REG["trina.tools.registry.ToolRegistry<br/>参数校验→护栏→审计→超时→归一"]

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from pathlib import Path
 
 from .external import run_external
 from .registry import ParamSpec, Tool, ToolResult, ToolSpec
@@ -10,20 +11,24 @@ from .registry import ParamSpec, Tool, ToolResult, ToolSpec
 
 class TerminalStart(Tool):
     spec = ToolSpec(
-        name="terminal_start", summary="在当前任务工作目录启动后台终端程序，返回 job_id；启动成功不代表程序完成",
+        name="terminal_start", summary="在任务目录启动后台终端程序，返回 job_id；启动成功不代表程序完成",
         category="utility", action_level="exploit",
         params={"argv": ParamSpec("list", "程序及参数数组，不经过 shell"),
                 "timeout": ParamSpec("float", "后台最长秒数", required=False, default=120),
+                "cwd": ParamSpec("str", "执行目录：run 为本次运行目录，project 为当前项目目录", required=False, default="run", enum=["run", "project"]),
                 "target": ParamSpec("str", "目标；本地分析可为空", required=False, default="")},
     )
 
-    def run(self, ctx, argv, timeout=120, target=""):
+    def run(self, ctx, argv, timeout=120, cwd="run", target=""):
         if not argv or not all(isinstance(arg, str) and arg for arg in argv) or not 0 < timeout <= 3600:
             return ToolResult(ok=False, error="argv 必须为非空字符串数组，timeout 必须在 (0,3600] 内")
+        directory = Path.cwd() if cwd == "project" else ctx.workspace
+        if not directory.is_dir():
+            return ToolResult(ok=False, error="后台执行目录不存在或不是目录")
         call = run_external(argv, ctx, tool=self.spec.name, target=target, required_level=ctx.effective_level,
-                            timeout=timeout, background=True)
+                            timeout=timeout, cwd=str(directory), background=True)
         return ToolResult(ok=call.ok, summary=f"后台作业已启动：{call.job_id}（运行中）" if call.ok else call.error,
-                          error=call.error, data=call.to_dict(), command=call.command)
+                          error=call.error, data={**call.to_dict(), "cwd": str(directory)}, command=call.command)
 
 
 class TerminalStatus(Tool):
@@ -43,7 +48,9 @@ class TerminalStatus(Tool):
                 jobs.wait(job_id, wait_seconds)
             else:
                 jobs.wait_all(wait_seconds)
-        rows = jobs.snapshot(job_id, tail=1600)
+        # 指定作业保持轻量视图。等待当前会话全部作业时返回完整终态集合，
+        # 避免第 9 个后台任务被“近期 8 项”截掉，导致证据无法一次性回收。
+        rows = jobs.snapshot(job_id, tail=1600, include_all=not job_id and bool(wait_seconds))
         evidence = []
         data = {"jobs": rows, "evidence_ids": []}
         for row in rows:

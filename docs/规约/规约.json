@@ -224,14 +224,14 @@
         {
           "id": "TR-04-R01",
           "level": "MUST",
-          "statement": "任务 Agent、对话 Assistant 与通用 Worker 必须共用含七个模块的最高权限安全工程师系统提示词。",
-          "tests": ["tests.test_brain.TestParseAction.test_system_messages_define_the_security_engineer_modules"]
+          "statement": "任务 Agent、对话 Assistant 与通用 Worker 必须共用含七个模块的通用 Agent 系统提示词。",
+          "tests": ["tests.test_brain.TestParseAction.test_system_messages_define_the_general_agent_modules"]
         },
         {
           "id": "TR-04-R02",
           "level": "MUST",
           "statement": "动态工具、范围、事实与预算必须作为本轮运行数据传入，不得固化为陈旧 system 内容。",
-          "tests": ["tests.test_brain.TestReActLoop.test_agent_sends_security_system_and_runtime_contract_as_user_data"]
+          "tests": ["tests.test_brain.TestReActLoop.test_agent_sends_general_system_and_runtime_contract_as_user_data"]
         },
         {
           "id": "TR-04-R03",

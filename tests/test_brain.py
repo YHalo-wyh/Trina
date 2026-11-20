@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -39,26 +40,25 @@ class TestParseAction(unittest.TestCase):
                     self.assertNotIn("thought", action)
                     self.assertLess(len(text), 400)
 
-    def test_system_messages_define_the_security_engineer_modules(self):
+    def test_system_messages_define_the_general_agent_modules(self):
         from trina.brain.chat import render_chat_prompt
         from trina.brain.prompts import render_system_prompt
 
         task_prompt = render_system_prompt()
         self.assertEqual(render_chat_prompt(), task_prompt)
-        self.assertIn("CTF / 攻防比赛", task_prompt)
+        self.assertIn("通用的自主 Agent Runtime", task_prompt)
+        self.assertNotIn("安全工程师", task_prompt)
         self.assertIn("普通问候", task_prompt)
-        for category in ("Web / API", "Pwn", "逆向", "密码", "取证", "隐写", "Misc", "移动端", "AI / ML"):
-            self.assertIn(category, task_prompt)
         self.assertIn("真实回执", task_prompt)
         self.assertIn("两个及以上互不依赖的分支", task_prompt)
-        self.assertIn("主动分别 spawn", task_prompt)
+        self.assertIn("主动分别派发", task_prompt)
         self.assertIn("统一结果契约", task_prompt)
         self.assertIn("同批调用由执行器按顺序处理", task_prompt)
         for section in ("Engineering", "Tool Policy", "Exploration", "Delegation", "Workflow", "Delivery", "Completeness"):
             self.assertIn(f"# {section}", task_prompt)
 
     def test_task_route_is_task_scoped_and_selects_binary_or_web_guidance(self):
-        from trina.brain.prompts import build_prompt_layers, infer_task_route
+        from trina.brain.prompts import build_prompt_layers, infer_task_route, infer_task_route_key
 
         binary = infer_task_route("用 gdb 分析 ELF 并验证 ROP", "challenge.elf",
                                   tool_names=("binary_open", "debug_start"), categories=("binary",))
@@ -78,6 +78,13 @@ class TestParseAction(unittest.TestCase):
         self.assertIn("CTF 文件题", generalized_ctf)
         generic_ctf = infer_task_route("读取 answer.py 并用 validator.py 验证 token", "127.0.0.1")
         self.assertIn("CTF 文件题", generic_ctf)
+        pwn_route = infer_task_route_key(
+            "解决本地 pwn 题，目录提供 exploit.py，优先运行并验证 flag",
+            "file://pwn1",
+            tool_names=("terminal_exec", "workspace_read_many", "binary_open"),
+            categories=("binary", "workspace", "utility"),
+        )
+        self.assertEqual(pwn_route, "binary")
 
         layers = build_prompt_layers(protocol="native", task_route=binary)
         self.assertNotIn("Binary/Pwn/Reverse", layers.system())
@@ -440,6 +447,38 @@ class TestReActLoop(unittest.TestCase):
         backend = ReplayBackend(LLMConfig(backend="replay", replay_script=str(script_path)))
         return PentestAgent(self.cfg, registry=ToolRegistry(tools or [_FakeTool(), _LeakTool(), _SqliTool()]), backend=backend)
 
+    def test_binary_prefetch_runs_provided_pwn_script_before_model(self):
+        """Pwn 题先取得真实脚本回执，再把结果交给首轮模型。"""
+        from trina.tools import build_registry
+
+        project = Path(self.tmp.name) / "pwn-project"
+        project.mkdir()
+        (project / "README.md").write_text("run exploit.py", encoding="utf-8")
+        (project / "pwn1").write_bytes(b"ELF test fixture")
+        (project / "exploit.py").write_text("print('flag{preflight}')\n", encoding="utf-8")
+        script_path = Path(self.tmp.name) / "preflight-replay.yaml"
+        script_path.write_text(json.dumps({"steps": [
+            {"response": '{"final":{"status":"success","summary":"预执行回执已取得"}}'},
+        ]}, ensure_ascii=False), encoding="utf-8")
+        cfg = self.cfg.with_overrides(llm__replay_script=str(script_path), llm__backend="replay")
+        original_cwd = Path.cwd()
+        os.chdir(project)
+        try:
+            agent = PentestAgent(cfg, registry=build_registry(), backend=ReplayBackend(cfg.llm))
+            state = agent.run(
+                "file://pwn1",
+                goal="解决本地 pwn 题，目录提供 exploit.py，优先运行并验证 flag",
+                max_steps=1,
+                max_seconds=15,
+                run_id="binary-preflight",
+            )
+        finally:
+            os.chdir(original_cwd)
+        self.assertEqual(state.status, "success")
+        self.assertEqual([item["value"] for item in state.flags], ["flag{preflight}"])
+        self.assertTrue(any("已先运行题目提供的 exploit.py" in item.get("text", "") for item in state.timeline))
+        self.assertEqual(state.counters["llm_calls"], 1)
+
     def test_full_loop_reaches_success(self):
         agent = self._agent(
             [
@@ -501,7 +540,7 @@ class TestReActLoop(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "目标"):
             second_agent.run("other.test", resume_state=first)
 
-    def test_agent_sends_security_system_and_runtime_contract_as_user_data(self):
+    def test_agent_sends_general_system_and_runtime_contract_as_user_data(self):
         agent = self._agent([
             {"response": '{"final": {"status": "partial", "summary": "done"}}'},
         ])
@@ -516,7 +555,7 @@ class TestReActLoop(unittest.TestCase):
         agent.run("127.0.0.1", max_steps=1)
         self.assertTrue(calls)
         self.assertTrue(all("# Tool Policy" in call[0]["content"] for call in calls))
-        self.assertTrue(all("CTF / 攻防比赛" in call[0]["content"] for call in calls))
+        self.assertTrue(all("通用的自主 Agent Runtime" in call[0]["content"] for call in calls))
         self.assertEqual([item["role"] for item in calls[0][:3]], ["system", "user", "user"])
         self.assertIn("# 工具协议", calls[0][1]["content"])
         self.assertIn("# 可用工具", calls[0][1]["content"])

@@ -24,7 +24,7 @@ from ..tools.schema import tool_schemas
 from .failure import LoopGuard, advice_for, classify_failure
 
 def render_chat_prompt(include_hypothesis: bool = True) -> str:
-    """对话 Assistant 与任务 Agent 共用安全工程师系统提示词。"""
+    """对话 Assistant 与任务 Agent 共用通用 Agent 系统提示词。"""
     from .prompts import render_system_prompt
 
     return render_system_prompt(include_hypothesis)

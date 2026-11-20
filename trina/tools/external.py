@@ -202,22 +202,23 @@ class BackgroundJobs:
         threading.Thread(target=monitor, name=f"trina-{job_id}", daemon=True).start()
         return job_id
 
-    def snapshot(self, job_id: str = "", *, tail: int = 400) -> list[dict[str, Any]]:
+    def snapshot(self, job_id: str = "", *, tail: int = 400, include_all: bool = False) -> list[dict[str, Any]]:
         with self._lock:
             if job_id and job_id not in self._jobs:
                 raise ValueError("后台作业不存在或不属于当前会话")
             rows = [self._jobs[job_id]] if job_id else list(self._jobs.values())
-            if not job_id:
+            if not job_id and not include_all:
                 active = [job for job in rows if job["status"] == "running"]
                 recent = [job for job in rows if job["status"] != "running"]
                 rows = active + recent[-max(1, 8 - len(active)):]
+            selected_rows = rows if include_all else rows[-8:]
             return [{
                 "id": job["id"], "tool": job["tool"], "status": job["status"],
                 "exit_code": job["exit_code"], "error": job["error"],
                 "finished": job["done"].is_set(),
                 "elapsed_seconds": round(time.monotonic() - job["started"], 2) if job["status"] == "running" else job["elapsed_seconds"],
                 "stdout_tail": job["stdout"][-tail:], "stderr_tail": job["stderr"][-tail:],
-            } for job in rows[-8:]]
+            } for job in selected_rows]
 
     def wait(self, job_id: str, seconds: float) -> None:
         with self._lock:

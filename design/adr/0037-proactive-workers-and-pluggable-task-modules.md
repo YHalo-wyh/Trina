@@ -30,7 +30,7 @@ Trina 已提供真实 `worker_tasks` 宿主和并发 Worker Pool，但旧 Delega
 
 ## 验证
 
-- `tests/test_brain.py::TestParseAction.test_system_messages_define_the_security_engineer_modules`：Delegation 合同要求主动识别两个及以上独立分支。
+- `tests/test_brain.py::TestParseAction.test_system_messages_define_the_general_agent_modules`：Delegation 合同要求主动识别两个及以上独立分支。
 - `tests/test_worker_dashboard.py::WorkerDashboardTests.test_targeted_cancel_and_message_do_not_stop_sibling`：两个无依赖任务同时进入 `running` 并占用两个 Worker，单项取消不停止兄弟任务。
 - `tests/test_capabilities.py::CapabilityFabricTests.test_manifest_is_discovered_without_core_change_and_guidance_is_jit`：自动发现同目录 `AGENT.md`、租约时读取，并验证内容只进入 user 合同。
 - `tests/test_capabilities.py::CapabilityFabricTests.test_worker_switches_capability_and_released_lease_cannot_be_reused`：释放模块租约后旧调用失效。

@@ -590,6 +590,24 @@ class PentestAgent:
                             compact=False,
                         )
                     hints.append("Binary 文件已完成首轮批量预取，禁止重复调用 workspace_read_many，直接使用上下文中的脚本和证据。")
+                    pwn_goal = any(term in f"{goal} {target}".casefold()
+                                   for term in ("pwn", "heap", "堆", "rop", "ret2", "shellcode", "利用"))
+                    if pwn_goal and binary_script_paths:
+                        script = binary_script_paths[0]
+                        script_argv = ["python3", script] if script.casefold().endswith((".py", ".py3")) else ["bash", script]
+                        preflight = self.registry.execute(
+                            "terminal_exec",
+                            {"argv": script_argv, "cwd": "project", "timeout": 45},
+                            ctx,
+                            call_id=f"binary-script-preflight-{run_id}",
+                        )
+                        binary_script_attempted = True
+                        observation += "\n\n## Provided exploit preflight\n" + preflight.to_observation(max_chars=3000)
+                        state.note(
+                            "binary",
+                            f"已先运行题目提供的 {script}，后续根据真实回执修正"
+                            + ("；已发现 flag 候选" if preflight.facts.get("flags") else ""),
+                        )
                 state.log_step(StepRecord(
                     index=previous_steps,
                     phase="execute",

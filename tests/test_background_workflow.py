@@ -6,6 +6,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from trina.audit import AuditLog
 from trina.brain.chat import ChatAgent
@@ -116,6 +117,27 @@ class BackgroundWorkflowTests(unittest.TestCase):
         self.assertEqual(rows[second]["status"], "completed")
         self.assertEqual(set(result.data["evidence_ids"]), {"bg-" + first, "bg-" + second})
         self.assertEqual({item["job_id"] for item in result.evidence}, {first, second})
+
+    def test_project_cwd_and_complete_multi_job_recovery(self):
+        project = Path(self.tmp.name) / "project-root"
+        project.mkdir()
+        started = []
+        with patch("trina.tools.terminal.Path.cwd", return_value=project):
+            for _ in range(9):
+                result = self.execute(
+                    "terminal_start",
+                    argv=[sys.executable, "-c", "import os; print(os.getcwd())"],
+                    cwd="project",
+                    timeout=10,
+                )
+                self.assertTrue(result.ok, result.to_observation())
+                started.append(result.data["job_id"])
+        result = self.execute("terminal_status", wait_seconds=5)
+        self.assertTrue(result.ok, result.to_observation())
+        self.assertEqual({row["id"] for row in result.data["jobs"]}, set(started))
+        self.assertEqual(len(result.data["evidence_ids"]), len(started))
+        self.assertTrue(all(str(project) in json.loads(Path(item["path"]).read_text(encoding="utf-8"))["stdout_tail"]
+                            for item in result.evidence if item["successful"]))
 
 
 if __name__ == "__main__":
