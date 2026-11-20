@@ -11,18 +11,25 @@ def _runtime(ctx):
 class SharedContext(Tool):
     spec = ToolSpec(
         name="shared_context",
-        summary="查看当前 Swarm 的共享 Todolist、Intent 状态和已验证事实计数；非 Swarm 会话不可用",
+        summary="按需查看当前 Swarm 的共享 Todolist、Intent 前沿和已验证事实索引；非 Swarm 会话不可用",
         category="coordination",
         action_level="detect",
-        params={},
+        params={
+            "limit": ParamSpec("int", "最多返回事实和待办条目数", required=False, default=24),
+            "include_facts": ParamSpec("bool", "是否返回已验证事实索引", required=False, default=True),
+        },
     )
 
-    def run(self, ctx):
+    def run(self, ctx, limit=24, include_facts=True):
         runtime = _runtime(ctx)
         if runtime is None:
             return ToolResult(ok=False, error="当前不是 Swarm Worker，没有共享协作上下文")
-        data = runtime.overview()
-        return ToolResult(summary=f"Planner {data['planner_rounds']} 轮，事实 {sum(data['fact_counts'].values())} 条", data=data)
+        data = runtime.worker_view(limit=limit, include_facts=include_facts)
+        return ToolResult(
+            summary=(f"Planner {data['planner_rounds']} 轮，待办 {len(data['ready'])} 可执行 / "
+                     f"{len(data['running'])} 执行中，事实 {sum(data['fact_counts'].values())} 条"),
+            data=data,
+        )
 
 
 class SharedTraceSearch(Tool):

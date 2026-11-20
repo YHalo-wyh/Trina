@@ -384,6 +384,13 @@ class PentestAgent:
         from ..tools.profile import visible_tool_names
         visible_names = visible_tool_names(self.registry, task_route_key, browser=browser_needed,
                                            terminal_session=terminal_session_needed)
+        # Swarm Worker 按需读取共享事实和待办前沿。它不会把共享事实写入当前
+        # RunState，保持不同题目的事实隔离；非 Swarm CTF 仍保持最小工具面。
+        if self.shared_context.get("coordination_runtime"):
+            visible_names.update(
+                name for name in ("shared_context", "shared_trace_search", "shared_trace_get")
+                if name in self.registry.names()
+            )
         if target_id:
             visible_names.update(test.tool for test in controller.registry.tests_for(target_id)
                                  if test.tool in self.registry.names())

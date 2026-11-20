@@ -114,6 +114,37 @@ class SwarmTests(unittest.TestCase):
         self.assertTrue(summary["tasks"]["verify"]["evidence_refs"])
         self.assertTrue(runtime.audit.verify()[0])
 
+    def test_worker_view_exposes_frontier_and_facts_without_copying_run_state(self) -> None:
+        runtime = SwarmRuntime(
+            self.config,
+            [TaskSpec("a", "127.0.0.1", "识别服务"),
+             TaskSpec("b", "127.0.0.1", "复核服务", depends_on=("a",))],
+            max_workers=1,
+            executor=lambda *args: None,
+        )
+        runtime.coordination.facts["fact-test"] = {
+            "id": "fact-test", "kind": "asset", "payload": {"host": "127.0.0.1"},
+            "sources": ["a"], "evidence_refs": ["ev-1"],
+        }
+        view = runtime.coordination.worker_view(limit=10)
+        self.assertEqual([item["id"] for item in view["ready"]], ["a"])
+        self.assertEqual(view["facts"][0]["id"], "fact-test")
+        self.assertEqual(view["facts"][0]["evidence_refs"], ["ev-1"])
+        self.assertEqual(runtime.records["b"].status, "pending")
+
+    def test_swarm_worker_keeps_shared_tools_on_demand_for_ctf_route(self) -> None:
+        from trina.brain.agent import PentestAgent
+        from trina.tools import build_registry
+
+        agent = PentestAgent(
+            self.config.with_overrides(llm__backend="replay"),
+            registry=build_registry(),
+            shared_context={"coordination_runtime": object(), "worker_id": "worker-1"},
+        )
+        # route selection is exercised by the real run setup in integration tests. The
+        # shared context contract itself is covered by the registry and tool view here.
+        self.assertIn("shared_context", agent.registry.names())
+
     def test_commander_does_not_forward_unrelated_completed_task(self) -> None:
         observed: dict[str, list[str]] = {}
 

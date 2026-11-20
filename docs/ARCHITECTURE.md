@@ -6,7 +6,7 @@
 
 任务、对话与 Worker 共用 `AgentRuntime`：一次模型决策可以提交多个原生工具调用，执行器按顺序处理，并用 `_depends_on` 表达本批次前序依赖；每个动作仍独立经过控制器、`ToolRegistry`、护栏、审计和超时。JSON 兼容模式保持单动作。默认 CTF 路径按目标与证据推进，不启用固定 PTES 阶段或额外假设调度；两者只作为显式兼容配置保留。
 
-`SwarmRuntime` 是统一 Task Scheduler 和 Worker Pool。`CoordinationRuntime.intents` 是任务状态唯一来源，`TaskRecord` 只是同一字典的兼容字段视图；Todo 与探索图是派生视图，事实索引只收工具验证结果。检查点 v4 不再保存第二份 `records`，恢复旧 v1–v3 时一次迁入 Intent。Bench 只负责平台启停、提交与计分，题目同样交给 Swarm 调度。Worker 的模型上下文、`RunState`、工作目录与事实按题隔离，Commander 只转发有来源的相关情报。详见 [Swarm 使用说明](SWARM.md)。
+`SwarmRuntime` 是统一 Task Scheduler 和 Worker Pool。`CoordinationRuntime.intents` 是任务状态唯一来源，`TaskRecord` 只是同一字典的兼容字段视图；Todo 与探索图是派生视图，事实索引只收工具验证结果。检查点 v4 不再保存第二份 `records`，恢复旧 v1–v3 时一次迁入 Intent。Bench 只负责平台启停、提交与计分，题目同样交给 Swarm 调度。Worker 的模型上下文、`RunState`、工作目录与事实按题隔离，Commander 只转发有来源的相关情报；Swarm Worker 可按需调用 `shared_context` 读取事实索引和待办前沿，仍不会把共享事实写入当前题的 `RunState`。详见 [Swarm 使用说明](SWARM.md)。
 
 ## 1. 总览
 
@@ -96,7 +96,7 @@ ScopeSentry由外置Capability通过 `mcp_http` 复用 `ctx.http`；浏览器采
 | `trina.tools.registry` | `ToolSpec`/`ParamSpec`/`ToolResult`/`ToolContext`/`Tool`/`ToolRegistry.execute` | 执行链是**唯一**入口；工具实现 `run(ctx, **params)`，返回 `ToolResult`；按题型和能力租约导出最小 Schema 与执行白名单；超时结果给出当前工作目录和缩小范围提示 |
 | `trina.tools.workspace` | `terminal_exec`、`workspace_read/write/edit` | 前台 argv 命令和项目文件编码工具；命令经 `run_external`，路径经 `ScopeGuard.check_workspace_path`，写入原子替换，编辑要求精确匹配数 |
 | `trina.tools.web_search` | `web_search` | Google/Bing 免费搜索与 DeepSeek Search 适配；查询过滤、结构化结果、统一 `[n]` 引用和原始交通证据 |
-| `trina.coordination` / `trina.tools.coordination` | `CoordinationRuntime.plan/claim/settle/publish_state/search_traces`、`shared_context/shared_trace_*` | Intent 是唯一任务状态；事件驱动规划、共享 Todo 派生视图、租约/去重/恢复、事实索引与探索视图、跨 Worker 可追踪观察和失败；不共享完整对话或直接合并当前题事实 |
+| `trina.coordination` / `trina.tools.coordination` | `CoordinationRuntime.plan/claim/settle/publish_state/worker_view/search_traces`、`shared_context/shared_trace_*` | Intent 是唯一任务状态；事件驱动规划、共享 Todo 派生视图、租约/去重/恢复、事实索引与探索视图、跨 Worker 可追踪观察和失败；共享事实只通过按需索引读取，不共享完整对话或直接合并当前题事实 |
 | `trina.binary` / `trina.tools.binary` | `BinarySessions`、`R2Backend`、`GDBBackend`、`AddressRef`、10 个语义化工具 | r2 stdio JSON 与 GDB/MI3 持久会话；按任务和能力租约隔离，地址空间显式，完整协议写证据；见 [二进制工具链](BINARY_TOOLS.md) |
 | `trina.browser` / `trina.tools.browser` | `BrowserSessions`、7 个结构化工具 | Playwright CLI 命名会话；快照 ref、交互、存储、网络记录与截图；完整输出写证据，恢复不复活进程；见[浏览器工具链](BROWSER_TOOLS.md) |
 | `trina.capabilities` / 外部任务模块 | `CapabilityCatalog`、`CapabilityFabric`、`CapabilityRuntime`、`AGENT.md` | 靶场/平台能力放在仓库外清单中，按 Worker/Task 租约 JIT 加载；`AGENT.md` 只进入 user 任务合同，不修改全局 system；见[临时任务模块](TASK_MODULES.md) |

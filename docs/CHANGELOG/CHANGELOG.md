@@ -1,5 +1,12 @@
 # Trina 更新日志
 
+## 0.5.0 · 2026-11-20 · Sapper-v2 对照与按需协作视图
+
+- 对照 `N1nEmAn/sapper-v2` 的 Commander、并行 Worker、项目级事实图和恢复模型，确认 Trina 已具备事件驱动任务 DAG、Worker 租约、检查点恢复、事实索引与版本化结果契约。
+- 新增 `CoordinationRuntime.worker_view()`，`shared_context` 可按需返回待办前沿、执行中任务、已验证事实索引、来源和证据引用；原始工具输出仍通过 trace 按需读取。
+- Swarm Worker 在题型工具裁剪后只额外获得三个共享协作 Schema，不向非 Swarm CTF 会话注入；共享视图不会写入当前题 `RunState`，保留跨题事实隔离。
+- 新增本地并发基准 `scripts/benchmarks/swarm_concurrency.py`，覆盖 1/2/3 Worker 的峰值并发、租约复用、结果契约和墙钟时间。
+
 ## 0.5.0 · 2026-11-20 · Rust 原生只读工具层
 
 - 新增 `native/` Cargo 工程和 `trina-native` 二进制，提供 Rust 文件读取与固定字符串检索原语。

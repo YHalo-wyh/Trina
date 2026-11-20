@@ -141,8 +141,13 @@ class ConversationContext:
             return
         # 压缩后尽量降到触发线的 75%，避免连续几轮重写缓存。
         target = int(limit * self.config.compaction_threshold * .75)
-        last_assistant = max((i for i, row in enumerate(messages) if row.get("role") == "assistant"), default=len(messages) - 1)
-        max_cut = max(2, last_assistant)
+        # 优先保留最近一条用户请求。旧版把最后一条 assistant 固定在活动
+        # 上下文中，当单次回复本身接近预算时，系统合同加上这条回复可能
+        # 永远无法压到 limit，最终把本可压缩的对话误报为预算不足。
+        # 原生 tool_calls 仍通过下面的边界检查保持 assistant/tool 配对。
+        last_user = max((i for i, row in enumerate(messages) if row.get("role") == "user"),
+                        default=len(messages) - 1)
+        max_cut = max(2, last_user)
         cut = min(cut, max_cut)
         while cut > 2 and messages[cut].get("role") == "tool":
             cut -= 1

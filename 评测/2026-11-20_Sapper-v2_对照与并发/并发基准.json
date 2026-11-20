@@ -1,0 +1,53 @@
+{
+  "benchmark": "local_swarm_scheduler",
+  "rows": [
+    {
+      "workers": 1,
+      "tasks": 6,
+      "work_seconds": 0.12,
+      "wall_seconds": 2.398,
+      "peak_active": 1,
+      "status": [
+        "completed"
+      ],
+      "workers_created": 1,
+      "worker_reuses": 5,
+      "contract_versions": [
+        1
+      ],
+      "speedup_vs_1_worker": 1.0
+    },
+    {
+      "workers": 2,
+      "tasks": 6,
+      "work_seconds": 0.12,
+      "wall_seconds": 1.174,
+      "peak_active": 2,
+      "status": [
+        "completed"
+      ],
+      "workers_created": 2,
+      "worker_reuses": 4,
+      "contract_versions": [
+        1
+      ],
+      "speedup_vs_1_worker": 2.04
+    },
+    {
+      "workers": 3,
+      "tasks": 6,
+      "work_seconds": 0.12,
+      "wall_seconds": 1.008,
+      "peak_active": 3,
+      "status": [
+        "completed"
+      ],
+      "workers_created": 3,
+      "worker_reuses": 3,
+      "contract_versions": [
+        1
+      ],
+      "speedup_vs_1_worker": 2.38
+    }
+  ]
+}

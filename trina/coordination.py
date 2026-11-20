@@ -369,6 +369,44 @@ class CoordinationRuntime:
         payload = row.get("payload") or {}
         return str(payload.get("title") or payload.get("host") or payload.get("target") or row.get("kind") or "fact")[:300]
 
+    def worker_view(self, *, limit: int = 24, include_facts: bool = True) -> dict[str, Any]:
+        """返回 Worker 按需读取的共享视图，不把别的任务事实写入本题 RunState。
+
+        视图只包含事实索引、待办前沿和数量摘要。原始工具输出仍留在各自
+        Worker 工件中，需要细节时通过 ``shared_trace_get`` 按 Intent 读取。
+        """
+        capped = max(1, min(int(limit), 100))
+        with self.lock:
+            ready = [
+                {"id": item["id"], "summary": item["summary"],
+                 "status": item["status"], "depends_on": list(item.get("depends_on", []))}
+                for item in self.todo.values() if item.get("status") == "ready"
+            ][:capped]
+            running = [
+                {"id": item["id"], "summary": item["summary"],
+                 "status": item["status"], "worker_id": self.intents[item["id"]].get("worker_id", "")}
+                for item in self.todo.values() if item.get("status") == "in_progress"
+            ][:capped]
+            facts: list[dict[str, Any]] = []
+            if include_facts:
+                for row in list(self.facts.values())[-capped:]:
+                    facts.append({
+                        "id": row["id"], "kind": row["kind"],
+                        "summary": self._fact_summary(row),
+                        "payload": row.get("payload", {}),
+                        "sources": list(row.get("sources", [])),
+                        "evidence_refs": list(row.get("evidence_refs", [])),
+                    })
+            return {
+                "revision": self.revision,
+                "planner_rounds": self.planner_rounds,
+                "ready": ready,
+                "running": running,
+                "facts": facts,
+                "fact_counts": {kind: sum(item["kind"] == kind for item in self.facts.values())
+                                for kind in sorted({item["kind"] for item in self.facts.values()})},
+            }
+
     def overview(self) -> dict[str, Any]:
         with self.lock:
             return {
