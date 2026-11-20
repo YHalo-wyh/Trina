@@ -463,7 +463,8 @@ class PentestAgent:
         context = ConversationContext(ctx)
         context.remember_user(goal)
         observation = ""
-        if task_route_key == "ctf" and "workspace_read_many" in visible_names and not state.steps:
+        if (task_route_key == "ctf" and "workspace_read_many" in visible_names and not state.steps
+                and not self.shared_context.get("worker_id") and not ctx.extra.get("subworkers")):
             # 题目文件型 CTF 的首轮预取仍经 ToolRegistry、范围解析和审计。
             # 只读取当前目录中明确存在的常见题面文件，避免模型先做低信息 ls/find。
             from pathlib import Path as _Path
