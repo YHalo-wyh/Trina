@@ -1,5 +1,10 @@
 # Trina 更新日志
 
+## 0.5.0 · 2026-11-20 · 供应商额度错误快速停止
+
+- 将 OpenCode Go 的 `GoUsageLimitError`、`usage limit reached` 和 5 小时额度提示识别为 `quota_exhausted`，收到 429 后立即停止本次请求，不再执行无效退避重试。
+- 保留普通 `rate_limit_exceeded` 的可重试语义，避免把短暂限速和账户额度耗尽混为一类。
+
 ## 0.5.0 · 2026-11-20 · Binary/Pwn 路由收敛与 Nmap 兼容修复
 
 - Binary 路由在识别到 Pwn、堆、ROP、Shellcode 或格式化字符串语义时，增加一次性的利用执行指引，要求批量确认保护与输入模型、优先复用已有利用脚本、尽快运行完整候选，并以目标进程或权威 checker 的真实回执收尾。

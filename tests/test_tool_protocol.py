@@ -252,6 +252,7 @@ class ClassificationTest(unittest.TestCase):
             (LLMResponse(ok=False, error="HTTP 403: tools forbidden"), "permission_denied"),
             (LLMResponse(ok=False, error="HTTP 402: Payment Required"), "quota_exhausted"),
             (LLMResponse(ok=False, error="HTTP 429: insufficient_quota · Check your plan"), "quota_exhausted"),
+            (LLMResponse(ok=False, error="HTTP 429: GoUsageLimitError · OpenCode Go usage limit reached"), "quota_exhausted"),
             (LLMResponse(ok=False, error="流式响应失败: 余额不足"), "quota_exhausted"),
             (LLMResponse(ok=False, error="HTTP 429: rate_limit_exceeded"), "run_failure"),
             (LLMResponse(ok=False, error="请求失败: timed out"), "run_failure"),

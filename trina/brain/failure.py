@@ -78,6 +78,7 @@ _QUOTA_RE = re.compile(
     r"(HTTP\s+402\b|insufficient[_\s-]*(?:quota|balance|credits?|funds)|"
     r"(?:quota|credits?|balance)[_\s-]*(?:exhausted|depleted)|credit[_\s-]*balance|"
     r"billing[_\s-]*hard[_\s-]*limit|exceeded\s+your\s+current\s+quota|"
+    r"GoUsageLimitError|usage\s+limit\s+reached|5[-\s]?hour(?:\s+usage)?\s+limit|"
     r"余额不足|欠费|额度(?:不足|耗尽|用尽)|配额(?:不足|耗尽|用尽))", re.I,
 )
 
