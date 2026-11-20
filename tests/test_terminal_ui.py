@@ -167,6 +167,21 @@ class TestTerminalUI(unittest.TestCase):
             pipe.send_text("\x1b[200~" + text + "\x1b[201~\r")
             self.assertEqual(editor.read(), text)
 
+    def test_activity_renders_live_step_subcaption(self):
+        from prompt_toolkit.application.current import create_app_session
+        from prompt_toolkit.input import create_pipe_input
+        from prompt_toolkit.output import DummyOutput
+        from prompt_toolkit.formatted_text import fragment_list_to_text
+        from trina.console_ui import EnhancedConsoleInput
+
+        with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
+            editor = EnhancedConsoleInput(status=lambda: "运行中", running=lambda: True,
+                                          dynamic_values=lambda *_: (), plain=True,
+                                          activity=lambda: ("tool", "执行中", 0.2))
+            editor._live_action_hint = "第 3 步 · terminal_exec"
+            text = fragment_list_to_text(editor._activity())
+            self.assertIn("第 3 步 · terminal_exec", text)
+
     def test_home_uses_shell_lettering_and_only_version_below_it(self):
         text = render_home(width=88, color=True)
         self.assertIn("███████", clean_text(text))
