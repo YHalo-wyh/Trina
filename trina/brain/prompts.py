@@ -116,8 +116,9 @@ def infer_task_route(goal: str = "", target: str = "", *, tool_names: Iterable[s
     if selected == "binary" and any(term in text for term in pwn_terms):
         route += (
             "\n<Pwn execution guidance>\n"
-            "先用一次低成本批量检查确认架构、保护、输入/菜单和可用符号；若题目目录已有利用脚本或交互协议，"
-            "优先复用并逐步修正它，不要盲目扫描地址。每个利用假设都要尽快写出完整候选并用本地目标运行，"
+            "若题目目录已有 exploit.py、solve.py 或可执行交互脚本，第一轮先运行一次并记录退出码、stderr 和目标输出，"
+            "再根据真实失败修正脚本；没有脚本时才用一次低成本批量检查确认架构、保护、输入/菜单和可用符号。"
+            "不要在已有脚本尚未运行前进行多轮反汇编或盲目扫描地址。每个利用假设都要尽快写出完整候选并用本地目标运行，"
             "根据真实崩溃、输出或 flag 回执迭代；连续两次探针没有新增事实就改变切入点或进入验证。"
             "读取 /flag 本身不能替代利用成功证据，最终交付必须来自目标进程或权威 checker。"
         )

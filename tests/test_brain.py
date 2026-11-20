@@ -69,6 +69,7 @@ class TestParseAction(unittest.TestCase):
         self.assertIn("确认文件类型", binary)
         self.assertIn("Pwn execution guidance", binary)
         self.assertIn("完整候选", binary)
+        self.assertIn("第一轮先运行一次", binary)
         self.assertIn("HTTP/API 入口", web)
         ctf = infer_task_route("读取 challenge.py 并用 verifier.py 校验 flag", "127.0.0.1")
         self.assertIn("CTF 文件题", ctf)
