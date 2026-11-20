@@ -928,6 +928,7 @@ class SwarmRuntime:
                             "planner.round", round=self.coordination.planner_rounds,
                             revision=self.coordination.revision, ready=sorted(ready_intents),
                         )
+                    launches: list[tuple[TaskSpec, Worker, str, ToolRegistry, str]] = []
                     for task in sorted(list(self.tasks), key=lambda item: (-item.priority, item.id)):
                         record = self.records[task.id]
                         if record.status != "pending":
@@ -970,11 +971,16 @@ class SwarmRuntime:
                         self.event_bus.publish("task.started", source="commander", task_id=task.id,
                                                worker_id=worker.id, attempt=record.attempt, lease_id=worker.lease_id)
                         self.audit.append("swarm.task.start", task=task.id, worker=worker.id, lease=worker.lease_id, attempt=record.attempt)
+                        # 同一调度批次先领取所有就绪任务，再一次性提交检查点，
+                        # 避免每个 Worker 启动前都被磁盘 I/O 阻塞。
+                        launches.append((task, worker, task_run_id, task_registry, record.capability_lease_id))
+                    if launches:
                         self._save()
-                        future = executor.submit(self.executor, worker, task, task_run_id, self._hints(task), task_registry)
-                        futures[future] = (task, worker, worker.lease_id, record.capability_lease_id)
-                        future.add_done_callback(lambda _future, task_id=task.id:
-                                                 self.event_bus.publish("worker.finished", source="executor", task_id=task_id))
+                        for task, worker, task_run_id, task_registry, capability_lease in launches:
+                            future = executor.submit(self.executor, worker, task, task_run_id, self._hints(task), task_registry)
+                            futures[future] = (task, worker, worker.lease_id, capability_lease)
+                            future.add_done_callback(lambda _future, task_id=task.id:
+                                                     self.event_bus.publish("worker.finished", source="executor", task_id=task_id))
                 if not futures:
                     if all(record.status in TERMINAL for record in self.records.values()):
                         with self._lifecycle_lock:
