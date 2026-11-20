@@ -1,0 +1,80 @@
+{
+  "version": 1,
+  "status": "enabled",
+  "run_id": "20261120-092914-12ca17",
+  "worker_id": "",
+  "started_at": 1795138154.880027,
+  "wall_time_seconds": 12.333466,
+  "counters": {
+    "tool_calls": 2,
+    "agent_rounds": 2,
+    "agent_steps": 2,
+    "llm_requests": 2
+  },
+  "llm": {
+    "calls": 2,
+    "total_seconds": 9.199861,
+    "p50_seconds": 4.509818,
+    "p95_seconds": 4.690043,
+    "input_tokens": 10046,
+    "output_tokens": 364,
+    "cache_read_tokens": 4608,
+    "first_token_p50_seconds": 2.319728,
+    "first_token_p95_seconds": 3.271549,
+    "duration_availability": "reported",
+    "token_usage_availability": "reported"
+  },
+  "tools": {
+    "calls": 2,
+    "total_seconds": 1.154,
+    "p50_seconds": 0.334,
+    "p95_seconds": 0.82,
+    "failed": 0,
+    "by_tool": {
+      "terminal_exec": {
+        "calls": 1,
+        "total_seconds": 0.82,
+        "p50_seconds": 0.82,
+        "p95_seconds": 0.82
+      },
+      "workspace_read_many": {
+        "calls": 1,
+        "total_seconds": 0.334,
+        "p50_seconds": 0.334,
+        "p95_seconds": 0.334
+      }
+    }
+  },
+  "subworkers": {
+    "calls": 0,
+    "total_seconds": 0,
+    "p50_seconds": null,
+    "p95_seconds": null,
+    "completed": 0,
+    "startup_seconds": 0,
+    "execution_seconds": 0,
+    "waiting_seconds": null,
+    "waiting_availability": "unavailable",
+    "availability": "unavailable"
+  },
+  "phases": {
+    "prompt_build": {
+      "calls": 2,
+      "total_seconds": 0.014719,
+      "p50_seconds": 0.000231,
+      "p95_seconds": 0.014488
+    },
+    "context_prepare": {
+      "calls": 2,
+      "total_seconds": 0.000498,
+      "p50_seconds": 0.000145,
+      "p95_seconds": 0.000353
+    },
+    "context_diagnostic": {
+      "calls": 2,
+      "total_seconds": 0.000741,
+      "p50_seconds": 0.000206,
+      "p95_seconds": 0.000535
+    }
+  }
+}
