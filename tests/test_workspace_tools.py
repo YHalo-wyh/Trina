@@ -51,6 +51,22 @@ class WorkspaceToolTests(unittest.TestCase):
         self.assertTrue(executed.ok, executed.to_observation())
         self.assertEqual(executed.data["stdout"].strip(), "after")
 
+    def test_exploit_script_flag_output_becomes_task_fact(self):
+        path = self.ctx.workspace / "exploit.py"
+        path.write_text("print('flag{workspace_fact}')\n", encoding="utf-8")
+        executed = self.registry.execute("terminal_exec", {
+            "argv": [sys.executable, "exploit.py"], "cwd": "run", "timeout": 10,
+        }, self.ctx)
+        self.assertTrue(executed.ok, executed.to_observation())
+        self.assertEqual([item["value"] for item in self.ctx.state.flags], ["flag{workspace_fact}"])
+
+    def test_plain_echo_flag_is_not_promoted_to_task_fact(self):
+        executed = self.registry.execute("terminal_exec", {
+            "argv": ["echo", "flag{not-authoritative}"], "cwd": "run", "timeout": 10,
+        }, self.ctx)
+        self.assertTrue(executed.ok, executed.to_observation())
+        self.assertFalse(self.ctx.state.flags)
+
     def test_edit_mismatch_is_non_destructive(self):
         path = self.ctx.workspace / "stable.txt"
         path.parent.mkdir(parents=True, exist_ok=True)

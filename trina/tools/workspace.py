@@ -80,6 +80,35 @@ def _authority_verifier_facts(argv: list[str], stdout: str, stderr: str, *, exit
     return facts, metadata
 
 
+def _script_flag_facts(argv: list[str], stdout: str, stderr: str, *, exit_code: int | None,
+                       evidence_id: str) -> tuple[dict[str, Any], dict[str, Any]]:
+    """从真实利用/求解进程输出提取 flag，排除单纯 echo/cat 命令。"""
+    if exit_code != 0:
+        return {}, {}
+    command_text = " ".join(argv)
+    lowered = command_text.casefold()
+    if re.search(r"(?:^|[;&|\s])(echo|printf)\s", lowered) or any(token in lowered for token in ("cat /flag", "cat /root/flag")):
+        return {}, {}
+    script_or_target = bool(re.search(
+        r"(?:exploit|solve|poc|payload|writeup)\.(?:py|py3|sh)\b|"
+        r"(?:^|[\s/])(?:pwn|challenge|target)[\w.-]*\b|"
+        r"\.(?:elf|bin|out)\b",
+        lowered,
+    ))
+    if not script_or_target:
+        return {}, {}
+    combined = "\n".join((stdout or "", stderr or ""))
+    candidates = list(dict.fromkeys(_FLAG_RE.findall(combined)))
+    if not candidates:
+        return {}, {}
+    verification = {"status": "observed", "source": "script_output", "evidence_id": evidence_id,
+                    "flag_candidates": candidates[:8]}
+    return {
+        "flags": [{"value": value, "source": "script_output", "evidence_id": evidence_id}
+                  for value in candidates[:8]]
+    }, {"script_flag_output": verification}
+
+
 def _path(ctx, raw: str, root: str = "project", *, for_write: bool = False) -> Path:
     """所有文件路径统一交给 ScopeGuard 裁决，禁止跨项目/跨任务逃逸。"""
     if not raw or "\x00" in raw:
@@ -168,6 +197,13 @@ class TerminalExec(Tool):
         verifier_facts, verifier_metadata = _authority_verifier_facts(
             argv, call.stdout or "", call.stderr or "", exit_code=call.code, evidence_id=evidence_id,
         )
+        script_facts, script_metadata = _script_flag_facts(
+            argv, call.stdout or "", call.stderr or "", exit_code=call.code, evidence_id=evidence_id,
+        )
+        if script_facts:
+            verifier_facts = {**verifier_facts, **script_facts}
+        if script_metadata:
+            verifier_metadata = {**verifier_metadata, **script_metadata}
         authority = verifier_metadata.get("authority_verifier")
         summary = f"命令完成，退出码 {call.code}" if call.ok else (error or "命令执行失败")
         key_findings: list[str] = []
@@ -177,6 +213,8 @@ class TerminalExec(Tool):
                 key_findings.append("权威验证器已通过，结果已写入事实库")
             else:
                 key_findings.append("检测到验证器入口，但没有独立 OK 回执")
+        if script_metadata:
+            key_findings.append("利用/求解进程输出包含 flag 候选，已写入任务事实")
         return ToolResult(
             ok=call.ok,
             category="timed_out" if call.timed_out else "",
