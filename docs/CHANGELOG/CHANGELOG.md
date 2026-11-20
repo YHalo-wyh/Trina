@@ -1,5 +1,12 @@
 # Trina 更新日志
 
+## 0.5.0 · 2026-11-20 · Binary/Pwn 路由收敛与 Nmap 兼容修复
+
+- Binary 路由在识别到 Pwn、堆、ROP、Shellcode 或格式化字符串语义时，增加一次性的利用执行指引，要求批量确认保护与输入模型、优先复用已有利用脚本、尽快运行完整候选，并以目标进程或权威 checker 的真实回执收尾。
+- 该指引只进入任务级 user 合同，不改变稳定 system 前缀、工具白名单或通用 Agent Loop，也不把逆向和静态分析题强行套入固定流水线。
+- 修复 `port_scan` 在 Nmap 成功分支把 `ExternalRun.output` 属性误当作函数调用的问题。Nmap 可用时不再因该异常把成功扫描标记为失败或把结论降为 `INCONCLUSIVE`。
+- 新增路由回归覆盖 Pwn 指引，沿用既有策略回归验证 Nmap 成功路径。
+
 ## 0.5.0 · 2026-11-20 · Swarm 进程级 Watchdog
 
 - 新增 `trina watchdog <swarm.json>`，以零策略子进程监视 Swarm，只有子进程无摘要异常退出时才从同一检查点恢复。

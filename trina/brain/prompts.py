@@ -107,7 +107,21 @@ def infer_task_route(goal: str = "", target: str = "", *, tool_names: Iterable[s
     selected = infer_task_route_key(goal, target, tool_names=tool_names, categories=categories)
     label = {"ctf": "CTF 文件题", "web": "Web/API", "binary": "Binary/Pwn/Reverse", "crypto": "Crypto",
              "forensics": "Forensics/Stego", "code": "Code/Repository", "general": "General"}[selected]
-    return f"[{label}]\n{_TASK_ROUTE_PROFILES[selected]}"
+    route = _TASK_ROUTE_PROFILES[selected]
+    # Pwn 题仍属于 Binary 路由，但需要把“先构造可验证利用”明确写入任务契约。
+    # 这段只在目标出现堆、ROP、菜单或利用语义时加入，避免把逆向/静态分析题
+    # 强行套进固定流水线，也不改变工具白名单和通用 Agent Loop。
+    text = f"{goal} {target}".casefold()
+    pwn_terms = ("pwn", "heap", "堆", "rop", "ret2", "shellcode", "格式化字符串", "format string", "利用")
+    if selected == "binary" and any(term in text for term in pwn_terms):
+        route += (
+            "\n<Pwn execution guidance>\n"
+            "先用一次低成本批量检查确认架构、保护、输入/菜单和可用符号；若题目目录已有利用脚本或交互协议，"
+            "优先复用并逐步修正它，不要盲目扫描地址。每个利用假设都要尽快写出完整候选并用本地目标运行，"
+            "根据真实崩溃、输出或 flag 回执迭代；连续两次探针没有新增事实就改变切入点或进入验证。"
+            "读取 /flag 本身不能替代利用成功证据，最终交付必须来自目标进程或权威 checker。"
+        )
+    return f"[{label}]\n{route}"
 
 
 def action_example(include_hypothesis: bool = True) -> str:

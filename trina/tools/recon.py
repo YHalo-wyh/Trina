@@ -413,7 +413,7 @@ class PortScanTool(Tool):
                     parsed_ports, parsed_hosts = [], []
                 if parsed_hosts:
                     open_ports, hosts, engine = parsed_ports, parsed_hosts, "nmap"
-                    raw = run.output()[:20000]
+                    raw = run.output[:20000]
 
         # 2) 内置扫描兜底
         stats: dict[str, int] = {}
