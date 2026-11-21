@@ -500,6 +500,35 @@ class TestReport(unittest.TestCase):
                 with self.subTest(name=name):
                     self.assertIn("/recorded-health", (root / name).read_text(encoding="utf-8"))
 
+    def test_cli_rebuild_reports_saved_swarm_task_status_and_timing(self):
+        from trina.cli import main
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            snapshot = root / "swarm.json"
+            records = {
+                "first": {"status": "completed", "started_at": 101, "ended_at": 105},
+                "second": {"status": "running", "started_at": 103, "ended_at": 0},
+                "third": {"status": "pending", "started_at": 0, "ended_at": 0},
+            }
+            saved = {"run_id": "sample-swarm", "tasks": [{"id": task_id} for task_id in records],
+                     "coordination": {"intents": records}}
+            snapshot.write_text(json.dumps(saved), encoding="utf-8")
+            performance = root / "commander-performance.json"
+            performance.write_text(json.dumps({"started_at": 100, "wall_time_seconds": 20}), encoding="utf-8")
+            command = ["report", "--set", f"report.output_dir={root}", "rebuild", "--state", str(snapshot)]
+            self.assertEqual(main(command), 0)
+            for fmt in ("md", "html"):
+                report = (root / f"sample-swarm_report.{fmt}").read_text(encoding="utf-8")
+                with self.subTest(format=fmt):
+                    for text in ("已完成 1/3", "20.00 秒", "4.00 秒", "5.00 秒", "运行中", "待执行"):
+                        self.assertIn(text, report)
+            performance.unlink()
+            self.assertEqual(main(command), 0)
+            report = (root / "sample-swarm_report.md").read_text(encoding="utf-8")
+            self.assertIn("Commander 总耗时 —", report)
+            self.assertIn("4.00 秒", report)
+
 
 class TestAdaptersAndScoring(unittest.TestCase):
     def test_list_and_load_adapters(self):

@@ -949,13 +949,18 @@ def cmd_report(args: argparse.Namespace) -> int:
     if not path.exists():
         out(f"状态文件不存在: {path}", "red")
         return 2
-    from .state import RunState
-    from .report import build_report
-
     data = json.loads(path.read_text(encoding="utf-8"))
-    # 旧快照可能缺少报告标识和运行阶段。
-    state = RunState.from_dict({"run_id": "rebuilt", "status": "unknown", "phase": "report", **data})
-    report = build_report(state, config, meta={"rebuilt_from": str(path)})
+    if isinstance(data, dict) and isinstance(data.get("tasks"), list) and ("coordination" in data or "records" in data):
+        from .report.swarm_checkpoint import build_swarm_checkpoint_report
+
+        report = build_swarm_checkpoint_report(path, data, config)
+    else:
+        from .report import build_report
+        from .state import RunState
+
+        # 旧快照可能缺少报告标识和运行阶段。
+        state = RunState.from_dict({"run_id": "rebuilt", "status": "unknown", "phase": "report", **data})
+        report = build_report(state, config, meta={"rebuilt_from": str(path)})
     paths = report.save()
     for item in paths:
         print(f"报告: {item}")
@@ -1224,7 +1229,7 @@ def build_parser() -> argparse.ArgumentParser:
     report = sub.add_parser("report", help="报告")
     add_common(report)
     report_sub = report.add_subparsers(dest="report_action", required=True)
-    report_rebuild = report_sub.add_parser("rebuild", help="由 state.json 重建报告")
+    report_rebuild = report_sub.add_parser("rebuild", help="由 state.json 或 swarm.json 重建报告")
     report_rebuild.add_argument("--state", required=True)
     report_rebuild.set_defaults(func=cmd_report)
 
