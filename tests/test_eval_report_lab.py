@@ -515,19 +515,33 @@ class TestReport(unittest.TestCase):
                      "coordination": {"intents": records}}
             snapshot.write_text(json.dumps(saved), encoding="utf-8")
             performance = root / "commander-performance.json"
-            performance.write_text(json.dumps({"started_at": 100, "wall_time_seconds": 20}), encoding="utf-8")
-            command = ["report", "--set", f"report.output_dir={root}", "rebuild", "--state", str(snapshot)]
+            performance.write_text(json.dumps({
+                "started_at": 100, "wall_time_seconds": 20,
+                "llm": {"calls": 8, "total_seconds": 27, "p50_seconds": 2.35, "p95_seconds": 5.81,
+                        "input_tokens": 1537, "cache_read_tokens": None},
+                "tools": {"calls": 6, "total_seconds": 1.2, "p95_seconds": 0.25, "failed": 0},
+                "subworkers": {"calls": 2, "total_seconds": 30, "startup_seconds": 0.2},
+            }), encoding="utf-8")
+            command = ["report", "--set", f"report.output_dir={root}",
+                       "--set", "report.formats=markdown,html,json", "rebuild", "--state", str(snapshot)]
             self.assertEqual(main(command), 0)
             for fmt in ("md", "html"):
                 report = (root / f"sample-swarm_report.{fmt}").read_text(encoding="utf-8")
                 with self.subTest(format=fmt):
-                    for text in ("已完成 1/3", "20.00 秒", "4.00 秒", "5.00 秒", "运行中", "待执行"):
+                    for text in ("已完成 1/3", "20.00 秒", "4.00 秒", "5.00 秒", "运行中", "待执行",
+                                 "运行性能", "单次 p95", "27.00 秒", "5.81 秒", "0.25 秒", "平均并发为 1.50",
+                                 "输入 token 1,537", "工具调用失败 0 次"):
                         self.assertIn(text, report)
+            exported = json.loads((root / "sample-swarm_report.json").read_text(encoding="utf-8"))["performance"]
+            self.assertEqual(exported["llm"]["calls"], 8)
+            self.assertIsNone(exported["llm"]["cache_read_tokens"])
+            self.assertEqual(exported["subworkers"]["average_concurrency"], 1.5)
             performance.unlink()
             self.assertEqual(main(command), 0)
             report = (root / "sample-swarm_report.md").read_text(encoding="utf-8")
             self.assertIn("Commander 总耗时 —", report)
             self.assertIn("4.00 秒", report)
+            self.assertNotIn("运行性能", report)
 
 
 class TestAdaptersAndScoring(unittest.TestCase):

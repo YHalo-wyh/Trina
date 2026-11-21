@@ -169,6 +169,14 @@ ui:
 
 ## 独立监视与日志
 
+### 离线性能报告
+
+```text
+trina report rebuild --state runs/<swarm-id>/swarm.json
+```
+
+同目录有 `commander-performance.json` 时，报告会显示模型请求、工具和 Worker 的样本数、累计耗时、单次 p50 和 p95。平均 Worker 并发按已记录的 Worker 累计耗时除以 Commander 总耗时估算。累计耗时包含并行期间的重叠时间。
+
 ## 项目 Goal 与定时启动
 
 `/goal set <文本>` 保存当前项目目标，`/goal show` 查看，`/goal clear` 清除。也可以直接输入 `/goal <文本>`。后续 `/run`、`/play` 未带 `--goal` 时沿用；任务运行中修改会在下一决策点生效，并使修改前尚未提交的模型候选失效。Goal 只描述任务成果，不扩大目标范围或动作权限。
