@@ -39,7 +39,7 @@ class WorkerDashboardTests(unittest.TestCase):
         return manager
 
     def test_grid_layout_pages_resize_zoom_and_reuses_unchanged_dialog(self):
-        manager = self.manager(7)
+        manager = self.manager(12)
         for name in manager._rows:
             manager._record(name, "reply", "回复", "真实输出 " + "中文 mixed " * 60)
         first = manager.dialog_lines("worker-1", 60)
@@ -48,9 +48,16 @@ class WorkerDashboardTests(unittest.TestCase):
             text = "".join(text for _, text in render_grid(manager, width, height, 0))
             self.assertTrue(all(_cells(line) <= width for line in text.splitlines()))
             self.assertLessEqual(len(text.splitlines()), height)
-        page = "".join(t for _, t in render_grid(manager, 144, 30, 5))
-        self.assertIn("worker-6", page)
-        self.assertNotIn("worker-1", page)
+        first_page = "".join(t for _, t in render_grid(manager, 144, 30, 5))
+        self.assertIn("worker-1 ·", first_page)
+        self.assertIn("worker-9 ·", first_page)
+        self.assertNotIn("worker-10 ·", first_page)
+        page = "".join(t for _, t in render_grid(manager, 144, 30, 10))
+        self.assertIn("worker-11 ·", page)
+        self.assertNotIn("worker-1 ·", page)
+        compact = "".join(t for _, t in render_grid(manager, 100, 22, 0))
+        self.assertIn("worker-4 ·", compact)
+        self.assertNotIn("worker-5 ·", compact)
         zoom = "".join(t for _, t in render_grid(manager, 144, 30, 1, zoom=True))
         self.assertIn("worker-2", zoom)
         self.assertNotIn("worker-1", zoom)

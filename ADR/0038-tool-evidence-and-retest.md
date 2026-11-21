@@ -32,4 +32,4 @@ ScopeSentry需要已有服务和凭据；回环夹具不能冒充真实服务连
 
 `tests/test_casebook.py`覆盖真实HTTP重定向、正文分页/截断、伪造来源拒绝、工件修改、失败命令、发现去重、资产覆盖、状态往返、目标条件、复测新证据/对照/版本、静态资源预算、迟到请求拒绝及MCP读写分离。
 `tests/test_browser.py`覆盖新Schema、会话和既有执行边界；真实冒烟入口为`scripts/verify_api_browser_stack.py`。
-完成全量单元测试后再推送；环境和真实结果记录于 [工具栈说明](../../docs/TOOL_STACK/TOOL_STACK.md) 及对应验证目录。
+完成全量单元测试后再推送；环境和真实结果记录于 [工具栈说明](../docs/TOOL_STACK/TOOL_STACK.md) 及对应验证目录。

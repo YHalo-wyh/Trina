@@ -27,8 +27,8 @@ Trina 应围绕“受控决策 → 可验证事实 → 可追溯报告”形成�
 | 工作台可能读到半份状态 | 临时文件写完后原子替换 | 正常落盘与替换失败保留旧快照 |
 | 多智能体缺少实质封装 | 注册 `consult_specialist`，增加独立上下文角色、建议协议与调用上限 | 不自动执行、不提升权限、不伪造事实、可回放 |
 
-实现详情分别见 [ADR-0017](../design/adr/0017-specialist-consultation-without-blackboard.md)
-和 [ADR-0018](../design/adr/0018-fact-context-and-atomic-snapshots.md)。
+实现详情分别见 [ADR-0017](../ADR/0017-specialist-consultation-without-blackboard.md)
+和 [ADR-0018](../ADR/0018-fact-context-and-atomic-snapshots.md)。
 
 ## 为什么这些选择适合当前项目
 

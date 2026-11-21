@@ -25,4 +25,4 @@
 
 验证证明的是相应交互分支、文本边界和既有回归行为；没有据此宣称安全测试成功率提高、模型注意力提升或多 Agent 收益已被证明。覆盖底层生命周期、在途取消及全流程敏感内容治理仍保留原未决问题。
 
-研究依据与选择记录在 [ADR-0017](../../design/adr/0017-specialist-consultation-without-blackboard.md)，使用说明见 [CLI 界面](../../docs/CLI_UI.md)。
+研究依据与选择记录在 [ADR-0017](../../ADR/0017-specialist-consultation-without-blackboard.md)，使用说明见 [CLI 界面](../../docs/CLI_UI.md)。

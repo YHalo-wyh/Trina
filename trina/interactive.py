@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import difflib
 import json
+from collections import deque
 from pathlib import Path
 import shlex
 import sys
@@ -30,6 +31,7 @@ from .console_ui import (
     command_names, enhanced_input_available, find_command,
 )
 from .events import RuntimeEvent
+from .plan_review import PlanReview
 from .session import APPROVAL_MODES, Session
 from .shutdown import Shutdown
 from .tasks import TaskStore, TaskScheduler
@@ -84,6 +86,11 @@ class Console:
         self._live_action_hint = ""
         self._requested_action: tuple[str, int | None] | None = None
         self._active_call = ""
+        self._plan_review: PlanReview | None = None
+        self._planning = False
+        self._drafts: dict[int, tuple[str, str, str]] = {}
+        self._draft_number = 0
+        self._job_notices: deque[tuple[str, str]] = deque(maxlen=128)
         #: 注入的后端（测试用）或按当前会话配置构建的缓存
         self._backend_obj = backend
         self._tracked_backend = None
@@ -118,7 +125,8 @@ class Console:
         self._git_branches = [self._branch] if self._branch else []
         self._git_files: list[str] = []
         from .subworkers import Subworkers
-        self.subworkers = Subworkers(lambda text: self._emit(text, prefix="Subworker"))
+        self.subworkers = Subworkers(lambda text: self._emit(text, prefix="Subworker"),
+                                     on_finished=self._background_notice)
 
     # ------------------------------------------------------------------ 输出
     def _display(self, text: str) -> None:
@@ -134,6 +142,13 @@ class Console:
             self._display(render_approval(pending, self.session.approval_timeout, color=self.color))
         else:
             self._emit(message)
+
+    def _background_notice(self, name: str, status: str) -> None:
+        label = {"completed": "完成", "failed": "失败", "timed_out": "超时", "cancelled": "已取消",
+                 "blocked": "受阻", "skipped": "跳过"}.get(status, "已结束")
+        message = f"{name} · {label}"
+        self._emit(message, prefix="后台")
+        self._notify_agent(message, error=status in {"failed", "timed_out", "blocked"})
 
     def _agent_log(self, message: str) -> None:
         import re
@@ -186,6 +201,12 @@ class Console:
             self.view.set_activity("retry", f"等待重试 · 第 {event.payload.get('attempt')} 次")
         elif event.kind == "model.error":
             self.view.set_activity("error", "模型请求失败")
+        elif event.kind == "job.finished":
+            job_id = str(event.payload.get("job_id") or event.call_id)
+            identity = (event.stream_id, job_id)
+            if job_id and identity not in self._job_notices:
+                self._job_notices.append(identity)
+                self._background_notice(job_id, str(event.payload.get("status") or ""))
         self._event_transcript.consume(event)
 
     def _show_help(self, args: list[str] | None = None) -> None:
@@ -277,6 +298,8 @@ class Console:
             )
         pending = self.session.steers.qsize()
         queued = f" · 补充 {pending} 条待处理" if pending else ""
+        if self._drafts:
+            queued += f" · 草稿 {len(self._drafts)}"
         state = self.session.state or self._last_state
         is_chat = self.chat is not None and state is self.chat.state
         context_tokens = self.view.context_tokens
@@ -350,6 +373,11 @@ class Console:
         return f"trina · {status} · {short} > " if terminal_width() >= 60 else f"trina · {status} > "
 
     def _completion_values(self, command: str, completed_args: list[str]) -> list[ChoiceSpec]:
+        if command == "plan" and completed_args == ["choose"] and self._plan_review:
+            return [ChoiceSpec(str(index), option) for index, option in enumerate(self._plan_review.options, 1)]
+        if command == "queue" and completed_args in (["send"], ["drop"]):
+            return [ChoiceSpec(str(number), f"{task or '主会话'} · {text.splitlines()[0][:50]}")
+                    for number, (text, task, _) in self._drafts.items()]
         """补全运行时才能知道的历史会话、模型、工具、靶场和产物路径。"""
         if command == "branch" and completed_args in ([], ["switch"], ["delete"]):
             return [ChoiceSpec(name, "本地分支") for name in self._git_branches]
@@ -448,27 +476,34 @@ class Console:
         if not line:
             self._show_help()
             return True
+        raw_parts = line.split(maxsplit=2)
+        if raw_parts[:2] == ["queue", "add"] and len(raw_parts) == 3:
+            self._enqueue_draft(raw_parts[2])
+            return True
+        if self.session.running and line.startswith("!"):
+            self._send_live_note(line[1:].strip())
+            return True
         try:
             argv = shlex.split(line)
         except ValueError:
             if not forced and self.session.running:
-                self.session.steer(line)
+                self._enqueue_draft(line)
                 return True
             if forced:
                 self._emit("命令中的引号未闭合；补齐引号后重试，或输入 /help 查看示例。", prefix="错误")
                 return True
             self._emit(f"命令解析失败，按对话处理: {line[:60]}")
-            self._start_chat_turn(line)
+            self._handle_chat_input(line)
             return True
         command, args = argv[0], argv[1:]
 
-        if command == "subworker":
+        if command in {"subworker", "queue", "plan"}:
             try:
-                self._cmd_subworker(args)
+                {"subworker": self._cmd_subworker, "queue": self._cmd_queue, "plan": self._cmd_plan}[command](args)
             except (KeyboardInterrupt, EOFError):
                 self._emit("已返回主会话")
             except Exception as exc:
-                self._emit(f"Subworker: {exc}", prefix="错误")
+                self._emit(str(exc), prefix="错误")
             return True
 
         if self.session.running:
@@ -487,7 +522,7 @@ class Console:
             "run": lambda: self._cmd_run(args),
             "status": self._show_status,
             "approve": lambda: self._cmd_approve(args),
-            "hint": lambda: self.session.steer(" ".join(args)),
+            "hint": lambda: self._emit("当前没有运行中的任务"),
             "pause": lambda: self._emit("当前没有运行中的任务"),
             "resume": lambda: self._cmd_resume(args),
             "unpause": lambda: self._emit("当前没有运行中的任务"),
@@ -535,7 +570,7 @@ class Console:
                 suggestion = f"；是否想输入 /{matches[0]}" if matches else ""
                 self._emit(f"未知命令 {command!r}{suggestion}。输入 /help 查看命令。")
                 return True
-            self._start_chat_turn(line)
+            self._handle_chat_input(line)
             return True
         try:
             handler()
@@ -560,9 +595,8 @@ class Console:
             if not self.session.answer(False):
                 self._emit("当前没有待审批的动作")
             return True
-        if command == "hint" or line.startswith("!"):
-            text = " ".join(args) if command == "hint" else line[1:].strip()
-            self.session.steer(text)
+        if command == "hint":
+            self._send_live_note(" ".join(args))
             return True
         if command == "pause":
             self.session.toggle_pause()
@@ -603,11 +637,153 @@ class Console:
             self._show_help(args)
             return True
         if not forced and command not in COMMAND_NAMES:
-            # 运行中说人话 = 人工介入提示（最自然的交互）；已知命令名仍按命令处理
-            self.session.steer(line)
+            self._enqueue_draft(line)
             return True
-        self._emit("任务运行中，可用命令：y / n · hint <文本> · status · pause · unpause · stop（也可直接说人话＝介入提示）")
+        self._emit("任务运行中 · /queue 查看草稿 · /hint 立即补充 · /status 查看 · /stop 停止")
         return True
+
+    def _handle_chat_input(self, text: str) -> None:
+        if self._plan_review and self._plan_review.question:
+            try:
+                self._cmd_plan(["reply", text])
+            except Exception as exc:
+                self._emit(str(exc), prefix="错误")
+        else:
+            self._start_chat_turn(text)
+
+    def _enqueue_draft(self, text: str, *, task_id: str = "") -> None:
+        if not text.strip():
+            return
+        runtime = self.subworkers.runtime if task_id else None
+        self._draft_number += 1
+        self._drafts[self._draft_number] = (text, task_id, runtime.run_id if runtime else "")
+        self._emit(f"草稿 #{self._draft_number} 已排队 · /queue send {self._draft_number} 发送", prefix="队列")
+
+    def _send_live_note(self, text: str) -> bool:
+        if self._planning:
+            self._emit("正在生成澄清问题，请在结果出现后选择或补充。")
+            return False
+        if not self.session.running or self.session.stop_event.is_set():
+            self._emit("当前没有可接收实时补充的任务")
+            return False
+        self.session.steer(text)
+        return bool(text.strip())
+
+    def _cmd_queue(self, args: list[str]) -> None:
+        action = args[0] if args else "list"
+        if action == "list":
+            rows = [(f"#{number} · {task or '主会话'}", text) for number, (text, task, _) in self._drafts.items()]
+            self._display(render_panel("补充队列", rows=rows or [("队列", "暂无草稿")],
+                                       footer="/queue add <文本> · /queue send [编号] · /queue drop <编号>", color=self.color))
+            return
+        if action not in {"send", "drop"} or len(args) > 2 or (action == "drop" and len(args) != 2):
+            raise ValueError("/queue list | add <文本> | send [编号] | drop <编号>")
+        number = int(args[1].lstrip("#")) if len(args) == 2 else next(iter(self._drafts), 0)
+        if number not in self._drafts:
+            raise ValueError("未找到草稿")
+        if action == "send":
+            text, task_id, run_id = self._drafts[number]
+            if task_id:
+                runtime = self.subworkers.runtime
+                if runtime is None or runtime.run_id != run_id:
+                    raise ValueError("原 Worker 已结束，可从 /queue 查看并复制草稿")
+                self.subworkers.task_control(task_id, "message", text)
+            elif self.session.running:
+                if not self._send_live_note(text):
+                    return
+            else:
+                if self._plan_review and self._plan_review.question:
+                    raise ValueError("请先完成或取消当前计划澄清")
+                with self._launch_lock:
+                    if not self._start_chat_turn(text):
+                        return
+        del self._drafts[number]
+        self._emit(f"草稿 #{number} 已{'发送' if action == 'send' else '移除'}", prefix="队列")
+
+    def _show_plan_review(self) -> None:
+        review = self._plan_review
+        if self._planning:
+            self._emit("正在澄清任务", prefix="计划")
+        elif review and review.question:
+            self._display(render_panel("请选择", sections=[(review.question, "\n".join(
+                f"{index}. {option}" for index, option in enumerate(review.options, 1)
+            ))], footer="/plan choose [编号] · /plan reply <其他答案> · /plan cancel", color=self.color))
+        elif review and review.criteria:
+            self._display(render_panel("计划核对", sections=[("", review.draft())],
+                                       footer="/plan queue 加入待发草稿 · /plan cancel 关闭", color=self.color))
+        else:
+            self._emit("/plan <任务> 开始澄清", prefix="计划")
+
+    def _cmd_plan(self, args: list[str]) -> None:
+        action = args[0] if args else "show"
+        if action == "show":
+            self._show_plan_review()
+            return
+        if action == "cancel":
+            self._plan_review = None
+            if self._planning:
+                self.session.request_stop()
+            self._emit("已取消计划澄清", prefix="计划")
+            return
+        if self.session.running:
+            raise ValueError("当前会话正在运行")
+        review = self._plan_review
+        if action == "queue":
+            if review is None or not review.criteria:
+                raise ValueError("请先完成计划澄清")
+            self._enqueue_draft(review.draft())
+            self._plan_review = None
+            return
+        if action in {"choose", "reply"}:
+            if review is None or not review.question:
+                raise ValueError("当前没有待回答的澄清问题")
+            if action == "choose":
+                if len(args) == 1 and self._enhanced_input is not None:
+                    from .console_ui import select_option
+                    selected = select_option(review.question, [
+                        ChoiceSpec(str(index), option) for index, option in enumerate(review.options, 1)
+                    ])
+                    if selected is None:
+                        return
+                    args = [action, selected]
+                if len(args) != 2 or not args[1].isascii() or not args[1].isdigit():
+                    raise ValueError("/plan choose <编号>")
+                number = int(args[1])
+                if not 1 <= number <= len(review.options):
+                    raise ValueError("选项编号超出范围")
+                answer = review.options[number - 1]
+            else:
+                answer = " ".join(args[1:]).strip()
+                if not answer:
+                    raise ValueError("/plan reply <答案>")
+            draft = review.followup(answer)
+        else:
+            draft = PlanReview(" ".join(args))
+        with self._launch_lock:
+            if self.session.running:
+                raise ValueError("当前会话正在运行")
+            self.session.reset_for_run()
+            self.session.state = None
+            self.session.started_at = time.monotonic()
+            backend = self._backend()
+            self._planning = True
+
+            def review_task() -> None:
+                try:
+                    result = draft.request(backend)
+                    if not self.session.stop_event.is_set():
+                        self._plan_review = result
+                except Exception as exc:
+                    if not self.session.stop_event.is_set():
+                        self._emit(f"澄清出错: {exc}", prefix="计划")
+                finally:
+                    self._planning = False
+                    self.view.set_activity("idle", "就绪")
+                if not self.session.stop_event.is_set():
+                    self._show_plan_review()
+
+            self.session.thread = threading.Thread(target=review_task, name="trina-plan-review", daemon=True)
+            self.session.thread.start()
 
     # ------------------------------------------------------------------ 工作台视图
     def _current_state(self) -> Any:
@@ -918,7 +1094,13 @@ class Console:
                     elif action == "message" and task_id:
                         text = ModelManager._ask("给 " + task_id + " 的补充")
                         if text:
-                            self.subworkers.task_control(task_id, "message", text)
+                            choice = select_option("发送补充", [
+                                ChoiceSpec("wait", "加入草稿队列"), ChoiceSpec("now", "立即发送"),
+                            ])
+                            if choice == "wait":
+                                self._enqueue_draft(text, task_id=task_id)
+                            elif choice == "now":
+                                self.subworkers.task_control(task_id, "message", text)
                     elif action == "cancel" and task_id:
                         self.subworkers.task_control(task_id, "cancel")
                     else:
@@ -971,11 +1153,16 @@ class Console:
         elif action in {"stop", "pause", "continue"}:
             self.subworkers.control(action)
             self._emit({"stop": "正在停止并回收执行资源", "pause": "已请求暂停", "continue": "已继续"}[action], prefix="Subworker")
-        elif action in {"message", "cancel"}:
-            if not values or (action == "message" and len(values) < 2):
-                raise ValueError("/subworker message <名称> <补充>；/subworker cancel <名称>")
+        elif action in {"message", "queue", "cancel"}:
+            if not values or (action != "cancel" and len(values) < 2):
+                raise ValueError("/subworker message|queue <名称> <补充> · /subworker cancel <名称>")
+            if action == "queue":
+                if not self.subworkers.running or values[0] not in {row["id"] for row in self.subworkers.rows()}:
+                    raise ValueError("没有找到当前批次中的 Worker")
+                self._enqueue_draft(" ".join(values[1:]), task_id=values[0])
+                return
             self.subworkers.task_control(values[0], action, " ".join(values[1:]))
-            self._emit("补充已入队" if action == "message" else "已请求取消指定任务", prefix="Subworker")
+            self._emit("补充已发送" if action == "message" else "已请求取消指定任务", prefix="Subworker")
         elif action == "inspect":
             if len(values) != 1:
                 raise ValueError("/subworker inspect <任务名称>")
@@ -1503,15 +1690,15 @@ class Console:
         for cred in facts.get("credentials", []) or []:
             self._emit(f"[凭据] {cred.get('service')}@{cred.get('target')} 用户 {cred.get('username')}", prefix="[Trina]")
 
-    def _start_chat_turn(self, text: str) -> None:
+    def _start_chat_turn(self, text: str) -> bool:
         if self.session.running:
-            self._emit("有任务在跑：先 stop，或直接把这句话作为介入提示（无需命令前缀）")
-            return
+            self._emit("有任务在跑 · /queue add 保留草稿 · /hint 立即补充")
+            return False
         try:
             chat = self._ensure_chat()
         except Exception as exc:  # noqa: BLE001 - 工作目录不可写等启动失败必须回显，不能把控制台打崩
             self._emit(f"对话无法启动：{type(exc).__name__}: {exc}", prefix="错误")
-            return
+            return False
         if not isinstance(chat.backend, TrackedBackend):
             chat.backend = TrackedBackend(chat.backend, self.view)
             chat.ctx.extra["llm_backend"] = chat.backend
@@ -1544,6 +1731,7 @@ class Console:
         if self._enhanced_input is None:
             self._emit("思考中…", prefix="过程")
         self.session.thread.start()
+        return True
 
     def _show_status(self) -> None:
         from .board import render_board
@@ -1560,7 +1748,7 @@ class Console:
                     ("耗时", f"{max(0, time.monotonic() - self.session.started_at):.0f}s")]
             if step is not None:
                 rows.append(("最近一步", f"第 {step.index} 步 · {step.action} · {step.summary}"))
-            self._display(render_panel("当前任务", rows=rows, footer="/board 查看 · /pause 暂停 · /unpause 继续 · /stop 停止；直接输入文字介入。", color=self.color))
+            self._display(render_panel("当前任务", rows=rows, footer="/board 查看 · /queue 草稿 · /hint 立即补充 · /stop 停止", color=self.color))
             if self.session.pending:
                 self._display(render_approval(self.session.pending, self.session.approval_timeout, color=self.color))
         elif self._last_state is not None:

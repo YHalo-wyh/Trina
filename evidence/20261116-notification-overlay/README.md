@@ -2,7 +2,7 @@
 
 - 日期：2026-11-16（Asia/Shanghai）
 - 状态：本地真实渲染循环 + VT100 字节流 + kitty-vt 回放；未调用模型、网络或靶机。
-- 设计：[ADR-0035](../../design/adr/0035-repository-shell-notifications.md)
+- 设计：[ADR-0035](../../ADR/0035-repository-shell-notifications.md)
 - 代码：HEAD `c868c1c`，暂存树 `584af18`。渲染路径（`trina/console_ui.py`、`trina/terminal.py`、`trina/transcript.py`、`trina/notifications.py`）与暂存树一致；工作区未暂存改动不涉及这些文件。
 - 环境：Windows 10.0.26300 x64；Python 3.10.11；prompt_toolkit 3.0.52；终端尺寸 120×36。
 

@@ -15,8 +15,10 @@ from .swarm import SwarmRuntime, TaskSpec
 
 
 class Subworkers:
-    def __init__(self, notify: Callable[[str], None]) -> None:
+    def __init__(self, notify: Callable[[str], None], *,
+                 on_finished: Callable[[str, str], None] | None = None) -> None:
         self.notify = notify
+        self.on_finished = on_finished
         self.runtime: SwarmRuntime | None = None
         self.thread: threading.Thread | None = None
         self.usage = ConsoleState()
@@ -28,7 +30,7 @@ class Subworkers:
         self._closed = False
         self._dialogs: dict[str, OrderedDict[str, tuple[str, str]]] = {}
         self._versions: dict[str, int] = {}
-        self._line_cache: dict[tuple[str, int], tuple[int, list[tuple[str, str]]]] = {}
+        self._line_cache: OrderedDict[tuple[str, int], tuple[int, list[tuple[str, str]]]] = OrderedDict()
         self._block_cache: dict[tuple[str, int], dict[str, tuple[Any, list[tuple[str, str]]]]] = {}
         self._completed: OrderedDict[str, dict[str, Any]] = OrderedDict()
 
@@ -145,6 +147,7 @@ class Subworkers:
             version = self._versions.get(task_id, 0)
             cached = self._line_cache.get((task_id, width))
             if cached is not None and cached[0] == version:
+                self._line_cache.move_to_end((task_id, width))
                 return cached[1]
             lines = []
             dialog = self._dialogs.get(task_id, {})
@@ -171,12 +174,14 @@ class Subworkers:
             for key in list(blocks):
                 if key not in dialog:
                     del blocks[key]
-            # 一次调整窗口不永久保留所有旧宽度缓存。
-            if len(self._line_cache) > 24:
-                self._line_cache.clear()
-                self._block_cache.clear()
             lines = lines[-600:]
-            self._line_cache[(task_id, width)] = (version, lines)
+            cache_key = (task_id, width)
+            self._line_cache[cache_key] = (version, lines)
+            self._line_cache.move_to_end(cache_key)
+            # 为九个窗格保留少量常用宽度，缩放时只淘汰最旧项。
+            while len(self._line_cache) > 48:
+                evicted, _ = self._line_cache.popitem(last=False)
+                self._block_cache.pop(evicted, None)
             return lines
 
     def submit(self, config: TrinaConfig, task: TaskSpec, *, backend_factory=make_backend) -> bool:
@@ -199,6 +204,7 @@ class Subworkers:
 
     def _update(self, snapshot: dict[str, Any]) -> None:
         # 只在 Commander 提交检查点时投影；每个渲染帧不复制 DAG 或访问磁盘。
+        finished = []
         with self._lock:
             self._snapshot = snapshot
             tasks = snapshot["tasks"]
@@ -208,6 +214,8 @@ class Subworkers:
                     while len(self._completed) > 128:
                         self._completed.popitem(last=False)
                 row = self._rows.setdefault(task_id, {"id": task_id})
+                if self.on_finished and row.get("status") in {"pending", "running"} and item["status"] not in {"pending", "running"}:
+                    finished.append((task_id, item["status"]))
                 row.update({key: item[key] for key in ("goal", "status", "model", "reasoning_effort", "profile", "started_at", "ended_at")})
                 if item.get("result"):
                     result = item["result"]
@@ -221,6 +229,9 @@ class Subworkers:
             active = sum(item["status"] == "running" for item in tasks.values())
             waiting = sum(item["status"] == "pending" for item in tasks.values())
             self._badge = f"{active} 运行 / {waiting} 等待" if active or waiting else f"{len(tasks)} 已收尾"
+        if self.on_finished and not self._closed:
+            for task_id, status in finished:
+                self.on_finished(task_id, status)
 
     def start(self, config: TrinaConfig, tasks: list[TaskSpec] | None = None, *,
               checkpoint: str = "", backend_factory=make_backend, executor=None) -> None:
@@ -243,7 +254,7 @@ class Subworkers:
             runtime.on_progress = self._progress
             self._rows = {}
             self._text_streams.clear()
-            self._dialogs, self._versions, self._line_cache, self._block_cache = {}, {}, {}, {}
+            self._dialogs, self._versions, self._line_cache, self._block_cache = {}, {}, OrderedDict(), {}
             self._snapshot = {"run_id": runtime.run_id, "checkpoint": str(runtime.checkpoint), "tasks": {}}
             self._badge = "启动中"
             self._update({**self._snapshot, "tasks": {task.id: {"goal": task.goal, "target": task.target,

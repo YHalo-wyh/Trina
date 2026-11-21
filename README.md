@@ -9,8 +9,9 @@ Trina 是面向 CTF 与授权攻防环境的自动化 Agent，提供真实浏览
 | 文档 | 内容 |
 |---|---|
 | [使用说明](docs/CLI_UI.md) | 控制台、命令、模型、任务与子 Worker 操作 |
-| [产品需求](docs/需求/需求.md) | 当前能力、优先级、状态与验收目标 |
-| [行为规约](docs/规约/规约.md) · [机器规约](docs/规约/规约.json) | 状态转换、规则 ID、实现路径与验证方法 |
+| [产品需求](需求/README.md) | 当前能力、优先级、状态与验收目标 |
+| [行为规约](规约/README.md) · [机器规约](规约/规约.json) | 状态转换、规则 ID、实现路径与验证方法 |
+| [架构决策记录](ADR/README.md) | 按编号查阅 ADR、适用范围和验证入口 |
 | [设计决策](docs/设计决策/设计决策.md) | 关键方案的背景、取舍、边界与验证依据 |
 | [架构](docs/ARCHITECTURE.md) | Agent Runtime、执行链、状态与模块契约 |
 | [Swarm](docs/SWARM.md) | 多任务调度、并行 Worker、租约与恢复 |
@@ -22,7 +23,7 @@ Trina 是面向 CTF 与授权攻防环境的自动化 Agent，提供真实浏览
 
 ## 项目使用说明
 
-**CLI 界面更新（2026-10-28）**：[首页、审批与工作台使用说明](docs/CLI_UI.md) · [单主控 / 多 Agent / 黑板研究复核](design/adr/0017-specialist-consultation-without-blackboard.md)
+**CLI 界面更新（2026-10-28）**：[首页、审批与工作台使用说明](docs/CLI_UI.md) · [单主控 / 多 Agent / 黑板研究复核](ADR/0017-specialist-consultation-without-blackboard.md)
 
 **V2 智能体群运行时**：[Swarm 使用说明](docs/SWARM.md) · `trina swarm --target http://127.0.0.1:9099 --goal "验证目标" --workers 2`
 
@@ -34,7 +35,9 @@ Swarm 可由已验证资产/发现/凭据生成有界后继 Intent；Bench 默�
 
 [Trina / OMP 同机同流评测](评测/20261115-omp-output-benchmark/README.md)：固定终端引擎和输入回放，18 轮实测显示当前 Trina 的渲染延迟仍高于 OMP；逐帧数据、画面和复现脚本一并保留。
 
-控制台 `/subworker` 默认打开四宫格，G 列表/四格、Z 放大、F 补充、C 单项取消。Commander 可通过真实工具 `worker_tasks` 委派分支、查看结果与证据；模型、思考强度和供应商按任务独立绑定。
+控制台 `/subworker` 在宽屏同时显示九个 Worker 对话，窗口缩小后切换四格或单格。G 切换列表和网格，Z 放大，F 选择立即补充或存入队列，C 取消所选任务。模型、思考强度和供应商按任务独立绑定。
+
+`/plan <任务>` 在执行前澄清交付物和验收条件。`/plan choose` 打开选项，确认后用 `/plan queue` 保存为草稿。
 
 自动化渗透测试 Agent：**大模型 ReAct 决策 + 全套工具封装 + 多靶场适配 + 默认完全信任 + 标准报告 + 评测框架**。
 
@@ -129,7 +132,7 @@ scripts/dev.sh play --target 127.0.0.1
 
 ### 动态能力装配
 
-[Capability Fabric](docs/CAPABILITY_FABRIC.md) 按任务发现、租用和执行 Tool、CLI 与 MCP 能力。通用 Worker 在任务间切换能力，版本快照固定，释放后旧租约失效。Guidance 与工具 Schema 按需加载，执行继续通过 ToolRegistry；Commander 只转发证据索引与来源明确的候选情报。靶场或比赛平台适配应做成仓库外[临时任务模块](docs/TASK_MODULES.md)：清单同目录的 `AGENT.md` 只进入当前任务的 user 合同，不注入 system。实现取舍见 [ADR-0021](design/adr/0021-capability-fabric.md)。
+[Capability Fabric](docs/CAPABILITY_FABRIC.md) 按任务发现、租用和执行 Tool、CLI 与 MCP 能力。通用 Worker 在任务间切换能力，版本快照固定，释放后旧租约失效。Guidance 与工具 Schema 按需加载，执行继续通过 ToolRegistry；Commander 只转发证据索引与来源明确的候选情报。靶场或比赛平台适配应做成仓库外[临时任务模块](docs/TASK_MODULES.md)：清单同目录的 `AGENT.md` 只进入当前任务的 user 合同，不注入 system。实现取舍见 [ADR-0021](ADR/0021-capability-fabric.md)。
 
 `trina swarm` 使用事件驱动 Planner、共享 Todolist、可去重且带租约的 Intent 队列，以及事实图 / 探索图双图。每个题目的 `RunState` 与聊天仍隔离；Commander 只把来源明确的观察、失败经验和事实候选定向交给相关 Worker，接收方必须在自己的目标上重新验证后才能入账。Flag、完整聊天和其他题目的 `RunState` 不会被合并。
 
@@ -159,7 +162,7 @@ scripts/dev.sh play --target 127.0.0.1
 | 历史对话 | `/resume` · `/resume list` · `/resume last` · `/resume <编号或ID>` | 搜索并切换当前项目的已保存聊天，恢复上下文、事实与用量；`/new` 开新对话 |
 | 仓库与工作树 | `/repo` · `/branch` · `/worktree` | 查看状态/Diff，显式暂存与提交，管理分支、远端同步和独立 worktree；不强制覆盖本地修改 |
 | 输出与提醒 | `/theme trina|contrast|mono` · `/notify on|off|test` | 切换语义配色；Agent 完成时显示终端通知条，支持的终端同时发桌面提醒 |
-| 运行中介入 | `hint <文本>`（或直接说人话）· `pause/unpause` · `stop` · `status` · `/revoke <target_id>` 撤权 | 运行中说人话＝介入提示；显式开启审批后可用 `y/n`，**超时即拒绝** |
+| 运行中介入 | `/hint <文本>` 立即补充 · `/queue` 草稿 · `pause/unpause` · `stop` · `status` · `/revoke <target_id>` 撤权 | 普通文本先进入草稿队列；显式开启审批后可用 `y/n`，**超时即拒绝** |
 | 评价 Agent | `trina review [--state runs/<id>/state.json]` | 只读复核：缺证据的声明、结论一致性、覆盖缺口、边界事件、审计链 |
 
 > 对话模式与任务模式共用 `ToolRegistry`、执行超时和审计链。默认 `scope.trust_mode=full`、`approve=off`，不会逐目标或逐动作申请；显式切换 `restricted` 或 `--approve` 才启用对应限制。
@@ -180,7 +183,7 @@ scripts/dev.sh play --target 127.0.0.1
 | 类别 | 位置 |
 |---|---|
 | brief（问题/范围/验收ID/责任） | [`brief/README.md`](brief/README.md)、`docs/PLAN.md` |
-| design（ADR/AI 规则/状态与权限） | [`design/`](design/README.md)（**37 篇 ADR**，区分当前决策与历史基线；[`ai-rules.md`](design/ai-rules.md)） |
+| 设计索引、AI 规则与状态权限 | [`design/`](design/README.md) · [`ai-rules.md`](design/ai-rules.md) |
 | eval（用例与判定） | [`eval/README.md`](eval/README.md)、`trina/eval/scenarios/*.yaml`、`docs/EVAL.md` |
 | evidence（运行事实） | [`evidence/README.md`](evidence/README.md) + 精选样本 |
 | release（启动/重置/停止/恢复/已知问题） | [`release/README.md`](release/README.md)、`docs/RUNBOOK.md` |

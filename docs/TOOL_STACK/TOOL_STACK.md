@@ -105,4 +105,4 @@ python -m unittest discover -s tests -q
 ```
 
 真实浏览器冒烟覆盖本地HTTP页面、JS API请求采集、资产写回、mock证据拒绝、移除后重载、文件上传、trace工件与审计链。
-架构取舍见 [ADR-0038](../../design/adr/0038-tool-evidence-and-retest.md)。
+架构取舍见 [ADR-0038](../../ADR/0038-tool-evidence-and-retest.md)。

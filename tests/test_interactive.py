@@ -678,15 +678,71 @@ class TestConsole(unittest.TestCase):
         self.assertTrue(any("任务运行中" in line for line in output))
         console.session.thread.join(timeout=2)
 
-    def test_running_supplement_preserves_quotes_and_sends_without_confirmation(self):
+    def test_running_supplement_waits_in_queue_until_explicitly_sent(self):
         from types import SimpleNamespace
         console, output = self._console([])
         console.session.thread = SimpleNamespace(is_alive=lambda: True)
         text = '补充：先看 /login 的 "redirect 参数\n再检查返回内容'
         self.assertTrue(console.handle(text))
-        self.assertIn("补充 1 条待处理", console._prompt_status())
+        self.assertIn("草稿 1", console._prompt_status())
+        self.assertTrue(console.session.steers.empty())
+        console.handle("/queue send")
         self.assertEqual(console.session.steers.get_nowait(), text)
         self.assertTrue(any("已发送" in line for line in output))
+        self.assertFalse(console._drafts)
+        console.handle("!" + text)
+        self.assertEqual(console.session.steers.get_nowait(), text)
+
+    def test_plan_reasks_until_review_and_stages_without_running_tools(self):
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+        from trina.llm.base import LLMResponse
+
+        console, output = self._console([])
+        backend = Mock()
+        backend.complete_messages.side_effect = [
+            LLMResponse(text='{"question":"输出格式？","options":["Markdown","JSON"]}'),
+            LLMResponse(text='{"criteria":["输出可解析的 JSON"]}'),
+        ]
+        console._backend = lambda: backend
+        console._start_chat_turn = Mock(return_value=True)
+        console.handle("/plan 整理文档")
+        console.session.thread.join(2)
+        self.assertIn("2. JSON", "\n".join(output))
+        console.handle("/plan choose 2")
+        console.session.thread.join(2)
+        self.assertIn("输出可解析的 JSON", "\n".join(output))
+        self.assertIn("JSON", backend.complete_messages.call_args.args[0][1]["content"])
+        self.assertNotIn("tools", backend.complete_messages.call_args.kwargs)
+        console.handle("/plan queue")
+        console._start_chat_turn.assert_not_called()
+        self.assertTrue(console.session.steers.empty())
+        console.session.thread = SimpleNamespace(is_alive=lambda: False)
+        console.handle("/queue send")
+        console._start_chat_turn.assert_called_once()
+        self.assertIn("输出可解析的 JSON", console._start_chat_turn.call_args.args[0])
+
+    def test_background_notice_is_visible_without_enqueuing_model_input(self):
+        from unittest.mock import Mock
+        from trina.events import RuntimeEvent
+
+        console, output = self._console([])
+        console._notify_agent = Mock()
+        event = RuntimeEvent(1, "run", "run", "job.finished", 0, "worker", "", "", "job-1",
+                             {"job_id": "job-1", "status": "completed"})
+        console._on_runtime_event(event)
+        console._on_runtime_event(event)
+        console._notify_agent.assert_called_once_with("job-1 · 完成", error=False)
+        self.assertIn("job-1 · 完成", "\n".join(output))
+        item = dict.fromkeys(("goal", "model", "reasoning_effort", "profile", "started_at", "ended_at"))
+        console.subworkers._update({"tasks": {"worker-1": {**item, "status": "running"}}})
+        finished = {"tasks": {"worker-1": {**item, "status": "completed"}}}
+        console.subworkers._update(finished)
+        console.subworkers._update(finished)
+        self.assertEqual(console._notify_agent.call_count, 2)
+        console._notify_agent.assert_called_with("worker-1 · 完成", error=False)
+        self.assertIn("worker-1 · 完成", "\n".join(output))
+        self.assertTrue(console.session.steers.empty())
 
 
 if __name__ == "__main__":

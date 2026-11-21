@@ -80,7 +80,7 @@ Trina 的 CPU 相对自身旧基线下降约 72%–73%，仍高于 OMP；工作�
 - [逐轮汇总](final/summary.json)、[原始夹具](final/fixtures.json)、[聚合结果](final/aggregated.json)。
 - `final/<engine>-<scenario>-<trial>.json`：每帧耗时、资源、字节数、观察项、未观察标记和最终画面。
 - [回放原始输出](final/benchmark-console.log)、[聚合输出](final/analysis-console.log)、[实现与工件指纹](final/manifest.json)。
-- [设计决定](../../../design/adr/0034-direct-fragment-terminal-rendering.md)与 `tests/test_markdown_view.py`、`tests/test_transcript.py`、`tests/test_console_session.py`、`tests/test_stream_latency.py`。
+- [设计决定](../../../ADR/0034-direct-fragment-terminal-rendering.md)与 `tests/test_markdown_view.py`、`tests/test_transcript.py`、`tests/test_console_session.py`、`tests/test_stream_latency.py`。
 
 源码 `.py/.ts/.ps1` 指纹按仓库 LF 规范计算；`final/` 内运行原件按采集字节计算，避免 Windows 检出行尾转换造成误报。
 

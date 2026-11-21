@@ -9,9 +9,9 @@
 
 | 检查项 | 状态 | 当前入口 | 机器判定 |
 |---|---|---|---|
-| 需求 | 完成 | [`需求.md`](需求/需求.md) | `D-REQ`；21 个 `TR-xx` 必须与机器规约一一对应 |
-| 规约 | 完成 | [`规约.md`](规约/规约.md) · [`规约.json`](规约/规约.json) | `D-SPEC`；规则 ID、状态、实现路径和测试方法必须存在 |
-| ADR（含前 3 项前置决策） | 完成 | [`design/README.md`](../design/README.md) · `design/adr/0001—0003` | `D-ADR`；必需 ADR 存在且总数达到规约下限 |
+| 需求 | 完成 | [`需求.md`](../需求/需求.md) | `D-REQ`；21 个 `TR-xx` 必须与机器规约一一对应 |
+| 规约 | 完成 | [`规约.md`](../规约/规约.md) · [`规约.json`](../规约/规约.json) | `D-SPEC`；规则 ID、状态、实现路径和测试方法必须存在 |
+| ADR（含前 3 项前置决策） | 完成 | [`design/README.md`](../design/README.md) · `ADR/0001—0003` | `D-ADR`；必需 ADR 存在且总数达到规约下限 |
 | 项目级 Harness | 完成 | [`harness-manifest.md`](course/harness-manifest.md) · [`AGENTS.md`](../AGENTS.md) · [`ai-rules.md`](../design/ai-rules.md) | `D-HARNESS`；开发、AI、代码、文档、日志与可观测性入口存在 |
 | Global Plan / Tasks | 完成 | [`docs/PLAN.md`](PLAN.md) · [`plan.md`](course/plan.md) · [`tasks.md`](course/tasks.md) · [网安实训中级对抗计划](网安实训中级课程——对抗组计划文档/网安实训中级课程——对抗组计划文档.md) · [专业综合能力提升对抗计划](专业综合能力提升课程——对抗组计划文档/专业综合能力提升课程——对抗组计划文档.md) | `D-PLAN`；目标、计划、任务卡、两门课程的对抗实验和完成条件可定位 |
 | 可执行代码与评测证据 | 完成 | `trina/` · `tests/` · [`evidence/`](../evidence/README.md) · [`评测/`](../评测/README.md) | `D-EVIDENCE`；源码、测试、评测报告与证据数量达到规约下限 |
@@ -29,7 +29,7 @@
 | 类别 | 该放什么（课程口径） | 本仓库位置 | 备注 |
 |---|---|---|---|
 | **brief** | 问题、范围、验收ID、责任 | [`brief/README.md`](../brief/README.md) → `docs/PLAN.md` | 目标与验收标准写在这里；范围以 `configs/trina.yaml#scope` 为准 |
-| **design** | 关键 ADR、AI 规则、状态与权限 | [`design/README.md`](../design/README.md)、`design/adr/*.md`、`design/ai-rules.md`、`docs/ARCHITECTURE.md`、`docs/GUARDRAILS.md` | ADR 记录「为什么这么做」，不是功能清单 |
+| **design** | 关键 ADR、AI 规则、状态与权限 | [`design/README.md`](../design/README.md)、`ADR/*.md`、`design/ai-rules.md`、`docs/ARCHITECTURE.md`、`docs/GUARDRAILS.md` | ADR 记录「为什么这么做」，不是功能清单 |
 | **eval** | 用例与判定 | `trina/eval/scenarios/*.yaml`、[`eval/README.md`](../eval/README.md)、`docs/EVAL.md` | 用例 = 场景 YAML；判定 = ground truth + 指标口径；**验收ID** 见 `eval/README.md` |
 | **evidence** | 版本结果、Trace、成本 | [`evidence/README.md`](../evidence/README.md) + `evidence/<版本>-<场景>/` 精选样本 | 只提交**小而关键**的运行事实；全量产物不入库 |
 | **release** | 启动、重置、已知问题、恢复 | [`release/README.md`](../release/README.md)、`docs/RUNBOOK.md` | 含「模拟器优先」与停用/回收说明 |
@@ -72,7 +72,7 @@
 |---|---|---|
 | 实现 | `trina/`（含 policy/session/interactive/play）、`configs/`、`tests/` | `git log -1` |
 | 计划与验收 | `docs/PLAN.md`、`brief/README.md` | — |
-| 设计 | `design/adr/*.md`（37 篇，区分当前决策、历史基线和实证记录）、`design/ai-rules.md`、`docs/ARCHITECTURE.md`、`docs/GUARDRAILS.md` | — |
+| 设计 | `ADR/*.md`（37 篇，区分当前决策、历史基线和实证记录）、`design/ai-rules.md`、`docs/ARCHITECTURE.md`、`docs/GUARDRAILS.md` | — |
 | 实验与复核 | `review/experiments/E1–E3`（实验卡含逐次数据与结论边界）、`review/README.md` 模板、`review/*-review.md` 复核记录 | 见文件内标注 |
 | 评测 | `trina/eval/scenarios/*.yaml`、`docs/EVAL.md`、`evidence/` 中的评测摘要 | 见文件内 commit |
 | 发布/交接 | `release/README.md`、`docs/RUNBOOK.md` | — |

@@ -1,6 +1,6 @@
 # 2026-10-26 决策层文档核对
 
-对象为[决策层设计说明](../../docs/DECISION_LAYER.md)、[架构文档](../../docs/ARCHITECTURE.md)、[ADR-0001](../../design/adr/0001-brain-own-react-loop.md)及相关索引。核对起点为 `cede4efea31edd23f07b18aa7ef351e4594cc9bc`。本轮只修改文档、导航、文档追踪清单及归档属性，产品实现、配置和测试代码保持原样。
+对象为[决策层设计说明](../../docs/DECISION_LAYER.md)、[架构文档](../../docs/ARCHITECTURE.md)、[ADR-0001](../../ADR/0001-brain-own-react-loop.md)及相关索引。核对起点为 `cede4efea31edd23f07b18aa7ef351e4594cc9bc`。本轮只修改文档、导航、文档追踪清单及归档属性，产品实现、配置和测试代码保持原样。
 
 ## 实际验证结果
 

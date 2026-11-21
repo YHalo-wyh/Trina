@@ -36,4 +36,4 @@ Trina 已提供真实 `worker_tasks` 宿主和并发 Worker Pool，但旧 Delega
 - `tests/test_capabilities.py::CapabilityFabricTests.test_worker_switches_capability_and_released_lease_cannot_be_reused`：释放模块租约后旧调用失效。
 - `tests/test_interactive.py::TestChatAgent.test_external_harness_can_preserve_a_hard_model_call_budget_without_platform_code`：通用硬预算不依赖平台代码。
 
-模块格式与生命周期见 [`docs/TASK_MODULES.md`](../../docs/TASK_MODULES.md)，主动调度与租约语义见 [`docs/SWARM.md`](../../docs/SWARM.md)。
+模块格式与生命周期见 [`docs/TASK_MODULES.md`](../docs/TASK_MODULES.md)，主动调度与租约语义见 [`docs/SWARM.md`](../docs/SWARM.md)。

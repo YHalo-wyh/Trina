@@ -56,7 +56,7 @@ flowchart TB
 ## 2. 单步数据流
 
 通用成果与流量新增契约：`RunState.casebook` 保存资产、观察、绑定和带版本复测；原生HTTP执行窗口将各跳写入任务的 `traffic.sqlite3`，不替代事实库。脚本工件有证据编号与哈希，报告消费同一状态中的资产覆盖、流量关联和复测记录。
-ScopeSentry由外置Capability通过 `mcp_http` 复用 `ctx.http`；浏览器采集仍保留自己的证据工件。覆盖与限制见[工具栈](TOOL_STACK/TOOL_STACK.md)及[ADR-0038](../design/adr/0038-tool-evidence-and-retest.md)。
+ScopeSentry由外置Capability通过 `mcp_http` 复用 `ctx.http`；浏览器采集仍保留自己的证据工件。覆盖与限制见[工具栈](TOOL_STACK/TOOL_STACK.md)及[ADR-0038](../ADR/0038-tool-evidence-and-retest.md)。
 
 ```
 人工信号与任务剩余时间
@@ -156,7 +156,7 @@ ScopeSentry由外置Capability通过 `mcp_http` 复用 `ctx.http`；浏览器采
 | 知识摘要与重复指纹 | 时间变化、重复发现不能持续冒充新进展 | 字段归一化不理解全部语义，raw 中变化文本仍可能影响指纹 |
 | 哈希链、快照和报告 | 分别保存过程一致性、当前状态和可读派生视图 | 哈希链没有外部可信锚；快照读取不等于进程续跑 |
 
-各选择的完整依据、计算示例、方案比较和验证见[设计决策](设计决策/设计决策.md)；控制归属见 [ADR-0001](../design/adr/0001-brain-own-react-loop.md)。
+各选择的完整依据、计算示例、方案比较和验证见[设计决策](设计决策/设计决策.md)；控制归属见 [ADR-0001](../ADR/0001-brain-own-react-loop.md)。
 
 ## 5. 错误隔离与收敛
 
@@ -216,7 +216,7 @@ ScopeSentry由外置Capability通过 `mcp_http` 复用 `ctx.http`；浏览器采
 
 ## 8. Capability Fabric 与上下文
 
-Commander 通过 `trina/capabilities/catalog.py` 发现统一能力；`broker.py` 根据依赖、策略与版本快照签发任务租约；`runtime.py` 将 Tool、CLI 或 MCP 能力投影为当前 Worker 的 ToolRegistry。Schema 与 Guidance 按租约加载，调用前后验证 TTL 和释放状态。清单同目录的 `AGENT.md` 是约定式 Guidance，只进入当前任务的 user 合同。通用 Worker 可在任务间复用执行环境，事实图、凭据、假设和对话仍默认独立。Commander 只转发相关证据索引与带来源的线索。清单、API、运行限制与验收见 [Capability Fabric](CAPABILITY_FABRIC.md)、[临时任务模块](TASK_MODULES.md)、[ADR-0021](../design/adr/0021-capability-fabric.md)和[ADR-0037](../design/adr/0037-proactive-workers-and-pluggable-task-modules.md)。
+Commander 通过 `trina/capabilities/catalog.py` 发现统一能力；`broker.py` 根据依赖、策略与版本快照签发任务租约；`runtime.py` 将 Tool、CLI 或 MCP 能力投影为当前 Worker 的 ToolRegistry。Schema 与 Guidance 按租约加载，调用前后验证 TTL 和释放状态。清单同目录的 `AGENT.md` 是约定式 Guidance，只进入当前任务的 user 合同。通用 Worker 可在任务间复用执行环境，事实图、凭据、假设和对话仍默认独立。Commander 只转发相关证据索引与带来源的线索。清单、API、运行限制与验收见 [Capability Fabric](CAPABILITY_FABRIC.md)、[临时任务模块](TASK_MODULES.md)、[ADR-0021](../ADR/0021-capability-fabric.md)和[ADR-0037](../ADR/0037-proactive-workers-and-pluggable-task-modules.md)。
 
 任务与对话使用结构化消息，稳定 system 和初始合同处于前缀，动态状态与观察只追加到后方。接近本地窗口预算时创建可复核的继承检查点，不调用模型生成摘要；不同任务不复用完整对话。DeepSeek 自动预算为 500K，明确识别的百万窗口型号为 1M，其他型号保守回退且可由 `/model context` 覆盖。详见 [模型传输与缓存](MODELS.md#上下文窗口)与[缓存运行时](CACHE_RUNTIME.md)。
 

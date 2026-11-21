@@ -3,8 +3,8 @@
   "contract_id": "trina-product-contract",
   "product_version": "0.5.0",
   "updated_at": "2026-11-16",
-  "normative_document": "docs/规约/规约.md",
-  "requirements_document": "docs/需求/需求.md",
+  "normative_document": "规约/规约.md",
+  "requirements_document": "需求/需求.md",
   "verification_commands": {
     "V-CONTRACT": {
       "argv": ["{python}", "-X", "utf8", "-m", "scripts.verify_contract"],
@@ -28,13 +28,13 @@
       "id": "D-REQ",
       "name": "需求",
       "status": "complete",
-      "required_paths": ["docs/需求/需求.md"]
+      "required_paths": ["需求/需求.md"]
     },
     {
       "id": "D-SPEC",
       "name": "机器可验证规约",
       "status": "complete",
-      "required_paths": ["docs/规约/规约.md", "docs/规约/规约.json", "scripts/verify_contract.py", "tests/test_contract.py"]
+      "required_paths": ["规约/规约.md", "规约/规约.json", "scripts/verify_contract.py", "tests/test_contract.py"]
     },
     {
       "id": "D-ADR",
@@ -42,15 +42,15 @@
       "status": "complete",
       "required_paths": [
         "design/README.md",
-        "design/adr/0001-brain-own-react-loop.md",
-        "design/adr/0002-text-json-action-protocol.md",
-        "design/adr/0003-single-execution-chokepoint.md",
-        "design/adr/0020-security-engineer-prompt-and-commander-intelligence.md",
-        "design/adr/0026-native-binary-runtime-and-model-windows.md",
-        "design/adr/0030-commander-delegation-and-live-grid.md",
-        "design/adr/0037-proactive-workers-and-pluggable-task-modules.md"
+        "ADR/0001-brain-own-react-loop.md",
+        "ADR/0002-text-json-action-protocol.md",
+        "ADR/0003-single-execution-chokepoint.md",
+        "ADR/0020-security-engineer-prompt-and-commander-intelligence.md",
+        "ADR/0026-native-binary-runtime-and-model-windows.md",
+        "ADR/0030-commander-delegation-and-live-grid.md",
+        "ADR/0037-proactive-workers-and-pluggable-task-modules.md"
       ],
-      "required_globs": [{"pattern": "design/adr/*.md", "minimum": 37}]
+      "required_globs": [{"pattern": "ADR/*.md", "minimum": 37}]
     },
     {
       "id": "D-HARNESS",
@@ -202,14 +202,20 @@
         {
           "id": "TR-03-R08",
           "level": "MUST",
-          "statement": "固定补全教学行必须隐藏且保留候选；角色普通字重。四格支持分页、聚焦和窄屏，稳定对话缓存不得因其他任务更新重排；原始模型协议不得作为可见对话。",
+          "statement": "固定补全教学行必须隐藏且保留候选；角色普通字重。九格支持分页、聚焦和窄屏回退，稳定对话缓存不得因其他任务更新重排；原始模型协议不得作为可见对话。",
           "tests": ["tests.test_worker_dashboard.WorkerDashboardTests.test_ui_hides_hint_and_normal_weight_role_and_keeps_grid_keyboard", "tests.test_worker_dashboard.WorkerDashboardTests.test_grid_layout_pages_resize_zoom_and_reuses_unchanged_dialog", "tests.test_worker_dashboard.WorkerDashboardTests.test_live_projection_ignores_raw_model_protocol_and_tracks_final_output"]
         },
         {
           "id": "TR-03-R09",
           "level": "MUST",
           "statement": "输出主题必须按真实运行、成功、警告、失败和 Diff 语义着色且单色保持文字；完成提醒在增强终端显示短时通知条，按终端能力使用 OSC 9/99 或 BEL，重定向输出不得含控制序列。",
-          "tests": ["tests.test_output_colors.OutputColorTests.test_tool_state_colors_and_diff_have_distinct_semantics", "tests.test_output_colors.OutputColorTests.test_markdown_patch_colors_and_palette_change_keep_text", "tests.test_notifications.NotificationTests.test_known_terminals_use_notification_protocol_and_unknown_uses_bell", "tests.test_notifications.NotificationTests.test_payload_removes_control_sequence_injection", "tests.test_notifications.NotificationTests.test_redirected_output_does_not_receive_terminal_control_codes", "tests.test_notifications.NotificationTests.test_notification_configuration_round_trip_and_validation"]
+          "tests": ["tests.test_output_colors.OutputColorTests.test_tool_state_colors_and_diff_have_distinct_semantics", "tests.test_output_colors.OutputColorTests.test_markdown_patch_colors_and_palette_change_keep_text", "tests.test_notifications.NotificationTests.test_known_terminals_use_notification_protocol_and_unknown_uses_bell", "tests.test_notifications.NotificationTests.test_payload_removes_control_sequence_injection", "tests.test_notifications.NotificationTests.test_redirected_output_does_not_receive_terminal_control_codes", "tests.test_notifications.NotificationTests.test_notification_configuration_round_trip_and_validation", "tests.test_interactive.TestConsole.test_background_notice_is_visible_without_enqueuing_model_input"]
+        },
+        {
+          "id": "TR-03-R10",
+          "level": "MUST",
+          "statement": "计划澄清只使用文本请求。用户选择后可将验收计划存为草稿。运行中的普通补充应保留原文并等待用户明确发送。",
+          "tests": ["tests.test_interactive.TestConsole.test_plan_reasks_until_review_and_stages_without_running_tools", "tests.test_interactive.TestConsole.test_running_supplement_waits_in_queue_until_explicitly_sent"]
         }
       ]
     },

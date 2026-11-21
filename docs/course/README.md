@@ -1,6 +1,6 @@
 # Trina 课程提交文档
 
-2026-10-28 交互补充：[CLI 界面](../CLI_UI.md)统一首页、步骤、审批和结果展示；[研究复核](../../design/adr/0017-specialist-consultation-without-blackboard.md)维持单主控与按需咨询，未引入共享黑板。
+2026-10-28 交互补充：[CLI 界面](../CLI_UI.md)统一首页、步骤、审批和结果展示；[研究复核](../../ADR/0017-specialist-consultation-without-blackboard.md)维持单主控与按需咨询，未引入共享黑板。
 
 完整汇报见[《开题报告与第一次汇报》](../开题报告与第一次汇报/开题报告与第一次汇报.md)。本目录提供该报告的具体规格、计划、任务卡及工程附件。
 
@@ -21,7 +21,7 @@ Trina 接收授权靶场地址和测试目标，通过模型提出动作，由�
 | 每条要求如何被证明 | [验收矩阵](acceptance-matrix.md) | 要求、场景、任务、测试、证据和未覆盖部分 |
 | 状态如何变化，谁能改变状态 | [状态模型](state-model.md) | 运行状态、漏洞状态、结论与授权的不同语义 |
 | 现有系统哪些部分会受影响 | [影响分析](impact-map.md) | CLI、配置、模型协议、持久化、兼容及回滚 |
-| 采取何种方案，有何替代方案 | [ADR-0019](../../design/adr/0019-course-contract-and-dual-harness.md) | 沿用已有执行链，增加课程规格与机械检查 |
+| 采取何种方案，有何替代方案 | [ADR-0019](../../ADR/0019-course-contract-and-dual-harness.md) | 沿用已有执行链，增加课程规格与机械检查 |
 | 实施顺序和检查点是什么 | [实施计划](plan.md)、[8 张任务卡](tasks.md) | 垂直切片、依赖、输入、输出、DoR、DoD 和停止条件 |
 | 文件、模块及权威位置在哪里 | [仓库地图](repository-map.md) | 分层资料入口、主要调用链、事实来源及冲突处理 |
 | Agent 如何受控运行和开发 | [双层 Harness](harness-manifest.md) | Runtime / Project、权限、命令、预算、可见性和恢复 |

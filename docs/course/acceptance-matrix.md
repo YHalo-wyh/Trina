@@ -180,7 +180,7 @@
 
 ### REQ-14 的 Sensor
 
-2026-11-12 状态：superseded。固定 recon/web/review 咨询已删除；历史测试结果仍在原始证据文件，仅适用于旧代码基线。当前能力模型与租约检查见 [ADR-0021](../../design/adr/0021-capability-fabric.md) 和产品 TR-11，不把能力验收作为旧咨询功能的通过证据。
+2026-11-12 状态：superseded。固定 recon/web/review 咨询已删除；历史测试结果仍在原始证据文件，仅适用于旧代码基线。当前能力模型与租约检查见 [ADR-0021](../../ADR/0021-capability-fabric.md) 和产品 TR-11，不把能力验收作为旧咨询功能的通过证据。
 
 ### REQ-15 的 Sensor
 

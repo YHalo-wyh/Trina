@@ -15,7 +15,7 @@
 | Acceptance Matrix | [acceptance-matrix.md](acceptance-matrix.md) | REQ 到 GWT、可观察结果、测试、Task 和证据 |
 | 状态模型或状态图 | [state-model.md](state-model.md) | 运行、发现、假设、结论、授权生命周期及非法解释 |
 | 遗留影响分析 | [impact-map.md](impact-map.md) | CLI、动作、配置、字段、调用者、兼容和回滚 |
-| 至少一份 ADR | [ADR-0019](../../design/adr/0019-course-contract-and-dual-harness.md) | 采用与替代方案、代价、限制、回滚及重决策条件 |
+| 至少一份 ADR | [ADR-0019](../../ADR/0019-course-contract-and-dual-harness.md) | 采用与替代方案、代价、限制、回滚及重决策条件 |
 | Plan | [plan.md](plan.md) | M0–M5、依赖、检查点、DoR/DoD、风险和预算 |
 | 5–8 张 Task Card | [tasks.md](tasks.md) | 8 个纵向切片，各有目标、范围、验证、证据、责任和停止条件 |
 | Repository Map | [repository-map.md](repository-map.md) | L1/L2/L3、主要模块、测试入口与权威冲突规则 |

@@ -17,8 +17,8 @@
     "docs/ARCHITECTURE.md",
     "docs/EVAL.md",
     "design/README.md",
-    "design/adr/0001-brain-own-react-loop.md",
-    "design/adr/0016-deterministic-hypothesis-scheduling.md",
+    "ADR/0001-brain-own-react-loop.md",
+    "ADR/0016-deterministic-hypothesis-scheduling.md",
     "evidence/20261026-decision-docs/README.md",
     "README.md",
     "docs/开题报告与第一次汇报/开题报告与第一次汇报.md",
@@ -38,11 +38,11 @@
     "docs/course/continuity.md",
     "docs/course/ai-disclosure.md",
     "docs/course/course-alignment.md",
-    "design/adr/0019-course-contract-and-dual-harness.md",
+    "ADR/0019-course-contract-and-dual-harness.md",
     "evidence/20261021-course-pack/README.md",
     "review/20261021-course-pack-review.md",
     "docs/CLI_UI.md",
-    "design/adr/0017-specialist-consultation-without-blackboard.md",
+    "ADR/0017-specialist-consultation-without-blackboard.md",
     "evidence/20261028-cli-ui/README.md"
   ],
   "tasks": [
@@ -463,7 +463,7 @@
       ],
       "task": "TASK-07",
       "implementation": [
-        "design/adr/0021-capability-fabric.md"
+        "ADR/0021-capability-fabric.md"
       ],
       "tests": [],
       "commands": [

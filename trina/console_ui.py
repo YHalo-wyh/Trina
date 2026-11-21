@@ -141,6 +141,10 @@ COMMANDS: tuple[CommandSpec, ...] = (
     CommandSpec("goal", "任务", "保存或修改当前项目的任务目标", "goal [set <目标>|show|clear]",
                 positional_choices=(ChoiceSpec("show", "查看目标"), ChoiceSpec("set", "设置目标"), ChoiceSpec("clear", "清除目标")),
                 examples=('/goal 检查登录流程并记录证据',), availability="always"),
+    CommandSpec("plan", "任务", "执行前澄清目标和验收，保留待发计划", "plan <任务> | choose <编号> | reply <答案> | queue | cancel",
+                positional_choices=(ChoiceSpec("show", "查看计划"), ChoiceSpec("choose", "选择编号"),
+                                    ChoiceSpec("reply", "补充答案"), ChoiceSpec("queue", "计划加入待发队列"),
+                                    ChoiceSpec("cancel", "取消计划")), availability="always"),
     CommandSpec("schedule", "任务", "定时启动任务", "schedule <add|list|cancel> [选项]",
                 aliases=("scheduled", "schedualed"), availability="always",
                 positional_choices=(ChoiceSpec("add", "安排任务"), ChoiceSpec("list", "查看任务"), ChoiceSpec("cancel", "取消任务")),
@@ -207,7 +211,8 @@ COMMANDS: tuple[CommandSpec, ...] = (
                 positional_choices=tuple(ChoiceSpec(key, value[0]) for key, value in WORKER_ROLES.items())),
     CommandSpec("subworker", "并行任务", "子 Worker 面板、模型与思考强度、并发和任务管理", "subworker [操作] [参数]",
                 positional_choices=tuple(ChoiceSpec(k, v) for k, v in (("start", "名称 目标 任务：启动"), ("run", "从 YAML 任务图启动"),
-                    ("add", "追加并行任务"), ("grid", "四宫格实时对话"), ("list", "查看任务"), ("message", "给指定任务补充"), ("cancel", "取消指定任务"), ("inspect", "查看结果与证据"), ("model", "设置子模型 ID"),
+                    ("add", "追加并行任务"), ("grid", "九宫格实时对话"), ("list", "查看任务"), ("message", "立即补充指定任务"),
+                    ("queue", "预存给指定任务的补充"), ("cancel", "取消指定任务"), ("inspect", "查看结果与证据"), ("model", "设置子模型 ID"),
                     ("thinking", "设置思考强度"), ("provider", "选择已保存供应商"), ("settings", "并发、步数、超时"),
                     ("pause", "暂停"), ("continue", "继续"), ("stop", "停止与回收"), ("resume", "恢复 Swarm 检查点"))),
                 examples=("/subworker", "/subworker start audit localhost 检查服务", "/subworker thinking high", "/subworker model deepseek-flash", "/subworker run tasks.yaml")),
@@ -271,6 +276,10 @@ COMMANDS: tuple[CommandSpec, ...] = (
         "hint", "运行控制", "向运行中的 Agent 注入下一步提示", "hint <文本>",
         examples=("/hint 优先验证 /sqli 的 id 参数",), availability="running",
     ),
+    CommandSpec("queue", "运行控制", "查看、发送或移除待发草稿", "queue [list|add <文本>|send [编号]|drop <编号>]",
+                positional_choices=(ChoiceSpec("list", "查看草稿"), ChoiceSpec("add", "留待发送"),
+                                    ChoiceSpec("send", "发送草稿"), ChoiceSpec("drop", "移除草稿")),
+                availability="always"),
     CommandSpec("pause", "运行控制", "暂停当前任务", "pause", availability="running"),
     CommandSpec("resume", "会话与模型", "查看、搜索和切换历史对话", "resume [list|last|编号|ID]",
                 positional_choices=(ChoiceSpec("list", "列出已保存对话"), ChoiceSpec("last", "切换最近对话")),
@@ -1144,9 +1153,11 @@ class EnhancedConsoleInput:
             self._dispatching = True
             try:
                 call = lambda: self._handler(text)
-                command = text.strip().lstrip("/").split(maxsplit=1)[0] if text.strip() else ""
+                words = text.strip().lstrip("/").split(maxsplit=2)
+                command = words[0] if words else ""
                 # 模型表单暂时接管终端，结束后恢复同一内容区和未提交输入。
                 modal = command in {"model", "resume", "worker", "subworker", "branch", "repo", "worktree", "wt", "theme", "colors", "footer"} and (not self.running() or command == "subworker")
+                modal = modal or (words == ["plan", "choose"] and not self.running())
                 keep = await run_in_terminal(call, in_executor=True) if modal else await run_in_executor_with_context(call)
                 if not keep:
                     self.app.exit()

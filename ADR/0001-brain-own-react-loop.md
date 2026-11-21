@@ -3,7 +3,7 @@
 - 状态：已采纳；2026-10-26 补充设计依据，未改变产品执行逻辑。
 - 适用范围：`PentestAgent`、`ChatAgent` 与 `trina.llm` 的职责划分。
 - 关联：[动作协议](0002-text-json-action-protocol.md)、[执行入口](0003-single-execution-chokepoint.md)、[配置授权](0004-policy-from-config-not-prompt.md)、[确定性调度](0016-deterministic-hypothesis-scheduling.md)。
-- 逐步设计说明：[设计决策](../../docs/设计决策/设计决策.md)。
+- 逐步设计说明：[设计决策](../docs/设计决策/设计决策.md)。
 
 ## 1. 决策背景
 
@@ -80,7 +80,7 @@ Trina 需要根据目标状态决定下一步。固定扫描列表可以覆盖�
 
 机制运行使用固定响应配合真实 lab 请求，证明候选动作可以通过受控执行链形成证据、假设和报告。它不能证明模型自主探索水平优于其他架构。模型或调度效果比较应固定任务、模型、预算和评分口径，保存逐次结果与失败样本。
 
-本次说明对应的实际验证记录见 [2026-10-26 文档验证](../../evidence/20261026-decision-docs/README.md)，历史机制证据见 [2026-10-21 课程验证](../../evidence/20261021-course-pack/README.md)。
+本次说明对应的实际验证记录见 [2026-10-26 文档验证](../evidence/20261026-decision-docs/README.md)，历史机制证据见 [2026-10-21 课程验证](../evidence/20261021-course-pack/README.md)。
 
 ## 8. 重新决策与迁移条件
 

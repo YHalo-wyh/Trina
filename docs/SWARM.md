@@ -151,7 +151,7 @@ Flag、完整聊天、开放假设和来源题目的 `RunState` 不进入简报�
 
 ### 控制台与调度器的并发边界
 
-`worker_tasks` 是 Commander 的真实 ToolRegistry 工具，控制台提供委派宿主；Swarm 子 Worker 不获得宿主，不能递归扩大任务。单任务补充和取消也通过 Commander 命令队列处理。局部停止与整场停止合成原有 Event 接口；取消某任务不设置其他任务的停止信号。补充通过 PentestAgent 原有 steer 队列进入下一决策点，并沿用候选响应失效和审计机制。主动分解、并发额度与临时任务模块边界见 [ADR-0037](../design/adr/0037-proactive-workers-and-pluggable-task-modules.md)。
+`worker_tasks` 是 Commander 的真实 ToolRegistry 工具，控制台提供委派宿主；Swarm 子 Worker 不获得宿主，不能递归扩大任务。单任务补充和取消也通过 Commander 命令队列处理。局部停止与整场停止合成原有 Event 接口；取消某任务不设置其他任务的停止信号。补充通过 PentestAgent 原有 steer 队列进入下一决策点，并沿用候选响应失效和审计机制。主动分解、并发额度与临时任务模块边界见 [ADR-0037](../ADR/0037-proactive-workers-and-pluggable-task-modules.md)。
 
 四宫格读取同一事件流中已解析的 `assistant.message/react.action/tool.*`，不直接显示 `model.text_delta` 协议碎片或隐藏思考增量。每任务最多缓存 80 个块、每块 4000 字，折行保留最近 600 行；仅变化任务和新宽度重新折行，窗口帧只取可见行。恢复可重放当前尝试的可见事件，只恢复显示，不执行旧动作或重复统计用量。
 

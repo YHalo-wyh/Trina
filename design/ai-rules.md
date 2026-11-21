@@ -32,7 +32,7 @@
 | O1 人机责任 | 本文件 + `review/` 中的"被否决建议"记录 | `design/ai-rules.md`、`review/README.md` |
 | O2 工程契约 | 验收ID 表 + 注册检查项格式（`tests:` 段） | `brief/README.md`、`docs/GUARDRAILS.md` |
 | O3 可信验证 | 测试 + 审计哈希链 + 评测指标（含分母） | `tests/`、`evidence/`、`docs/EVAL.md` |
-| O4 工程取舍 | ADR（含被否决方案与代价） | `design/adr/` |
+| O4 工程取舍 | ADR（含被否决方案与代价） | `ADR/` |
 | O5 变化与对抗 | 蓝队对抗评测 + 撤权演练 | `docs/EVAL.md`、`tests/test_policy.py` |
 | O6 交接与恢复 | 运行手册 + 启动/重置/停止/回收 | `release/README.md`、`docs/RUNBOOK.md` |
 | O7 风险与个人能力 | 提交边界 + 风险表 + 个人解释 | `docs/SUBMISSION.md`、`review/README.md` |

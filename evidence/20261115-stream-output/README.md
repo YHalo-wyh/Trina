@@ -2,7 +2,7 @@
 
 - 日期：2026-11-15（Asia/Shanghai）
 - 状态：本人实际执行本地压测、HTTP SSE 夹具、终端组件及回归测试；未使用付费模型或线上题目。
-- 设计：[ADR-0033](../../design/adr/0033-frame-coalesced-stream-output.md)
+- 设计：[ADR-0033](../../ADR/0033-frame-coalesced-stream-output.md)
 - 全量回归树：`504cf332d0333819b76ca926b83166e206a9934d`；最终补测树：`fb5062c933418fcee97bb66c862f0ea859fb57b6`。均从暂存树导出，未包含其他本地未提交改动。
 
 ## 原因与修改

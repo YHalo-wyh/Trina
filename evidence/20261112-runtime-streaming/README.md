@@ -35,4 +35,4 @@ OMP 模型后端删除；标准结构化消息；Chat Completions、Anthropic Me
 
 现有证据支持结构化消息、SSE 增量、流终止校验、卡片更新、能力租约和声明的回归组合成立。测试未调用付费模型，不证明全部供应商账户兼容、真实模型成功率或缓存收益；未采集真实桌面截图。当前仍无自动 Token 压缩、常驻 MCP 服务池或操作系统级沙箱。
 
-系统提示词的唯一源码位于 [prompts.py](../../trina/brain/prompts.py) 的 `SECURITY_ENGINEER_SYSTEM_PROMPT`，避免另存一份文本后发生漂移。设计依据见 [ADR-0021](../../design/adr/0021-capability-fabric.md)、[ADR-0022](../../design/adr/0022-standard-messages-and-streaming.md)。
+系统提示词的唯一源码位于 [prompts.py](../../trina/brain/prompts.py) 的 `SECURITY_ENGINEER_SYSTEM_PROMPT`，避免另存一份文本后发生漂移。设计依据见 [ADR-0021](../../ADR/0021-capability-fabric.md)、[ADR-0022](../../ADR/0022-standard-messages-and-streaming.md)。

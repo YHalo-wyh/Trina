@@ -1,6 +1,6 @@
 # ADR-0010：动作等级按「尝试规模」判定，被拒时回灌等价做法
 
-- 状态：已采纳（实验见 [`review/experiments/E2`](../../review/experiments/E2-credential-verification-scope.md)）
+- 状态：已采纳（实验见 [`review/experiments/E2`](../review/experiments/E2-credential-verification-scope.md)）
 - 相关：ADR-0004、ADR-0007
 
 ## 背景

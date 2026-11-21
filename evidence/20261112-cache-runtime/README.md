@@ -53,4 +53,4 @@ python -X utf8 evidence/20261112-cache-runtime/measure.py
 
 上下文 ID、时间与临时路径会变化，归档哈希不要求跨次运行相同。当前未验证各供应商账户的实际能力、保留期限、路由结果、费用或新命中率，也未验证不同工具集能共享多少 KV。分层提示词仅完成离线结构对照，默认值未改变。供应商原生 allowed_tools、延迟工具搜索和任意聊天检查点的一键续跑未实现。
 
-配置、指标和边界见 [缓存感知运行时](../../docs/CACHE_RUNTIME.md)，设计依据见 [ADR-0024](../../design/adr/0024-cache-aware-context-lifecycle.md)。
+配置、指标和边界见 [缓存感知运行时](../../docs/CACHE_RUNTIME.md)，设计依据见 [ADR-0024](../../ADR/0024-cache-aware-context-lifecycle.md)。

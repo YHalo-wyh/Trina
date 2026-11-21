@@ -2,7 +2,7 @@
 
 - 日期：2026-11-15（Asia/Shanghai）
 - 执行状态：本轮实际执行；平台接口使用本地 HTTP 夹具，模型使用固定回放。未运行付费模型对照或线上竞赛。
-- 对应需求：TR-24；设计：[ADR-0032](../../design/adr/0032-fact-driven-intents-and-bench-continuation.md)
+- 对应需求：TR-24；设计：[ADR-0032](../../ADR/0032-fact-driven-intents-and-bench-continuation.md)
 - 最终 Windows 验证树：`af6d4c9af6c71e2a76a999bb69409b39e41239fd`。从暂存树导出隔离快照执行，不包含工作目录中的其他未提交改动。验证后仅补充本证据、入口链接和 ADR 文案。
 
 ## 实际检查

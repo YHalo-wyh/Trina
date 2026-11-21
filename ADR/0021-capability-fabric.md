@@ -42,4 +42,4 @@ python -m unittest tests.test_capabilities tests.test_swarm -v
 python -m scripts.verify_contract --execute --json
 ```
 
-详细清单格式、状态语义和测试映射见 [`docs/CAPABILITY_FABRIC.md`](../../docs/CAPABILITY_FABRIC.md) 与 [`docs/TASK_MODULES.md`](../../docs/TASK_MODULES.md)。
+详细清单格式、状态语义和测试映射见 [`docs/CAPABILITY_FABRIC.md`](../docs/CAPABILITY_FABRIC.md) 与 [`docs/TASK_MODULES.md`](../docs/TASK_MODULES.md)。

@@ -1,6 +1,6 @@
 # 工具栈与成果链验证
 
-日期：2026-11-18。说明与入口见[工具、成果与复测](../../docs/TOOL_STACK/TOOL_STACK.md)，决策见[ADR-0038](../../design/adr/0038-tool-evidence-and-retest.md)。
+日期：2026-11-18。说明与入口见[工具、成果与复测](../../docs/TOOL_STACK/TOOL_STACK.md)，决策见[ADR-0038](../../ADR/0038-tool-evidence-and-retest.md)。
 
 ## 环境
 

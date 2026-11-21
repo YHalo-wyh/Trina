@@ -81,5 +81,5 @@
 5. 若硬任务下开臂的"每验证发现在成本"更低 → 默认开启（现状）；反之在预算紧的场景提供 `loop_guard=false` 的低成本档。
 
 ## 决策
-见 [ADR-0015](../../design/adr/0015-insight-layer-hypotheses-failure-graph.md)（当前结论：**默认开启**，开关保留用于对照与预算收紧）；
+见 [ADR-0015](../../ADR/0015-insight-layer-hypotheses-failure-graph.md)（当前结论：**默认开启**，开关保留用于对照与预算收紧）；
 本轮未发现"洞察层伪造结论"的反例。

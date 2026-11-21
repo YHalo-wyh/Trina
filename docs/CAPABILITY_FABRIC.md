@@ -128,4 +128,4 @@ python -m unittest tests.test_capabilities tests.test_swarm -v
 
 这些限制避免第一版重新造完整插件生态。后续只有在三项验收稳定、真实任务数据证明有收益后，才考虑长驻服务复用和更高级的组合策略。
 
-基础能力装配决策见 [ADR-0021](../design/adr/0021-capability-fabric.md)；外置平台模块、`AGENT.md` system 隔离与主动 Worker 边界见 [ADR-0037](../design/adr/0037-proactive-workers-and-pluggable-task-modules.md)。
+基础能力装配决策见 [ADR-0021](../ADR/0021-capability-fabric.md)；外置平台模块、`AGENT.md` system 隔离与主动 Worker 边界见 [ADR-0037](../ADR/0037-proactive-workers-and-pluggable-task-modules.md)。

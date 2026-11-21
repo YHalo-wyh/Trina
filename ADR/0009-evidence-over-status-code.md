@@ -1,6 +1,6 @@
 # ADR-0009：验收判定以响应证据为准，状态码只是前置条件
 
-- 状态：已采纳（实验见 [`review/experiments/E1`](../../review/experiments/E1-verdict-evidence-vs-status.md)）
+- 状态：已采纳（实验见 [`review/experiments/E1`](../review/experiments/E1-verdict-evidence-vs-status.md)）
 - 相关：ADR-0003、ADR-0007
 
 ## 背景

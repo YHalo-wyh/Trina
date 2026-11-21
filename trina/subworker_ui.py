@@ -13,6 +13,14 @@ STATUS = {"pending": ("○", "等待"), "running": ("◉", "运行"), "completed
           "skipped": ("–", "跳过"), "timed_out": ("!", "超时")}
 
 
+def _grid_size(width: int, height: int, zoom: bool) -> int:
+    if zoom:
+        return 1
+    if width >= 120 and height >= 21:
+        return 3
+    return 2 if width >= 96 and height >= 16 else 1
+
+
 def render_workers(rows: list[dict[str, Any]], width: int, selected: int, *, now: float | None = None,
                    count: int = 8) -> list[tuple[str, str]]:
     """每项三行，名称/模型对齐两端；窄屏保留名称、状态和思考档位。"""
@@ -45,17 +53,17 @@ def render_workers(rows: list[dict[str, Any]], width: int, selected: int, *, now
 
 
 def render_grid(manager, width: int, height: int, selected: int, *, scroll: int = 0, zoom: bool = False):
-    """有界四宫格；每格只绘制可见物理行，小窗口自动显示所选任务。"""
+    """有界九宫格，小屏切换四宫格或单格。"""
     width, height = max(1, width), max(1, height)
     if width < 4 or height < 3:
         return [("class:dim", _fit_cells("Worker", width))]
     rows = manager.rows()
-    wide = width >= 96 and height >= 16 and not zoom
-    columns, per_page = (2, 4) if wide else (1, 1)
+    columns = _grid_size(width, height, zoom)
+    per_page = columns ** 2
     selected = max(0, min(selected, max(0, len(rows) - 1)))
     start = selected // per_page * per_page
-    box_width = (width - 1) // 2 if wide else width
-    box_height = height // 2 if wide else height
+    box_width = (width + 1) // columns - 1
+    box_height = height // columns
     inner = max(1, box_width - 2)
     result = []
     def pad(text):
@@ -96,7 +104,7 @@ def render_grid(manager, width: int, height: int, selected: int, *, scroll: int 
         if box_height >= 2:
             lines.append([(border, "└" + "─" * inner + "┘")])
         return lines
-    for band in range(2 if wide else 1):
+    for band in range(columns):
         panes = [panel(start + band * columns + col) for col in range(columns)]
         for line in range(box_height):
             for col, pane in enumerate(panes):
@@ -123,6 +131,8 @@ def show_subworkers(manager, config, *, notice: str = "", view: str = "grid"):
     llm = task_llm(config)
     def width():
         return max(1, app.output.get_size().columns - 2)
+    def height():
+        return max(1, app.output.get_size().rows - 7 - int(bool(notice)))
     def header():
         metrics = manager.usage.footer(width(), compact=True)
         return [("class:title", _fit_cells(" ◇ SUBWORKERS  " + (manager.badge or "READY"), width()) + "\n"),
@@ -134,7 +144,7 @@ def show_subworkers(manager, config, *, notice: str = "", view: str = "grid"):
         rows = manager.rows()
         selected[0] = min(selected[0], len(rows) - 1)
         if mode[0] == "grid":
-            return render_grid(manager, width(), max(1, app.output.get_size().rows - 7 - int(bool(notice))), selected[0], scroll=scroll[0], zoom=zoom[0])
+            return render_grid(manager, width(), height(), selected[0], scroll=scroll[0], zoom=zoom[0])
         return render_workers(rows, width(), selected[0], count=max(1, (app.output.get_size().rows - 7) // 3))
 
     bindings = KeyBindings()
@@ -165,10 +175,9 @@ def show_subworkers(manager, config, *, notice: str = "", view: str = "grid"):
         rows = manager.rows()
         if not rows:
             return
-        height = max(1, app.output.get_size().rows - 7 - int(bool(notice)))
-        wide = width() >= 96 and height >= 16 and not zoom[0]
-        inner = max(1, ((width() - 1) // 2 if wide else width()) - 2)
-        available = max(1, (height // 2 if wide else height) - 4)
+        columns = _grid_size(width(), height(), zoom[0])
+        inner = max(1, (width() + 1) // columns - 3)
+        available = max(1, height() // columns - 4)
         maximum = max(0, len(manager.dialog_lines(rows[max(0, selected[0])]["id"], inner)) - available)
         scroll[0] = min(maximum, scroll[0] + 3)
     @bindings.add("pagedown")
@@ -215,7 +224,7 @@ def show_subworkers(manager, config, *, notice: str = "", view: str = "grid"):
         Window(FormattedTextControl(lambda: [("class:rail", "─" * width())]), height=1),
         Window(body, wrap_lines=False),
         Window(FormattedTextControl(lambda: [("class:title", _fit_cells(notice, width()))]), height=1 if notice else 0, wrap_lines=False),
-        Window(FormattedTextControl(lambda: [("class:dim", _fit_cells(" Tab 切换 · G 列表/四格 · Z 放大 · PgUp/Dn 历史 · F 补充 · C 取消 · M 模型 · T 思考 · N 新建 · Esc 返回", width()))]), height=1),
+        Window(FormattedTextControl(lambda: [("class:dim", _fit_cells(" Tab 切换 · G 列表/网格 · Z 放大 · PgUp/Dn 历史 · F 补充 · C 取消 · M 模型 · T 思考 · N 新建 · Esc 返回", width()))]), height=1),
     ]), focused_element=body), key_bindings=bindings, full_screen=True, erase_when_done=True,
         refresh_interval=.25, min_redraw_interval=1 / 120, max_render_postpone_time=0,
         color_depth=ColorDepth.DEPTH_24_BIT, mouse_support=True,

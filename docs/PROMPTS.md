@@ -10,7 +10,7 @@ Commander 与 Worker 使用版本化结果契约 `contract_version=1`。每个 W
 
 Tool Policy 明确等待期间的推进方式：耗时命令先用 `terminal_start` 取得 job_id，再分析已有证据、调用独立工具或委派 Worker；有其他工作时不忙轮询，依赖输出时才查询/有界等待，交付前回收真实终态和证据。同步工具返回前不会发起下一次模型决策，批内调用也不因此并发。新规则随新会话加载；旧会话使用 `/new` 生效。
 
-Delegation 现在明确调用 `worker_tasks(spawn)` 分派独立分析/编码分支，并用 `result` 回收证据；主 Agent 继续关键路径。请求同时包含两个及以上互不依赖的交付物、目标或验证分支时，应在当前并发额度内主动分别 spawn，不无故串行，也不把单步小事拆成 Worker。仅在本入口真实提供委派宿主时适用，未接受或未完成的子任务不能作为成功结果。模型末尾运行状态列出最多 8 个当前子任务的 ID/状态/模型，保持稳定 system 前缀，避免反复复制完整对话。旧会话保留已有 system，更新需 `/new`。决策见 [ADR-0030](../design/adr/0030-commander-delegation-and-live-grid.md) 与 [ADR-0037](../design/adr/0037-proactive-workers-and-pluggable-task-modules.md)。
+Delegation 现在明确调用 `worker_tasks(spawn)` 分派独立分析/编码分支，并用 `result` 回收证据；主 Agent 继续关键路径。请求同时包含两个及以上互不依赖的交付物、目标或验证分支时，应在当前并发额度内主动分别 spawn，不无故串行，也不把单步小事拆成 Worker。仅在本入口真实提供委派宿主时适用，未接受或未完成的子任务不能作为成功结果。模型末尾运行状态列出最多 8 个当前子任务的 ID/状态/模型，保持稳定 system 前缀，避免反复复制完整对话。旧会话保留已有 system，更新需 `/new`。决策见 [ADR-0030](../ADR/0030-commander-delegation-and-live-grid.md) 与 [ADR-0037](../ADR/0037-proactive-workers-and-pluggable-task-modules.md)。
 
 0.4.0（2026-11-14）补充编码与协作要求：先检查当前仓库约定和用户差异，用真实文件/命令工具完成修改与验证；允许在当前 main 分支按用户要求编辑。操作使用当前标准 API，普通正文不手写 DSML。共享 Todo、观察和失败经验可用于减少重复尝试；当前题的事实仍须独立验证。
 

@@ -32,7 +32,7 @@
 - `tests/test_runtime_status.py`：真实程序的运行、退出码、失败、超时、取消、子进程回收、会话隔离、最小环境、状态栏末尾位置和快照兼容。
 - 当前机器规则：TR-03-R04、TR-04-R04、TR-05-R02。
 
-实际输出、性能微基准及复现入口见 [2026-11-12 验证记录](../../evidence/20261112-viewport-statusbar/README.md)。
+实际输出、性能微基准及复现入口见 [2026-11-12 验证记录](../evidence/20261112-viewport-statusbar/README.md)。
 
 ## 参考
 
