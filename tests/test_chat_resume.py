@@ -84,6 +84,21 @@ class ChatResumeTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.store.load("../outside")
 
+    def test_legacy_text_only_session_resumes_as_normal_chat(self):
+        chat = self.chat()
+        chat.ask("记录会议要点")
+        chat.close()
+        saved = self.store.load(chat.run_id)
+        saved["text_messages"], saved["messages"] = saved["history"].copy(), []
+        self.store.save(saved)
+        backend = self.backend()
+        restored = ChatAgent.resume(self.config, chat.run_id, registry=ToolRegistry([]), backend=backend)
+        self.addCleanup(restored.close)
+        self.assertEqual(backend.inputs, [])
+        restored.ask("继续整理")
+        self.assertEqual(backend.inputs[0][2:4], saved["text_messages"])
+        self.assertEqual(len(backend.inputs), 1)
+
     def test_active_chat_cannot_be_opened_twice_and_lock_releases_on_close(self):
         chat = self.chat()
         chat.ask("保持会话占用")

@@ -10,9 +10,13 @@ import sys
 import threading
 import time
 from dataclasses import dataclass
-from typing import Callable, Iterable
+from typing import TYPE_CHECKING, Callable, Iterable
 
 from .worker_roles import WORKER_ROLES
+
+if TYPE_CHECKING:
+    from .terminal import ResponsiveText
+    from .transcript import StreamingAnswer
 
 try:
     from prompt_toolkit.completion import Completer as _Completer
@@ -115,8 +119,6 @@ APPROVAL_CHOICES = tuple(
 
 
 COMMANDS: tuple[CommandSpec, ...] = (
-    CommandSpec("ask", "对话", "快速回答、润色或分析粘贴的内容", "ask <问题或文本>",
-                examples=("/ask 把下面的会议纪要整理成三条待办",)),
     CommandSpec(
         "play", "任务", "自动准备靶场并完成一次完整任务", "play [选项]",
         options=(
@@ -530,8 +532,9 @@ class EnhancedConsoleInput:
         self._handler = None
         self._dispatching = False
         self._queue = None
-        self._chunks: list[str] = []
+        self._chunks: list[str | StreamingAnswer] = []
         self._stream_index: int | None = None
+        self._stream_format_lock = asyncio.Lock()
         self._tool_indices: dict[str, int] = {}
         self._thinking_indices: dict[str, int] = {}
         self._plain = plain
@@ -1026,7 +1029,7 @@ class EnhancedConsoleInput:
                     self._stream_index = self._stream_index - 1 if self._stream_index else None
                 pruned = True
             if len(self._chunks[0]) > 250_000:
-                self._chunks[0] = self._chunks[0][-250_000:]
+                self._chunks[0] = str(self._chunks[0])[-250_000:]
                 self._char_count = len(self._chunks[0])
                 pruned = True
             self.transcript_control.invalidate_from(0 if pruned else len(self._chunks) - 1)
@@ -1088,20 +1091,12 @@ class EnhancedConsoleInput:
         self.app.invalidate()
 
     def update_stream(self, text: str, *, final: bool = False) -> None:
-        """合并尚未绘制的增量；只在实际绘制或最终确认时渲染 Markdown。"""
-        from .markdown_view import render_markdown_fragments
-        from .terminal import ResponsiveText, render_answer
+        """接收正文更新，长草稿复用已排版行，长终稿在后台排版。"""
+        from .terminal import ResponsiveText, streaming_answer
+        from .transcript import StreamingAnswer
 
-        if final:
-            source = render_answer(text or " ", color=not self._plain, palette=self._output_palette)
-            chunk = ResponsiveText(str(source).rstrip("\n") + "\n\n",
-                                   lambda width: source.at_width(width).rstrip("\n") + "\n\n",
-                                   lambda width: (source.fragments_at_width(width) or []) + [("", "\n\n")])
-        else:
-            # 快速到来的 delta 只替换文本，渲染频率由 Application 的帧率统一控制。
-            chunk = ResponsiveText(text, lambda width:
-                                   str(render_answer(text or " ", width=width, color=not self._plain, palette=self._output_palette)) + "\n\n",
-                                   lambda _width: render_markdown_fragments(text or " ", color=not self._plain, palette=self._output_palette) + [("", "\n\n")])
+        loop = getattr(self.app, "loop", None)
+        defer_format = final and len(text) > StreamingAnswer.MARKDOWN_PREVIEW_CHARS and loop is not None and loop.is_running()
         with self._content_lock:
             if self._stream_index is None:
                 if final and not text:
@@ -1109,7 +1104,8 @@ class EnhancedConsoleInput:
                 self._stream_index = len(self._chunks)
                 self._chunks.append("")
             index = self._stream_index
-            old_length = len(self._chunks[index])
+            previous = self._chunks[index]
+            old_length = len(previous)
             if final and not text:
                 self._chunks.pop(index)
                 self._tool_indices = {key: (value - 1 if value > index else value)
@@ -1118,13 +1114,49 @@ class EnhancedConsoleInput:
                                           for key, value in self._thinking_indices.items() if value != index}
                 self._char_count -= old_length
             else:
+                if final and not defer_format:
+                    source = streaming_answer(text, color=not self._plain, palette=self._output_palette)
+                    chunk = ResponsiveText(text, lambda width: source.at_width(width).rstrip("\n") + "\n\n",
+                                           lambda width: source.fragments_at_width(width) + [("", "\n\n")])
+                elif isinstance(previous, StreamingAnswer):
+                    previous.replace(text)
+                    chunk = previous
+                else:
+                    chunk = StreamingAnswer(text, color=not self._plain, palette=self._output_palette)
                 self._chunks[index] = chunk
                 self._char_count += len(chunk) - old_length
             self.transcript_control.invalidate_from(index)
             if final:
                 self._stream_index = None
+        if defer_format:
+            ready_source = streaming_answer(text, color=not self._plain, palette=self._output_palette)
+            loop.call_soon_threadsafe(self._schedule_final_markdown, chunk, ready_source)
         self.app.invalidate()
 
+    def _schedule_final_markdown(self, preview: StreamingAnswer, source: ResponsiveText) -> None:
+        if self.app.is_running:
+            self.app.create_background_task(self._finish_final_markdown(preview, source))
+
+    async def _finish_final_markdown(self, preview: StreamingAnswer, source: ResponsiveText) -> None:
+        from .terminal import ResponsiveText
+
+        async with self._stream_format_lock:
+            with self._content_lock:
+                if preview not in self._chunks:
+                    return
+            try:
+                fragments = await asyncio.to_thread(source.fragments_at_width, 1)
+            except Exception:
+                return  # 排版失败时保持已显示的字面正文。
+        with self._content_lock:
+            try:
+                index = self._chunks.index(preview)
+            except ValueError:  # 会话切换或历史裁剪已移除此块。
+                return
+            self._chunks[index] = ResponsiveText(preview.text, lambda width: source.at_width(width).rstrip("\n") + "\n\n",
+                                                 lambda _width: fragments + [("", "\n\n")])
+            self.transcript_control.invalidate_from(index)
+        self.app.invalidate()
     @staticmethod
     def _chunk_text(chunk, width: int) -> str:
         """每块至少以换行收尾，避免相邻两条输出粘在同一行。"""

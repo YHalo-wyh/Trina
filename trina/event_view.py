@@ -22,6 +22,8 @@ class EventTranscript:
         self._thinking: dict[str, str] = {}
         self._model_text: Any = None
         self._model_final_text = ""
+        self._assistant_id: tuple[str, str] | None = None
+        self._assistant_text = ""
         self._lock = threading.RLock()
 
     def consume(self, event: RuntimeEvent) -> None:
@@ -56,6 +58,8 @@ class EventTranscript:
         elif event.kind == "model.error" or (event.kind == "model.finished" and payload.get("ok") is False):
             self._finish_thinking(request_id)
             self._model_text = None
+            self._assistant_id = None
+            self._assistant_text = ""
             identity = (event.stream_id, str(payload.get("request_id", event.seq)))
             if identity not in self._model_errors:
                 if self.editor is not None:
@@ -73,8 +77,17 @@ class EventTranscript:
                                        label="模型", color=self.color, palette=self.palette))
         elif event.kind == "user.message":
             self.output(render_message(str(payload.get("text", "")), label="你", color=self.color, palette=self.palette))
+        elif event.kind == "assistant.delta" and self.editor is not None:
+            identity = (event.stream_id, str(payload.get("message_id", "")))
+            if self._assistant_id != identity:
+                self._assistant_id = identity
+                self._assistant_text = ""
+            self._assistant_text += str(payload.get("delta", ""))
+            self.editor.update_stream(self._assistant_text)
         elif event.kind == "assistant.message":
             text, final = str(payload.get("text", "")), bool(payload.get("final"))
+            self._assistant_id = None if final else (event.stream_id, str(payload.get("message_id", "")))
+            self._assistant_text = "" if final else text
             if final and text.rstrip() == self._model_final_text and self._model_final_text:
                 self._model_final_text = ""
             elif self.editor is not None:

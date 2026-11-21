@@ -14,7 +14,7 @@ from typing import Any, Callable
 
 from ..audit import AuditLog
 from ..config import TrinaConfig
-from ..llm import LLMBackend, LLMMessage, LLMResponse, LLMStreamEvent, make_backend
+from ..llm import LLMBackend, LLMMessage, LLMStreamEvent, make_backend
 from ..scope import ScopeGuard
 from ..state import RunState
 from ..tools import ToolRegistry, build_registry
@@ -22,12 +22,6 @@ from ..tools.http import HttpClient
 from ..tools.registry import ToolContext
 from ..tools.schema import tool_schemas
 from .failure import LoopGuard, advice_for, classify_failure
-
-
-_ASK_SYSTEM = (
-    "你是 Trina 的问答助手。直接回答问题，或按要求处理用户提供的文字、数据和代码。"
-    "需要尚未提供的资料时，明确指出缺少什么。只输出给用户的回复。"
-)
 
 def render_chat_prompt(include_hypothesis: bool = True) -> str:
     """对话 Assistant 与任务 Agent 共用通用 Agent 系统提示词。"""
@@ -119,9 +113,10 @@ class ChatAgent:
             self.events.interrupt_open_calls()
         self._event_subscription = self.events.subscribe(on_event, after=self.events.last_seq) if on_event else None
         self._message_id = ""
+        self._visible_prefix = ""
         self.history: list[dict[str, str]] = []
         self._messages: list[LLMMessage] = []
-        self._text_messages: list[LLMMessage] = []
+        self._previous_text_messages: list[LLMMessage] = []
         self._messages_ready = False
         self._pending_stream: _VisibleStream | None = None
         self.last_reply_streamed = False
@@ -170,85 +165,36 @@ class ChatAgent:
         return self._controller
 
     # ------------------------------------------------------------------ 主循环
-    def ask(self, message: str, *, text_only: bool = False) -> str:
+    def ask(self, message: str) -> str:
         if self._closed:
             raise ValueError("对话已关闭，请使用 /resume 恢复")
         self.in_flight = True
         try:
             # _ask_turn 已用首条消息生成确定性短标题。标题是展示元数据，不能
             # 为它额外占用一次在线模型请求，首轮直接进入主 Agent 循环。
-            return self._ask_text(message) if text_only else self._ask_turn(message)
+            return self._ask_turn(message)
         finally:
             self.in_flight = False
             self.save()
-
-    def _record_user(self, text: str) -> None:
-        self.turns += 1
-        self.current_request = text
-        if not self.title:
-            from ..session_title import fallback_session_title
-
-            self.title = fallback_session_title(text)
-        self.last_reply_streamed = False
-        self.audit.append("chat.user", decision="allow", message=text[:400])
-        self.ctx.emit("user.message", text=text)
-        self.logger(f"[用户] {text}")
-        self.history.append({"role": "user", "content": text})
-
-    def _ask_text(self, message: str) -> str:
-        """快速问答只发送当前文本和最近成功的问答。"""
-        from ..conversation import estimate_tokens
-
-        text = (message or "").strip()
-        if not text:
-            return ""
-        self._record_user(text)
-        user: LLMMessage = {"role": "user", "content": text}
-        system: LLMMessage = {"role": "system", "content": _ASK_SYSTEM}
-        llm = self.config.llm
-        limit = llm.effective_context_window - llm.output_reserve - 1024
-        keep = llm.context_keep_messages // 2 * 2
-        recent = self._text_messages[-keep:] if keep else []
-        request = [system, *recent, user]
-        size = estimate_tokens(request)
-        while recent and size > limit:
-            recent = recent[2:]
-            request = [system, *recent, user]
-            size = estimate_tokens(request)
-        self.context.stats.update(estimated_input_tokens=size, input_budget=limit)
-        self.save()
-
-        def finish(text: str) -> str:
-            self.history.append({"role": "assistant", "content": text})
-            self._finish_stream(text)
-            return text
-
-        if size > limit:
-            return finish("（问题超过模型输入预算，请缩短文字或调整上下文窗口。）")
-        if self.stop_event is not None and self.stop_event.is_set():
-            return finish("（已停止）")
-        response = self._request_model(request, None, text_only=True)
-        if self.stop_event is not None and self.stop_event.is_set():
-            self._cancel_stream()
-            return finish("（已停止）")
-        if not response.ok or response.tool_calls or not response.text.strip():
-            error = response.error or ("模型返回了工具动作" if response.tool_calls else "模型没有返回正文")
-            self.audit.append("chat.text_answer", decision="error", reason=error[:300])
-            return finish(f"（问答失败：{error}）")
-        reply = response.text.strip()
-        answer: LLMMessage = {"role": "assistant", "content": reply}
-        self._text_messages = [*self._text_messages, user, answer][-keep:] if keep else []
-        self.audit.append("chat.answer", decision="allow", chars=len(reply), text_only=True)
-        return finish(reply)
 
     def _ask_turn(self, message: str) -> str:
         """处理一条用户消息：回答，或边执行工具边推进；返回最终自然语言回复。"""
         text = (message or "").strip()
         if not text:
             return ""
-        self._record_user(text)
+        self.turns += 1
+        self.current_request = text
+        if not self.title:
+            from ..session_title import fallback_session_title
+
+            self.title = fallback_session_title(text)
         self.context.remember_user(text)
+        self.last_reply_streamed = False
         self._initialize_messages()
+        self.audit.append("chat.user", decision="allow", message=text[:400])
+        self.ctx.emit("user.message", text=text)
+        self.logger(f"[用户] {text}")
+        self.history.append({"role": "user", "content": text})
         self._messages.append({"role": "user", "content": text})
         self.save()
 
@@ -407,7 +353,9 @@ class ChatAgent:
                 "content": contract,
                 "cache_scope": "stable",
             },
+            *self._previous_text_messages,
         ]
+        self._previous_text_messages = []
         self._messages_ready = True
 
     def _ask_model(self, step: int = 0, *, allow_tools: bool = True,
@@ -417,7 +365,7 @@ class ChatAgent:
             if self.state.target and self.controller.registry.match_target(self.state.target)
             else ""
         )
-        from ..conversation import state_projection
+        from ..conversation import ContextBudgetError, state_projection
         runtime_parts = [self.context.state_update(state_projection(
             self.state, hypotheses=self.ledger.to_dict() if self.use_ledger else None, registered=registered))]
         from ..runtime_status import render_agent_status
@@ -438,31 +386,25 @@ class ChatAgent:
                     exclude=() if self.ctx.extra.get("subworkers") else ("worker_tasks",),
                 )
                 self.ctx.extra["_chat_tool_payload"] = tool_payload
-        return self._request_model(self._messages, tool_payload)
-
-    def _request_model(
-        self, messages: list[LLMMessage], tool_payload: list[dict[str, Any]] | None, *, text_only: bool = False,
-    ) -> LLMResponse:
         from ..events import ModelEventStream
-        from ..conversation import ContextBudgetError
-
         self._message_id = uuid.uuid4().hex
-        self._pending_stream = _VisibleStream(self._visible_update, literal=text_only)
+        self._visible_prefix = ""
+        self._pending_stream = _VisibleStream(self._visible_update)
         stream = ModelEventStream(self.ctx.emit, self._pending_stream.on_event)
         try:
-            if not text_only:
-                self.context.prepare(messages, tool_payload)
+            self.context.prepare(self._messages, tool_payload)
         except ContextBudgetError as exc:
+            from ..llm import LLMResponse
             self.state.context_stats = {**self.context.stats, "budget_error": str(exc)}
             self.audit.append("context.budget_error", error=str(exc))
             response = LLMResponse(ok=False, error=str(exc))
             stream.finish(response)
             return response
-        diagnostic = self.context.before_request(messages, tool_payload)
+        diagnostic = self.context.before_request(self._messages, tool_payload)
         self.state.counters["llm_calls"] = self.state.counters.get("llm_calls", 0) + 1
         method = getattr(self.backend, "complete_messages", None)
         if method is None:  # 仅供旧测试替身
-            response = stream.invoke(self.backend.complete, messages[0]["content"], messages[-1]["content"])
+            response = stream.invoke(self.backend.complete, self._messages[0]["content"], self._messages[-1]["content"])
         else:
             kwargs: dict[str, Any] = {"on_event": stream.on_event}
             if tool_payload is not None:
@@ -480,7 +422,7 @@ class ChatAgent:
                     accepts_tools = True
                 if accepts_tools:
                     kwargs["tools"] = tool_payload
-            response = stream.invoke(method, messages, **kwargs)
+            response = stream.invoke(method, self._messages, **kwargs)
         stream.finish(response)
         self.context.after_response(diagnostic, response)
         self._record_usage(response.usage)
@@ -564,7 +506,13 @@ class ChatAgent:
         self._pending_stream = None
 
     def _visible_update(self, text: str, final: bool) -> None:
-        self.ctx.emit("assistant.message", message_id=self._message_id, text=text, final=final)
+        if not final and text.startswith(self._visible_prefix):
+            delta = text[len(self._visible_prefix):]
+            if delta:
+                self.ctx.emit("assistant.delta", message_id=self._message_id, delta=delta)
+        else:
+            self.ctx.emit("assistant.message", message_id=self._message_id, text=text, final=final)
+        self._visible_prefix = "" if final else text
         if self.on_stream is not None:
             self.on_stream(text, final)
 
@@ -592,14 +540,13 @@ class ChatAgent:
 
     def save(self) -> None:
         """只保存对话运行数据；标准消息和最近显示记录分别保留。"""
-        if not self.history or self._closed:
+        if not self._messages_ready or not self.history or self._closed:
             return
         context = self.context
         self.store.save({"version": 1, "run_id": self.run_id, "project": self.store.project,
                          "title": self.title, "turns": self.turns, "in_flight": self.in_flight,
                          "worker_role": self.worker_role,
-                         "history": self.history, "messages": self._messages, "text_messages": self._text_messages,
-                         "state": self.state.to_dict(),
+                         "history": self.history, "messages": self._messages, "state": self.state.to_dict(),
                          "binary_sessions": self.ctx.extra["binary_sessions"].snapshot(),
                          "browser_sessions": self.ctx.extra["browser_sessions"].snapshot(),
                          "hypotheses": self.ledger.to_dict(), "usage": self.usage.to_dict(),
@@ -631,7 +578,10 @@ class ChatAgent:
         self.history = data["history"]
         self._messages = data["messages"]
         self._messages_ready = bool(self._messages)
-        self._text_messages = [{"role": row["role"], "content": row["content"]} for row in data.get("text_messages", [])]
+        if not self._messages_ready:
+            # 旧版 /ask 仅保存文本问答。首次普通请求会在合同之后继承这些消息。
+            self._previous_text_messages = [{"role": row["role"], "content": row["content"]}
+                                            for row in data.get("text_messages", [])]
         self.turns, self.title = data["turns"], data["title"]
         from ..worker_roles import WORKER_ROLES
         role = data.get("worker_role", "commander")
@@ -873,9 +823,8 @@ __all__ = ["ChatAgent", "render_chat_prompt"]
 class _VisibleStream:
     """只把明确的自然语言正文送往 UI；JSON/DSML 动作在解析前保持隐藏。"""
 
-    def __init__(self, callback: Callable[[str, bool], None] | None, *, literal: bool = False):
+    def __init__(self, callback: Callable[[str, bool], None] | None):
         self.callback = callback
-        self.literal = literal
         self.text = ""
         self.mode = "pending"  # pending | visible | hidden
         self.opened = False
@@ -885,9 +834,7 @@ class _VisibleStream:
         if event.type != "text_delta" or not event.delta:
             return
         self.text += event.delta
-        if self.literal:
-            self.mode = "visible"
-        elif self.mode == "pending":
+        if self.mode == "pending":
             stripped = self.text.lstrip()
             if not stripped:
                 return
@@ -900,7 +847,7 @@ class _VisibleStream:
             self.mode = "visible"
         if self.mode == "visible" and self.callback is not None:
             # 模型可能先解释再输出动作；仅等待动作协议的歧义前缀，代码继续输出。
-            boundary = len(self.text) if self.literal else self._boundary()
+            boundary = self._boundary()
             visible = self.text[:boundary]
             if not visible.strip() or visible == self.displayed:
                 return

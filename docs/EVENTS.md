@@ -26,7 +26,7 @@
 ```text
 model.started → model.connected → model.text_delta / model.thinking_delta → model.tool_call → model.finished
              ↘ model.error → model.finished（ok=false）→ model.retry（仅可恢复故障）
-user.message → assistant.message（同一 message_id，text 为当前正文，final 标识确认）
+user.message → assistant.delta（同一 message_id，delta 为新增正文）→ assistant.message（终稿）
 
 tool.requested
   → tool.approval_requested（显式启用审批时）
@@ -40,6 +40,8 @@ coordination.* → runtime.checkpoint / runtime.finished
 ```
 
 参数错误、未知工具、不可用、控制器拒绝、人工拒绝和护栏拒绝均产生终态；未获执行许可的调用没有 `tool.started`。终态包含 `completed/failed/denied/invalid/unavailable/timed_out/cancelled/interrupted`。原生模型调用 ID 另存于 `model.tool_call.native_call_id`，工具执行使用本地 `call_id`。
+
+终端重放时按 `message_id` 累积 `assistant.delta`。带 `final=false` 的 `assistant.message` 可替换尚未确认的正文，并兼容旧版累计快照。带 `final=true` 的事件保留完整终稿，空终稿清除临时正文。
 
 `model.error` 在收到失败时发布，不等待后续重试预算耗尽；不发送流事件的后端在 `model.finished` 前补发错误。终端按 `(stream_id, request_id)` 避免错误与失败终态重复显示。`model.retry` 包含 `attempt/delay/failure_kind`；鉴权和额度错误不产生重试事件。`model.connected` 表示已经收到响应头，不代表开始推理。
 

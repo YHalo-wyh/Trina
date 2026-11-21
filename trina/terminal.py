@@ -190,9 +190,21 @@ def render_answer(message: str, *, width: int | None = None, color: bool = False
 
 def streaming_answer(message: str, *, color: bool = False, palette: Palette = "trina") -> ResponsiveText:
     """流式正文的延迟排版对象；未绘制的 delta 不产生 ANSI 或语法高亮。"""
-    from .markdown_view import render_markdown_fragments
-    return ResponsiveText(message, lambda width: str(render_answer(message or " ", width=width, color=color, palette=palette)),
-                          lambda _width: render_markdown_fragments(message or " ", color=color, palette=palette))
+    from .markdown_view import fragments_to_ansi, render_markdown_fragments, wrap_fragments
+
+    fragments = None
+
+    def layout(_width: int) -> list[tuple[str, str]]:
+        nonlocal fragments
+        if fragments is None:
+            fragments = render_markdown_fragments(message or " ", color=color, palette=palette)
+        return fragments
+
+    def render(width: int) -> str:
+        wrapped = wrap_fragments(layout(width), max(20, width))
+        return fragments_to_ansi(wrapped) if color else "".join(text for _, text in wrapped)
+
+    return ResponsiveText(message, render, layout)
 
 
 def render_thinking(message: str, *, final: bool = False, width: int | None = None, color: bool = False,

@@ -64,15 +64,13 @@ class TranscriptControl(UIControl):
                 if cached is not None and cached[0] is chunk and position not in self._changed:
                     self.rows.extend(cached[1])
                     continue
-                fragments = chunk.fragments_at_width(width) if hasattr(chunk, "fragments_at_width") else None
-                rendered = None if fragments is not None else owner._chunk_text(chunk, width)
-                lines = list(split_lines(fragments if fragments is not None else _ansi_fragments(rendered or "")))
-                tail = fragments[-1][1] if fragments else (rendered or "")
-                if tail.endswith("\n"):
-                    lines.pop()
-                block_rows = []
-                for line in lines:
-                    block_rows.extend(_wrap_physical_line(line, width))
+                if isinstance(chunk, StreamingAnswer):
+                    block_rows = chunk.rows_at_width(width)
+                else:
+                    fragments = chunk.fragments_at_width(width) if hasattr(chunk, "fragments_at_width") else None
+                    if fragments is None:
+                        fragments = _ansi_fragments(owner._chunk_text(chunk, width))
+                    block_rows = _fragment_rows(fragments, width)
                 self._blocks[id(chunk)] = (chunk, block_rows)
                 self.rows.extend(block_rows)
             self._changed.clear()
@@ -209,6 +207,83 @@ class TranscriptControl(UIControl):
             self.owner.app.invalidate()
             return None
         return NotImplemented
+
+
+class StreamingAnswer:
+    """草稿较长时复用已排入的物理行，按到达顺序追加正文。"""
+
+    MARKDOWN_PREVIEW_CHARS = 2048
+
+    def __init__(self, text: str, *, color: bool, palette: str):
+        self.color, self.palette = color, palette
+        self.text = ""
+        self._width = 0
+        self._reset_rows()
+        self.replace(text)
+
+    def __len__(self) -> int:
+        return len(self.text)
+
+    def __str__(self) -> str:
+        return self.text
+
+    def replace(self, text: str) -> None:
+        if not text.startswith(self.text):
+            self._reset_rows()
+        self.text = text
+
+    def at_width(self, width: int) -> str:
+        return "\n".join(fragment_list_to_text(row) for row in self.rows_at_width(width)) + "\n"
+
+    def _reset_rows(self) -> None:
+        self._rows: list[list[tuple[str, str]]] = []
+        self._offset = 0
+        self._tail = ""
+        self._columns = 0
+
+    def rows_at_width(self, width: int) -> list[list[tuple[str, str]]]:
+        from .markdown_view import render_markdown_fragments
+        from .output_styles import output_style
+        from .text import clean_text
+
+        if len(self.text) <= self.MARKDOWN_PREVIEW_CHARS:
+            fragments = render_markdown_fragments(self.text or " ", color=self.color, palette=self.palette)
+            return _fragment_rows([*fragments, ("", "\n\n")], width)
+        if self._width != width:
+            self._width = width
+            self._reset_rows()
+        style = output_style("text", self.palette, color=self.color)
+        # ANSI 序列可能跨增量或行边界。出现时净化完整草稿，分块仍不解释命令。
+        if "\x1b" in self.text:
+            clean = clean_text(self.text.replace("\r\n", "\n").replace("\r", "\n"))
+            return _fragment_rows([(style, clean + "\n\n")], width)
+        end = len(self.text) - int(self.text.endswith("\r"))
+        new_text = self.text[self._offset:end].replace("\r\n", "\n").replace("\r", "\n")
+        for char in clean_text(new_text):
+            cells = get_cwidth(char)
+            if char == "\n" or self._tail and cells > 0 and self._columns + cells > width:
+                self._rows.append([(style, self._tail)])
+                self._tail = ""
+                self._columns = 0
+            if char != "\n":
+                self._tail += char
+                self._columns += cells
+        self._offset = end
+        rows = self._rows.copy()
+        if self._tail:
+            rows.append([(style, self._tail)])
+        rows.append([])
+        return rows
+
+
+def _fragment_rows(fragments: list[tuple[str, str]], width: int) -> list[list[tuple[str, str]]]:
+    lines = list(split_lines(fragments))
+    if fragments and fragments[-1][1].endswith("\n"):
+        lines.pop()
+    rows = []
+    for line in lines:
+        rows.extend(_wrap_physical_line(line, width))
+    return rows
 
 
 _SGR = re.compile(r"(?:\x1b\[|\x9b)([0-9;]*)m")

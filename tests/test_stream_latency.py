@@ -7,13 +7,14 @@ import unittest
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 from prompt_toolkit.application import create_app_session
 from prompt_toolkit.input.defaults import create_pipe_input
 from prompt_toolkit.output import DummyOutput
 
-from trina.brain.chat import _VisibleStream
+from trina.brain.chat import ChatAgent, _VisibleStream
 from trina.console_ui import EnhancedConsoleInput
 from trina.event_view import EventTranscript
 from trina.events import EventBus, ModelEventStream
@@ -136,6 +137,29 @@ class StreamLatencyTests(unittest.TestCase):
             stream.on_event(LLMStreamEvent("text_delta", delta=char))
         self.assertIn('print(value)', seen[-1][0])
         self.assertTrue(all(not final for _, final in seen))
+
+    def test_visible_answer_deltas_replay_and_keep_replacement_frames(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bus = EventBus(Path(tmp) / "events.sqlite3", "chat")
+            holder = SimpleNamespace(ctx=SimpleNamespace(emit=bus.publish), _message_id="reply",
+                                     _visible_prefix="", on_stream=None)
+            editor = Mock()
+            bus.subscribe(EventTranscript(Mock(), editor=editor).consume)
+            ChatAgent._visible_update(holder, "第一段", False)
+            ChatAgent._visible_update(holder, "第一段第二段", False)
+            ChatAgent._visible_update(holder, "第一段", False)
+            ChatAgent._visible_update(holder, "第一段终稿", True)
+            events = bus.replay()
+            self.assertEqual([(event.kind, event.payload.get("delta")) for event in events],
+                             [("assistant.delta", "第一段"), ("assistant.delta", "第二段"),
+                              ("assistant.message", None), ("assistant.message", None)])
+            self.assertEqual([call.args[0] for call in editor.update_stream.call_args_list],
+                             ["第一段", "第一段第二段", "第一段", "第一段终稿"])
+            restored_editor = Mock()
+            restored = EventTranscript(Mock(), editor=restored_editor)
+            for event in events:
+                restored.consume(event)
+            self.assertEqual(restored_editor.update_stream.call_args_list, editor.update_stream.call_args_list)
 
     def test_thinking_text_and_tool_output_update_independent_blocks(self):
         with tempfile.TemporaryDirectory() as tmp, create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):

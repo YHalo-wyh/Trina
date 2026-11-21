@@ -1,6 +1,8 @@
 """缓存视口、拖选复制与持续流输出时的操作回归。"""
 from __future__ import annotations
 
+import asyncio
+import threading
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -51,6 +53,48 @@ class TranscriptTests(unittest.TestCase):
         rows = [fragment_list_to_text(content.get_line(index)) for index in range(content.line_count)]
         self.assertEqual(rows[:3], ["123456", "7890中", "中"])
         self.assertFalse(self.editor.output_window.wrap_lines())
+
+    def test_long_draft_reuses_rows_and_formats_final_once(self):
+        from prompt_toolkit.formatted_text import fragment_list_to_text
+        from trina.markdown_view import render_markdown_fragments
+
+        text = ("**内容** 和中文\n" * 220) + "尾行"
+        control = self.editor.transcript_control
+        with patch("trina.markdown_view.render_markdown_fragments", wraps=render_markdown_fragments) as render:
+            self.editor.update_stream(text + "\r")
+            control.sync(42)
+            first = control.rows[0]
+            self.editor.update_stream(text + "\r\n新内容")
+            control.sync(42)
+            self.assertIs(control.rows[0], first)
+            self.assertEqual([fragment_list_to_text(row) for row in control.rows[-3:]], ["尾行", "新内容", ""])
+            self.assertEqual(render.call_count, 0)
+            self.editor.update_stream(text, final=True)
+            self.assertEqual(render.call_count, 0)
+            control.sync(42)
+            control.sync(54)
+            self.assertEqual(render.call_count, 1)
+            self.assertEqual(fragment_list_to_text(control.rows[0]), "内容 和中文")
+
+    def test_final_format_runs_off_ui_thread(self):
+        from trina.markdown_view import render_markdown_fragments
+        from trina.terminal import streaming_answer
+
+        text = "**最终结果**\n" * 300
+        self.editor.update_stream(text)
+        preview = self.editor._chunks[0]
+        threads = []
+
+        def record(*args, **kwargs):
+            threads.append(threading.get_ident())
+            return render_markdown_fragments(*args, **kwargs)
+
+        with patch("trina.markdown_view.render_markdown_fragments", side_effect=record):
+            asyncio.run(self.editor._finish_final_markdown(preview, streaming_answer(text)))
+            self.editor.transcript_control.sync(64)
+        self.assertEqual(len(threads), 1)
+        self.assertNotEqual(threads[0], threading.get_ident())
+        self.assertIsNot(self.editor._chunks[0], preview)
 
     def test_updating_early_block_does_not_rerender_unchanged_following_blocks(self):
         rendered = []
