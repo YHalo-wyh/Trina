@@ -66,11 +66,20 @@ class ChatStore:
             raise ValueError("对话记录格式无效")
         for field in ("messages", "history"):
             messages = data.get(field)
-            if not isinstance(messages, list) or (field == "messages" and len(messages) < 2) or any(
+            if not isinstance(messages, list) or any(
                 not isinstance(item, dict) or item.get("role") not in {"system", "user", "assistant", "tool"}
                 or not isinstance(item.get("content"), str) for item in messages
             ):
                 raise ValueError("历史消息格式无效")
+        messages = data["messages"]
+        text_messages = data.get("text_messages", [])
+        if len(messages) < 2 and (messages or "text_messages" not in data):
+            raise ValueError("历史消息格式无效")
+        if not isinstance(text_messages, list) or len(text_messages) % 2 or any(
+            not isinstance(item, dict) or item.get("role") != ("assistant" if index % 2 else "user")
+            or not isinstance(item.get("content"), str) for index, item in enumerate(text_messages)
+        ):
+            raise ValueError("历史消息格式无效")
         if not isinstance(data.get("title"), str) or type(data.get("turns")) is not int or data["turns"] < 0:
             raise ValueError("对话元数据格式无效")
         if any(not isinstance(data.get(field, {}), dict) for field in ("state", "context", "usage", "usage_gaps", "controller")):

@@ -88,6 +88,7 @@ class Console:
         self._active_call = ""
         self._plan_review: PlanReview | None = None
         self._planning = False
+        self._text_answer_running = False
         self._drafts: dict[int, tuple[str, str, str]] = {}
         self._draft_number = 0
         self._job_notices: deque[tuple[str, str]] = deque(maxlen=128)
@@ -477,6 +478,13 @@ class Console:
             self._show_help()
             return True
         raw_parts = line.split(maxsplit=2)
+        if forced and raw_parts[0] == "ask":
+            prompt = line.split(maxsplit=1)
+            if len(prompt) == 1:
+                self._show_help(["ask"])
+            else:
+                self._start_chat_turn(prompt[1], text_only=True)
+            return True
         if raw_parts[:2] == ["queue", "add"] and len(raw_parts) == 3:
             self._enqueue_draft(raw_parts[2])
             return True
@@ -615,7 +623,7 @@ class Console:
             return True
         if command == "stop":
             self.session.request_stop()
-            if self.chat is not None and self.session.state is self.chat.state:
+            if not self._text_answer_running and self.chat is not None and self.session.state is self.chat.state:
                 self.chat.ctx.extra["background_jobs"].cancel_running()
             return True
         if command == "status":
@@ -660,6 +668,9 @@ class Console:
         self._emit(f"草稿 #{self._draft_number} 已排队 · /queue send {self._draft_number} 发送", prefix="队列")
 
     def _send_live_note(self, text: str) -> bool:
+        if self._text_answer_running:
+            self._emit("快速问答每轮只请求一次模型 · /queue add 暂存补充")
+            return False
         if self._planning:
             self._emit("正在生成澄清问题，请在结果出现后选择或补充。")
             return False
@@ -1690,7 +1701,7 @@ class Console:
         for cred in facts.get("credentials", []) or []:
             self._emit(f"[凭据] {cred.get('service')}@{cred.get('target')} 用户 {cred.get('username')}", prefix="[Trina]")
 
-    def _start_chat_turn(self, text: str) -> bool:
+    def _start_chat_turn(self, text: str, *, text_only: bool = False) -> bool:
         if self.session.running:
             self._emit("有任务在跑 · /queue add 保留草稿 · /hint 立即补充")
             return False
@@ -1703,6 +1714,7 @@ class Console:
             chat.backend = TrackedBackend(chat.backend, self.view)
             chat.ctx.extra["llm_backend"] = chat.backend
         self.session.reset_for_run()
+        self._text_answer_running = text_only
         self.view.set_activity("processing", "准备回复")
         self._task_title = chat.title or " ".join(text.split())[:80]
         self._live_step = None
@@ -1713,7 +1725,7 @@ class Console:
 
         def _worker() -> None:
             try:
-                reply = chat.ask(text)
+                reply = chat.ask(text, text_only=True) if text_only else chat.ask(text)
                 self._task_title = chat.title or self._task_title
                 if not chat.last_reply_streamed:
                     self._display(render_answer(reply or "(空回复)", color=self.color, palette=self._output_palette))
@@ -1724,6 +1736,7 @@ class Console:
                 self._emit(f"对话出错: {type(exc).__name__}: {exc}", prefix="[错误]")
                 self._notify_agent("本轮回复异常", error=True)
             finally:
+                self._text_answer_running = False
                 self._last_turn_seconds = max(0.0, time.monotonic() - self.session.started_at)
                 self.view.set_activity("idle", "就绪")
 

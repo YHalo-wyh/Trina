@@ -219,6 +219,67 @@ class TestChatAgent(unittest.TestCase):
         self.assertIn("Trina", reply)
         self.assertEqual(chat.state.counters.get("tool_calls", 0), 0)
 
+    def test_text_answers_send_only_recent_text_and_resume(self):
+        chat = self._chat([{"response": '{"choice":"A"}'}, {"response": "理由已补充。"},
+                           {"response": "普通对话已恢复。"}])
+        outgoing = []
+        original = chat.backend.complete_messages
+
+        def capture(messages, **kwargs):
+            outgoing.append(([dict(row) for row in messages], kwargs.get("tools")))
+            return original(messages, **kwargs)
+
+        chat.backend.complete_messages = capture
+        self.addCleanup(chat.close)
+        self.assertEqual(chat.ask("将选择写为 JSON", text_only=True), '{"choice":"A"}')
+        self.assertEqual(chat.usage.calls, 1)
+        self.assertEqual(len(outgoing[0][0]), 2)
+        self.assertIsNone(outgoing[0][1])
+        self.assertIsNone(chat._controller)
+        self.assertFalse(chat._messages_ready)
+        chat.close()
+
+        resumed = type(chat).resume(self.cfg, chat.run_id, backend=chat.backend, registry=chat.registry)
+        self.addCleanup(resumed.close)
+        self.assertEqual(resumed.ask("解释刚才的选择", text_only=True), "理由已补充。")
+        self.assertEqual([row["content"] for row in outgoing[1][0][1:]],
+                         ["将选择写为 JSON", '{"choice":"A"}', "解释刚才的选择"])
+        self.assertIsNone(outgoing[1][1])
+        self.assertIsNone(resumed._controller)
+        self.assertEqual(resumed.ask("回到普通任务对话"), "普通对话已恢复。")
+        self.assertTrue(outgoing[2][1])
+        self.assertNotIn("解释刚才的选择", [row["content"] for row in outgoing[2][0]])
+
+    def test_text_answer_rejects_tool_response_without_retry(self):
+        chat = self._chat([{"tool_calls": [{"name": "echo_probe", "arguments": {"target": "127.0.0.1"}}]}])
+        self.addCleanup(chat.close)
+        reply = chat.ask("总结这一段文字", text_only=True)
+        self.assertIn("模型返回了工具动作", reply)
+        self.assertEqual(chat.backend.calls, 1)
+        self.assertEqual(chat.state.counters.get("tool_calls", 0), 0)
+        self.assertFalse(chat._text_messages)
+
+    def test_text_answer_trims_older_pairs_before_request(self):
+        self.cfg = self.cfg.with_overrides(llm__context_window=4096, llm__max_tokens=1024,
+                                           llm__context_keep_messages=2)
+        chat = self._chat([{"response": "首次总结"}, {"response": "第二次总结"}])
+        self.addCleanup(chat.close)
+        outgoing = []
+        original = chat.backend.complete_messages
+
+        def capture(messages, **kwargs):
+            outgoing.append([row["content"] for row in messages])
+            return original(messages, **kwargs)
+
+        chat.backend.complete_messages = capture
+        self.assertEqual(chat.ask("甲" * 850, text_only=True), "首次总结")
+        current = "乙" * 900
+        self.assertEqual(chat.ask(current, text_only=True), "第二次总结")
+        self.assertEqual(outgoing[1][1:], [current])
+        self.assertIn("超过模型输入预算", chat.ask("丙" * 2200, text_only=True))
+        self.assertEqual(chat.backend.calls, 2)
+        self.assertEqual([row["content"] for row in chat._text_messages], [current, "第二次总结"])
+
     def test_chat_sends_general_system_and_contract_as_user_data(self):
         chat = self._chat([{"response": "收到。"}])
         original = chat.backend.complete_messages
@@ -575,6 +636,25 @@ class TestConsole(unittest.TestCase):
         console, output = self._console(["/nope", "quit"])
         console.run()
         self.assertTrue(any("未知命令" in line for line in output))
+
+    def test_ask_accepts_literal_multiline_text(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            script = root / "reply.json"
+            script.write_text(json.dumps({"steps": [{"response": "整理完成。"}]}), encoding="utf-8")
+            backend = ReplayBackend(LLMConfig(backend="replay", replay_script=str(script)))
+            console, output = self._console([], backend=backend)
+            console.config = console.config.with_overrides(
+                run__workspace=str(root / "runs"), audit__dir=str(root / "logs"),
+            )
+            user = "解释这段文字\n路径 C:\\note.txt，原文有一个未闭合的引号 '"
+            self.assertTrue(console.handle("/ask " + user))
+            console.session.thread.join(timeout=5)
+            self.assertFalse(console.session.running)
+            self.assertEqual(console.chat.history[0], {"role": "user", "content": user})
+            self.assertEqual(console.chat.usage.calls, 1)
+            self.assertIn("整理完成。", "\n".join(output))
+            console.chat.close()
 
     def test_model_switch_and_removed_backend_command(self):
         console, output = self._console(["/model deepseek/deepseek-chat", "/backend omp", "/usage", "quit"])

@@ -115,6 +115,8 @@ APPROVAL_CHOICES = tuple(
 
 
 COMMANDS: tuple[CommandSpec, ...] = (
+    CommandSpec("ask", "对话", "快速回答、润色或分析粘贴的内容", "ask <问题或文本>",
+                examples=("/ask 把下面的会议纪要整理成三条待办",)),
     CommandSpec(
         "play", "任务", "自动准备靶场并完成一次完整任务", "play [选项]",
         options=(
