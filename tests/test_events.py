@@ -232,7 +232,11 @@ class EventTests(unittest.TestCase):
             "argv": [sys.executable, "-u", "-c", "import time; print('STARTED'); time.sleep(10)"],
             "timeout": 10}, ctx)
         self.assertTrue(started.ok, started.error)
+        count, elapsed = jobs.running_activity()
+        self.assertEqual(count, 1)
+        self.assertGreaterEqual(elapsed, 0)
         jobs.close()
+        self.assertEqual(jobs.running_activity(), (0, 0.0))
         high_water = self.bus.last_seq
         time.sleep(.05)
         self.assertEqual(self.bus.last_seq, high_water)

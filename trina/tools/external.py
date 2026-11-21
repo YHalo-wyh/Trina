@@ -202,6 +202,17 @@ class BackgroundJobs:
         threading.Thread(target=monitor, name=f"trina-{job_id}", daemon=True).start()
         return job_id
 
+    def running_activity(self) -> tuple[int, float]:
+        """底栏只读活跃数量和最早开始的作业，避免构造输出尾部。"""
+        count = 0
+        now = oldest = time.monotonic()
+        with self._lock:
+            for job in self._jobs.values():
+                if job["status"] == "running":
+                    count += 1
+                    oldest = min(oldest, job["started"])
+        return count, now - oldest
+
     def snapshot(self, job_id: str = "", *, tail: int = 400, include_all: bool = False) -> list[dict[str, Any]]:
         with self._lock:
             if job_id and job_id not in self._jobs:

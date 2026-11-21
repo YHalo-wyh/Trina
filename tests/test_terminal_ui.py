@@ -169,18 +169,46 @@ class TestTerminalUI(unittest.TestCase):
 
     def test_activity_renders_live_step_subcaption(self):
         from prompt_toolkit.application.current import create_app_session
+        from prompt_toolkit.data_structures import Size
         from prompt_toolkit.input import create_pipe_input
-        from prompt_toolkit.output import DummyOutput
+        from prompt_toolkit.output.vt100 import Vt100_Output
         from prompt_toolkit.formatted_text import fragment_list_to_text
+        from rich.cells import cell_len
+        from trina.console_state import ConsoleContext
         from trina.console_ui import EnhancedConsoleInput
+        from trina.events import RuntimeEvent
 
-        with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
-            editor = EnhancedConsoleInput(status=lambda: "运行中", running=lambda: True,
-                                          dynamic_values=lambda *_: (), plain=True,
-                                          activity=lambda: ("tool", "执行中", 0.2))
-            editor._live_action_hint = "第 3 步 · terminal_exec"
-            text = fragment_list_to_text(editor._activity())
-            self.assertIn("第 3 步 · terminal_exec", text)
+        console, _ = self.console()
+        columns = 88
+        output = Vt100_Output(io.StringIO(), lambda: Size(rows=30, columns=columns), enable_cpr=False)
+        with create_pipe_input() as pipe, create_app_session(input=pipe, output=output):
+            editor = EnhancedConsoleInput(
+                status=lambda: "运行中", running=lambda: True, dynamic_values=lambda *_: (),
+                activity=console.view.activity, activity_detail=lambda: console._live_action_hint,
+                context=lambda: ConsoleContext("运行中", "model", ".", "修复解析器"), plain=True,
+            )
+            console._enhanced_input = editor
+
+            def event(seq, kind, call_id="", **payload):
+                console._on_runtime_event(RuntimeEvent(
+                    seq, "ui", "ui", kind, 0, "worker", "", "", call_id, payload,
+                ))
+
+            event(1, "tool.requested", "read", step=3, tool="workspace_read")
+            self.assertNotIn("第 3 步", fragment_list_to_text(editor._activity()))
+            event(2, "tool.started", "read", tool="workspace_read", params={"path": "fixture.py"})
+            self.assertIn(("class:context.progress", "  ↳ 第 3 步 · 读取文件"), editor._activity())
+            self.assertIn("修复解析器", fragment_list_to_text(editor._activity()))
+            columns = 30
+            self.assertLessEqual(cell_len(fragment_list_to_text(editor._activity())), columns)
+            event(3, "job.finished", "an-older-job", status="completed")
+            self.assertEqual(console.view.activity()[0], "tool")
+            event(4, "tool.finished", "read", tool="workspace_read", status="completed")
+            self.assertNotIn("第 3 步", fragment_list_to_text(editor._activity()))
+            event(5, "model.started", request_id="next")
+            self.assertEqual(console.view.activity()[0], "waiting")
+            event(6, "tool.started", "prefetch", tool="workspace_read_many")
+            self.assertEqual(console._live_action_hint, "批量读取文件")
 
     def test_home_uses_shell_lettering_and_only_version_below_it(self):
         text = render_home(width=88, color=True)

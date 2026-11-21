@@ -952,50 +952,17 @@ def cmd_report(args: argparse.Namespace) -> int:
     if not path.exists():
         out(f"状态文件不存在: {path}", "red")
         return 2
-    from .brain.agent import PentestAgent  # noqa: F401 - 保持导入以复用状态结构
     from .state import RunState
     from .report import build_report
 
     data = json.loads(path.read_text(encoding="utf-8"))
-    state = _state_from_dict(data)
+    # 旧快照可能缺少报告标识和运行阶段。
+    state = RunState.from_dict({"run_id": "rebuilt", "status": "unknown", "phase": "report", **data})
     report = build_report(state, config, meta={"rebuilt_from": str(path)})
     paths = report.save()
     for item in paths:
         print(f"报告: {item}")
     return 0
-
-
-def _state_from_dict(data: dict[str, Any]):
-    """从 state.json 还原 RunState（供报告重建）。"""
-    from .state import Credential, Finding, HostState, RunState
-
-    state = RunState(run_id=data.get("run_id", "rebuilt"), target=data.get("target", ""), goal=data.get("goal", ""))
-    state.status = data.get("status", "unknown")
-    state.phase = data.get("phase", "report")
-    state.started_at = data.get("started_at", state.started_at)
-    state.ended_at = data.get("ended_at")
-    state.timeline = data.get("timeline", [])
-    state.steps = data.get("steps", [])
-    state.flags = data.get("flags", [])
-    state.evidence = data.get("evidence", [])
-    state.ledger = data.get("ledger", {})
-    state.counters = data.get("counters", state.counters)
-    state.artifacts = data.get("artifacts", {})
-    for host, payload in (data.get("hosts") or {}).items():
-        entry = HostState(host=host)
-        entry.alive = payload.get("alive")
-        entry.technologies = payload.get("technologies", [])
-        entry.web_paths = payload.get("web_paths", [])
-        entry.notes = payload.get("notes", [])
-        entry.ports = {int(k): v for k, v in (payload.get("ports") or {}).items()}
-        state.hosts[host] = entry
-    for item in data.get("findings", []) or []:
-        fields = {k: v for k, v in item.items() if k in Finding.__dataclass_fields__ and k != "severity_cn"}
-        state.findings.append(Finding(**fields))
-    for item in data.get("credentials", []) or []:
-        fields = {k: v for k, v in item.items() if k in Credential.__dataclass_fields__}
-        state.credentials.append(Credential(**fields))
-    return state
 
 
 # ---------------------------------------------------------------------------

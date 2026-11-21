@@ -376,7 +376,8 @@
         "trina/brain/failure.py"
       ],
       "tests": [
-        "test_policy.TestController.test_budget_stops_checks",
+        "test_policy.TestController.test_time_and_check_budgets_are_removed",
+        "test_interactive.TestChatAgent.test_external_harness_can_preserve_a_hard_model_call_budget_without_platform_code",
         "test_policy.TestController.test_no_new_evidence_triggers_stop",
         "test_decision_evidence.TestEvidenceRun.test_repeated_facts_trigger_stop_contract",
         "test_runtime_contracts.RuntimeContractTests.test_chat_failure_feedback_is_sent_back_to_model"

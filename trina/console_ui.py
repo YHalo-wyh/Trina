@@ -495,7 +495,7 @@ class EnhancedConsoleInput:
     """可滚动内容区与固定底部的活动、输入、索引和会话用量。"""
 
     def __init__(self, *, status, running, dynamic_values, plain: bool = False, usage=None, activity=None, context=None,
-                 motion: str = "full", output_palette="trina") -> None:
+                 motion: str = "full", output_palette="trina", activity_detail=None) -> None:
         from prompt_toolkit import Application
         from prompt_toolkit.buffer import Buffer
         from prompt_toolkit.history import InMemoryHistory
@@ -512,8 +512,10 @@ class EnhancedConsoleInput:
 
         self.status = status
         self.context = context
+        self._frame_context = None
         self.usage = usage or (lambda _width, _compact=False: "")
         self.activity = activity or (lambda: ("processing", "运行中", 0) if running() else ("idle", "就绪", 0))
+        self.activity_detail = activity_detail or (lambda: "")
         self._handler = None
         self._dispatching = False
         self._queue = None
@@ -782,7 +784,20 @@ class EnhancedConsoleInput:
         # Windows 的句柄通知可能已排队，detach 之后才送达旧应用。
         # 包装仅属于主界面；嵌套表单继续使用 AppSession 的原始输入。
         self.app.input = _ModalInput(self.app.input, self.app)
-        self.app.before_render += lambda _: self._animate_home()
+        self.app.before_render += self._before_render
+        self.app.after_render += self._after_render
+
+    def _before_render(self, _app) -> None:
+        self._animate_home()
+        if self.context is not None:
+            self._frame_context = self.context()
+
+    def _after_render(self, _app) -> None:
+        self._frame_context = None
+
+    def _context_view(self):
+        """一帧内共享底栏快照，避免重复读取用量和 Worker 状态。"""
+        return self._frame_context if self._frame_context is not None else self.context()
 
     def _toast(self):
         from .console_state import _fit_cells
@@ -890,7 +905,7 @@ class EnhancedConsoleInput:
     def _status(self):
         from .terminal import clean_text
         if self.context is not None:
-            fragments = self.context().footer(self.app.output.get_size().columns)
+            fragments = self._context_view().footer(self.app.output.get_size().columns)
             if not self._mouse_enabled:
                 from .console_state import _fit_cells
                 fragments += [("class:context.label", "\n" + _fit_cells("原生选取模式 · F2 恢复滚动", self.app.output.get_size().columns))]
@@ -904,7 +919,7 @@ class EnhancedConsoleInput:
     def _rail(self):
         if self.context is None:
             return [("class:rail", "─" * max(1, self.app.output.get_size().columns))]
-        return self.context().rail(self.app.output.get_size().columns)
+        return self._context_view().rail(self.app.output.get_size().columns)
 
     def _activity_height(self) -> int:
         return 1
@@ -936,32 +951,42 @@ class EnhancedConsoleInput:
             marker = ("·", "✧", "✦", "✧")[frame]
             style = "class:thinking" if frame == 2 else "class:thinking.dim"
         else:
-            marker = {"waiting": "◌", "responding": "▸", "tool": "◆", "retry": "↻",
+            marker = {"waiting": "◌", "responding": "▸", "tool": "◆", "background": "↻", "retry": "↻",
                       "processing": "◇", "approval": "?", "paused": "Ⅱ", "stopping": "■",
                       "error": "!"}.get(phase, "·")
-            style = "class:status" if phase in {"tool", "responding"} else "class:hint"
+            style = "class:status" if phase in {"tool", "background", "responding"} else "class:hint"
         if phase == "waiting" and seconds >= 15:
             label = "等待供应商响应"
         elapsed = f"  {seconds:.1f}s" if phase not in ("idle", "paused", "approval") else ""
         fragments = [(style, f" {marker} {clean_text(label).replace(chr(10), ' ')}{elapsed}")]
-        action_hint = str(getattr(self, "_live_action_hint", "") or "")
-        if action_hint and phase not in {"idle", "paused", "approval"}:
-            fragments.append(("class:context.progress", f"  ↳ {clean_text(action_hint)}"))
+        if phase == "tool" and (detail := self.activity_detail()):
+            fragments.append(("class:context.progress", f"  ↳ {clean_text(detail).replace(chr(10), ' ')}"))
         return self._with_task(fragments)
 
     def _with_task(self, fragments: list[tuple[str, str]]) -> list[tuple[str, str]]:
         """活动和任务始终共用一行；窄窗口省略标题及较长状态。"""
         from .console_state import _cells, _fit_cells
         width = max(1, self.app.output.get_size().columns)
-        left = "".join(text for _, text in fragments)
-        style = fragments[0][0] if fragments else "class:status"
-        if self.context is None or width < 12:
-            return [(style, _fit_cells(left, width))] if left else []
-        task = "▣ " + self.context().task
-        right = _fit_cells(task, max(1, width * 2 // 5) if left else width)
-        left = _fit_cells(left, max(1, width - _cells(right) - 2)) if left else ""
-        return [(style, left), ("", " " * max(0, width - _cells(left) - _cells(right))),
-                ("class:context.task", right)]
+        right = ""
+        if self.context is not None and width >= 12:
+            right = _fit_cells("▣ " + self._context_view().task, width * 2 // 5 if fragments else width)
+        remaining = width - _cells(right) - (2 if right and fragments else 0)
+        shown: list[tuple[str, str]] = []
+        for style, text in fragments:
+            if remaining <= 0:
+                break
+            size = _cells(text)
+            if size > remaining:
+                prefix = text[:len(text) - len(text.lstrip())]
+                if len(prefix) >= remaining:
+                    break
+                text = prefix + _fit_cells(text[len(prefix):], remaining - len(prefix))
+                size = _cells(text)
+            shown.append((style, text))
+            remaining -= size
+        if right:
+            shown.extend([("", " " * (remaining + (2 if fragments else 0))), ("class:context.task", right)])
+        return shown
 
     def write(self, text: str) -> None:
         """后台只追加内容并请求重绘，不打印到终端或覆盖输入缓冲。"""

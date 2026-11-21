@@ -148,10 +148,13 @@
 
 执行入口：`V-POLICY`、`V-FULL`。实现位置：[trina/policy.py](../../trina/policy.py)、[trina/brain/failure.py](../../trina/brain/failure.py)。
 
-- `test_policy.TestController.test_budget_stops_checks`
+- `test_policy.TestController.test_time_and_check_budgets_are_removed`
+- `test_interactive.TestChatAgent.test_external_harness_can_preserve_a_hard_model_call_budget_without_platform_code`
 - `test_policy.TestController.test_no_new_evidence_triggers_stop`
 - `test_decision_evidence.TestEvidenceRun.test_repeated_facts_trigger_stop_contract`
 - `test_runtime_contracts.RuntimeContractTests.test_chat_failure_feedback_is_sent_back_to_model`
+
+课程基线 `24fb637` 的 SC-N06 包含控制器检查次数上限。自 `9e87ce7` 起，控制器移除了检查数和逻辑时长上限。前两项用例分别验证现行控制器行为和显式配置的对话模型调用上限。连续无新增证据的停止条件有单独的用例覆盖。
 
 事实文件：[unit-tests.json](../../evidence/20261021-course-pack/unit-tests.json)。执行状态按逐测试记录读取，未运行、失败和跳过不能计作通过。
 

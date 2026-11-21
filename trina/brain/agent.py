@@ -904,7 +904,7 @@ class PentestAgent:
             hypothesis = ledger.from_action(action) if use_ledger else None
             import uuid
             call_id = uuid.uuid4().hex
-            ctx.emit("tool.requested", call_id=call_id, tool=tool_name, params=params)
+            ctx.emit("tool.requested", call_id=call_id, tool=tool_name, params=params, step=index)
             if use_ledger and action.get("hypothesis_id") and hypothesis is None:
                 hints.append("hypothesis_id 不存在：请引用台账中的编号或提出新假设")
 

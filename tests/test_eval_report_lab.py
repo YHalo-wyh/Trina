@@ -485,6 +485,21 @@ class TestReport(unittest.TestCase):
         self.assertIn("执行摘要", report.markdown)
         self.assertIn("<svg", report.html)
 
+    def test_cli_rebuild_preserves_recorded_api_assets(self):
+        from trina.cli import main
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            state = RunState(run_id="saved", target="localhost")
+            state.casebook = {"assets": {"health": {"method": "GET", "target": "/recorded-health"}}}
+            snapshot = root / "state.json"
+            snapshot.write_text(json.dumps(state.to_dict()), encoding="utf-8")
+            result = main(["report", "--set", f"report.output_dir={root}", "rebuild", "--state", str(snapshot)])
+            self.assertEqual(result, 0)
+            for name in ("saved_report.md", "saved_report.html"):
+                with self.subTest(name=name):
+                    self.assertIn("/recorded-health", (root / name).read_text(encoding="utf-8"))
+
 
 class TestAdaptersAndScoring(unittest.TestCase):
     def test_list_and_load_adapters(self):

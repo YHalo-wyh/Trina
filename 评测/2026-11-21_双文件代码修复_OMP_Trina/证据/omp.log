@@ -1,0 +1,7 @@
+Working...
+All 4 tests pass.
+
+- `headers.py`: strip+lowercase each name, skip blanks, merge duplicates in insertion order with `", "` (preserves original value order).
+- `backoff.py`: exponent was missing — `base * 2` per item; now `base * 2**index`, still capped by `min(cap, …)`; non-positive `attempts` still returns `[]`.
+
+Verified with `python3 -m unittest -v`: 4/4 OK.

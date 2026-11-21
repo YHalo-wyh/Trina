@@ -645,7 +645,7 @@ class ChatAgent:
             self.state.target = target
         level = self._effective_level(tool_name, params)
         hypothesis = self.ledger.from_action(action) if self.use_ledger else None
-        self.ctx.emit("tool.requested", call_id=call_id, tool=tool_name, params=params)
+        self.ctx.emit("tool.requested", call_id=call_id, tool=tool_name, params=params, step=step)
 
         self.audit.append(
             "chat.action", step=step, decision="allow", tool=tool_name, level=level, params=params, thought=thought[:200],

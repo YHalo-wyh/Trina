@@ -289,6 +289,7 @@ def _render_tool_box_fragments(title: str, script: str, output: str, stderr: str
             "success" if status == "completed" else "warning" if status in {"denied", "timed_out", "cancelled", "unavailable"} else "running")
     border_style = output_style(role, palette, color=color)
     input_style = output_style("code", palette, color=color)
+    text_style = output_style("text", palette, color=color)
     stderr_style = output_style("warning", palette, color=color)
     error_style = output_style("error", palette, color=color)
     lines: list[list[tuple[str, str]]] = []
@@ -314,8 +315,9 @@ def _render_tool_box_fragments(title: str, script: str, output: str, stderr: str
             lines.append(row(wrapped, input_style))
     lines.append(ruled("Output"))
     for source_line in safe_output.splitlines() or [""]:
+        style = diff_style(source_line, palette, color=color) if is_diff else text_style
         for wrapped in _wrap_clean_line(source_line, inner):
-            lines.append(row(wrapped, diff_style(source_line, palette, color=color) if is_diff else output_style("text", palette, color=color)))
+            lines.append(row(wrapped, style))
     if stderr:
         lines.append(ruled("stderr"))
         for source_line in safe_stderr.splitlines():
