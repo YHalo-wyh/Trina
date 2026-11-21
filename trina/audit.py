@@ -15,11 +15,14 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import sys
 import time
 import uuid
+from collections import deque
 from dataclasses import dataclass, field
+from itertools import islice
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Iterable, Iterator
 
 GENESIS_HASH = "0" * 64
 DEFAULT_REDACT_KEYS = [
@@ -62,6 +65,54 @@ def redact(data: Any, keys: list[str] | None = None, _depth: int = 0) -> Any:
     if isinstance(data, (list, tuple)):
         return [redact(item, keys, _depth + 1) for item in data]
     return data
+
+
+def _read_lines(path: str | Path) -> Iterator[str]:
+    with Path(path).open("r", encoding="utf-8") as handle:
+        for line in handle:
+            if line := line.strip():
+                yield line
+
+
+def _parse_record(line: str) -> dict[str, Any]:
+    try:
+        record = json.loads(line)
+    except json.JSONDecodeError:
+        record = None
+    return record if isinstance(record, dict) else {"event": "corrupt", "raw": line[:200]}
+
+
+@dataclass
+class _ChainCheck:
+    """保留首个校验错误和已读取的记录数。"""
+
+    count: int = 0
+    previous: str = GENESIS_HASH
+    error: str = ""
+
+    def accept(self, record: dict[str, Any]) -> None:
+        self.count += 1
+        if self.error:
+            return
+        if record.get("event") == "corrupt":
+            self.error = f"第 {self.count} 行不是合法 JSON 对象"
+        elif record.get("seq") != self.count:
+            self.error = f"seq 断裂：期望 {self.count}，实际 {record.get('seq')}"
+        elif record.get("prev_hash") != self.previous:
+            self.error = f"第 {self.count} 条 prev_hash 不匹配（记录被插入或删除）"
+        else:
+            digest = sha256_text(_canonical({k: v for k, v in record.items() if k != "hash"}))
+            if digest != record.get("hash"):
+                self.error = f"第 {self.count} 条内容被篡改（hash 不匹配）"
+            else:
+                self.previous = digest
+
+    def result(self) -> tuple[bool, str]:
+        if self.error:
+            return False, self.error
+        if not self.count:
+            return True, "审计文件为空"
+        return True, f"哈希链完整：{self.count} 条记录，末端 {self.previous[:12]}…"
 
 
 @dataclass
@@ -136,48 +187,59 @@ class AuditLog:
     # ------------------------------------------------------------------ 读取
     @staticmethod
     def iter_records(path: str | Path) -> Iterator[dict[str, Any]]:
-        with Path(path).open("r", encoding="utf-8") as handle:
-            for line in handle:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    yield json.loads(line)
-                except json.JSONDecodeError:
-                    yield {"event": "corrupt", "raw": line[:200]}
+        for line in _read_lines(path):
+            yield _parse_record(line)
 
     def read_all(self) -> list[dict[str, Any]]:
         return list(self.iter_records(self.path))
 
     def verify(self) -> tuple[bool, str]:
         """校验哈希链；返回 (是否完整, 说明)。"""
-        prev = GENESIS_HASH
-        expected_seq = 0
-        count = 0
+        chain = _ChainCheck()
         for record in self.iter_records(self.path):
-            if record.get("event") == "corrupt":
-                return False, f"第 {count + 1} 行不是合法 JSON"
-            count += 1
-            expected_seq += 1
-            if record.get("seq") != expected_seq:
-                return False, f"seq 断裂：期望 {expected_seq}，实际 {record.get('seq')}"
-            if record.get("prev_hash") != prev:
-                return False, f"第 {expected_seq} 条 prev_hash 不匹配（记录被插入或删除）"
-            digest = sha256_text(_canonical({k: v for k, v in record.items() if k != "hash"}))
-            if digest != record.get("hash"):
-                return False, f"第 {expected_seq} 条内容被篡改（hash 不匹配）"
-            prev = digest
-        if count == 0:
-            return True, "审计文件为空"
-        return True, f"哈希链完整：{count} 条记录，末端 {prev[:12]}…"
+            chain.accept(record)
+            if chain.error:
+                break
+        return chain.result()
+
+    def tail(self, limit: int) -> Iterator[dict[str, Any]]:
+        """只解析需要输出的记录；负数表示跳过开头若干条。"""
+        lines = _read_lines(self.path)
+        if limit < 0:
+            selected: Iterable[str] = islice(lines, min(-limit, sys.maxsize), None)
+        elif limit:
+            selected = deque(lines, maxlen=min(limit, sys.maxsize))
+        else:
+            return
+        for line in selected:
+            yield _parse_record(line)
+
+    def inspect(self, limit: int = 0) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        """单次遍历生成校验结果、摘要和有限的最近记录。"""
+        chain = _ChainCheck()
+        recent: deque[dict[str, Any]] = deque(maxlen=min(max(limit, 0), sys.maxsize))
+
+        def observe() -> Iterator[dict[str, Any]]:
+            for record in self.iter_records(self.path):
+                chain.accept(record)
+                recent.append(record)
+                yield record
+
+        summary = self._summarize(observe())
+        summary["records"] = chain.count
+        summary["chain_ok"] = not chain.error
+        return summary, list(recent)
 
     # ------------------------------------------------------------------ 统计
     def summary(self) -> dict[str, Any]:
+        return self._summarize(self.iter_records(self.path))
+
+    def _summarize(self, records: Iterable[dict[str, Any]]) -> dict[str, Any]:
         events: dict[str, int] = {}
         tools: dict[str, int] = {}
         denied = 0
         first_ts = last_ts = None
-        for record in self.iter_records(self.path):
+        for record in records:
             name = str(record.get("event", "?"))
             events[name] = events.get(name, 0) + 1
             if tool := record.get("tool"):

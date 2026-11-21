@@ -400,25 +400,22 @@ def cmd_audit(args: argparse.Namespace) -> int:
             return 2
         path = candidates[0]
     log = AuditLog(path, run_id=path.stem)
-    records = log.read_all()
-    log._records = len(records)
     if args.audit_action == "verify":
         ok, detail = log.verify()
         out(f"[{'通过' if ok else '失败'}] {path}", "green" if ok else "red")
         print(f"  {detail}")
         return 0 if ok else 2
     if args.audit_action == "show":
-        summary = log.summary()
-        summary["chain_ok"] = log.verify()[0]
+        summary, recent = log.inspect(limit=args.limit)
         print(json.dumps(summary, ensure_ascii=False, indent=2))
         if args.limit:
             rule(f"最近 {args.limit} 条")
-            for record in records[-args.limit :]:
+            for record in log.tail(args.limit) if args.limit < 0 else recent:
                 print(f"  {record.get('time', '')} #{record.get('seq')} {record.get('event')} "
                       f"{record.get('tool', '')} {record.get('decision', '')} {str(record.get('reason', ''))[:80]}")
         return 0
     if args.audit_action == "tail":
-        for record in records[-args.limit or -20 :]:
+        for record in log.tail(args.limit or 20):
             print(json.dumps(record, ensure_ascii=False))
         return 0
     return 1

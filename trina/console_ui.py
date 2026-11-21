@@ -125,7 +125,7 @@ COMMANDS: tuple[CommandSpec, ...] = (
             OptionSpec(("--approve",), "设置审批闸门", "<模式>", APPROVAL_CHOICES),
         ),
         examples=(
-            '/play --goal "拿到 flag 并验证 SQL 注入" --max-steps 8',
+            '/play --goal "检查测试服务是否正常响应" --max-steps 8',
             "/play --range lab --approve exploit",
         ),
     ),
@@ -136,7 +136,7 @@ COMMANDS: tuple[CommandSpec, ...] = (
             OptionSpec(("--max-steps",), "限制决策步数", "<整数>"),
             OptionSpec(("--approve",), "设置审批闸门", "<模式>", APPROVAL_CHOICES),
         ),
-        examples=('/run http://127.0.0.1:9099 --goal "拿到 flag"',),
+        examples=('/run http://127.0.0.1:9099 --goal "检查首页响应状态"',),
     ),
     CommandSpec("goal", "任务", "保存或修改当前项目的任务目标", "goal [set <目标>|show|clear]",
                 positional_choices=(ChoiceSpec("show", "查看目标"), ChoiceSpec("set", "设置目标"), ChoiceSpec("clear", "清除目标")),

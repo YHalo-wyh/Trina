@@ -233,6 +233,7 @@ class TestChatAgent(unittest.TestCase):
         self.assertIn("通用的自主 Agent Runtime", calls[0][0]["content"])
         self.assertNotIn("安全工程师", calls[0][0]["content"])
         self.assertIn("# Delivery", calls[0][0]["content"])
+        self.assertIn("安全测试流程仅用于明确要求安全测试的任务", calls[0][0]["content"])
         self.assertIn("原生 tool calling", calls[0][1]["content"])
         self.assertIn("# 可用工具", calls[0][1]["content"])
         self.assertEqual(calls[0][-2]["content"], "你好")

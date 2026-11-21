@@ -388,7 +388,10 @@ class TestTerminalUI(unittest.TestCase):
         self.assertIn("命令 /play", text)
         self.assertIn("--target", text)
         self.assertIn("--approve", text)
-        self.assertIn("拿到 flag", text)
+        self.assertIn("检查测试服务是否正常响应", text)
+        output.clear()
+        console.handle("/help run")
+        self.assertIn("检查首页响应状态", "\n".join(output))
 
     def test_dynamic_completion_reads_real_tools_and_ranges(self):
         console, _ = self.console()
