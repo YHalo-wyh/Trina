@@ -25,6 +25,14 @@ _STATUS_TEXT = {"ready": "待检查", "started": "结果未落盘", "passed": "�
                 "input_changed": "输入变更，需复验", "evidence_changed": "结果变更或缺失，需复验"}
 
 
+class PreflightError(ValueError):
+    """附可供本地检查入口展示的原因码。"""
+
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code
+
+
 def _identifier(value: str) -> str:
     if not isinstance(value, str) or not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,47}", value):
         raise ValueError("工作单和前提 ID 须使用 1–48 位小写字母、数字或连字符")
@@ -206,7 +214,7 @@ class ProjectVerification:
         except (OSError, ValueError, KeyError):
             return False
 
-    def write_reports(self, state: dict[str, Any]) -> tuple[str, str, int]:
+    def write_reports(self, state: dict[str, Any]) -> tuple[str, str, int, str]:
         """生成证否明细，并返回索引所需的状态和轮次。"""
         try:
             self._verify_inputs(state["binding"])
@@ -247,35 +255,85 @@ class ProjectVerification:
         elif status not in {"ready", "started"} and not self._ref_is_current(
                 {"path": entry.get("evidence", ""), "sha256": entry.get("evidence_sha256", "")}):
             status = "evidence_changed"
-        return status, latest, refuted
+        check_id = next((item["check"] for item in reversed(entry.get("events", []))
+                         if isinstance(item, dict) and item.get("event") == "check.started" and item.get("check") in CHECKS), "")
+        return status, latest, refuted, check_id
+
+    def _prepare_round(self, plan_path: str) -> tuple[dict[str, Any], dict[str, Any], Path]:
+        try:
+            state = self.show()
+        except (OSError, ValueError) as exc:
+            raise PreflightError("invalid_work_order", str(exc)) from exc
+        try:
+            self._verify_inputs(state["binding"])
+        except (OSError, ValueError) as exc:
+            raise PreflightError("input_changed", str(exc)) from exc
+        try:
+            plan = _read_object(self._local_file(plan_path))
+            premise, _ = _check_plan(plan)
+            evidence = self._managed(self.directory / "checks" / f"{premise}.json")
+        except (OSError, ValueError) as exc:
+            raise PreflightError("invalid_plan", str(exc)) from exc
+        verdicts = state["verdicts"]
+        if verdicts.get(premise, {}).get("outcome") == "refuted":
+            raise PreflightError("premise_refuted", "该前提已被证否")
+        if premise in state["rounds"]:
+            raise PreflightError("already_registered", "该前提已登记过一轮验证，请更新前提")
+        if evidence.exists() or (evidence.parent.exists() and not evidence.parent.is_dir()):
+            raise PreflightError("result_path_conflict", "验证结果路径已被占用")
+        if prior := plan.get("replaces"):
+            previous = verdicts.get(prior, {})
+            if previous.get("outcome") != "refuted":
+                raise PreflightError("invalid_replacement", "replaces 须引用本工作单内带证据的已证否前提")
+            if not self._ref_is_current(previous.get("evidence", {})):
+                raise PreflightError("replacement_evidence_changed", "被替换前提的证据文件已变化或缺失")
+        return state, plan, evidence
+
+    def preflight(self, plan_path: str) -> dict[str, Any]:
+        """只读校验，执行时仍需在工作单锁内复核。"""
+        try:
+            _, plan, evidence = self._prepare_round(plan_path)
+        except PreflightError as exc:
+            return {"work_id": self.work_id, "ready": False, "reason": exc.code, "detail": str(exc)}
+        return {"work_id": self.work_id, "ready": True, "premise": plan["premise"],
+                "checks": [item["id"] for item in plan["checks"]], "evidence": evidence.relative_to(self.root).as_posix()}
+
+    def events(self, premise: str = "") -> dict[str, Any]:
+        """读取一个轮次的已提交事件，旧版轮次仍可查状态和结果。"""
+        rounds = self.show()["rounds"]
+        selected = _identifier(premise) if premise else next(reversed(rounds), "")
+        if selected and selected not in rounds:
+            raise ValueError("当前工作单没有该验证轮次")
+        round_data = rounds.get(selected, {})
+        return {"work_id": self.work_id, "premise": selected, "status": round_data.get("status", "ready"),
+                "evidence": round_data.get("evidence", ""), "events": round_data.get("events", [])}
 
     def run(self, plan_path: str) -> dict[str, Any]:
         with self._lock():
-            state = self.show(verify_inputs=True)
-            plan = _read_object(self._local_file(plan_path))
-            premise, budget = _check_plan(plan)
-            verdicts = state["verdicts"]
-            if verdicts.get(premise, {}).get("outcome") == "refuted":
-                raise ValueError("该前提已被证否")
-            if premise in state["rounds"]:
-                raise ValueError("该前提已登记过一轮验证，请更新前提")
-            if prior := plan.get("replaces"):
-                previous = verdicts.get(prior, {})
-                if previous.get("outcome") != "refuted":
-                    raise ValueError("replaces 须引用本工作单内带证据的已证否前提")
-                if self._file_ref(previous["evidence"]["path"]) != previous["evidence"]:
-                    raise ValueError("被替换前提的证据文件已变化")
-
-            evidence = self._managed(self.directory / "checks" / f"{premise}.json")
+            state, plan, evidence = self._prepare_round(plan_path)
+            premise, budget = plan["premise"], plan["budget_s"]
             results: list[dict[str, Any]] = []
-            entry = {"plan": plan, "status": "started", "evidence": evidence.relative_to(self.root).as_posix()}
+            entry = {"plan": plan, "status": "started", "evidence": evidence.relative_to(self.root).as_posix(), "events": []}
             state["rounds"][premise] = entry
-            _save_json(self.path, state)
+
+            def publish(event: str, **fields: Any) -> None:
+                entry["events"].append({"event": event, "time": time.time(), "work_id": self.work_id,
+                                        "premise": premise, **fields})
+                _save_json(self.path, state)
+
+            publish("round.started")
 
             started = time.monotonic()
             status = "passed"
+            active_check = ""
             try:
                 for check in plan["checks"]:
+                    remaining = budget - (time.monotonic() - started)
+                    if remaining <= 0:
+                        status = "timed_out"
+                        break
+                    active_check = check["id"]
+                    publish("check.started", check=active_check)
                     remaining = budget - (time.monotonic() - started)
                     if remaining <= 0:
                         status = "timed_out"
@@ -284,15 +342,19 @@ class ProjectVerification:
                     results.append({"id": check["id"], **result})
                     if result["timed_out"] or time.monotonic() - started >= budget:
                         status = "timed_out"
-                        break
-                    if result["exit_code"] != 0:
+                    elif result["exit_code"] != 0:
                         status = "failed"
+                    publish("check.finished", check=active_check, status=status, exit_code=result["exit_code"])
+                    active_check = ""
+                    if status != "passed":
                         break
             except KeyboardInterrupt:
                 status = "interrupted"
             except OSError as exc:
                 status = "runner_error"
                 results.append({"error": str(exc)})
+            if active_check:
+                publish("check.finished", check=active_check, status=status, exit_code=None)
             elapsed = round(time.monotonic() - started, 3)
             try:
                 self._verify_inputs(state["binding"])
@@ -302,7 +364,7 @@ class ProjectVerification:
                     status = "input_changed"
             _save_json(evidence, {"status": status, "elapsed_s": elapsed, "results": results})
             entry.update(status=status, elapsed_s=elapsed, evidence_sha256=self._file_ref(evidence)["sha256"])
-            _save_json(self.path, state)
+            publish("round.finished", status=status, evidence=entry["evidence"], evidence_sha256=entry["evidence_sha256"])
             return {"premise": premise, **entry}
 
 
@@ -313,20 +375,20 @@ def write_workspace_reports(root: Path) -> dict[str, Any]:
     report = directory / "STATUS.md"
     if report.resolve() != report:
         raise ValueError("状态索引不能通过链接重定向")
-    lines = ["# 离线验证工作单状态", "", "| 工作单 | 当前状态 | 最近轮次 | 已证否 |", "|---|---|---|---|"]
+    lines = ["# 离线验证工作单状态", "", "| 工作单 | 当前状态 | 最近轮次 | 已证否 | 最近检查 |", "|---|---|---|---|---|"]
     unreadable = []
     count = 0
     for path in sorted(directory.glob("*/STATE.json")):
         work_id = path.parent.name
         try:
             work = ProjectVerification(root, work_id)
-            status, latest, refuted = work.write_reports(work.show())
+            status, latest, refuted, check = work.write_reports(work.show())
         except (OSError, ValueError, KeyError, TypeError):
             unreadable.append(work_id)
-            lines.append(f"| {_table_cell(work_id)} | 无法生成交接记录 | — | — |")
+            lines.append(f"| {_table_cell(work_id)} | 无法生成交接记录 | — | — | — |")
         else:
             lines.append(f"| [{work_id}]({work_id}/STATE.json) | {_STATUS_TEXT.get(status, '待核对')} | "
-                         f"{_table_cell(latest or '—')} | [{refuted} 条]({work_id}/REJECTED.md) |")
+                         f"{_table_cell(latest or '—')} | [{refuted} 条]({work_id}/REJECTED.md) | {check or '—'} |")
         count += 1
     if not count:
         lines.extend(["", "当前没有验证工作单。"])
@@ -337,7 +399,7 @@ def write_workspace_reports(root: Path) -> dict[str, Any]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="action", required=True)
-    for name in ("init", "show", "handoff", "record", "run"):
+    for name in ("init", "show", "handoff", "record", "preflight", "run", "events"):
         commands.add_parser(name).add_argument("work_id")
     commands.add_parser("report", help="生成工作单状态索引和各工作单的证否明细")
     commands.choices["init"].add_argument("--input", action="append", required=True)
@@ -346,7 +408,9 @@ def main() -> int:
     commands.choices["record"].add_argument("--evidence", required=True)
     commands.choices["record"].add_argument("--conclusion", default="", help="简述证据确认或证否的内容")
     commands.choices["record"].add_argument("--recheck", default="", help="输入或证据变化后的复验方式")
+    commands.choices["preflight"].add_argument("--plan", required=True)
     commands.choices["run"].add_argument("--plan", required=True)
+    commands.choices["events"].add_argument("--premise", default="", help="指定轮次，省略时显示最近一轮")
     args = parser.parse_args()
     try:
         if args.action == "report":
@@ -362,11 +426,19 @@ def main() -> int:
                                  conclusion=args.conclusion, recheck=args.recheck)
         elif args.action == "run":
             result = work.run(args.plan)
+        elif args.action == "preflight":
+            result = work.preflight(args.plan)
+        elif args.action == "events":
+            result = work.events(args.premise)
         else:
             result = work.show() if args.action == "show" else work.handoff()
+    except PreflightError as exc:
+        parser.exit(2, f"Error · {exc.code} · {exc}\n")
     except (ValueError, OSError) as exc:
         parser.exit(2, f"Error · {exc}\n")
     print(json.dumps(result, ensure_ascii=False, indent=2))
+    if args.action == "preflight":
+        return 0 if result["ready"] else 2
     return int(args.action == "run" and result["status"] != "passed")
 
 

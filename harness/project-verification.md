@@ -27,12 +27,18 @@ python -m scripts.project_verification init docs-refs --input pyproject.toml --i
 ```
 
 ```text
+python -m scripts.project_verification preflight docs-refs --plan runs/docs-refs-plan.json
 python -m scripts.project_verification run docs-refs --plan runs/docs-refs-plan.json
+python -m scripts.project_verification events docs-refs --premise index-matches-checkout
 python -m scripts.project_verification show docs-refs
 python -m scripts.project_verification handoff docs-refs
 ```
 
 当前入口复用 `V-CONTRACT` 和 `V-COURSE` 两项固定仓库检查。计划总耗时超出预算、缺少判据、输入变化或前提已有轮次时，启动前直接返回错误。实际执行给每条检查传递剩余时间，首个失败或超时结束本轮。检查期间发生输入漂移时保留输出及漂移原因。`started` 表示轮次已登记且结果尚未落盘。意外终止后保留这条记录，复盘时能看到已经消耗过一次机会。
+
+`preflight` 只读核对工作区绑定、输入哈希、检查计划及证否记录。返回 `ready` 和具体原因，拒绝时退出码为 2。`run` 取得工作单锁后使用同一套校验。预检结果反映读取当时的状态。
+
+每轮在 `STATE.json` 中保存开始、每项检查的开始与结束、整轮结束四类事件，记录工作单 ID、前提 ID、时间和状态。结果落盘后，结束事件附证据路径和哈希。`events` 默认读取最近一轮。旧工作单可以继续查看状态和证据，早期轮次的事件数组为空。
 
 ## 写回证据再交接
 
@@ -52,6 +58,6 @@ python -m scripts.project_verification record docs-refs index-matches-checkout r
 python -m scripts.project_verification report
 ```
 
-`runs/project-verification/STATUS.md` 列出本地工作单、最近轮次、已证否条数及详情入口。每个工作单的 `REJECTED.md` 每行列出一条证否，展示结论、绑定输入、证据哈希和复验方式。生成时复核输入与证据的 SHA-256，内容变化或文件缺失时标为需复验。检查进程若在写回结果前退出，索引显示“结果未落盘”。交接前重新运行 `report` 即可刷新两份视图，原始 `STATE.json` 保持权威记录。
+`runs/project-verification/STATUS.md` 列出本地工作单、最近轮次、最近检查、已证否条数及详情入口。每个工作单的 `REJECTED.md` 每行列出一条证否，展示结论、绑定输入、证据哈希和复验方式。生成时复核输入与证据的 SHA-256，内容变化或文件缺失时标为需复验。检查进程若在写回结果前退出，索引显示“结果未落盘”。交接前重新运行 `report` 即可刷新两份视图，原始 `STATE.json` 保持权威记录。
 
 常见复验入口见[验证接口](harness-manifest.md#4-sensor可执行验证接口)。涉及规约声明和实现路径用 `V-CONTRACT`，涉及课程引用、链接和工件用 `V-COURSE`。

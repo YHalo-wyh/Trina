@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from scripts.project_verification import ProjectVerification, write_workspace_reports
+from scripts.project_verification import PreflightError, ProjectVerification, write_workspace_reports
 from scripts.verify_contract import execute_check
 
 
@@ -46,12 +46,39 @@ class ProjectVerificationTests(unittest.TestCase):
         self.assertEqual(self.work.show()["rounds"], {})
 
     @patch("scripts.project_verification.execute_check")
+    def test_preflight_is_read_only_and_run_rechecks_bound_inputs(self, execute):
+        before = self.work.path.read_bytes()
+        plan = self.plan()
+        verdict = self.work.preflight(plan)
+        self.assertTrue(verdict["ready"])
+        self.assertEqual(verdict["checks"], ["V-CONTRACT", "V-COURSE"])
+        self.assertEqual(self.work.path.read_bytes(), before)
+        evidence = self.root / verdict["evidence"]
+        self.assertFalse(evidence.exists())
+        evidence.parent.mkdir()
+        evidence.write_bytes(b"retained result")
+        self.assertEqual(self.work.preflight(plan)["reason"], "result_path_conflict")
+        with self.assertRaises(PreflightError) as conflict:
+            self.work.run(plan)
+        self.assertEqual(conflict.exception.code, "result_path_conflict")
+        self.assertEqual(evidence.read_bytes(), b"retained result")
+        (self.root / "input.toml").write_bytes(b"different inputs")
+        self.assertEqual(self.work.preflight(plan)["reason"], "input_changed")
+        with self.assertRaises(PreflightError) as rejected:
+            self.work.run(plan)
+        self.assertEqual(rejected.exception.code, "input_changed")
+        execute.assert_not_called()
+        self.assertEqual(self.work.path.read_bytes(), before)
+
+    @patch("scripts.project_verification.execute_check")
     def test_reserves_once_and_keeps_full_result_after_reopen(self, execute):
         path = self.plan()
 
         def run_check(root, identifier, *, timeout):
             state = self.work.show()["rounds"]["stale-doc-links"]
             self.assertEqual(state["status"], "started")
+            self.assertEqual(state["events"][-1]["event"], "check.started")
+            self.assertEqual(state["events"][-1]["check"], identifier)
             self.assertGreater(timeout, 0)
             self.assertLessEqual(timeout, 12)
             return {"exit_code": 0, "timed_out": False, "output": "x" * 6000}
@@ -63,6 +90,12 @@ class ProjectVerificationTests(unittest.TestCase):
         evidence = json.loads((self.root / result["evidence"]).read_text(encoding="utf-8"))
         self.assertEqual(len(evidence["results"][1]["output"]), 6000)
         self.assertTrue(reopened.show()["rounds"]["stale-doc-links"]["evidence_sha256"])
+        timeline = reopened.events("stale-doc-links")["events"]
+        self.assertEqual([row["event"] for row in timeline], ["round.started", "check.started", "check.finished",
+                          "check.started", "check.finished", "round.finished"])
+        self.assertTrue(all(row["work_id"] == "docs-review" and row["premise"] == "stale-doc-links" for row in timeline))
+        self.assertEqual(timeline[-1]["evidence_sha256"], result["evidence_sha256"])
+        self.assertEqual(reopened.preflight(path)["reason"], "already_registered")
         with self.assertRaisesRegex(ValueError, "已登记过一轮"):
             reopened.run(path)
         self.assertEqual(execute.call_count, 2)
@@ -70,6 +103,7 @@ class ProjectVerificationTests(unittest.TestCase):
     @patch("scripts.project_verification.execute_check")
     def test_refuted_premise_cannot_be_overwritten_or_silently_retried(self, execute):
         self.work.record("stale-doc-links", "refuted", "comparison.txt")
+        self.assertEqual(self.work.preflight(self.plan())["reason"], "premise_refuted")
         with self.assertRaisesRegex(ValueError, "已被证否"):
             self.work.run(self.plan())
         with self.assertRaisesRegex(ValueError, "已有带证据的结论"):
@@ -90,6 +124,8 @@ class ProjectVerificationTests(unittest.TestCase):
         execute.return_value = {"exit_code": None, "timed_out": True, "output": "partial"}
         entry = self.work.run(self.plan())
         self.assertEqual(entry["status"], "timed_out")
+        self.assertEqual([(event["check"], event["status"]) for event in entry["events"]
+                          if event["event"] == "check.finished"], [("V-CONTRACT", "timed_out")])
         self.assertEqual(self.work.show()["verdicts"], {})
         execute.assert_called_once()
 
@@ -138,6 +174,7 @@ class ProjectVerificationTests(unittest.TestCase):
             snapshot = write_workspace_reports(self.root)
             index = (self.root / snapshot["status_report"]).read_text(encoding="utf-8")
             self.assertIn("结果未落盘", index)
+            self.assertIn(f"| {args[1]} |", index)
             return {"exit_code": 0, "timed_out": False, "output": "pass"}
 
         execute.side_effect = run_check
