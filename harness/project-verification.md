@@ -39,9 +39,19 @@ python -m scripts.project_verification handoff docs-refs
 用实际检查输出或工作区内的复核记录提交结论。文件引用带 SHA-256。若本轮复核证否了示例前提，可按下例记录。
 
 ```text
-python -m scripts.project_verification record docs-refs index-matches-checkout refuted --evidence runs/project-verification/docs-refs/checks/index-matches-checkout.json
+python -m scripts.project_verification record docs-refs index-matches-checkout refuted --evidence runs/project-verification/docs-refs/checks/index-matches-checkout.json --conclusion "当前索引含失效引用" --recheck "更新索引后复跑 V-CONTRACT 和 V-COURSE"
 ```
 
 同一前提的结论只能按相同证据幂等提交。新计划如需替代旧前提，在 JSON 增加 `"replaces": "index-matches-checkout"`，并为新前提使用新 ID。工作单校验旧反证的文件哈希。程序按前提 ID 去重，维护者负责判断改名后的两个前提是否相同。超时、运行错误和中断会保留为独立状态，交接者应结合证据判定结论。
 
 交接时发 `handoff` 的输出即可。它给出 `STATE.json` 路径、最多八个已证否的前提 ID 和总数。接手方用 `show` 查看完整清单及证据引用。检查结束后先落盘再交接，后续验证由命令退出和结果文件确认。输入内容变更后，按新的输入创建工作单。
+
+## 查阅工作单状态
+
+```text
+python -m scripts.project_verification report
+```
+
+`runs/project-verification/STATUS.md` 列出本地工作单、最近轮次、已证否条数及详情入口。每个工作单的 `REJECTED.md` 每行列出一条证否，展示结论、绑定输入、证据哈希和复验方式。生成时复核输入与证据的 SHA-256，内容变化或文件缺失时标为需复验。检查进程若在写回结果前退出，索引显示“结果未落盘”。交接前重新运行 `report` 即可刷新两份视图，原始 `STATE.json` 保持权威记录。
+
+常见复验入口见[验证接口](harness-manifest.md#4-sensor可执行验证接口)。涉及规约声明和实现路径用 `V-CONTRACT`，涉及课程引用、链接和工件用 `V-COURSE`。

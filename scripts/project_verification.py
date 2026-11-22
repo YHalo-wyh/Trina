@@ -8,6 +8,7 @@ import os
 import re
 import tempfile
 import time
+from html import escape
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +19,10 @@ from .verify_contract import PROJECT_ROOT, execute_check
 
 CHECKS = ("V-CONTRACT", "V-COURSE")
 WORK_DIR = Path("runs/project-verification")
+_REPORT_MARKER = "<!-- scripts.project_verification -->\n"
+_STATUS_TEXT = {"ready": "待检查", "started": "结果未落盘", "passed": "通过", "failed": "检查失败",
+                "timed_out": "超时", "interrupted": "已中断", "runner_error": "运行错误",
+                "input_changed": "输入变更，需复验", "evidence_changed": "结果变更或缺失，需复验"}
 
 
 def _identifier(value: str) -> str:
@@ -39,20 +44,35 @@ def _read_object(path: Path) -> dict[str, Any]:
     return data
 
 
-def _save_json(path: Path, data: dict[str, Any]) -> None:
+def _save_text(path: Path, text: str) -> None:
     """先写临时文件再替换，读者只能看到完整快照。"""
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, name = tempfile.mkstemp(dir=path.parent, prefix=".verification-")
     temporary = Path(name)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as stream:
-            json.dump(data, stream, ensure_ascii=False, indent=2)
-            stream.write("\n")
+            stream.write(text)
             stream.flush()
             os.fsync(stream.fileno())
         temporary.replace(path)
     finally:
         temporary.unlink(missing_ok=True)
+
+
+def _save_json(path: Path, data: dict[str, Any]) -> None:
+    _save_text(path, json.dumps(data, ensure_ascii=False, indent=2) + "\n")
+
+
+def _save_report(path: Path, lines: list[str]) -> None:
+    if path.exists() and not path.read_text(encoding="utf-8").startswith(_REPORT_MARKER):
+        raise ValueError(f"同名文件需保留: {path.name}")
+    _save_text(path, _REPORT_MARKER + "\n".join(lines) + "\n")
+
+
+def _table_cell(value: str) -> str:
+    # 结论和文件名都是字面数据，不能插入新行、表格列或链接。
+    text = escape(" ".join(value.split()), quote=False)
+    return re.sub(r"[|`\[\]\\*_~]", lambda match: f"&#{ord(match[0])};", text)
 
 
 def _check_plan(plan: dict[str, Any]) -> tuple[str, int]:
@@ -161,22 +181,73 @@ class ProjectVerification:
         return {"state": self.path.relative_to(self.root).as_posix(), "refuted": refuted[:8],
                 "refuted_count": len(refuted)}
 
-    def record(self, premise: str, outcome: str, evidence: str) -> dict[str, Any]:
+    def record(self, premise: str, outcome: str, evidence: str, *, conclusion: str = "", recheck: str = "") -> dict[str, Any]:
         _identifier(premise)
         if outcome not in {"verified", "refuted"}:
             raise ValueError("结论须为 verified 或 refuted")
         with self._lock():
             state = self.show(verify_inputs=True)
-            if self._local_file(evidence) == self.path:
-                raise ValueError("工作单自身不能作为证据")
+            if self._local_file(evidence) in {self.path, self.directory / "REJECTED.md", self.root / WORK_DIR / "STATUS.md"}:
+                raise ValueError("工作单及其交接视图不能作为证据")
             verdict = {"outcome": outcome, "evidence": self._file_ref(evidence)}
-            previous = state["verdicts"].get(premise)
-            if previous is not None and previous != verdict:
+            previous = state["verdicts"].get(premise, {})
+            metadata = {key: value.strip() for key, value in (("conclusion", conclusion), ("recheck", recheck)) if value.strip()}
+            if any(key in previous and previous[key] != value for key, value in (verdict | metadata).items()):
                 raise ValueError("该前提已有带证据的结论，请为新前提使用新的 ID")
-            if previous is None:
+            verdict = previous | verdict | metadata
+            if verdict != previous:
                 state["verdicts"][premise] = verdict
                 _save_json(self.path, state)
         return verdict
+
+    def _ref_is_current(self, ref: dict[str, str]) -> bool:
+        try:
+            return self._file_ref(ref["path"]) == ref
+        except (OSError, ValueError, KeyError):
+            return False
+
+    def write_reports(self, state: dict[str, Any]) -> tuple[str, str, int]:
+        """生成证否明细，并返回索引所需的状态和轮次。"""
+        try:
+            self._verify_inputs(state["binding"])
+            inputs_current = True
+        except (OSError, ValueError):
+            inputs_current = False
+
+        lines = [f"# {self.work_id} · 已证否前提", "", "[工作单及原始记录](STATE.json)", "", "## 适用输入", ""]
+        for ref in state["binding"]["inputs"]:
+            lines.append(f"- {_table_cell(ref['path'])} · {_table_cell(ref['sha256'])}")
+        lines.extend(["", "| 前提 | 结论 | 适用性 | 证据路径与 SHA-256 | 复验方式 |", "|---|---|---|---|---|"])
+        refuted = 0
+        for premise, verdict in state["verdicts"].items():
+            if verdict["outcome"] != "refuted":
+                continue
+            refuted += 1
+            evidence = verdict["evidence"]
+            if not inputs_current:
+                applicability = "输入变更，需复验"
+            elif not self._ref_is_current(evidence):
+                applicability = "证据变更或缺失，需复验"
+            else:
+                applicability = "适用上列输入"
+            values = (premise, verdict.get("conclusion", "已证否"), applicability,
+                      f"{evidence['path']} · {evidence['sha256']}", verdict.get("recheck", "重新核对绑定输入与检查输出"))
+            lines.append("| " + " | ".join(map(_table_cell, values)) + " |")
+        if not refuted:
+            lines.extend(["", "本工作单暂无已证否前提。"])
+        _save_report(self._managed(self.directory / "REJECTED.md"), lines)
+
+        latest = next(reversed(state["rounds"]), "")
+        entry = state["rounds"].get(latest, {})
+        status = entry.get("status", "ready")
+        if not isinstance(status, str):
+            raise ValueError("轮次状态无效")
+        if not inputs_current:
+            status = "input_changed"
+        elif status not in {"ready", "started"} and not self._ref_is_current(
+                {"path": entry.get("evidence", ""), "sha256": entry.get("evidence_sha256", "")}):
+            status = "evidence_changed"
+        return status, latest, refuted
 
     def run(self, plan_path: str) -> dict[str, Any]:
         with self._lock():
@@ -235,24 +306,60 @@ class ProjectVerification:
             return {"premise": premise, **entry}
 
 
+def write_workspace_reports(root: Path) -> dict[str, Any]:
+    """从本工作区已有工作单生成交接索引。"""
+    root = root.resolve()
+    directory = root / WORK_DIR
+    report = directory / "STATUS.md"
+    if report.resolve() != report:
+        raise ValueError("状态索引不能通过链接重定向")
+    lines = ["# 离线验证工作单状态", "", "| 工作单 | 当前状态 | 最近轮次 | 已证否 |", "|---|---|---|---|"]
+    unreadable = []
+    count = 0
+    for path in sorted(directory.glob("*/STATE.json")):
+        work_id = path.parent.name
+        try:
+            work = ProjectVerification(root, work_id)
+            status, latest, refuted = work.write_reports(work.show())
+        except (OSError, ValueError, KeyError, TypeError):
+            unreadable.append(work_id)
+            lines.append(f"| {_table_cell(work_id)} | 无法生成交接记录 | — | — |")
+        else:
+            lines.append(f"| [{work_id}]({work_id}/STATE.json) | {_STATUS_TEXT.get(status, '待核对')} | "
+                         f"{_table_cell(latest or '—')} | [{refuted} 条]({work_id}/REJECTED.md) |")
+        count += 1
+    if not count:
+        lines.extend(["", "当前没有验证工作单。"])
+    _save_report(report, lines)
+    return {"status_report": report.relative_to(root).as_posix(), "work_orders": count, "unreadable": unreadable}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="action", required=True)
     for name in ("init", "show", "handoff", "record", "run"):
         commands.add_parser(name).add_argument("work_id")
+    commands.add_parser("report", help="生成工作单状态索引和各工作单的证否明细")
     commands.choices["init"].add_argument("--input", action="append", required=True)
     commands.choices["record"].add_argument("premise")
     commands.choices["record"].add_argument("outcome", choices=("verified", "refuted"))
     commands.choices["record"].add_argument("--evidence", required=True)
+    commands.choices["record"].add_argument("--conclusion", default="", help="简述证据确认或证否的内容")
+    commands.choices["record"].add_argument("--recheck", default="", help="输入或证据变化后的复验方式")
     commands.choices["run"].add_argument("--plan", required=True)
     args = parser.parse_args()
     try:
+        if args.action == "report":
+            result = write_workspace_reports(PROJECT_ROOT)
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return int(bool(result["unreadable"]))
         work = ProjectVerification(PROJECT_ROOT, args.work_id)
         if args.action == "init":
             work.initialize(args.input)
             result = work.handoff()
         elif args.action == "record":
-            result = work.record(args.premise, args.outcome, args.evidence)
+            result = work.record(args.premise, args.outcome, args.evidence,
+                                 conclusion=args.conclusion, recheck=args.recheck)
         elif args.action == "run":
             result = work.run(args.plan)
         else:

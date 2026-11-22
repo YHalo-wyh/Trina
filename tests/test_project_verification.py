@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from scripts.project_verification import ProjectVerification
+from scripts.project_verification import ProjectVerification, write_workspace_reports
 from scripts.verify_contract import execute_check
 
 
@@ -104,6 +104,63 @@ class ProjectVerificationTests(unittest.TestCase):
         self.assertEqual(entry["status"], "input_changed")
         evidence = json.loads((self.root / entry["evidence"]).read_text(encoding="utf-8"))
         self.assertIn("binding_error", evidence["results"][-1])
+
+    def test_reports_preserve_legacy_verdicts_and_flag_changed_evidence(self):
+        self.work.record("older-record", "refuted", "comparison.txt")
+        self.work.record("invalid-index", "refuted", "comparison.txt", conclusion="引用失效 | <旧入口>\n另见明细",
+                         recheck="复跑 V-COURSE")
+        result = write_workspace_reports(self.root)
+        index = self.root / result["status_report"]
+        findings = self.work.directory / "REJECTED.md"
+        self.assertEqual(result["unreadable"], [])
+        self.assertIn("[2 条](docs-review/REJECTED.md)", index.read_text(encoding="utf-8"))
+        text = findings.read_text(encoding="utf-8")
+        self.assertIn("older-record | 已证否", text)
+        self.assertIn("引用失效 &#124; &lt;旧入口&gt; 另见明细", text)
+        self.assertIn("适用上列输入", text)
+        self.assertIn("复跑 V-COURSE", text)
+        self.assertIn(self.work.show()["binding"]["inputs"][0]["sha256"], text)
+        before = self.work.path.read_bytes()
+
+        (self.root / "comparison.txt").write_bytes(b"changed evidence")
+        write_workspace_reports(self.root)
+        self.assertIn("证据变更或缺失，需复验", findings.read_text(encoding="utf-8"))
+        self.assertEqual(self.work.path.read_bytes(), before)
+
+        (self.root / "input.toml").write_bytes(b"changed input")
+        write_workspace_reports(self.root)
+        self.assertIn("输入变更，需复验", findings.read_text(encoding="utf-8"))
+        self.assertIn("输入变更，需复验", index.read_text(encoding="utf-8"))
+
+    @patch("scripts.project_verification.execute_check")
+    def test_index_distinguishes_unwritten_result_and_stale_passing_result(self, execute):
+        def run_check(*args, **kwargs):
+            snapshot = write_workspace_reports(self.root)
+            index = (self.root / snapshot["status_report"]).read_text(encoding="utf-8")
+            self.assertIn("结果未落盘", index)
+            return {"exit_code": 0, "timed_out": False, "output": "pass"}
+
+        execute.side_effect = run_check
+        entry = self.work.run(self.plan())
+        snapshot = write_workspace_reports(self.root)
+        index = self.root / snapshot["status_report"]
+        self.assertIn("| 通过 | stale-doc-links |", index.read_text(encoding="utf-8"))
+        (self.root / entry["evidence"]).unlink()
+        write_workspace_reports(self.root)
+        self.assertIn("结果变更或缺失，需复验", index.read_text(encoding="utf-8"))
+        self.assertEqual(execute.call_count, 2)
+
+    def test_manual_report_is_preserved_and_other_work_orders_are_listed(self):
+        manual = self.work.directory / "REJECTED.md"
+        manual.write_text("手记", encoding="utf-8")
+        other = ProjectVerification(self.root, "other-check")
+        other.initialize(["input.toml"])
+        snapshot = write_workspace_reports(self.root)
+        self.assertEqual(snapshot["unreadable"], ["docs-review"])
+        self.assertEqual(manual.read_text(encoding="utf-8"), "手记")
+        index = (self.root / snapshot["status_report"]).read_text(encoding="utf-8")
+        self.assertIn("docs-review | 无法生成交接记录", index)
+        self.assertIn("[other-check](other-check/STATE.json) | 待检查", index)
 
     def test_rejects_a_work_order_copied_under_another_id_and_outside_paths(self):
         other = ProjectVerification(self.root, "different-review")
