@@ -110,6 +110,7 @@ class TestTerminalUI(unittest.TestCase):
 
             # 阅读历史时，新输出不得把视口拉回底部。
             editor.write("新输出")
+            editor._transcript()
             self.assertGreater(editor._scrollback, 3)
             editor._scroll_to_latest()
             self.assertEqual(editor._scrollback, 0)

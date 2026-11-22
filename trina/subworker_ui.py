@@ -120,10 +120,12 @@ def show_subworkers(manager, config, *, notice: str = "", view: str = "grid"):
     from prompt_toolkit.styles import Style
     from prompt_toolkit.output import ColorDepth
     from .console_ui import _low_latency_keys, run_panel
+    from .scrollbar import ScrollbarControl
     from .swarm import task_llm
     from .output_styles import output_style
 
-    selected = [0 if manager.rows() else -1]
+    rows = manager.rows()
+    selected = [0 if rows else -1]
     mode, zoom, scroll, first_row = [view], [False], [0], [0]
     llm = task_llm(config)
     def width():
@@ -154,15 +156,27 @@ def show_subworkers(manager, config, *, notice: str = "", view: str = "grid"):
         scroll[0] = 0
         keep_selection_visible(count)
     def move_view(index):
-        count = len(manager.rows())
+        count = len(rows)
         columns, visible, maximum = row_limits(count)
-        first_row[0] = min(maximum, max(0, index))
+        target = min(maximum, max(0, index))
+        if target == first_row[0]:
+            return
+        first_row[0] = target
         low = first_row[0] * columns
         high = min(count - 1, low + columns * visible - 1)
         if count and not low <= selected[0] <= high:
             selected[0] = min(high, max(low, selected[0]))
             scroll[0] = 0
-        app.invalidate()
+
+    def viewport():
+        _, visible, maximum = row_limits(len(rows))
+        return visible, maximum, first_row[0]
+
+    def before_render(_app):
+        nonlocal rows
+        rows = manager.rows()
+        scrollbar.apply_pending()
+
     def header():
         metrics = manager.usage.footer(width(), compact=True)
         return [("class:title", _fit_cells(" ◇ SUBWORKERS  " + (manager.badge or "READY"), width()) + "\n"),
@@ -171,7 +185,6 @@ def show_subworkers(manager, config, *, notice: str = "", view: str = "grid"):
         text = f" {'›' if selected[0] == -1 else ' '} 默认 · {llm.model} ◦ {llm.reasoning_effort} · 并发 {config.subworker.workers}"
         return [("class:chosen" if selected[0] == -1 else "class:dim", _fit_cells(text, width()))]
     def content():
-        rows = manager.rows()
         selected[0] = min(selected[0], len(rows) - 1)
         first = keep_selection_visible(len(rows))
         if mode[0] == "grid":
@@ -195,10 +208,12 @@ def show_subworkers(manager, config, *, notice: str = "", view: str = "grid"):
         select(max(0, selected[0] - 1))
     @bindings.add("g")
     def toggle(event):
+        scrollbar.cancel_drag()
         mode[0] = "list" if mode[0] == "grid" else "grid"
         select(selected[0])
     @bindings.add("z")
     def focus(event):
+        scrollbar.cancel_drag()
         zoom[0] = not zoom[0]
         select(selected[0])
     @bindings.add("pageup")
@@ -241,59 +256,29 @@ def show_subworkers(manager, config, *, notice: str = "", view: str = "grid"):
         def mouse_handler(self, event):
             from prompt_toolkit.mouse_events import MouseEventType
             if event.event_type == MouseEventType.SCROLL_UP:
+                scrollbar.cancel_drag()
                 move_view(first_row[0] - 1)
             elif event.event_type == MouseEventType.SCROLL_DOWN:
+                scrollbar.cancel_drag()
                 move_view(first_row[0] + 1)
             else:
                 return NotImplemented
             return None
-    class WorkerScrollbar(FormattedTextControl):
-        def __init__(self):
-            super().__init__(self._render)
-            self.dragging = False
-
-        def _dimensions(self):
-            _, visible, maximum = row_limits(len(manager.rows()))
-            track = height()
-            thumb = max(1, round(track * visible / (maximum + visible)))
-            return track, thumb, maximum
-
-        def _render(self):
-            track, thumb, maximum = self._dimensions()
-            if not maximum:
-                return []
-            offset = round((track - thumb) * first_row[0] / maximum)
-            return [("class:focusborder" if offset <= i < offset + thumb else "class:rail",
-                     ("█" if offset <= i < offset + thumb else "│") + "\n") for i in range(track)]
-
-        def mouse_handler(self, event):
-            from prompt_toolkit.mouse_events import MouseButton, MouseEventType
-            if event.event_type in {MouseEventType.SCROLL_UP, MouseEventType.SCROLL_DOWN}:
-                return body.mouse_handler(event)
-            if event.event_type == MouseEventType.MOUSE_UP:
-                self.dragging = False
-                return None
-            if event.event_type == MouseEventType.MOUSE_DOWN and event.button == MouseButton.LEFT:
-                self.dragging = True
-            elif not (self.dragging and event.event_type == MouseEventType.MOUSE_MOVE):
-                return NotImplemented
-            track, thumb, maximum = self._dimensions()
-            if not maximum:
-                return None
-            move_view(round((event.position.y - thumb // 2) * maximum / max(1, track - thumb - 1)))
-            return None
-
     body = DashboardControl(content, focusable=True, show_cursor=False)
+    scrollbar = ScrollbarControl(
+        viewport, lambda offset, _maximum: move_view(offset), lambda direction: move_view(first_row[0] - direction),
+        thumb_style="class:focusborder", track_style="class:rail", hide_when_fits=True,
+    )
     app = Application(layout=Layout(HSplit([
         Window(FormattedTextControl(header), height=2, wrap_lines=False),
         Window(FormattedTextControl(defaults), height=1, wrap_lines=False),
         Window(FormattedTextControl(lambda: [("class:rail", "─" * width())]), height=1),
-        VSplit([Window(body, wrap_lines=False), Window(WorkerScrollbar(), width=1, wrap_lines=False)],
+        VSplit([Window(body, wrap_lines=False), Window(scrollbar, width=1, wrap_lines=False)],
                width=width),
         Window(FormattedTextControl(lambda: [("class:title", _fit_cells(notice, width()))]), height=1 if notice else 0, wrap_lines=False),
         Window(FormattedTextControl(lambda: [("class:dim", _fit_cells(" 滚轮/拖动浏览 · Tab 切换 · G 列表/网格 · Z 放大 · PgUp/Dn 对话 · F 补充 · Esc 返回", width()))]), height=1),
     ]), focused_element=body), key_bindings=bindings, full_screen=True, erase_when_done=True,
-        refresh_interval=.25, min_redraw_interval=1 / 120, max_render_postpone_time=0,
+        refresh_interval=.25, min_redraw_interval=1 / 120, max_render_postpone_time=0, before_render=before_render,
         color_depth=ColorDepth.DEPTH_24_BIT, mouse_support=True,
         style=Style.from_dict({"title": "bold " + THEME["rose"], "chosen": "bold " + THEME["rose"],
                               "name": output_style("text", config.ui.output_palette), "model": THEME["lilac"],

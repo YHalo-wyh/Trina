@@ -78,7 +78,7 @@ class WorkerDashboardTests(unittest.TestCase):
 
         output = Vt100_Output(io.StringIO(), lambda: Size(rows=30, columns=144), enable_cpr=False)
         with create_pipe_input() as pipe, create_app_session(input=pipe, output=output):
-            pipe.send_text("\x1b[<65;1;5M\x1b[<0;144;5M\x1b[<32;144;27M\x1b[<0;144;27m\t\tf")
+            pipe.send_text("\x1b[<65;1;5M\x1b[<0;144;5M\x1b[<32;144;29M\x1b[<0;144;29m\t\tf")
             self.assertEqual(show_subworkers(self.manager(137), self.config), ("message", "worker-137"))
 
     def test_live_projection_ignores_raw_model_protocol_and_tracks_final_output(self):

@@ -631,6 +631,7 @@ class EnhancedConsoleInput:
         @bindings.add("f2")
         def native_selection(event):
             self._mouse_enabled = not self._mouse_enabled
+            self.scrollbar_control.cancel_drag()
             self.transcript_control.clear_selection()
             self.app.invalidate()
 
@@ -697,80 +698,20 @@ class EnhancedConsoleInput:
 
         owner = self
 
-        class ScrollbarControl(FormattedTextControl):
-            """右侧滚动条：拖动/滚轮改变视口，到底部恢复跟随最新输出。"""
-
-            def __init__(self):
-                self._dragging = False
-                super().__init__(self._render, focusable=False, show_cursor=False)
-
-            def _height(self) -> int:
-                return max(1, int(getattr(owner.transcript_control, "viewport_height", 1) or 1))
-
-            def _render(self):
-                control = owner.transcript_control
-                height = self._height()
-                total = max(1, owner._rendered_lines)
-                maximum = max(0, total - height)
-                rows: list[tuple[str, str]] = []
-                if maximum <= 0:
-                    for _ in range(height):
-                        rows.extend((("class:scrollbar.track", "│"), ("", "\n")))
-                    return rows
-                thumb = max(1, min(height, int(round(height * height / total))))
-                position = int(round((height - thumb) * (control.viewport_start() / maximum)))
-                for index in range(height):
-                    style = "class:scrollbar.thumb" if position <= index < position + thumb else "class:scrollbar.track"
-                    rows.extend(((style, "█" if style.endswith("thumb") else "│"), ("", "\n")))
-                return rows
-
-            def _seek(self, y: int) -> None:
-                owner._cancel_wheel_scroll()
-                control = owner.transcript_control
-                height = self._height()
-                maximum = control.max_scrollback()
-                if maximum <= 0:
-                    owner._scroll_to_latest()
-                    return
-                ratio = min(1.0, max(0.0, float(y) / max(1, height - 1)))
-                updated = max(0, min(maximum, int(round((1.0 - ratio) * maximum))))
-                old_start = control.viewport_start()
-                owner._scrollback = updated
-                owner._follow_latest = updated == 0
-                if owner._follow_latest:
-                    control.clear_selection()
-                control.precondition_scroll(old_start, control.viewport_start())
-                owner.app.invalidate()
-
-            def mouse_handler(self, event):
-                from prompt_toolkit.mouse_events import MouseButton, MouseEventType
-                if event.event_type == MouseEventType.SCROLL_UP:
-                    owner._wheel_scroll(3)
-                    return None
-                if event.event_type == MouseEventType.SCROLL_DOWN:
-                    owner._wheel_scroll(-3)
-                    return None
-                if event.button == MouseButton.LEFT:
-                    if event.event_type == MouseEventType.MOUSE_DOWN:
-                        self._dragging = True
-                        self._seek(event.position.y)
-                        return None
-                    if event.event_type == MouseEventType.MOUSE_MOVE and self._dragging:
-                        self._seek(event.position.y)
-                        return None
-                    if event.event_type == MouseEventType.MOUSE_UP:
-                        self._dragging = False
-                        return None
-                return NotImplemented
-
         # transcript 已按脏块缓存成物理行；关闭 Window 二次折行并直接给出视口偏移。
+        from .scrollbar import ScrollbarControl
+
         self.output_window = Window(
             self.transcript_control,
             wrap_lines=False,
             always_hide_cursor=True,
             get_vertical_scroll=lambda _window: self.transcript_control.viewport_start(),
         )
-        self.scrollbar_control = ScrollbarControl()
+        self.scrollbar_control = ScrollbarControl(
+            self._scroll_viewport, self._seek_viewport, lambda direction: self._wheel_scroll(direction * 3),
+            thumb_style="class:scrollbar.thumb", track_style="class:scrollbar.track",
+            on_press=self._cancel_wheel_scroll,
+        )
         self.scrollbar_window = Window(self.scrollbar_control, width=1, wrap_lines=False, always_hide_cursor=True)
         self.activity_window = Window(FormattedTextControl(self._activity), height=1, wrap_lines=False)
         self.input_window = Window(control, wrap_lines=True, height=Dimension(min=1, max=3), dont_extend_height=True)
@@ -814,6 +755,7 @@ class EnhancedConsoleInput:
         self.app.after_render += self._after_render
 
     def _before_render(self, _app) -> None:
+        self.scrollbar_control.apply_pending()
         self._animate_home()
         if self.context is not None:
             self._frame_context = self.context()
@@ -892,6 +834,7 @@ class EnhancedConsoleInput:
 
     def _wheel_scroll(self, lines: int) -> None:
         """把同一重绘间隔内的鼠标刻度合并，保留逐刻度钳制到边界的顺序。"""
+        self.scrollbar_control.cancel_drag()
         loop = getattr(self.app, "loop", None)
         if loop is None or not loop.is_running():
             self._scroll_by(lines)
@@ -932,6 +875,7 @@ class EnhancedConsoleInput:
         self.app.invalidate()
 
     def _scroll_to_oldest(self) -> None:
+        self.scrollbar_control.cancel_drag()
         self._cancel_wheel_scroll()
         old_start = self.transcript_control.viewport_start()
         updated = self.transcript_control.max_scrollback()
@@ -943,6 +887,7 @@ class EnhancedConsoleInput:
         self.app.invalidate()
 
     def _scroll_to_latest(self) -> None:
+        self.scrollbar_control.cancel_drag()
         self._cancel_wheel_scroll()
         selected = self.transcript_control.anchor is not None
         if not self._scrollback and not selected:
@@ -953,6 +898,17 @@ class EnhancedConsoleInput:
         self.transcript_control.clear_selection()
         self.transcript_control.precondition_scroll(old_start, self.transcript_control.viewport_start())
         self.app.invalidate()
+
+    def _scroll_viewport(self) -> tuple[int, int, int]:
+        control = self.transcript_control
+        return control.viewport_height, control.max_scrollback(), control.viewport_start()
+
+    def _seek_viewport(self, offset: int, drag_maximum: int) -> None:
+        maximum = self.transcript_control.max_scrollback()
+        self._scrollback = 0 if offset == drag_maximum else max(0, maximum - offset)
+        self._follow_latest = self._scrollback == 0
+        if self._follow_latest:
+            self.transcript_control.clear_selection()
 
     def _status(self):
         from .terminal import clean_text
@@ -1073,13 +1029,12 @@ class EnhancedConsoleInput:
             self.transcript_control.invalidate_from(0 if pruned else len(self._chunks) - 1)
             if pruned:
                 self.transcript_control.clear_selection()
-            if self._scrollback:
-                self.transcript_control.sync(max(1, self.app.output.get_size().columns))
         self.app.invalidate()
 
     def clear_transcript(self) -> None:
         """切换对话时替换内容，保留输入区与应用生命周期。"""
         with self._content_lock:
+            self.scrollbar_control.cancel_drag()
             self._cancel_wheel_scroll()
             self._chunks.clear()
             self._tool_indices.clear()
@@ -1253,6 +1208,7 @@ class EnhancedConsoleInput:
         try:
             self.app.run(pre_run=lambda: self.app.create_background_task(self._consume()))
         finally:
+            self.scrollbar_control.cancel_drag()
             self._cancel_wheel_scroll()
             self._handler = None
 

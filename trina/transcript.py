@@ -85,7 +85,8 @@ class TranscriptControl(UIControl):
             delta = new_start - old_start
             # 尾随新增行时先搬运稳定视口，差分只写新露出的行。
             # 宽度/高度变化或旧行改写时由普通屏幕差分处理。
-            if (can_shift and not owner._scrollback and self.anchor is None and 0 < delta < self.viewport_height
+            if (can_shift and not owner.scrollbar_control.dragging and not owner._scrollback
+                    and self.anchor is None and 0 < delta < self.viewport_height
                     and len(old_visible) == self.viewport_height
                     and old_visible[delta:] == self.rows[new_start:new_start + self.viewport_height - delta]):
                 self.precondition_scroll(old_start, new_start)

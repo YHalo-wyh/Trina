@@ -224,8 +224,8 @@ class TranscriptTests(unittest.TestCase):
         bar = self.editor.scrollbar_control
 
         def thumb() -> int:
-            rows = [text for _, text in bar._render() if text in {"█", "│"}]
-            return rows.index("█")
+            content = bar.create_content(1, 10)
+            return next(y for y in range(10) if content.get_line(y)[0][1] == "█")
 
         self.assertGreater(thumb(), 0, "底部时滑块应在下方")
         self.editor._scroll_to_oldest()
@@ -235,11 +235,35 @@ class TranscriptTests(unittest.TestCase):
 
         bar.mouse_handler(MouseEvent(Point(x=0, y=9), MouseEventType.MOUSE_DOWN,
                                      MouseButton.LEFT, frozenset()))
+        bar.apply_pending()
         self.assertEqual(self.editor._scrollback, 0)
         self.assertTrue(self.editor._follow_latest)
         control.create_content(80, 10)
         self.assertEqual(control.viewport_start(), control.max_scrollback())
         self.assertGreater(thumb(), 0, "拖动到底部后滑块仍在下方")
+
+    def test_history_append_only_reflows_new_blocks_while_dragging(self):
+        old_renders = []
+        self.editor.write(ResponsiveText("history", lambda width: old_renders.append(width) or "history\n" * 36))
+        control, bar = self.editor.transcript_control, self.editor.scrollbar_control
+        control.create_content(79, 20)
+        self.editor._scroll_to_oldest()
+
+        def thumb_rows():
+            content = bar.create_content(1, 20)
+            return [y for y in range(20) if content.get_line(y)[0][1] == "█"]
+
+        before = thumb_rows()
+        event = MouseEvent(Point(x=0, y=before[-1]), MouseEventType.MOUSE_DOWN, MouseButton.LEFT, frozenset())
+        self.assertIs(bar.mouse_handler(event), NotImplemented)
+        self.editor.write("\n".join(f"added {i}" for i in range(40)))
+        control.create_content(79, 20)
+        self.assertEqual(control.viewport_start(), 0)
+        self.assertEqual(thumb_rows(), before)
+        self.assertEqual(old_renders, [79])
+
+        bar.mouse_handler(MouseEvent(event.position, MouseEventType.MOUSE_UP, MouseButton.LEFT, frozenset()))
+        self.assertLess(len(thumb_rows()), len(before))
 
     def test_drag_selection_copies_chinese_lines_and_keeps_input_draft(self):
         self.editor.write("第一行 abc\n第二行 xyz")
@@ -396,6 +420,51 @@ class TranscriptTests(unittest.TestCase):
                     app.create_background_task(exercise())
             editor.app.after_render += rendered
             editor.app.run()
+
+    def test_real_vt_scrollbar_drag_moves_once_for_a_burst_of_mouse_events(self):
+        import io
+        import re
+        from prompt_toolkit.data_structures import Size
+        from prompt_toolkit.output.vt100 import Vt100_Output
+
+        stream = io.StringIO()
+        output = Vt100_Output(stream, lambda: Size(rows=24, columns=80), enable_cpr=False)
+        with create_app_session(input=self.input, output=output):
+            editor = EnhancedConsoleInput(status=lambda: "ready", running=lambda: False,
+                                          dynamic_values=lambda *_: (), plain=True, motion="none")
+            editor.write("\n".join(f"history {i}" for i in range(100)))
+            editor.buffer.text = "保留输入"
+            control, bar = editor.transcript_control, editor.scrollbar_control
+
+            async def exercise():
+                try:
+                    height = control.viewport_height
+                    before = control.viewport_start()
+                    self.input.send_text(f"\x1b[<0;80;{height}M")
+                    await asyncio.sleep(.05)
+                    self.assertTrue(bar.dragging)
+                    self.assertEqual(control.viewport_start(), before)
+
+                    offset, frame = stream.tell(), editor.app.render_counter
+                    positions = (height - 1, height - 2, height - 3, height - 2) * 20 + (1,)
+                    with patch.object(bar, "_seek", wraps=bar._seek) as seek:
+                        self.input.send_text("".join(f"\x1b[<32;80;{y}M" for y in positions))
+                        await asyncio.sleep(.1)
+                        self.assertEqual(seek.call_count, 1)
+                        self.assertEqual(editor.app.render_counter - frame, 1)
+                    self.assertEqual(control.viewport_start(), 0)
+                    self.assertNotRegex(stream.getvalue()[offset:], re.compile(r"\x1b\[\d+;\d+r"))
+
+                    self.input.send_text(f"\x1b[<0;80;{height}m")
+                    await asyncio.sleep(.05)
+                    self.assertFalse(bar.dragging)
+                    self.assertTrue(editor._follow_latest)
+                    self.assertEqual(editor.buffer.text, "保留输入")
+                    editor.app.exit()
+                except BaseException as exc:
+                    editor.app.exit(exception=exc)
+
+            editor.app.run(pre_run=lambda: editor.app.create_background_task(exercise()))
 
 
 if __name__ == "__main__":
