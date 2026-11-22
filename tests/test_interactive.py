@@ -693,6 +693,37 @@ class TestConsole(unittest.TestCase):
         console.handle("!" + text)
         self.assertEqual(console.session.steers.get_nowait(), text)
 
+    def test_second_enter_sends_the_latest_running_input_once(self):
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+
+        console, output = self._console([])
+        console.session.thread = SimpleNamespace(is_alive=lambda: True)
+        console._show_status = Mock()
+        console.handle("/queue add 之前留下的草稿")
+        text = '补测没有结束引号的输入 "\n再补空输入'
+        console.handle(text)
+        self.assertTrue(console.session.steers.empty())
+        self.assertIn("再按一次 Enter", "\n".join(output))
+        console.handle("")
+        self.assertEqual(console.session.steers.get_nowait(), text)
+        self.assertEqual(list(console._drafts), [1])
+        console.handle("")
+        self.assertTrue(console.session.steers.empty())
+        console._show_status.assert_called_once()
+
+    def test_second_enter_does_not_send_a_draft_to_a_different_task(self):
+        from types import SimpleNamespace
+
+        console, output = self._console([])
+        console.session.thread = SimpleNamespace(is_alive=lambda: True)
+        console.handle("补测旧任务的空输入")
+        console.session.thread = SimpleNamespace(is_alive=lambda: True)
+        console.handle("")
+        self.assertTrue(console.session.steers.empty())
+        self.assertEqual(console._drafts[1][0], "补测旧任务的空输入")
+        self.assertIn("草稿 #1", "\n".join(output))
+
     def test_plan_reasks_until_review_and_stages_without_running_tools(self):
         from types import SimpleNamespace
         from unittest.mock import Mock

@@ -91,6 +91,7 @@ class Console:
         self._planning = False
         self._drafts: dict[int, tuple[str, str, str]] = {}
         self._draft_number = 0
+        self._enter_draft: tuple[int, threading.Thread | None] | None = None
         self._job_notices: deque[tuple[str, str]] = deque(maxlen=128)
         #: 注入的后端（测试用）或按当前会话配置构建的缓存
         self._backend_obj = backend
@@ -597,7 +598,16 @@ class Console:
     # ------------------------------------------------------------------ 命令
     def handle(self, raw: str) -> bool:
         line = (raw or "").strip()
+        armed, self._enter_draft = self._enter_draft, None
         if not line:
+            if armed is not None:
+                number, owner = armed
+                if number in self._drafts:
+                    if self.session.running and self.session.thread is owner:
+                        self._cmd_queue(["send", str(number)], running_only=True)
+                    else:
+                        self._emit(f"原任务已结束，草稿 #{number} 仍可用 /queue send {number} 发送", prefix="队列")
+                    return True
             self._show_status()
             return True
         if line.lstrip("/").strip() in ("quit", "exit", "q"):
@@ -627,7 +637,7 @@ class Console:
             argv = shlex.split(line)
         except ValueError:
             if not forced and self.session.running:
-                self._enqueue_draft(line)
+                self._enqueue_draft(line, on_enter=True)
                 return True
             if forced:
                 self._emit("命令中的引号未闭合；补齐引号后重试，或输入 /help 查看示例。", prefix="错误")
@@ -778,7 +788,7 @@ class Console:
             self._show_help(args)
             return True
         if not forced and command not in COMMAND_NAMES:
-            self._enqueue_draft(line)
+            self._enqueue_draft(line, on_enter=True)
             return True
         self._emit("任务运行中 · /queue 查看草稿 · /hint 立即补充 · /status 查看 · /stop 停止")
         return True
@@ -792,13 +802,16 @@ class Console:
         else:
             self._start_chat_turn(text)
 
-    def _enqueue_draft(self, text: str, *, task_id: str = "") -> None:
+    def _enqueue_draft(self, text: str, *, task_id: str = "", on_enter: bool = False) -> None:
         if not text.strip():
             return
         runtime = self.subworkers.runtime if task_id else None
         self._draft_number += 1
         self._drafts[self._draft_number] = (text, task_id, runtime.run_id if runtime else "")
-        self._emit(f"草稿 #{self._draft_number} 已排队 · /queue send {self._draft_number} 发送", prefix="队列")
+        if on_enter:
+            self._enter_draft = self._draft_number, self.session.thread
+        hint = "再按一次 Enter 立即发送" if on_enter else f"/queue send {self._draft_number} 发送"
+        self._emit(f"草稿 #{self._draft_number} 已排队 · {hint}", prefix="队列")
 
     def _send_live_note(self, text: str) -> bool:
         if self._planning:
@@ -810,7 +823,7 @@ class Console:
         self.session.steer(text)
         return bool(text.strip())
 
-    def _cmd_queue(self, args: list[str]) -> None:
+    def _cmd_queue(self, args: list[str], *, running_only: bool = False) -> None:
         action = args[0] if args else "list"
         if action == "list":
             rows = [(f"#{number} · {task or '主会话'}", text) for number, (text, task, _) in self._drafts.items()]
@@ -829,7 +842,7 @@ class Console:
                 if runtime is None or runtime.run_id != run_id:
                     raise ValueError("原 Worker 已结束，可从 /queue 查看并复制草稿")
                 self.subworkers.task_control(task_id, "message", text)
-            elif self.session.running:
+            elif running_only or self.session.running:
                 if not self._send_live_note(text):
                     return
             else:

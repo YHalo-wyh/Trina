@@ -8,6 +8,9 @@ from typing import Any
 _ANSI = re.compile(r"\x1b(?:\][^\x07\x1b]*(?:\x07|\x1b\\)|\[[0-?]*[ -/]*[@-~]|[@-_])")
 
 
-def clean_text(value: Any) -> str:
-    text = _ANSI.sub("", str(value)).replace("\t", "    ")
-    return "".join(ch for ch in text if ch == "\n" or unicodedata.category(ch) not in ("Cc", "Cf", "Cs"))
+def clean_text(value: Any, *, preserve_tabs: bool = False) -> str:
+    text = _ANSI.sub("", str(value))
+    if not preserve_tabs:
+        text = text.replace("\t", "    ")
+    whitespace = "\n\t" if preserve_tabs else "\n"
+    return "".join(ch for ch in text if ch in whitespace or unicodedata.category(ch) not in ("Cc", "Cf", "Cs"))

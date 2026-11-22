@@ -9,6 +9,8 @@ import sys
 import unicodedata
 from typing import Any, Callable
 
+from prompt_toolkit.utils import get_cwidth
+
 PHASES = {"recon": "侦察", "enum": "枚举", "vuln": "验证", "exploit": "利用", "post": "后续", "report": "报告"}
 STATUSES = {"running": "运行中", "chat": "对话", "success": "完成", "partial": "部分完成", "failed": "失败", "blocked": "已阻止", "stopped": "已停止"}
 VERDICTS = {"CONFIRMED": "已确认", "NOT_CONFIRMED": "本轮未确认", "INCONCLUSIVE": "证据不足"}
@@ -271,11 +273,8 @@ def render_tool_call_fragments(tool: str, params: dict[str, Any], *, status: str
 
 
 def _cells(text: str) -> int:
-    """统计终端显示单元，工具边框不依赖 Rich 的逐帧布局。"""
-    if text.isascii():
-        return len(text)
-    return sum(0 if unicodedata.combining(ch) else (2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1)
-               for ch in text)
+    """工具窗口与会话视口使用同一显示列宽。"""
+    return len(text) if text.isascii() else get_cwidth(text)
 
 
 def _wrap_clean_line(text: str, width: int) -> list[str]:
@@ -286,7 +285,7 @@ def _wrap_clean_line(text: str, width: int) -> list[str]:
         return [text[index:index + width] for index in range(0, len(text), width)]
     lines, current, used = [], "", 0
     for char in text:
-        size = 0 if unicodedata.combining(char) else (2 if unicodedata.east_asian_width(char) in ("W", "F") else 1)
+        size = get_cwidth(char)
         if used + size > width and current:
             lines.append(current)
             current, used = "", 0
@@ -294,6 +293,38 @@ def _wrap_clean_line(text: str, width: int) -> list[str]:
         used += size
     lines.append(current)
     return lines
+
+
+def _clean_tool_text(value: str) -> str:
+    """保留终端日志缩进，按八列制表位对齐源码和诊断指示行。"""
+    text = clean_text(value.replace("\r\n", "\n").replace("\r", "\n"), preserve_tabs=True)
+    if "\t" not in text:
+        return text
+    lines = []
+    for line in text.split("\n"):
+        head, *segments = line.split("\t")
+        column = _cells(head)
+        parts = [head]
+        for segment in segments:
+            padding = 8 - column % 8
+            parts.extend((" " * padding, segment))
+            column += padding + _cells(segment)
+        lines.append("".join(parts))
+    return "\n".join(lines)
+
+
+_DIAGNOSTIC_GUTTER = re.compile(r"^(?: +\d+ *| +)\| ")
+
+
+def _wrap_tool_line(line: str, width: int) -> list[str]:
+    if _cells(line) <= width:
+        return [line]
+    gutter = _DIAGNOSTIC_GUTTER.match(line)
+    if gutter and gutter.end() < width // 2:
+        size = gutter.end()
+        first, *rest = _wrap_clean_line(line[size:], width - size)
+        return [line[:size] + first, *(" " * (size - 2) + "| " + part for part in rest)]
+    return _wrap_clean_line(line, width)
 
 
 def _render_tool_box_fragments(title: str, arguments: str, output: str, stderr: str, error: str,
@@ -324,7 +355,7 @@ def _render_tool_box_fragments(title: str, arguments: str, output: str, stderr: 
             lines.append(row(label, section_style))
         for source_line in text.splitlines():
             line_style = diff_style(source_line, palette, color=color) if diff else style
-            for wrapped in _wrap_clean_line(source_line, inner):
+            for wrapped in _wrap_tool_line(source_line, inner):
                 lines.append(row(wrapped, line_style))
 
     safe_title = " ".join(clean_text(title).splitlines())
@@ -341,13 +372,13 @@ def _render_tool_box_fragments(title: str, arguments: str, output: str, stderr: 
     if details and not details_fit:
         for wrapped in _wrap_clean_line(details, inner):
             lines.append(row(wrapped, border_style))
-    safe_output, safe_stderr, safe_error = clean_text(output), clean_text(stderr), clean_text(error)
+    safe_output, safe_stderr, safe_error = map(_clean_tool_text, (output, stderr, error))
     section("参数", clean_text(arguments), input_style)
     if safe_output.strip() or safe_stderr.strip() or safe_error.strip():
         lead = "─── Output "
         lines.append(row(lead + "─" * (inner - _cells(lead)), section_style))
     section("", safe_output, text_style, diff=is_diff)
-    section("stderr", safe_stderr, stderr_style)
+    section("stderr" if safe_output.strip() else "", safe_stderr, stderr_style)
     if safe_error.strip() not in {safe_output.strip(), safe_stderr.strip()}:
         section("错误", safe_error, error_style)
     section("记录", clean_text(record), section_style)

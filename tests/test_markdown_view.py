@@ -83,6 +83,25 @@ class MarkdownViewTests(unittest.TestCase):
         self.assertIn("工作目录不可读", failure)
         self.assertNotIn(" 参数 ", failure)
 
+    def test_compiler_output_preserves_tab_alignment_and_wrapped_gutter(self):
+        from prompt_toolkit.utils import get_cwidth
+
+        stderr = "   9 | ab\tCONFIG_VERSION + " + "value + " * 10 + "\r\n     |   \t^~~~~~~~~~~~~~\r\n结束❤\ufe0f"
+        for width in (42, 100):
+            with self.subTest(width=width):
+                plain = "".join(part for _, part in render_tool_call_fragments(
+                    "terminal_exec", {}, status="failed", stderr=stderr, width=width))
+                lines = plain.splitlines()
+                self.assertTrue(all(get_cwidth(line) == width for line in lines))
+                self.assertEqual(plain.count("─── Output ───"), 1)
+                self.assertNotIn("│ stderr ", plain)
+                source = next(line for line in lines if "CONFIG_VERSION" in line)
+                marker = next(line for line in lines if "^" in line)
+                self.assertEqual(source.index("CONFIG_VERSION"), marker.index("^"))
+                self.assertEqual(source.index("CONFIG_VERSION"), 18)
+                if width == 42:
+                    self.assertTrue(any("│      | " in line and "value" in line for line in lines))
+
     def test_commonmark_nested_markup_links_and_tables(self):
         fragments = render_markdown_fragments(
             "- **bold with *italic***\n  - child\n\n[text][ref]\n\n[ref]: https://example.com\n\n"
