@@ -12,6 +12,7 @@ Trina 是面向 CTF 与授权攻防环境的自动化 Agent，提供真实浏览
 | [产品需求](需求/README.md) | 当前能力、优先级、状态与验收目标 |
 | [行为规约](规约/README.md) · [机器规约](规约/规约.json) | 状态转换、规则 ID、实现路径与验证方法 |
 | [架构决策记录](ADR/README.md) | 按编号查阅 ADR、适用范围和验证入口 |
+| [项目级 Harness](docs/course/harness-manifest.md) | 工程规则、测试入口、验收、恢复与回滚 |
 | [设计决策](docs/设计决策/设计决策.md) | 关键方案的背景、取舍、边界与验证依据 |
 | [架构](docs/ARCHITECTURE.md) | Agent Runtime、执行链、状态与模块契约 |
 | [Swarm](docs/SWARM.md) | 多任务调度、并行 Worker、租约与恢复 |

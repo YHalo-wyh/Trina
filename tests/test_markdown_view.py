@@ -55,8 +55,29 @@ class MarkdownViewTests(unittest.TestCase):
                 output="结果\x1b[2J\n" + "x" * 70, duration=.2, exit_code=12345678, width=width, color=True)
             plain = "".join(text for _, text in fragments)
             self.assertNotIn("\x1b", plain)
-            self.assertIn("Output", plain)
+            self.assertIn("输出", plain)
             self.assertTrue(all(cell_len(line) <= width for line in plain.splitlines()))
+
+    def test_tool_card_separates_input_output_and_failures_without_empty_sections(self):
+        def text(*args, **kwargs):
+            return "".join(part for _, part in render_tool_call_fragments(*args, **kwargs))
+
+        card = text("terminal_exec", {"argv": ["python", "-V"]}, status="failed", duration=.3,
+                    exit_code=1, output="已生成摘要", stderr="命令执行出错", error="命令执行出错", width=72)
+        self.assertIn("terminal_exec · 失败", card.splitlines()[0])
+        self.assertIn("0.3s · exit 1", card.splitlines()[0])
+        self.assertLess(card.index(" 命令 "), card.index(" 输出 "))
+        self.assertLess(card.index(" 输出 "), card.index(" stderr "))
+        self.assertEqual(card.count("命令执行出错"), 1)
+
+        pending = text("workspace_read", {"path": "会议纪要.md"}, status="running", width=60)
+        self.assertIn('{"path": "会议纪要.md"}', pending)
+        self.assertNotIn("输出", pending)
+        self.assertNotIn("0.0s", pending)
+        failure = text("workspace_read", {}, status="denied", error="工作目录不可读", width=60)
+        self.assertIn(" 错误 ", failure)
+        self.assertIn("工作目录不可读", failure)
+        self.assertNotIn(" 参数 ", failure)
 
     def test_commonmark_nested_markup_links_and_tables(self):
         fragments = render_markdown_fragments(

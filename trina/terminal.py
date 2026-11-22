@@ -257,10 +257,17 @@ def render_tool_call_fragments(tool: str, params: dict[str, Any], *, status: str
     argv = params.get("argv")
     script = ("$ " + (subprocess.list2cmdline([str(item) for item in argv]) if os.name == "nt" else
                      shlex.join([str(item) for item in argv]))) if isinstance(argv, list) else ""
-    script = script or command or json.dumps(params, ensure_ascii=False, indent=2)
+    script = command or script
+    input_label = "命令" if script else "参数"
+    if not script and params:
+        script = json.dumps(params, ensure_ascii=False)
+        if _cells(script) > width - 4:
+            script = json.dumps(params, ensure_ascii=False, indent=2)
     title = f"{clean_text(tool)} · {label}"
-    footer = f"{duration:.1f}s" + (f" · exit {exit_code}" if exit_code is not None else "")
-    return _render_tool_box_fragments(title, script, output or "（暂无输出）", stderr, error, footer,
+    details = f"{duration:.1f}s" if status not in {"requested", "awaiting_approval", "running"} or duration else ""
+    if exit_code is not None:
+        details = " · ".join(part for part in (details, f"exit {exit_code}") if part)
+    return _render_tool_box_fragments(title, input_label, script, output, stderr, error, details,
                                       width=width, color=color, palette=palette, status=status,
                                       is_diff=tool == "workspace_git" and params.get("action") == "diff")
 
@@ -291,7 +298,8 @@ def _wrap_clean_line(text: str, width: int) -> list[str]:
     return lines
 
 
-def _render_tool_box_fragments(title: str, script: str, output: str, stderr: str, error: str, footer: str, *,
+def _render_tool_box_fragments(title: str, input_label: str, script: str, output: str, stderr: str, error: str,
+                               details: str, *,
                                width: int, color: bool, palette: Palette = "trina", status: str = "running",
                                is_diff: bool = False) -> list[tuple[str, str]]:
     """线性绘制工具窗口；输出增量只进行文本折行和补齐。"""
@@ -304,48 +312,43 @@ def _render_tool_box_fragments(title: str, script: str, output: str, stderr: str
     text_style = output_style("text", palette, color=color)
     stderr_style = output_style("warning", palette, color=color)
     error_style = output_style("error", palette, color=color)
+    section_style = output_style("muted", palette, color=color)
     lines: list[list[tuple[str, str]]] = []
 
     def row(text: str, style: str = "") -> list[tuple[str, str]]:
         pad = " " * max(0, inner - _cells(text))
         return [(border_style, "│"), ("", " "), (style, text), ("", pad + " "), (border_style, "│")]
 
-    def ruled(label: str) -> list[tuple[str, str]]:
-        lead = f" {label} "
-        return row(lead + "─" * max(0, inner - _cells(lead)))
+    def section(label: str, text: str, style: str, *, diff: bool = False) -> None:
+        if not text.strip():
+            return
+        lines.append(row(label, section_style))
+        for source_line in text.splitlines():
+            line_style = diff_style(source_line, palette, color=color) if diff else style
+            for wrapped in _wrap_clean_line(source_line, inner):
+                lines.append(row(wrapped, line_style))
 
-    safe_title, safe_script = clean_text(title), clean_text(script)
-    safe_output, safe_stderr, safe_error = clean_text(output), clean_text(stderr), clean_text(error)
+    safe_title = " ".join(clean_text(title).splitlines())
     title_lines = _wrap_clean_line(safe_title, max(1, width - 5))
     top_lead = f"╭─ {title_lines[0]} "
-    lines.append([(border_style, top_lead + "─" * max(0, width - _cells(top_lead) - 1) + "╮")])
+    top_tail = f" {details} ─╮" if details else "╮"
+    details_fit = len(title_lines) == 1 and _cells(top_lead + top_tail) < width
+    if not details_fit:
+        top_tail = "╮"
+    lines.append([(border_style, top_lead + "─" * max(0, width - _cells(top_lead + top_tail)) + top_tail)])
     for title_tail in title_lines[1:]:
         for wrapped in _wrap_clean_line(title_tail, inner):
             lines.append(row(wrapped, border_style))
-    for source_line in safe_script.splitlines() or [""]:
-        for wrapped in _wrap_clean_line(source_line, inner):
-            lines.append(row(wrapped, input_style))
-    lines.append(ruled("Output"))
-    for source_line in safe_output.splitlines() or [""]:
-        style = diff_style(source_line, palette, color=color) if is_diff else text_style
-        for wrapped in _wrap_clean_line(source_line, inner):
-            lines.append(row(wrapped, style))
-    if stderr:
-        lines.append(ruled("stderr"))
-        for source_line in safe_stderr.splitlines():
-            for wrapped in _wrap_clean_line(source_line, inner):
-                lines.append(row(wrapped, stderr_style))
-    if error:
-        for source_line in safe_error.splitlines():
-            for wrapped in _wrap_clean_line(source_line, inner):
-                lines.append(row(wrapped, error_style))
-    safe_footer = clean_text(footer)
-    if _cells(safe_footer) > width - 4:
-        for wrapped in _wrap_clean_line(safe_footer, inner):
+    if details and not details_fit:
+        for wrapped in _wrap_clean_line(details, inner):
             lines.append(row(wrapped, border_style))
-        safe_footer = ""
-    bottom_lead = "╰" + "─" * max(0, width - _cells(safe_footer) - (4 if safe_footer else 2))
-    lines.append([(border_style, bottom_lead + (f" {safe_footer} " if safe_footer else "") + "╯")])
+    safe_output, safe_stderr, safe_error = clean_text(output), clean_text(stderr), clean_text(error)
+    section(input_label, clean_text(script), input_style)
+    section("输出", safe_output, text_style, diff=is_diff)
+    section("stderr", safe_stderr, stderr_style)
+    if safe_error.strip() not in {safe_output.strip(), safe_stderr.strip()}:
+        section("错误", safe_error, error_style)
+    lines.append([(border_style, "╰" + "─" * (width - 2) + "╯")])
     fragments: list[tuple[str, str]] = []
     for index, line in enumerate(lines):
         for style, text in line:
