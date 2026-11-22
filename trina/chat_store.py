@@ -82,6 +82,9 @@ class ChatStore:
             raise ValueError("历史消息格式无效")
         if not isinstance(data.get("title"), str) or type(data.get("turns")) is not int or data["turns"] < 0:
             raise ValueError("对话元数据格式无效")
+        tool_allowlist = data.get("tool_allowlist", [])
+        if not isinstance(tool_allowlist, list) or any(not isinstance(name, str) for name in tool_allowlist):
+            raise ValueError("对话工具清单格式无效")
         if any(not isinstance(data.get(field, {}), dict) for field in ("state", "context", "usage", "usage_gaps", "controller")):
             raise ValueError("对话状态格式无效")
         return data

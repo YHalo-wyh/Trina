@@ -217,6 +217,20 @@ def _tool_contract(tool_block: str, protocol: str) -> str:
     return "# 可用工具（参数以本次 API tools Schema 为准）\n" + "、".join(names)
 
 
+def contract_tool_names(contract: str) -> set[str]:
+    """从保存的初始合同末尾读取旧版对话公布的工具名。"""
+    _, separator, section = contract.rpartition("\n\n# 可用工具")
+    if not separator:
+        return set()
+    heading, _, body = section.partition("\n")
+    if heading == "（参数以本次 API tools Schema 为准）":
+        return {name.strip() for name in body.split("、") if name.strip()}
+    if not heading:
+        return {line[4:].split(" [", 1)[0].strip() for line in body.splitlines()
+                if line.startswith("### ") and " [" in line}
+    return set()
+
+
 def build_prompt_layers(
     scope_block: str = "",
     tool_block: str = "",

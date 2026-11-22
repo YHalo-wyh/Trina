@@ -116,6 +116,7 @@ class ChatAgent:
         self._visible_prefix = ""
         self.history: list[dict[str, str]] = []
         self._messages: list[LLMMessage] = []
+        self._contract_tool_names: set[str] = set()
         self._previous_text_messages: list[LLMMessage] = []
         self._messages_ready = False
         self._pending_stream: _VisibleStream | None = None
@@ -320,7 +321,8 @@ class ChatAgent:
                                      for term in ("后台", "后台执行", "等待期间", "启动测试程序", "作业", "background", "job_id", "terminal_status", "terminal_start"))
         from ..tools.profile import visible_tool_names
         visible_names = visible_tool_names(self.registry, task_route_key, browser=browser_needed,
-                                           terminal_session=terminal_session_needed)
+                                           terminal_session=terminal_session_needed) - set(hidden_tools)
+        self._contract_tool_names = visible_names
         self.ctx.extra["tool_allowlist"] = set(visible_names)
         role = role_for_registry(self.registry, self.config.llm.role_profile, include=visible_names)
         if self.worker_role != "commander":
@@ -382,7 +384,7 @@ class ChatAgent:
             if tool_payload is None:
                 tool_payload = tool_schemas(
                     self.registry,
-                    include=self.ctx.extra.get("tool_allowlist"),
+                    include=self.ctx.extra.get("tool_allowlist", ()),
                     exclude=() if self.ctx.extra.get("subworkers") else ("worker_tasks",),
                 )
                 self.ctx.extra["_chat_tool_payload"] = tool_payload
@@ -546,6 +548,7 @@ class ChatAgent:
         self.store.save({"version": 1, "run_id": self.run_id, "project": self.store.project,
                          "title": self.title, "turns": self.turns, "in_flight": self.in_flight,
                          "worker_role": self.worker_role,
+                         "tool_allowlist": sorted(self._contract_tool_names),
                          "history": self.history, "messages": self._messages, "state": self.state.to_dict(),
                          "binary_sessions": self.ctx.extra["binary_sessions"].snapshot(),
                          "browser_sessions": self.ctx.extra["browser_sessions"].snapshot(),
@@ -578,7 +581,16 @@ class ChatAgent:
         self.history = data["history"]
         self._messages = data["messages"]
         self._messages_ready = bool(self._messages)
-        if not self._messages_ready:
+        if self._messages_ready:
+            from .prompts import contract_tool_names
+
+            contract = self._messages[1]
+            tool_names = contract_tool_names(contract["content"]) if contract["role"] == "user" else set()
+            if "tool_allowlist" in data:
+                tool_names.intersection_update(data["tool_allowlist"])
+            self._contract_tool_names = tool_names
+            self.ctx.extra["tool_allowlist"] = tool_names.intersection(self.registry.names())
+        else:
             # 旧版 /ask 仅保存文本问答。首次普通请求会在合同之后继承这些消息。
             self._previous_text_messages = [{"role": row["role"], "content": row["content"]}
                                             for row in data.get("text_messages", [])]

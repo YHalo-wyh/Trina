@@ -35,8 +35,10 @@ class ChatResumeTests(unittest.TestCase):
     def backend(self):
         backend = ReplayBackend(LLMConfig(backend="replay"))
         backend.inputs = []
+        backend.tool_inputs = []
         def complete(messages, **kwargs):
             backend.inputs.append(copy.deepcopy(messages))
+            backend.tool_inputs.append({schema["function"]["name"] for schema in kwargs.get("tools", [])})
             return LLMResponse(text="已收到，保留上下文", usage=LLMUsage(input_tokens=100, output_tokens=5, tokens_reported=True))
         backend.complete_messages = complete
         return backend
@@ -83,6 +85,66 @@ class ChatResumeTests(unittest.TestCase):
         self.assertNotIn("api_key", json.dumps(self.store.load(chat.run_id)))
         with self.assertRaises(ValueError):
             self.store.load("../outside")
+
+    def test_code_chat_restores_the_same_tools_in_native_and_legacy_records(self):
+        from trina.tools import build_registry
+
+        registry = build_registry()
+        for protocol in ("native", "json"):
+            config = self.config.with_overrides(llm__tool_protocol=protocol)
+            backend = self.backend()
+            original = ChatAgent(config, registry=registry, backend=backend)
+            self.addCleanup(original.close)
+            original.ask("修复 Python 代码并运行测试")
+            initial = set(original.ctx.extra["tool_allowlist"])
+            self.assertIn("workspace_read", initial)
+            self.assertNotIn("worker_tasks", initial)
+            original.close()
+            saved = self.store.load(original.run_id)
+            self.assertEqual(set(saved["tool_allowlist"]), initial)
+            for legacy in (False, True):
+                with self.subTest(protocol=protocol, legacy=legacy):
+                    if legacy:
+                        saved.pop("tool_allowlist")
+                        self.store.save(saved)
+                    replay = self.backend()
+                    restored = ChatAgent.resume(config, original.run_id, registry=registry, backend=replay)
+                    try:
+                        restored.ask("继续核对代码")
+                        self.assertEqual(restored.ctx.extra["tool_allowlist"], initial)
+                        self.assertEqual(replay.tool_inputs, backend.tool_inputs)
+                    finally:
+                        restored.close()
+            reduced = ToolRegistry([registry.get("workspace_read")])
+            restored = ChatAgent.resume(config, original.run_id, registry=reduced, backend=self.backend())
+            try:
+                self.assertEqual(restored.ctx.extra["tool_allowlist"], {"workspace_read"})
+                self.assertEqual(set(self.store.load(original.run_id)["tool_allowlist"]), initial)
+            finally:
+                restored.close()
+
+    def test_commander_resume_keeps_an_advertised_worker_tool_optional(self):
+        from trina.tools import build_registry
+
+        registry = build_registry()
+        config = self.config.with_overrides(llm__tool_protocol="native")
+        backend = self.backend()
+        first = Console(config, registry=registry, backend=backend, output=lambda _: None, autostart_lab=False)
+        self.addCleanup(first._cleanup)
+        chat = first._ensure_chat()
+        chat.ask("把交接纪要整理成摘要")
+        self.assertIn("worker_tasks", backend.tool_inputs[0])
+        self.assertIsNone(first.subworkers.runtime)
+        run_id = chat.run_id
+        first._cleanup()
+
+        backend = self.backend()
+        second = Console(config, registry=registry, backend=backend, output=lambda _: None, autostart_lab=False)
+        self.addCleanup(second._cleanup)
+        second.handle(f"/resume {run_id}")
+        second._ensure_chat().ask("继续整理")
+        self.assertIn("worker_tasks", backend.tool_inputs[0])
+        self.assertIsNone(second.subworkers.runtime)
 
     def test_legacy_text_only_session_resumes_as_normal_chat(self):
         chat = self.chat()
