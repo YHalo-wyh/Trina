@@ -13,6 +13,7 @@ TITLE_SYSTEM_PROMPT = """你负责给 Agent 会话命名。根据下一条用户
 规则：
 - 标题概括用户最终目标，不要写当前微步骤。
 - 优先复用用户点名的功能、组件或错误；不要使用“处理问题”“相关功能”等空泛词。
+- 使用用户消息的语言。
 - 中文标题控制在 6-16 个汉字；英文标题使用 3-6 个词。
 - 使用简短的祈使短语，不加引号、句号、解释、文件名或会话编号。
 """
@@ -73,6 +74,7 @@ def parse_generated_title(value: str) -> str | None:
 
 def generate_session_title(message: str, backend: Any) -> tuple[str | None, Any | None]:
     """使用隔离的小请求命名，不把标题协议写进主对话上下文。"""
+    message = _IMAGE_RE.sub("", message).strip()[:2400]
     if low_signal_title_input(message):
         return None, None
     messages = [

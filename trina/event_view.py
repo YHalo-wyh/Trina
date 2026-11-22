@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from .events import RuntimeEvent
-from .terminal import render_answer, render_message, render_process, render_tool_call
+from .terminal import render_answer, render_message, render_process, render_tool_call, tool_card_params
 
 
 _OUTPUT_HEAD_CHARS = 1200
@@ -160,7 +160,7 @@ class EventTranscript:
                 data = payload.get("data") or {}
                 stdout, stderr = data.get("stdout"), data.get("stderr")
                 output = str(stdout) if stdout is not None else ""
-                if stdout is None and not row["output"].length:
+                if stdout is None:
                     output = str(payload.get("raw") or "") or (json.dumps(data, ensure_ascii=False, indent=2) if data else "")
                 if output or not row["output"].length:
                     row["output"] = _OutputPreview()
@@ -190,7 +190,8 @@ class EventTranscript:
         from .terminal import ResponsiveText, render_tool_call_fragments
 
         # 历史缓冲按卡片实际保留的可显示内容计量。
-        raw = (f"{row['tool']} · {row['status']}\n{row['params']}\n{output}\n{stderr}\n"
+        params = tool_card_params(row["params"], row.get("command", ""))
+        raw = (f"{row['tool']} · {row['status']}\n{params}\n{output}\n{stderr}\n"
                f"{row.get('error', '')}\n{snapshot.get('record', '')}")
         card = ResponsiveText(raw, lambda width: str(render_tool_call(
             **snapshot, color=self.color, width=width, palette=self.palette)),

@@ -318,6 +318,8 @@ class Console:
             self.view.set_activity("retry", f"等待重试 · 第 {event.payload.get('attempt')} 次")
         elif event.kind == "model.error":
             self.view.set_activity("error", "模型请求失败")
+        elif event.kind == "chat.title" and self._enhanced_input is not None:
+            self._enhanced_input.app.invalidate()
         elif event.kind == "job.finished" and not replayed:
             job_id = str(event.payload.get("job_id") or event.call_id)
             identity = (event.stream_id, job_id)
@@ -463,8 +465,9 @@ class Console:
                 duration_seconds = None
         elif self.session.running:
             duration_seconds = max(0.0, time.monotonic() - self.session.started_at)
+        title = self.chat.title if is_chat and self.chat.title != "新对话" else self._task_title
         return ConsoleContext(status=status + queued, model=_display_model(llm.model, llm.reasoning_effort),
-                              directory=str(Path.cwd()), task=self._task_title or "新对话",
+                              directory=str(Path.cwd()), task=title or self._task_title or "新对话",
                               progress=progress, context_tokens=context_tokens,
                               context_window=llm.effective_context_window, duration_seconds=duration_seconds,
                               role=role, branch=self._branch,

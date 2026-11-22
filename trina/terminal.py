@@ -225,7 +225,7 @@ def render_tool_call(tool: str, params: dict[str, Any], *, status: str = "runnin
                      stderr: str = "", error: str = "", duration: float = 0, command: str = "",
                      exit_code: int | None = None, width: int | None = None, color: bool = False,
                      palette: Palette = "trina", record: str = "") -> str:
-    """工具输入、输出和状态共用一个窗口，脚本与 JSON 按字面量高亮。"""
+    """工具结果和状态共用一个窗口，普通参数按字面量展示。"""
     requested_width = width
     width = max(20, width if width is not None else terminal_width())
     original = dict(tool=tool, params=params, status=status, output=output, stderr=stderr, error=error,
@@ -242,32 +242,30 @@ def render_tool_call(tool: str, params: dict[str, Any], *, status: str = "runnin
                           lambda new_width: render_tool_call_fragments(**original, width=new_width))
 
 
+def tool_card_params(params: dict[str, Any], command: str = "") -> dict[str, Any]:
+    """终端命令留在运行记录，卡片上省略命令行。"""
+    return {} if command or "argv" in params else params
+
+
 def render_tool_call_fragments(tool: str, params: dict[str, Any], *, status: str = "running", output: str = "",
                                stderr: str = "", error: str = "", duration: float = 0, command: str = "",
                                exit_code: int | None = None, width: int = 88,
                                color: bool = False, palette: Palette = "trina", record: str = "") -> list[tuple[str, str]]:
     """工具流的延迟排版入口，供全屏 transcript 直接消费。"""
     import json
-    import shlex
-    import subprocess
     width = max(20, width)
     label = {"requested": "准备", "awaiting_approval": "待审批", "running": "运行中", "completed": "完成",
              "failed": "失败", "denied": "已拒绝", "invalid": "参数错误", "unavailable": "不可用",
              "timed_out": "超时", "interrupted": "已中断", "cancelled": "已取消"}.get(status, status)
-    argv = params.get("argv")
-    script = ("$ " + (subprocess.list2cmdline([str(item) for item in argv]) if os.name == "nt" else
-                     shlex.join([str(item) for item in argv]))) if isinstance(argv, list) else ""
-    script = command or script
-    input_label = "命令" if script else "参数"
-    if not script and params:
-        script = json.dumps(params, ensure_ascii=False)
-        if _cells(script) > width - 4:
-            script = json.dumps(params, ensure_ascii=False, indent=2)
+    visible_params = tool_card_params(params, command)
+    arguments = json.dumps(visible_params, ensure_ascii=False) if visible_params else ""
+    if _cells(arguments) > width - 4:
+        arguments = json.dumps(visible_params, ensure_ascii=False, indent=2)
     title = f"{clean_text(tool)} · {label}"
     details = f"{duration:.1f}s" if status not in {"requested", "awaiting_approval", "running"} or duration else ""
     if exit_code is not None:
         details = " · ".join(part for part in (details, f"exit {exit_code}") if part)
-    return _render_tool_box_fragments(title, input_label, script, output, stderr, error, details, record,
+    return _render_tool_box_fragments(title, arguments, output, stderr, error, details, record,
                                       width=width, color=color, palette=palette, status=status,
                                       is_diff=tool == "workspace_git" and params.get("action") == "diff")
 
@@ -298,7 +296,7 @@ def _wrap_clean_line(text: str, width: int) -> list[str]:
     return lines
 
 
-def _render_tool_box_fragments(title: str, input_label: str, script: str, output: str, stderr: str, error: str,
+def _render_tool_box_fragments(title: str, arguments: str, output: str, stderr: str, error: str,
                                details: str, record: str, *,
                                width: int, color: bool, palette: Palette = "trina", status: str = "running",
                                is_diff: bool = False) -> list[tuple[str, str]]:
@@ -322,7 +320,8 @@ def _render_tool_box_fragments(title: str, input_label: str, script: str, output
     def section(label: str, text: str, style: str, *, diff: bool = False) -> None:
         if not text.strip():
             return
-        lines.append(row(label, section_style))
+        if label:
+            lines.append(row(label, section_style))
         for source_line in text.splitlines():
             line_style = diff_style(source_line, palette, color=color) if diff else style
             for wrapped in _wrap_clean_line(source_line, inner):
@@ -343,8 +342,11 @@ def _render_tool_box_fragments(title: str, input_label: str, script: str, output
         for wrapped in _wrap_clean_line(details, inner):
             lines.append(row(wrapped, border_style))
     safe_output, safe_stderr, safe_error = clean_text(output), clean_text(stderr), clean_text(error)
-    section(input_label, clean_text(script), input_style)
-    section("输出", safe_output, text_style, diff=is_diff)
+    section("参数", clean_text(arguments), input_style)
+    if safe_output.strip() or safe_stderr.strip() or safe_error.strip():
+        lead = "─── Output "
+        lines.append(row(lead + "─" * (inner - _cells(lead)), section_style))
+    section("", safe_output, text_style, diff=is_diff)
     section("stderr", safe_stderr, stderr_style)
     if safe_error.strip() not in {safe_output.strip(), safe_stderr.strip()}:
         section("错误", safe_error, error_style)

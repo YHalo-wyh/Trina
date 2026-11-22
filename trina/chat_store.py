@@ -46,6 +46,20 @@ class ChatStore:
             db.execute("INSERT INTO chats VALUES (?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET title=excluded.title,updated=excluded.updated,turns=excluded.turns,payload=excluded.payload",
                        (data["run_id"], self.project, title, time.time(), data["turns"], json.dumps(data, ensure_ascii=False)))
 
+    def replace_title(self, run_id: str, expected: str, title: str) -> bool:
+        """仅更新仍使用临时标题的会话元数据，保留最近保存的对话快照。"""
+        self.validate_id(run_id)
+        with self.connection() as db:
+            row = db.execute("SELECT payload FROM chats WHERE id=? AND project=? AND title=?",
+                             (run_id, self.project, expected)).fetchone()
+            if row is None:
+                return False
+            data = json.loads(row[0])
+            data["title"] = title
+            updated = db.execute("UPDATE chats SET title=?,payload=? WHERE id=? AND project=? AND title=?",
+                                 (title, json.dumps(data, ensure_ascii=False), run_id, self.project, expected))
+            return updated.rowcount == 1
+
     def list(self) -> list[dict]:
         if not self.path.exists():
             return []

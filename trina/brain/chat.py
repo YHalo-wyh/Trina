@@ -7,13 +7,14 @@
 from __future__ import annotations
 
 import json
+import threading
 import time
 import uuid
-from dataclasses import fields
+from dataclasses import fields, replace
 from typing import Any, Callable
 
 from ..audit import AuditLog
-from ..config import TrinaConfig
+from ..config import LLMConfig, TrinaConfig
 from ..llm import LLMBackend, LLMMessage, LLMStreamEvent, make_backend
 from ..scope import ScopeGuard
 from ..state import RunState
@@ -80,6 +81,8 @@ class ChatAgent:
         self.run_id = run_id or f"chat-{time.strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:6]}"
         self._file_lock = self.store.acquire(self.run_id)
         self._closed = False
+        self._closing = False
+        self._title_lock = threading.RLock()
         self.in_flight = False
         self.title = ""
         self.worker_role = "commander"
@@ -167,12 +170,10 @@ class ChatAgent:
 
     # ------------------------------------------------------------------ 主循环
     def ask(self, message: str) -> str:
-        if self._closed:
+        if self._closed or self._closing:
             raise ValueError("对话已关闭，请使用 /resume 恢复")
         self.in_flight = True
         try:
-            # _ask_turn 已用首条消息生成确定性短标题。标题是展示元数据，不能
-            # 为它额外占用一次在线模型请求，首轮直接进入主 Agent 循环。
             return self._ask_turn(message)
         finally:
             self.in_flight = False
@@ -185,10 +186,13 @@ class ChatAgent:
             return ""
         self.turns += 1
         self.current_request = text
-        if not self.title:
+        provisional_title = ""
+        if not self.title or self.title == "新对话":
             from ..session_title import fallback_session_title
 
             self.title = fallback_session_title(text)
+            if self.title != "新对话":
+                provisional_title = self.title
         self.context.remember_user(text)
         self.last_reply_streamed = False
         self._initialize_messages()
@@ -204,7 +208,7 @@ class ChatAgent:
         completion_reply = ""
 
         def request(step, round_index):
-            nonlocal terminal_reply
+            nonlocal terminal_reply, provisional_title
             if self.stop_event is not None and self.stop_event.is_set():
                 terminal_reply = "（已按你的要求停止）"
                 return None
@@ -217,6 +221,9 @@ class ChatAgent:
                 self._cancel_stream()
                 terminal_reply = "（已按你的要求停止）"
                 return None
+            if provisional_title:
+                self._start_title(text, provisional_title)
+                provisional_title = ""
             if self._accept_steer():
                 self.audit.append("chat.response_superseded", decision="defer", reason="收到补充，重新决策")
                 self._cancel_stream()
@@ -471,31 +478,51 @@ class ChatAgent:
         return reply
 
     def _record_usage(self, usage: Any) -> None:
-        """主回复与独立标题请求使用同一真实用量账本。"""
+        """累计主对话模型请求的用量。"""
         self.usage = self.usage.merge(usage)
         for name in self.usage_gaps:
             self.usage_gaps[name] += int(not getattr(usage, name[8:] + "_reported"))
 
-    def _generate_title(self, message: str) -> None:
-        """在线会话用隔离请求生成短标题；测试替身和回放保留确定性降级名。"""
+    def _start_title(self, message: str, provisional: str) -> None:
+        """首个主回复返回后，用独立后端生成会话标题。"""
         backend = getattr(self.backend, "backend", self.backend)
-        if not isinstance(backend, LLMBackend) or getattr(backend, "name", "") != "openai":
+        if not isinstance(backend, LLMBackend) or backend.name != "openai":
             return
+        from ..llm.reasoning import reasoning_support
+
+        levels = reasoning_support(backend.config).levels
+        effort = next(level for level in ("off", "minimal", "low", "default") if level in levels)
+        config = replace(backend.config, timeout=min(15, backend.config.timeout), reasoning_effort=effort,
+                         cache_mode="off")
+        try:
+            threading.Thread(target=self._generate_title, args=(message, provisional, config),
+                             name="trina-chat-title", daemon=True).start()
+        except RuntimeError:
+            self.audit.append("chat.title", decision="fallback", reason="无法启动后台命名")
+
+    def _generate_title(self, message: str, provisional: str, config: LLMConfig) -> None:
         from ..session_title import generate_session_title
 
         try:
-            title, response = generate_session_title(message, self.backend)
-        except Exception as exc:  # noqa: BLE001 - 标题失败不能影响主回复
-            self.audit.append("chat.title", decision="fallback", error=f"{type(exc).__name__}: {exc}"[:300])
-            return
-        if response is not None:
-            self.state.counters["llm_calls"] = self.state.counters.get("llm_calls", 0) + 1
-            self._record_usage(response.usage)
-        if title:
-            self.title = title
-            self.audit.append("chat.title", decision="allow", title=title)
-        elif response is not None:
-            self.audit.append("chat.title", decision="fallback", reason="标题响应为空或格式无效")
+            title, response = generate_session_title(message, make_backend(config))
+            reason = "命名请求失败" if response is not None and not response.ok else "标题响应为空或格式无效"
+        except Exception as exc:  # noqa: BLE001 - 辅助命名失败时保留临时标题
+            title, response, reason = None, None, type(exc).__name__
+        with self._title_lock:
+            if self._closing or self._closed or self.title != provisional:
+                return
+            details = {"usage": response.usage.to_dict()} if response is not None else {}
+            if title and title != "新对话":
+                try:
+                    saved = self.store.replace_title(self.run_id, provisional, title)
+                except Exception as exc:  # noqa: BLE001 - 保存失败不影响当前会话
+                    saved, reason = False, type(exc).__name__
+                if saved:
+                    self.title = title
+                    self.audit.append("chat.title", decision="allow", title=title, **details)
+                    self.ctx.emit("chat.title", title=title)
+                    return
+            self.audit.append("chat.title", decision="fallback", reason=reason, **details)
 
     def _native_tools_enabled(self) -> bool:
         protocol = str(getattr(self.config.llm, "tool_protocol", "auto") or "auto")
@@ -525,8 +552,10 @@ class ChatAgent:
 
     def close(self) -> None:
         """关闭会话时回收后台作业，并记录最终快照。"""
-        if self._closed:
-            return
+        with self._title_lock:
+            if self._closed or self._closing:
+                return
+            self._closing = True
         from ..runtime_status import status_snapshot
         try:
             self.ctx.extra["background_jobs"].close()
@@ -535,34 +564,36 @@ class ChatAgent:
             status_snapshot(self.ctx, turn=self.turns)
             self.save()
         finally:
-            self._closed = True
-            self._file_lock.close()
+            with self._title_lock:
+                self._closed = True
+                self._file_lock.close()
             if self._event_subscription is not None:
                 self._event_subscription.close()
 
     def save(self) -> None:
         """只保存对话运行数据；标准消息和最近显示记录分别保留。"""
-        if not self._messages_ready or not self.history or self._closed:
-            return
-        context = self.context
-        self.store.save({"version": 1, "run_id": self.run_id, "project": self.store.project,
-                         "title": self.title, "turns": self.turns, "in_flight": self.in_flight,
-                         "worker_role": self.worker_role,
-                         "tool_allowlist": sorted(self._contract_tool_names),
-                         "history": self.history, "messages": self._messages, "state": self.state.to_dict(),
-                         "binary_sessions": self.ctx.extra["binary_sessions"].snapshot(),
-                         "browser_sessions": self.ctx.extra["browser_sessions"].snapshot(),
-                         "hypotheses": self.ledger.to_dict(), "usage": self.usage.to_dict(),
-                         "usage_gaps": self.usage_gaps,
-                         "controller": self._controller.coverage() if self._controller is not None else {},
-                         "controller_elapsed": self._controller.elapsed if self._controller is not None else 0,
-                         "stale_steps": self._controller.stale_steps if self._controller is not None else 0,
-                         "context": {"revision": context.revision, "epoch": context.epoch,
-                                     "snapshot": context.snapshot, "instructions": context.instructions,
-                                     "stats": context.stats, "events": context.events,
-                                     "last_request": context.last_request.decode("utf-8"),
-                                     "last_signature": context.last_signature},
-                         "model": self.config.llm.model})
+        with self._title_lock:
+            if not self._messages_ready or not self.history or self._closed:
+                return
+            context = self.context
+            self.store.save({"version": 1, "run_id": self.run_id, "project": self.store.project,
+                             "title": self.title, "turns": self.turns, "in_flight": self.in_flight,
+                             "worker_role": self.worker_role,
+                             "tool_allowlist": sorted(self._contract_tool_names),
+                             "history": self.history, "messages": self._messages, "state": self.state.to_dict(),
+                             "binary_sessions": self.ctx.extra["binary_sessions"].snapshot(),
+                             "browser_sessions": self.ctx.extra["browser_sessions"].snapshot(),
+                             "hypotheses": self.ledger.to_dict(), "usage": self.usage.to_dict(),
+                             "usage_gaps": self.usage_gaps,
+                             "controller": self._controller.coverage() if self._controller is not None else {},
+                             "controller_elapsed": self._controller.elapsed if self._controller is not None else 0,
+                             "stale_steps": self._controller.stale_steps if self._controller is not None else 0,
+                             "context": {"revision": context.revision, "epoch": context.epoch,
+                                         "snapshot": context.snapshot, "instructions": context.instructions,
+                                         "stats": context.stats, "events": context.events,
+                                         "last_request": context.last_request.decode("utf-8"),
+                                         "last_signature": context.last_signature},
+                             "model": self.config.llm.model})
 
     def _restore(self, data: dict) -> None:
         from ..hypotheses import Hypothesis

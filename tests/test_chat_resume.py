@@ -5,6 +5,7 @@ import copy
 import json
 import sqlite3
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -47,6 +48,81 @@ class ChatResumeTests(unittest.TestCase):
         chat = ChatAgent(self.config, registry=ToolRegistry([]), backend=self.backend(), **kwargs)
         self.addCleanup(chat.close)
         return chat
+
+    def _online_chat(self, **kwargs):
+        from trina.llm.openai_backend import OpenAICompatBackend
+
+        backend = OpenAICompatBackend(LLMConfig(model="deepseek-v4.1-flash", reasoning_effort="max"))
+        backend.complete_messages = Mock(return_value=LLMResponse(text="已收到"))
+        chat = ChatAgent(self.config, registry=ToolRegistry([]), backend=backend, **kwargs)
+        self.addCleanup(chat.close)
+        return chat, backend
+
+    def test_online_title_runs_after_first_reply_and_preserves_newer_turns(self):
+        started, release, saved = threading.Event(), threading.Event(), threading.Event()
+        chat, main = self._online_chat(on_event=lambda event: saved.set() if event.kind == "chat.title" else None)
+
+        def title_reply(messages, **kwargs):
+            started.set()
+            if not release.wait(5):
+                raise AssertionError("主对话等待了标题请求")
+            return LLMResponse(text="<title>修正历史列表</title>")
+
+        title_backend = SimpleNamespace(complete_messages=Mock(side_effect=title_reply))
+        with patch("trina.brain.chat.make_backend", return_value=title_backend) as factory:
+            try:
+                chat.ask("你好")
+                self.assertEqual(chat.title, "新对话")
+                factory.assert_not_called()
+                chat.ask("请帮我修复历史面板。再补一个回归用例")
+                self.assertTrue(started.wait(2))
+                self.assertEqual(chat.title, "修复历史面板")
+                self.assertEqual(main.complete_messages.call_count, 2)
+                chat.ask("补充一个空列表用例")
+            finally:
+                release.set()
+            self.assertTrue(saved.wait(3))
+        self.assertEqual(chat.title, "修正历史列表")
+        entry = self.store.load(chat.run_id)
+        self.assertEqual((entry["title"], entry["turns"]), ("修正历史列表", 3))
+        self.assertEqual(entry["history"][-2]["content"], "补充一个空列表用例")
+        self.assertEqual(self.store.list()[0]["title"], "修正历史列表")
+        title_backend.complete_messages.assert_called_once()
+        title_messages = title_backend.complete_messages.call_args.args[0]
+        self.assertEqual([item["role"] for item in title_messages], ["system", "user"])
+        self.assertEqual(title_messages[-1]["content"], "请帮我修复历史面板。再补一个回归用例")
+        self.assertEqual(title_backend.complete_messages.call_args.kwargs, {"max_tokens": 96})
+        self.assertEqual(factory.call_args.args[0].reasoning_effort, "off")
+        self.assertEqual(main.config.reasoning_effort, "max")
+
+    def test_late_title_does_not_write_to_closed_chat(self):
+        started, release, finished = threading.Event(), threading.Event(), threading.Event()
+        chat, _ = self._online_chat()
+        generate = chat._generate_title
+
+        def watched(*args):
+            try:
+                generate(*args)
+            finally:
+                finished.set()
+
+        def title_reply(*args, **kwargs):
+            started.set()
+            release.wait(5)
+            return LLMResponse(text="<title>迟到的标题</title>")
+
+        chat._generate_title = watched
+        with patch("trina.brain.chat.make_backend",
+                   return_value=SimpleNamespace(complete_messages=title_reply)):
+            try:
+                chat.ask("整理单元测试")
+                self.assertTrue(started.wait(2))
+                chat.close()
+            finally:
+                release.set()
+            self.assertTrue(finished.wait(3))
+        self.assertEqual(self.store.load(chat.run_id)["title"], "整理单元测试")
+        self.assertEqual(chat.events.replay(kinds=("chat.title",)), [])
 
     def test_saved_chat_restores_messages_facts_ledger_usage_and_delta_baseline(self):
         chat = self.chat()
