@@ -34,9 +34,10 @@ class WorkspaceToolTests(unittest.TestCase):
         )
 
     def test_registered_coding_toolchain_writes_edits_reads_and_executes(self):
-        for name in ("terminal_exec", "workspace_read", "workspace_write", "workspace_edit"):
-            self.assertIn(name, self.registry.names())
-        written = self.registry.execute("workspace_write", {
+        for name, legacy in (("shell", "terminal_exec"), ("read", "workspace_read"), ("write", "workspace_write")):
+            self.assertIs(self.registry.get(name), self.registry.get(legacy))
+            self.assertIsNotNone(self.registry.get(name))
+        written = self.registry.execute("write", {
             "path": "hello.py", "content": "print('before')\n", "root": "run",
         }, self.ctx)
         self.assertTrue(written.ok, written.error)
@@ -44,14 +45,28 @@ class WorkspaceToolTests(unittest.TestCase):
             "path": "hello.py", "old": "before", "new": "after", "root": "run",
         }, self.ctx)
         self.assertTrue(edited.ok, edited.error)
-        read = self.registry.execute("workspace_read", {"path": "hello.py", "root": "run"}, self.ctx)
+        read = self.registry.execute("read", {"path": "hello.py", "root": "run"}, self.ctx)
         self.assertTrue(read.ok, read.error)
         self.assertIn("print('after')", read.data["text"])
-        executed = self.registry.execute("terminal_exec", {
+        executed = self.registry.execute("shell", {
             "argv": [sys.executable, "hello.py"], "cwd": "run", "timeout": 10,
         }, self.ctx)
         self.assertTrue(executed.ok, executed.to_observation())
         self.assertEqual(executed.data["stdout"].strip(), "after")
+
+    def test_public_names_share_the_legacy_allowlist_and_audit_identity(self):
+        path = self.ctx.workspace / "memo.txt"
+        path.write_text("已有内容", encoding="utf-8")
+        self.ctx.extra["tool_allowlist"] = {"workspace_read"}
+        self.assertTrue(self.registry.execute("read", {"path": path.name, "root": "run"}, self.ctx).ok)
+        denied = self.registry.execute("write", {"path": path.name, "root": "run", "content": "未授权改动"}, self.ctx)
+        self.assertTrue(denied.denied)
+        self.assertEqual(path.read_text(encoding="utf-8"), "已有内容")
+        self.ctx.extra["tool_allowlist"] = {"read"}
+        self.assertTrue(self.registry.execute("workspace_read", {"path": path.name, "root": "run"}, self.ctx).ok)
+        completed = self.ctx.events.replay(kinds=("tool.finished",))
+        self.assertEqual([event.payload["tool"] for event in completed],
+                         ["workspace_read", "workspace_write", "workspace_read"])
 
     def test_exploit_script_flag_output_becomes_task_fact(self):
         path = self.ctx.workspace / "exploit.py"

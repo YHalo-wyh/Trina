@@ -9,6 +9,7 @@ from typing import Any, Callable
 
 from .events import RuntimeEvent
 from .terminal import render_answer, render_message, render_process, render_tool_call, tool_card_params
+from .tool_names import public_tool_name
 
 
 _OUTPUT_HEAD_CHARS = 1200
@@ -191,7 +192,7 @@ class EventTranscript:
 
         # 历史缓冲按卡片实际保留的可显示内容计量。
         params = tool_card_params(row["params"], row.get("command", ""))
-        raw = (f"{row['tool']} · {row['status']}\n{params}\n{output}\n{stderr}\n"
+        raw = (f"{public_tool_name(row['tool'])} · {row['status']}\n{params}\n{output}\n{stderr}\n"
                f"{row.get('error', '')}\n{snapshot.get('record', '')}")
         card = ResponsiveText(raw, lambda width: str(render_tool_call(
             **snapshot, color=self.color, width=width, palette=self.palette)),

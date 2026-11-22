@@ -65,7 +65,7 @@ class MarkdownViewTests(unittest.TestCase):
 
         card = text("terminal_exec", {"argv": ["python", "-V"]}, status="failed", duration=.3,
                     exit_code=1, output="已生成摘要", stderr="命令执行出错", error="命令执行出错", width=72)
-        self.assertIn("terminal_exec · 失败", card.splitlines()[0])
+        self.assertIn("shell · Error", card.splitlines()[0])
         self.assertIn("0.3s · exit 1", card.splitlines()[0])
         self.assertNotIn(" 命令 ", card)
         self.assertNotIn("python", card)
@@ -79,7 +79,8 @@ class MarkdownViewTests(unittest.TestCase):
         self.assertNotIn("Output", pending)
         self.assertNotIn("0.0s", pending)
         failure = text("workspace_read", {}, status="denied", error="工作目录不可读", width=60)
-        self.assertIn(" 错误 ", failure)
+        self.assertIn(" Error ", failure)
+        self.assertIn("read · 已拒绝", failure.splitlines()[0])
         self.assertIn("工作目录不可读", failure)
         self.assertNotIn(" 参数 ", failure)
 

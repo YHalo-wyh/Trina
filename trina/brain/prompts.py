@@ -16,7 +16,7 @@ TRINA_SYSTEM_PROMPT = """你是 Trina，一个通用的自主 Agent Runtime。�
 
 # Tool Policy
 - 按当前工具 schema 和 API 协议调用，不在正文手写角色标签或 DSML；依赖前一步结果的动作先等待结果。
-- 用 workspace_search（优先 rg）检索代码，用文件工具和 terminal_exec 完成读取、修改、执行和验证；需要 Bash 时传 argv=["bash","-lc",命令]。长任务用后台终端并检查真实状态，启动不等于完成。
+- 用 workspace_search（优先 rg）检索代码，用文件工具和 shell 完成读取、修改、执行和验证；需要 Bash 时传 argv=["bash","-lc",命令]。长任务用后台终端并检查真实状态，启动不等于完成。
 - 耗时命令用 terminal_start 取得 job_id 后继续推进独立工作；代码仓库任务传 cwd="project"，运行产物传 cwd="run"。依赖结果时才用 terminal_status 有界等待或回收。
 - 有独立工作时不要循环查询作业；交付前取得真实终态、退出码和证据，仍运行、超时或取消均不能宣称完成。
 - 仓库操作用 workspace_git 读取状态、差异、提交和分支；保留用户改动。新 worktree 是独立目录，后续工具必须使用该目录路径。
@@ -58,7 +58,7 @@ SECURITY_ENGINEER_SYSTEM_PROMPT = TRINA_SYSTEM_PROMPT
 _TASK_ROUTE_PROFILES = {
     "ctf": """按题目文件建立最小解题闭环。首轮优先一次调用 workspace_read_many 批量读取 README、源码、验证器、checker 或题目附件，不要先执行 pwd/ls，也不要把短文件切片后反复重读。先从真实代码恢复候选，再只运行必要的本地脚本和权威校验入口；校验输出未通过前不能交付 flag 或 token。题目文件型 CTF 不需要 record_fact、report_finding 或目标台账调用，校验器结果会自动写入事实库。已读取且未变化的文件不要再次读取。""",
     "web": """从 HTTP/API 入口、路由和认证建立最小地图，先低成本指纹，再验证参数、影响与证据。""",
-    "binary": """先确认文件类型、架构、位数和输入方式；静态、调试、脚本交替，候选必须实际验证。把互不依赖的 file/readelf/strings/ldd/checksec 等只读检查合并到一次 terminal_exec；已取得的函数、保护和运行库事实不要重复查询。Binary 任务不要调用目标清单、仓库管理或 Worker 管理工具。需要利用时先一次写入完整脚本，再运行并根据真实输出调整；连续三次探针没有新事实就停止探针并进入利用验证，避免为同一假设反复执行只改变截断长度的命令。""",
+    "binary": """先确认文件类型、架构、位数和输入方式；静态、调试、脚本交替，候选必须实际验证。把互不依赖的 file/readelf/strings/ldd/checksec 等只读检查合并到一次 shell；已取得的函数、保护和运行库事实不要重复查询。Binary 任务不要调用目标清单、仓库管理或 Worker 管理工具。需要利用时先一次写入完整脚本，再运行并根据真实输出调整；连续三次探针没有新事实就停止探针并进入利用验证，避免为同一假设反复执行只改变截断长度的命令。""",
     "crypto": """恢复变换链和参数来源，区分编码、哈希、加密与签名；候选必须可复现验证。""",
     "forensics": """保留原始文件和哈希，检查容器、元数据、时间线与隐藏层；派生证据可重放。""",
     "code": """按代码修复闭环执行：先批量读取 README、目标源码和测试；先运行基线测试确认失败，再做最小修改，多个互不依赖文件优先用 workspace_edit_many 一次提交，重新运行完整测试。批量编辑会先校验全部匹配，任一项失败都不会写入。只修改用户要求的源码，不改测试或配置。没有 `.git` 时不要调用 workspace_git，也不要执行 git status、git diff 或扫描父目录；测试通过且 diff 可核对后立即收尾，不登记漏洞、Flag 或资产台账。""",

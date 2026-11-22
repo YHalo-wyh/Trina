@@ -133,8 +133,8 @@ scripts/dev.sh play --target 127.0.0.1
 | vuln | `poc_scan`（21 个只读 PoC） `nuclei_scan`（缺 nuclei 自动降级内置引擎） | detect |
 | exploit | `sqli_test` `cmd_inject_test` `lfi_test` `file_upload_test` `rce_exec` | verify / exploit |
 | creds | `weak_password_brute`（ssh/ftp/mysql/redis/http_basic/http_form） `http_form_login` `flag_hunt` | exploit / verify |
-| utility | `terminal_exec`（前台 argv 命令，可调用 `bash -lc`）、`terminal_start` / `terminal_status` / `terminal_stop`（后台程序启动、等待、查询和取消） | exploit / detect |
-| workspace | `workspace_search`（优先 rg）、`workspace_read` / `workspace_write` / `workspace_edit`（有界检索、读取、原子写入、精确替换），`workspace_git`（状态、Diff、暂存、提交、分支、远端与 worktree） | detect / exploit |
+| utility | `shell`（前台 argv 命令，可调用 `bash -lc`）、`terminal_start` / `terminal_status` / `terminal_stop`（后台程序启动、等待、查询和取消） | exploit / detect |
+| workspace | `workspace_search`（优先 rg）、`read` / `write` / `workspace_edit`（有界检索、读取、原子写入、精确替换），`workspace_git`（状态、Diff、暂存、提交、分支、远端与 worktree） | detect / exploit |
 | coordination | `shared_context` / `shared_trace_search` / `shared_trace_get`（共享待办、双图摘要、其他 Worker 观察与失败留痕） | detect |
 | binary | `binary_open` `binary_overview` `binary_functions` `binary_function` `binary_xrefs` `debug_start` `debug_control` `debug_inspect` `binary_session` `binary_execute` | detect / exploit |
 

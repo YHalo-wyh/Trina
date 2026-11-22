@@ -163,6 +163,8 @@ class ChatResumeTests(unittest.TestCase):
             self.store.load("../outside")
 
     def test_code_chat_restores_the_same_tools_in_native_and_legacy_records(self):
+        import re
+        from trina.tool_names import internal_tool_name
         from trina.tools import build_registry
 
         registry = build_registry()
@@ -182,6 +184,10 @@ class ChatResumeTests(unittest.TestCase):
                 with self.subTest(protocol=protocol, legacy=legacy):
                     if legacy:
                         saved.pop("tool_allowlist")
+                        saved["messages"][1]["content"] = re.sub(
+                            r"\b(?:read|write|shell)\b", lambda match: internal_tool_name(match.group(0)),
+                            saved["messages"][1]["content"],
+                        )
                         self.store.save(saved)
                     replay = self.backend()
                     restored = ChatAgent.resume(config, original.run_id, registry=registry, backend=replay)
@@ -198,6 +204,31 @@ class ChatResumeTests(unittest.TestCase):
                 self.assertEqual(set(self.store.load(original.run_id)["tool_allowlist"]), initial)
             finally:
                 restored.close()
+
+    def test_model_can_use_read_name_in_native_and_json_protocols(self):
+        from trina.llm.base import ToolCall
+        from trina.tools import build_registry
+
+        registry = build_registry(["workspace"])
+        for protocol in ("native", "json"):
+            with self.subTest(protocol=protocol):
+                backend = self.backend()
+                params = {"path": "sample.txt", "root": "run"}
+                first = (LLMResponse(tool_calls=[ToolCall("sample", "read", json.dumps(params))]) if protocol == "native"
+                         else LLMResponse(text=json.dumps({"action": "read", "params": params})))
+                backend.complete_messages = Mock(side_effect=[first, LLMResponse(text="读取完成")])
+                config = self.config.with_overrides(llm__tool_protocol=protocol)
+                chat = ChatAgent(config, registry=registry, backend=backend)
+                try:
+                    (chat.workspace / "sample.txt").write_text("alias sample", encoding="utf-8")
+                    self.assertEqual(chat.ask("读取代码文件并汇报结果"), "读取完成")
+                    request = backend.complete_messages.call_args.args[0]
+                    self.assertTrue(any("alias sample" in item["content"] for item in request))
+                    if protocol == "native":
+                        tools = backend.complete_messages.call_args.kwargs["tools"]
+                        self.assertIn("read", {item["function"]["name"] for item in tools})
+                finally:
+                    chat.close()
 
     def test_commander_resume_keeps_an_advertised_worker_tool_optional(self):
         from trina.tools import build_registry

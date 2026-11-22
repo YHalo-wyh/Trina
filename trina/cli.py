@@ -214,7 +214,7 @@ def cmd_tools(args: argparse.Namespace) -> int:
     show_all = bool(getattr(args, "all", False))
     visible = set(registry.names()) if show_all else visible_tool_names(registry, getattr(args, "route", "general"))
     if args.json:
-        rows = [item for item in registry.describe() if item["name"] in visible]
+        rows = [item for item in registry.describe() if registry.resolve_name(item["name"]) in visible]
         print(json.dumps(rows, ensure_ascii=False, indent=2))
         return 0
     if LOAD_ERRORS:
@@ -558,16 +558,17 @@ def cmd_tool(args: argparse.Namespace) -> int:
     registry = build_registry()
     for module, error in LOAD_ERRORS.items():
         print(f"[警告] 工具模块 {module} 未加载: {error}", file=sys.stderr)
-    if args.name not in registry.names():
-        out(f"未知工具 {args.name}；可用: {', '.join(registry.names())}", "red")
+    tool = registry.get(args.name)
+    if tool is None:
+        out(f"未知工具 {args.name}；可用: {', '.join(item['name'] for item in registry.describe())}", "red")
         return 2
-    if args.name.startswith("terminal_"):
+    if tool.spec.name.startswith("terminal_"):
         out("后台终端作业属于持久 Agent 会话；请在 trina 对话或任务中调用，单次 tool 命令不持有作业。", "red")
         return 2
-    if registry.get(args.name).spec.category == "binary" and args.name != "binary_execute":
+    if tool.spec.category == "binary" and tool.spec.name != "binary_execute":
         out("二进制会话需由持久 Agent 持有；请在 trina 控制台通过 /tool 或模型调用。", "red")
         return 2
-    if registry.get(args.name).spec.category == "browser":
+    if tool.spec.category == "browser":
         out("浏览器会话需由持久 Agent 持有；请在 trina 控制台通过 /tool 或模型调用。", "red")
         return 2
 
@@ -584,7 +585,7 @@ def cmd_tool(args: argparse.Namespace) -> int:
     if args.target:
         # 只填工具**声明过**的目标参数：有的工具用 url，有的用 target，
         # 不要给不接受 target 的工具硬塞一个（那会被参数校验直接拒掉）。
-        tool_spec = registry.get(args.name).spec
+        tool_spec = tool.spec
         if "target" in tool_spec.params:
             params.setdefault("target", args.target)
         if "url" in tool_spec.params:

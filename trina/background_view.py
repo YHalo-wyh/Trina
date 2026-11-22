@@ -13,7 +13,7 @@ STATUS_LABELS = {
     "running": "运行中",
     "stopping": "停止中",
     "completed": "完成",
-    "failed": "失败",
+    "failed": "Error",
     "cancelled": "已取消",
     "timed_out": "超时",
     "interrupted": "已中断",

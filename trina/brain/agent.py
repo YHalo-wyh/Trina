@@ -891,7 +891,7 @@ class PentestAgent:
                 )
                 return ActionOutcome(observation=str(final.get("summary", "")), answer=str(final.get("summary", "")), stop=True)
 
-            tool_name = str(action.get("action", ""))
+            tool_name = self.registry.resolve_name(str(action.get("action", "")))
             params = action.get("params") if isinstance(action.get("params"), dict) else {}
             params = dict(params)
             thought = str(action.get("thought", ""))

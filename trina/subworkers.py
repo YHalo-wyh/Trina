@@ -12,6 +12,7 @@ from .config import TrinaConfig
 from .console_state import ConsoleState, TrackedBackend
 from .llm import make_backend
 from .swarm import SwarmRuntime, TaskSpec
+from .tool_names import public_tool_name
 
 
 class Subworkers:
@@ -117,7 +118,9 @@ class Subworkers:
                 kind, text = "过程", str(payload.get("thought", ""))
             elif event.kind == "tool.started":
                 import json
-                kind, text = "工具", str(payload.get("tool", "")) + " " + json.dumps(payload.get("params", {}), ensure_ascii=False)[:1200]
+                tool = public_tool_name(str(payload.get("tool", "")))
+                kind, text = "工具", tool + " " + json.dumps(payload.get("params", {}), ensure_ascii=False)[:1200]
+                row["activity"] = "工具 · " + tool
                 key += ":call"
             elif event.kind == "tool.output":
                 kind, text = "输出", str(payload.get("delta", ""))
@@ -125,9 +128,11 @@ class Subworkers:
                 old = self._dialogs.get(event.task_id, {}).get(key, ("", ""))[1]
                 text = old + text
             elif event.kind == "tool.finished":
-                kind = "错误" if payload.get("ok") is False or payload.get("status") in {"failed", "timed_out", "denied", "invalid", "interrupted"} else "结果"
-                text = str(payload.get("summary") or payload.get("error") or payload.get("status", ""))
-                text = f"{payload.get('tool', '')} · {payload.get('status', '')} · {text}"
+                status = payload.get("status", "")
+                kind = "Error" if payload.get("ok") is False or status in {"failed", "timed_out", "denied", "invalid", "interrupted"} else "结果"
+                text = str(payload.get("summary") or payload.get("error") or status)
+                tool = public_tool_name(str(payload.get("tool", "")))
+                text = f"{tool} · {'Error' if status == 'failed' else status} · {text}"
                 key += ":result"
             elif event.kind == "model.error":
                 kind, text = "错误", str(payload.get("error", ""))
@@ -135,8 +140,6 @@ class Subworkers:
                 row["activity"] = "思考中"
                 self._text_streams.pop(event.task_id, None)
                 row.pop("streamed_reply", None)
-            if event.kind == "tool.started":
-                row["activity"] = "工具 · " + str(payload.get("tool", ""))
             if text:
                 self._record(event.task_id, key, kind, text)
             if event.kind == "tool.finished":

@@ -12,9 +12,10 @@ from typing import Any, Callable
 from prompt_toolkit.utils import get_cwidth
 
 PHASES = {"recon": "侦察", "enum": "枚举", "vuln": "验证", "exploit": "利用", "post": "后续", "report": "报告"}
-STATUSES = {"running": "运行中", "chat": "对话", "success": "完成", "partial": "部分完成", "failed": "失败", "blocked": "已阻止", "stopped": "已停止"}
+STATUSES = {"running": "运行中", "chat": "对话", "success": "完成", "partial": "部分完成", "failed": "Error", "blocked": "已阻止", "stopped": "已停止"}
 VERDICTS = {"CONFIRMED": "已确认", "NOT_CONFIRMED": "本轮未确认", "INCONCLUSIVE": "证据不足"}
 from .text import clean_text
+from .tool_names import public_tool_name
 from .output_styles import Palette, diff_style, output_style, palette_name
 THEME = {"rose": "#edb2d2", "lilac": "#c7a5e8", "violet": "#9b7bc7", "muted": "#a595b3",
          "ink": "#1c1625", "selected": "#50355f", "text": "#ede5f2"}
@@ -257,13 +258,13 @@ def render_tool_call_fragments(tool: str, params: dict[str, Any], *, status: str
     import json
     width = max(20, width)
     label = {"requested": "准备", "awaiting_approval": "待审批", "running": "运行中", "completed": "完成",
-             "failed": "失败", "denied": "已拒绝", "invalid": "参数错误", "unavailable": "不可用",
+             "failed": "Error", "denied": "已拒绝", "invalid": "参数错误", "unavailable": "不可用",
              "timed_out": "超时", "interrupted": "已中断", "cancelled": "已取消"}.get(status, status)
     visible_params = tool_card_params(params, command)
     arguments = json.dumps(visible_params, ensure_ascii=False) if visible_params else ""
     if _cells(arguments) > width - 4:
         arguments = json.dumps(visible_params, ensure_ascii=False, indent=2)
-    title = f"{clean_text(tool)} · {label}"
+    title = f"{clean_text(public_tool_name(tool))} · {label}"
     details = f"{duration:.1f}s" if status not in {"requested", "awaiting_approval", "running"} or duration else ""
     if exit_code is not None:
         details = " · ".join(part for part in (details, f"exit {exit_code}") if part)
@@ -380,7 +381,7 @@ def _render_tool_box_fragments(title: str, arguments: str, output: str, stderr: 
     section("", safe_output, text_style, diff=is_diff)
     section("stderr" if safe_output.strip() else "", safe_stderr, stderr_style)
     if safe_error.strip() not in {safe_output.strip(), safe_stderr.strip()}:
-        section("错误", safe_error, error_style)
+        section("Error", safe_error, error_style)
     section("记录", clean_text(record), section_style)
     lines.append([(border_style, "╰" + "─" * (width - 2) + "╯")])
     fragments: list[tuple[str, str]] = []
@@ -415,10 +416,10 @@ def show_home(*, output, color: bool) -> None:
 
 
 def render_step(step: Any, *, width: int | None = None, color: bool = False) -> str:
-    status = "拒绝" if step.denied else ("完成" if step.ok else "失败")
+    status = "拒绝" if step.denied else ("完成" if step.ok else "Error")
     phase = PHASES.get(step.phase, step.phase)
     seconds = float(getattr(step, "duration", 0) or 0) + float(getattr(step, "llm_seconds", 0) or 0)
-    return render_message(f"{phase} · {step.action} · {seconds:.1f}s\n    {step.summary or getattr(step, 'error', '') or '无摘要'}",
+    return render_message(f"{phase} · {public_tool_name(step.action)} · {seconds:.1f}s\n    {step.summary or getattr(step, 'error', '') or '无摘要'}",
                           label=f"{step.index:02d} {status}", width=width, color=color)
 
 
@@ -427,7 +428,7 @@ def render_approval(request: dict[str, Any], timeout: float | None, *, width: in
     from .audit import redact
     footer = (f"输入 y 允许 / n 拒绝 · {timeout:g} 秒未答复按拒绝处理。"
               if timeout is not None else "输入 y 允许 / n 拒绝；直接回车按拒绝处理。")
-    return render_panel("待审批", rows=[("动作", request.get("tool", "")), ("等级", request.get("level", "")),
+    return render_panel("待审批", rows=[("动作", public_tool_name(request.get("tool", ""))), ("等级", request.get("level", "")),
                         ("检查项", request.get("test_id") or "未指定"),
                         ("参数", json.dumps(redact(request.get("params") or {}), ensure_ascii=False))],
                         sections=[("理由", str(request.get("thought") or "未提供"))],

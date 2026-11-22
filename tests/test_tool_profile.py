@@ -42,7 +42,8 @@ class ToolProfileTests(unittest.TestCase):
         schemas = tool_schemas(registry, include=visible)
         names = {item["function"]["name"] for item in schemas}
         self.assertIn("finish", names)
-        self.assertIn("terminal_exec", names)
+        self.assertTrue({"read", "write", "shell"} <= names)
+        self.assertTrue({"workspace_read", "workspace_write", "terminal_exec"}.isdisjoint(names))
         self.assertNotIn("port_scan", names)
         self.assertNotIn("binary_open", names)
 
@@ -54,7 +55,7 @@ class ToolProfileTests(unittest.TestCase):
         self.assertEqual({item["function"]["name"] for item in full},
                          {item["function"]["name"] for item in compact})
         self.assertLess(len(str(compact)), len(str(full)))
-        terminal = next(item for item in compact if item["function"]["name"] == "terminal_exec")
+        terminal = next(item for item in compact if item["function"]["name"] == "shell")
         self.assertIn("argv", terminal["function"]["parameters"]["properties"])
 
 

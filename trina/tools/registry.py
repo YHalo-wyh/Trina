@@ -39,6 +39,7 @@ from typing import Any, Callable, Iterable
 from ..audit import AuditLog, sha256_text
 from ..config import ACTION_LEVELS, TrinaConfig
 from ..scope import Decision, ScopeGuard, ScopeViolation
+from ..tool_names import internal_tool_name, public_tool_name
 from ..state import RunState
 
 # ---------------------------------------------------------------------------
@@ -82,7 +83,7 @@ class ToolSpec:
     notes: str = ""
 
     def render(self, verbose: bool = False, *, include_examples: bool = True) -> str:
-        head = f"### {self.name} [{self.category}/{self.action_level}]"
+        head = f"### {public_tool_name(self.name)} [{self.category}/{self.action_level}]"
         lines = [head, self.summary]
         if self.params:
             lines.append("参数:")
@@ -475,12 +476,17 @@ class ToolRegistry:
     def register(self, tool: Tool) -> None:
         if not isinstance(tool, Tool) or not tool.spec.name or tool.spec.action_level not in ACTION_LEVELS:
             raise ValueError("工具需要合法的名称、动作等级和 Tool 契约")
-        if tool.spec.name in self._tools:
+        name = tool.spec.name
+        if any(candidate in self._tools for candidate in (name, public_tool_name(name), internal_tool_name(name))):
             raise ValueError(f"工具名称重复: {tool.spec.name}")
-        self._tools[tool.spec.name] = tool
+        self._tools[name] = tool
+
+    def resolve_name(self, name: str) -> str:
+        """按当前注册表解析公开名称，内部继续使用持久化标识。"""
+        return name if name in self._tools else internal_tool_name(name)
 
     def get(self, name: str) -> Tool | None:
-        return self._tools.get(name)
+        return self._tools.get(self.resolve_name(name))
 
     def names(self) -> list[str]:
         return sorted(self._tools)
@@ -500,8 +506,8 @@ class ToolRegistry:
     ) -> str:
         """渲染工具清单给大模型（分组、紧凑）。"""
         grouped = self.by_category()
-        included = set(include) if include is not None else None
-        excluded = set(exclude)
+        included = {self.resolve_name(name) for name in include} if include is not None else None
+        excluded = {self.resolve_name(name) for name in exclude}
         blocks: list[str] = []
         order = ["recon", "web", "browser", "vuln", "exploit", "utility"]
         keys = [k for k in order if k in grouped] + [k for k in grouped if k not in order]
@@ -521,7 +527,7 @@ class ToolRegistry:
         for spec in self.specs():
             out.append(
                 {
-                    "name": spec.name,
+                    "name": public_tool_name(spec.name),
                     "category": spec.category,
                     "action_level": spec.action_level,
                     "summary": spec.summary,
@@ -548,6 +554,7 @@ class ToolRegistry:
         """所有结果分支都有 requested 和唯一 finished，未开始执行也可复盘。"""
         if ctx is None:
             raise ValueError("execute 需要 ToolContext（护栏与审计的载体）")
+        name = self.resolve_name(name)
         import uuid
         invocation = copy.copy(ctx)
         invocation.extra = dict(ctx.extra)
@@ -595,12 +602,12 @@ class ToolRegistry:
                 error=f"未知工具 {name!r}",
                 summary=f"未知工具 {name}",
                 category="invalid",
-                data={"available_tools": self.names()},
+                data={"available_tools": [public_tool_name(tool) for tool in self.names()]},
                 next_hints=["请从工具清单里选择合法工具名"],
                 duration=time.monotonic() - started,
             )
         allowlist = ctx.extra.get("tool_allowlist")
-        if allowlist is not None and name not in set(allowlist):
+        if allowlist is not None and name not in {self.resolve_name(item) for item in allowlist}:
             reason = f"工具 {name} 未按本题能力快照绑定"
             ctx.audit.append("tool.not_bound", tool=name, decision="deny", reason=reason)
             return ToolResult(

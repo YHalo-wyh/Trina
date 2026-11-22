@@ -570,8 +570,7 @@ class Console:
                     from .tools import build_registry
 
                     registry = build_registry()
-                descriptions = {item["name"]: item.get("description", "") for item in registry.describe()}
-                return [ChoiceSpec(name, descriptions.get(name, "")) for name in registry.names()]
+                return [ChoiceSpec(item["name"], item["summary"]) for item in registry.describe()]
             except Exception:  # noqa: BLE001
                 return []
         range_names = []

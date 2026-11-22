@@ -616,9 +616,10 @@ class ChatAgent:
             from .prompts import contract_tool_names
 
             contract = self._messages[1]
-            tool_names = contract_tool_names(contract["content"]) if contract["role"] == "user" else set()
+            advertised = contract_tool_names(contract["content"]) if contract["role"] == "user" else set()
+            tool_names = {self.registry.resolve_name(name) for name in advertised}
             if "tool_allowlist" in data:
-                tool_names.intersection_update(data["tool_allowlist"])
+                tool_names.intersection_update(self.registry.resolve_name(name) for name in data["tool_allowlist"])
             self._contract_tool_names = tool_names
             self.ctx.extra["tool_allowlist"] = tool_names.intersection(self.registry.names())
         else:
@@ -694,7 +695,7 @@ class ChatAgent:
 
     def _run_action(self, action: dict[str, Any], step: int) -> str:
         self._action_ok, self._action_data = False, {}
-        tool_name = str(action.get("action", ""))
+        tool_name = self.registry.resolve_name(str(action.get("action", "")))
         params = action.get("params") if isinstance(action.get("params"), dict) else {}
         params = dict(params)
         call_id = uuid.uuid4().hex

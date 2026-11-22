@@ -21,6 +21,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from ..tool_names import public_tool_name
 from .registry import ParamSpec, ToolSpec
 
 #: ParamSpec.type → JSON Schema type
@@ -105,7 +106,7 @@ def function_schema(spec: ToolSpec, *, compact: bool = False) -> dict[str, Any]:
     return {
         "type": "function",
         "function": {
-            "name": spec.name,
+            "name": public_tool_name(spec.name),
             "description": description,
             "parameters": parameters,
         },
@@ -124,8 +125,8 @@ def tool_schemas(
 
     ``include`` 给出白名单时只导出这些工具（阶段裁剪用），``exclude`` 优先。
     """
-    allowed = set(include) if include is not None else None
-    blocked = set(exclude)
+    allowed = {registry.resolve_name(name) for name in include} if include is not None else None
+    blocked = {registry.resolve_name(name) for name in exclude}
     rows: list[dict[str, Any]] = []
     for name in registry.names():
         if allowed is not None and name not in allowed:
