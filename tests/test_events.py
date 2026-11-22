@@ -364,6 +364,43 @@ class EventTests(unittest.TestCase):
                 replay.consume(event)  # 续流重复投递按 stream/seq 去重。
             self.assertEqual("".join(editor._chunk_text(chunk, 90) for chunk in editor._chunks), live)
 
+    def test_tool_output_preview_keeps_the_ends_and_preserves_original_events(self):
+        from prompt_toolkit.application.current import create_app_session
+        from prompt_toolkit.input import create_pipe_input
+        from prompt_toolkit.output import DummyOutput
+        from trina.console_ui import EnhancedConsoleInput
+
+        with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
+            editor = EnhancedConsoleInput(status=lambda: "ready", running=lambda: True, dynamic_values=lambda *_: (), plain=True)
+            view = EventTranscript(editor.write, editor=editor)
+            self.bus.subscribe(view.consume)
+            stdout = "\n".join(f"build row {index:04d}" for index in range(600))
+            stderr = "\n".join(f"notice {index:04d}" for index in range(100))
+            self.bus.publish("tool.started", call_id="build", tool="terminal_exec")
+            self.bus.publish("tool.output", call_id="build", stream="stdout", delta=stdout[:2400])
+            self.bus.publish("tool.output", call_id="build", stream="stdout", delta=stdout[2400:])
+            self.bus.publish("tool.output", call_id="build", stream="stderr", delta=stderr)
+            self.bus.publish("tool.finished", call_id="build", tool="terminal_exec", status="completed",
+                             data={"stdout": "", "stderr": "", "exit_code": 0}, artifact_ref="artifacts/build.log")
+
+            self.assertEqual(len(editor._chunks), 1)
+            card = editor._chunk_text(editor._chunks[0], 90)
+            for expected in ("build row 0000", "build row 0599", "notice 0000", "notice 0099",
+                             "中间输出已折叠", "artifacts/build.log"):
+                self.assertIn(expected, card)
+            self.assertNotIn("build row 0300", card)
+            self.assertNotIn("notice 0051", card)
+            output = self.bus.replay(kinds=("tool.output",))
+            self.assertEqual(output[0].payload["delta"] + output[1].payload["delta"], stdout)
+            self.assertEqual(output[2].payload["delta"], stderr)
+
+            self.bus.publish("tool.finished", call_id="snapshot", tool="terminal_exec", status="completed",
+                             data={"stdout": stdout, "exit_code": 0})
+            finished = editor._chunk_text(editor._chunks[-1], 90)
+            self.assertIn("build row 0599", finished)
+            self.assertIn("查看运行事件的 JSON 记录", finished)
+            self.assertNotIn("build row 0300", finished)
+
     def test_commander_consumes_live_facts_before_worker_terminal(self):
         from trina.swarm import SwarmRuntime, TaskSpec
         config = self.context().config

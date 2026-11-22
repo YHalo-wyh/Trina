@@ -4,10 +4,44 @@ from __future__ import annotations
 import json
 import threading
 from collections import OrderedDict
+from dataclasses import dataclass
 from typing import Any, Callable
 
 from .events import RuntimeEvent
 from .terminal import render_answer, render_message, render_process, render_tool_call
+
+
+_OUTPUT_HEAD_CHARS = 1200
+_OUTPUT_TAIL_CHARS = 4800
+_OUTPUT_HEAD_LINES = 12
+_OUTPUT_TAIL_LINES = 47
+
+
+@dataclass
+class _OutputPreview:
+    """控制台只缓存可显示的首尾，原始增量由事件库保存。"""
+
+    head: str = ""
+    tail: str = ""
+    length: int = 0
+
+    def append(self, text: str) -> None:
+        self.length += len(text)
+        self.head += text[:_OUTPUT_HEAD_CHARS - len(self.head)]
+        self.tail = (self.tail + text[-_OUTPUT_TAIL_CHARS:])[-_OUTPUT_TAIL_CHARS:]
+
+    def display(self) -> tuple[str, bool]:
+        overlap = len(self.head) + len(self.tail) - self.length
+        if overlap >= 0:
+            text = self.head + self.tail[overlap:]
+            lines = text.splitlines()
+            if len(lines) <= _OUTPUT_HEAD_LINES + _OUTPUT_TAIL_LINES + 1:
+                return text, False
+            head, tail = lines[:_OUTPUT_HEAD_LINES], lines[-_OUTPUT_TAIL_LINES:]
+        else:
+            head = self.head.splitlines()[:_OUTPUT_HEAD_LINES]
+            tail = self.tail.splitlines()[-_OUTPUT_TAIL_LINES:]
+        return "\n".join([*head, "… 中间输出已折叠 …", *tail]), True
 
 
 class EventTranscript:
@@ -109,8 +143,11 @@ class EventTranscript:
                 self.output(render_answer(text, color=self.color, palette=self.palette))
         elif event.kind.startswith(("tool.", "job.")) and event.call_id:
             kind = event.kind.replace("job.", "tool.", 1) if event.kind.startswith("job.") else event.kind
-            row = self.calls.setdefault(event.call_id, dict(tool=payload.get("tool", "工具"), params={},
-                                                           status="requested", output="", stderr=""))
+            row = self.calls.get(event.call_id)
+            if row is None:
+                row = dict(tool=payload.get("tool", "工具"), params={}, status="requested",
+                           output=_OutputPreview(), stderr=_OutputPreview())
+                self.calls[event.call_id] = row
             if kind in {"tool.requested", "tool.validated", "tool.started"}:
                 row.update(tool=payload.get("tool", row["tool"]), params=payload.get("params", row["params"]))
                 row["status"] = "running" if kind == "tool.started" else "requested"
@@ -118,39 +155,47 @@ class EventTranscript:
                 row["status"] = "awaiting_approval"
             elif kind == "tool.output":
                 field = "stderr" if payload.get("stream") == "stderr" else "output"
-                row[field] = (row[field] + str(payload.get("delta", "")))[-16000:]
+                row[field].append(str(payload.get("delta", "")))
             elif kind == "tool.finished":
                 data = payload.get("data") or {}
                 stdout, stderr = data.get("stdout"), data.get("stderr")
-                if stdout is not None:
-                    row["output"] = str(stdout)
-                elif payload.get("raw"):
-                    row["output"] = str(payload["raw"])[-16000:]
-                elif data:
-                    row["output"] = json.dumps(data, ensure_ascii=False, indent=2)[-16000:]
-                if not row["output"]:
-                    row["output"] = str(payload.get("summary", ""))
-                if stderr is not None:
-                    row["stderr"] = str(stderr)
+                output = str(stdout) if stdout is not None else ""
+                if stdout is None and not row["output"].length:
+                    output = str(payload.get("raw") or "") or (json.dumps(data, ensure_ascii=False, indent=2) if data else "")
+                if output or not row["output"].length:
+                    row["output"] = _OutputPreview()
+                    row["output"].append(output or str(payload.get("summary") or ""))
+                if stderr:
+                    row["stderr"] = _OutputPreview()
+                    row["stderr"].append(str(stderr))
                 row.update(status=payload.get("status", "failed"), error=payload.get("error", ""),
                            duration=float(payload.get("duration") or 0), command=payload.get("command", ""),
-                           exit_code=data.get("exit_code"))
-            if self.editor is not None:
-                from .terminal import ResponsiveText
-                snapshot = dict(row)
-                # 保留未排版文本的真实规模，使历史缓冲裁剪仍能计入工具输出。
-                raw = (f"{row['tool']} · {row['status']}\nInput\n{row['params']}\nOutput\n"
-                       f"{row['output']}\n{row['stderr']}\n{row.get('error', '')}")
-                from .terminal import render_tool_call_fragments
-                card = ResponsiveText(raw, lambda width: str(render_tool_call(
-                    **snapshot, color=self.color, width=width, palette=self.palette)),
-                    lambda width: render_tool_call_fragments(**snapshot, color=self.color, width=width, palette=self.palette))
-                self.editor.update_tool(event.call_id, card)
-            elif kind == "tool.finished":
-                self.output(render_tool_call(**row, color=self.color, palette=self.palette))
+                           exit_code=data.get("exit_code"), artifact_ref=payload.get("artifact_ref"))
+            if self.editor is not None or kind == "tool.finished":
+                self._show_tool(event.call_id, row)
             while len(self.calls) > 128:
                 self.calls.popitem(last=False)
         self.cursor[event.stream_id] = event.seq
+
+    def _show_tool(self, call_id: str, row: dict[str, Any]) -> None:
+        output, clipped_output = row["output"].display()
+        stderr, clipped_stderr = row["stderr"].display()
+        snapshot = {**row, "output": output, "stderr": stderr}
+        artifact = snapshot.pop("artifact_ref", None)
+        if clipped_output or clipped_stderr:
+            snapshot["record"] = str(artifact or "查看运行事件的 JSON 记录")
+        if self.editor is None:
+            self.output(render_tool_call(**snapshot, color=self.color, palette=self.palette))
+            return
+        from .terminal import ResponsiveText, render_tool_call_fragments
+
+        # 历史缓冲按卡片实际保留的可显示内容计量。
+        raw = (f"{row['tool']} · {row['status']}\n{row['params']}\n{output}\n{stderr}\n"
+               f"{row.get('error', '')}\n{snapshot.get('record', '')}")
+        card = ResponsiveText(raw, lambda width: str(render_tool_call(
+            **snapshot, color=self.color, width=width, palette=self.palette)),
+            lambda width: render_tool_call_fragments(**snapshot, color=self.color, width=width, palette=self.palette))
+        self.editor.update_tool(call_id, card)
 
     def _visible_text(self, text: str, final: bool) -> None:
         if self.editor is not None:

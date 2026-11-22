@@ -213,6 +213,8 @@ python -m scripts.verify_course_pack
 
 增强终端把正文增量更新到同一内容块，普通说明和最终回答直接以 Markdown 排版。工具调用按 `call_id` 原位更新。卡片顶部显示工具名、状态、耗时和退出码，正文依次显示命令或参数、输出、stderr 和错误详情。空区块省略，同一条错误只显示一次。后台作业使用独立调用 ID，启动工具返回后仍可更新其输出窗口。
 
+长输出在卡片里保留开头和末尾，并提示中间内容已折叠。卡片优先指向已有工件，也可用 `trina events <事件库路径> --json` 查看运行事件里保存的输出。
+
 Chat Agent 优先通过标准 API 的 `tools` / `tool_calls` 调用工具，并严格保存 assistant-tool 配对；JSON/DSML 只作为兼容回退。网关把 `<|DSML|...>` 扩成 `< | | DSML | | ...>` 时也会先规范化后解析，不作为正文展示。普通代码围栏和代码内的字典不会阻塞正文到结束。模型增量按最多约 30 帧/秒合并提交，首个增量立即提交，空闲尾部定时刷新，结束和异常前强制刷新；工具窗口只在真实显示帧排版最新数据。已提交的同进程事件直接投递，历史缺口仍回到 SQLite 重放，FULL 持久化保持。网络中断或协议未完整结束时撤回未完成正文并显示错误。输出重定向与非 TTY 入口保留一次完整答复、思考记录和已结束的工具窗口。滚动与输入草稿保持。
 
 实时显示与历史恢复共用 `EventTranscript`。`python -m trina events runs/<run-id>/events.sqlite3` 可以重放，`--follow --after N` 接续事件，`--consumer inspector --json` 保存命名消费者进度；查看事件不会执行历史工具。协议与恢复边界见[统一运行事件](EVENTS.md)。验收入口为 `tests/test_events.py` 和 `tests/test_llm_streaming.py`，检查原位更新、重放一致、去重和草稿保留。

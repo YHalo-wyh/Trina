@@ -224,12 +224,12 @@ def render_thinking(message: str, *, final: bool = False, width: int | None = No
 def render_tool_call(tool: str, params: dict[str, Any], *, status: str = "running", output: str = "",
                      stderr: str = "", error: str = "", duration: float = 0, command: str = "",
                      exit_code: int | None = None, width: int | None = None, color: bool = False,
-                     palette: Palette = "trina") -> str:
+                     palette: Palette = "trina", record: str = "") -> str:
     """工具输入、输出和状态共用一个窗口，脚本与 JSON 按字面量高亮。"""
     requested_width = width
     width = max(20, width if width is not None else terminal_width())
     original = dict(tool=tool, params=params, status=status, output=output, stderr=stderr, error=error,
-                    duration=duration, command=command, exit_code=exit_code, color=color, palette=palette)
+                    duration=duration, command=command, exit_code=exit_code, color=color, palette=palette, record=record)
     fragments = render_tool_call_fragments(**original, width=width)
     if color:
         from .markdown_view import fragments_to_ansi
@@ -245,7 +245,7 @@ def render_tool_call(tool: str, params: dict[str, Any], *, status: str = "runnin
 def render_tool_call_fragments(tool: str, params: dict[str, Any], *, status: str = "running", output: str = "",
                                stderr: str = "", error: str = "", duration: float = 0, command: str = "",
                                exit_code: int | None = None, width: int = 88,
-                               color: bool = False, palette: Palette = "trina") -> list[tuple[str, str]]:
+                               color: bool = False, palette: Palette = "trina", record: str = "") -> list[tuple[str, str]]:
     """工具流的延迟排版入口，供全屏 transcript 直接消费。"""
     import json
     import shlex
@@ -267,7 +267,7 @@ def render_tool_call_fragments(tool: str, params: dict[str, Any], *, status: str
     details = f"{duration:.1f}s" if status not in {"requested", "awaiting_approval", "running"} or duration else ""
     if exit_code is not None:
         details = " · ".join(part for part in (details, f"exit {exit_code}") if part)
-    return _render_tool_box_fragments(title, input_label, script, output, stderr, error, details,
+    return _render_tool_box_fragments(title, input_label, script, output, stderr, error, details, record,
                                       width=width, color=color, palette=palette, status=status,
                                       is_diff=tool == "workspace_git" and params.get("action") == "diff")
 
@@ -299,7 +299,7 @@ def _wrap_clean_line(text: str, width: int) -> list[str]:
 
 
 def _render_tool_box_fragments(title: str, input_label: str, script: str, output: str, stderr: str, error: str,
-                               details: str, *,
+                               details: str, record: str, *,
                                width: int, color: bool, palette: Palette = "trina", status: str = "running",
                                is_diff: bool = False) -> list[tuple[str, str]]:
     """线性绘制工具窗口；输出增量只进行文本折行和补齐。"""
@@ -348,6 +348,7 @@ def _render_tool_box_fragments(title: str, input_label: str, script: str, output
     section("stderr", safe_stderr, stderr_style)
     if safe_error.strip() not in {safe_output.strip(), safe_stderr.strip()}:
         section("错误", safe_error, error_style)
+    section("记录", clean_text(record), section_style)
     lines.append([(border_style, "╰" + "─" * (width - 2) + "╯")])
     fragments: list[tuple[str, str]] = []
     for index, line in enumerate(lines):
