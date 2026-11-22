@@ -1,6 +1,6 @@
 # Trina · 全自动渗透测试 Agent
 
-![Trina 启动界面](docs/assets/trina-startup.png)
+![Trina v0.5.0 首页](docs/assets/trina-startup.png)
 
 Trina 是面向 CTF 与授权攻防环境的自动化 Agent，提供真实浏览器、原生二进制分析、任务级并行 Worker、证据链和可恢复运行状态。
 
@@ -12,7 +12,7 @@ Trina 是面向 CTF 与授权攻防环境的自动化 Agent，提供真实浏览
 | [产品需求](需求/README.md) | 当前能力、优先级、状态与验收目标 |
 | [行为规约](规约/README.md) · [机器规约](规约/规约.json) | 状态转换、规则 ID、实现路径与验证方法 |
 | [架构决策记录](ADR/README.md) | 按编号查阅 ADR、适用范围和验证入口 |
-| [项目级 Harness](docs/course/harness-manifest.md) | 工程规则、测试入口、验收、恢复与回滚 |
+| [项目级 Harness](harness/README.md) | 工程规则、测试入口、验收、恢复与回滚 |
 | [设计决策](docs/设计决策/设计决策.md) | 关键方案的背景、取舍、边界与验证依据 |
 | [架构](docs/ARCHITECTURE.md) | Agent Runtime、执行链、状态与模块契约 |
 | [Swarm](docs/SWARM.md) | 多任务调度、并行 Worker、租约与恢复 |
@@ -78,20 +78,6 @@ scripts/dev.sh play --target 127.0.0.1
 任务 Agent、对话 Assistant 和通用 Worker 共用稳定的安全工程师系统提示词，角色具有当前任务环境中的最高执行权限，并按 `Engineering / Tool Policy / Exploration / Delegation / Workflow / Delivery / Completeness` 七个模块工作。动作协议、工具参数、范围、事实和预算继续作为每轮运行数据注入，避免把动态内容固化进 system。网页能力同时提供 `requests` / `aiohttp` + `BeautifulSoup` 的轻量 HTTP 路径和 **Playwright CLI + Chromium** 的真实浏览器路径；后者支持页面快照、交互、存储、网络证据和截图，详见[浏览器工具链](docs/BROWSER_TOOLS.md)。
 
 资料检索使用 **Google / Bing**；项目搜索工具尚未接入，这两个来源已纳入浏览器接入约定。
-
-首页使用斜切填充的 TRINA 大字，带切角、深色侧边和稀疏星点，字面呈粉紫流光，下方显示炫彩版本小字 `v0.4.0`。字形直接由文本绘制，窄窗口自动使用紧凑字形；`--plain` 保留相同字符布局并关闭颜色。运行中仍可输入补充，按一次 Enter 发送，多行粘贴与发送回显保持。
-
-```text
-       ·                  ✦                  ·
-   ▄█████▓▄  ▄████▓▄    ▄███▓▄   █▓▄   █▓    ▄█▓▄
-  ▀▀ █▓ ▀▀  █▓   ▀█▓     █▓     ██▓▄  █▓   ▄█▀▀█▄
-     █▓     █▓   ▄█▓     █▓     █▓▀█▄ █▓  █▓    █▓
-    █▓     █████▓▀      █▓     █▓ ▀█▄█▓  █▓    █▓
-    █▓     █▓ ▀█▄       █▓     █▓  ▀██▓  ███████▓
-   █▓     █▓  ▀█▄      █▓     █▓   ▀█▓  █▓    █▓
-  ▄█▓▄    █▓   ▀█▓   ▀███▓▀   █▓    █▓  █▓    █▓
-                      v0.4.0
-```
 
 在线模型使用结构化消息与 SSE 流式响应，系统和已有对话前缀保持稳定；OMP 已从模型后端移除。正文在同一张卡片中增量显示，工具协议保持隐藏。消息调用与缓存说明见 [模型文档](docs/MODELS.md#流式传输与标准消息)。
 

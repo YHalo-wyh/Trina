@@ -24,7 +24,7 @@ Trina 接收授权靶场地址和测试目标，通过模型提出动作，由�
 | 采取何种方案，有何替代方案 | [ADR-0019](../../ADR/0019-course-contract-and-dual-harness.md) | 沿用已有执行链，增加课程规格与机械检查 |
 | 实施顺序和检查点是什么 | [实施计划](plan.md)、[8 张任务卡](tasks.md) | 垂直切片、依赖、输入、输出、DoR、DoD 和停止条件 |
 | 文件、模块及权威位置在哪里 | [仓库地图](repository-map.md) | 分层资料入口、主要调用链、事实来源及冲突处理 |
-| Agent 如何受控运行和开发 | [双层 Harness](harness-manifest.md) | Runtime / Project、权限、命令、预算、可见性和恢复 |
+| Agent 如何受控运行和开发 | [双层 Harness](../../harness/harness-manifest.md) | Runtime / Project、权限、命令、预算、可见性和恢复 |
 | 中断后怎样继续 | [连续性与交接](continuity.md) | 已验证版本、失败、决策、人工问题与下一安全动作 |
 | 哪些问题仍未完成 | [未决问题](open-questions.md) | 风险、阻塞范围、负责人角色、验证时点和关闭条件 |
 | AI 参与了什么，谁负责最终判断 | [AI 使用披露](ai-disclosure.md) | 辅助范围、未采纳主张、人工责任及待签署事项 |

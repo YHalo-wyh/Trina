@@ -116,11 +116,12 @@ def check(root: Path) -> Report:
     required = {
         f"docs/course/{name}.md" for name in (
             "README", "intent", "problem-frame", "specification", "scenarios", "acceptance-matrix",
-            "state-model", "impact-map", "plan", "tasks", "repository-map", "harness-manifest",
+            "state-model", "impact-map", "plan", "tasks", "repository-map",
             "open-questions", "continuity", "ai-disclosure", "course-alignment",
         )
     }
-    required.update({"README.md", "docs/开题报告与第一次汇报/开题报告与第一次汇报.md"})
+    required.update({"README.md", "harness/README.md", "harness/harness-manifest.md",
+                     "docs/开题报告与第一次汇报/开题报告与第一次汇报.md"})
     if not required.issubset(documents):
         report.errors.append(f"清单遗漏课程工件: {sorted(required - set(documents))}")
     texts = {relative: _read(root, relative, report) for relative in documents}
@@ -133,7 +134,7 @@ def check(root: Path) -> Report:
     tasks = texts.get("docs/course/tasks.md", "")
     matrix = texts.get("docs/course/acceptance-matrix.md", "")
     questions = texts.get("docs/course/open-questions.md", "")
-    harness = texts.get("docs/course/harness-manifest.md", "")
+    harness = texts.get("harness/harness-manifest.md", "")
     continuity = texts.get("docs/course/continuity.md", "")
     req_ids = _heading_ids(spec, r"REQ-\d{2}")
     scene_ids = _heading_ids(scenes, r"SC-[PNA]\d{2}")

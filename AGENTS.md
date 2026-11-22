@@ -4,6 +4,8 @@
 
 ## 快速定位
 
+- 开发、验证与恢复入口见 [项目级 Harness](harness/README.md)。
+
 - 想知道能做什么 → 读 `.omp/skills/pentest-agent/SKILL.md`（已作为技能自动加载）；或 `python3 -m trina tools`
 - 想跑一次任务 → `trina play --target ...`；想边聊边执行 → `trina`；需要保存项目目标 → `trina goal set ...`；需要一次性定时启动 → `trina schedule add --at +10m --target ...`
 - 改代码前 → 先读 `docs/ARCHITECTURE.md` 的模块契约；护栏相关改动必读 `docs/GUARDRAILS.md`

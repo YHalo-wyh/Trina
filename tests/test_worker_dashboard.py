@@ -48,10 +48,15 @@ class WorkerDashboardTests(unittest.TestCase):
             text = "".join(text for _, text in render_grid(manager, width, height, 0))
             self.assertTrue(all(_cells(line) <= width for line in text.splitlines()))
             self.assertLessEqual(len(text.splitlines()), height)
-        first_page = "".join(t for _, t in render_grid(manager, 144, 30, 5))
+        first_page = "".join(t for _, t in render_grid(manager, 144, 30, 0))
         self.assertIn("worker-1 ·", first_page)
-        self.assertIn("worker-9 ·", first_page)
-        self.assertNotIn("worker-10 ·", first_page)
+        self.assertIn("worker-4 ·", first_page)
+        self.assertNotIn("worker-5 ·", first_page)
+        after_wheel = "".join(t for _, t in render_grid(manager, 144, 30, 2, first=2))
+        self.assertNotIn("worker-1 ·", after_wheel)
+        self.assertIn("worker-3 ·", after_wheel)
+        self.assertIn("worker-6 ·", after_wheel)
+        self.assertNotIn("worker-7 ·", after_wheel)
         page = "".join(t for _, t in render_grid(manager, 144, 30, 10))
         self.assertIn("worker-11 ·", page)
         self.assertNotIn("worker-1 ·", page)
@@ -63,6 +68,18 @@ class WorkerDashboardTests(unittest.TestCase):
         self.assertNotIn("worker-1", zoom)
         manager._record("worker-2", "new", "输出", "更新")
         self.assertIs(first, manager.dialog_lines("worker-1", 60))
+
+    def test_grid_drag_scrollbar_to_worker_beyond_128(self):
+        from prompt_toolkit.application.current import create_app_session
+        from prompt_toolkit.data_structures import Size
+        from prompt_toolkit.input import create_pipe_input
+        from prompt_toolkit.output.vt100 import Vt100_Output
+        from trina.subworker_ui import show_subworkers
+
+        output = Vt100_Output(io.StringIO(), lambda: Size(rows=30, columns=144), enable_cpr=False)
+        with create_pipe_input() as pipe, create_app_session(input=pipe, output=output):
+            pipe.send_text("\x1b[<65;1;5M\x1b[<0;144;5M\x1b[<32;144;27M\x1b[<0;144;27m\t\tf")
+            self.assertEqual(show_subworkers(self.manager(137), self.config), ("message", "worker-137"))
 
     def test_live_projection_ignores_raw_model_protocol_and_tracks_final_output(self):
         manager = self.manager(1)

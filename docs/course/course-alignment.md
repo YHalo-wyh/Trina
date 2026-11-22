@@ -19,7 +19,7 @@
 | Plan | [plan.md](plan.md) | M0–M5、依赖、检查点、DoR/DoD、风险和预算 |
 | 5–8 张 Task Card | [tasks.md](tasks.md) | 8 个纵向切片，各有目标、范围、验证、证据、责任和停止条件 |
 | Repository Map | [repository-map.md](repository-map.md) | L1/L2/L3、主要模块、测试入口与权威冲突规则 |
-| Harness Manifest | [harness-manifest.md](harness-manifest.md) | 双层职责、Guide/Sensor、命令、权限、预算、配置回归、恢复 |
+| Harness Manifest | [harness-manifest.md](../../harness/harness-manifest.md) | 双层职责、Guide/Sensor、命令、权限、预算、配置回归、恢复 |
 | AI 使用披露 | [ai-disclosure.md](ai-disclosure.md) | 辅助活动、人类决定、排除主张和未发生的签署 |
 | 未解决问题 | [open-questions.md](open-questions.md) | 风险、阻塞范围、责任角色、验证时点及关闭条件 |
 

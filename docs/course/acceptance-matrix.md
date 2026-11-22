@@ -29,7 +29,7 @@
 
 ## 2. 精确验证入口
 
-以下测试 ID 使用 `unittest discover -s tests` 的实际命名。完整测试可用 V-FULL 运行，局部命令和退出语义见 [Harness](harness-manifest.md)。文件链接用于定位测试，代码中的函数名用于定位具体断言；不得用同名但未被发现的函数伪装测试证据。
+以下测试 ID 使用 `unittest discover -s tests` 的实际命名。完整测试可用 V-FULL 运行，局部命令和退出语义见 [Harness](../../harness/harness-manifest.md)。文件链接用于定位测试，代码中的函数名用于定位具体断言；不得用同名但未被发现的函数伪装测试证据。
 
 ### REQ-01 的 Sensor
 

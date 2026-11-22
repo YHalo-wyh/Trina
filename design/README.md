@@ -1,6 +1,6 @@
 # design · ADR、AI 规则、状态与权限
 
-章节 02 的[双层 Harness](../docs/course/harness-manifest.md)、[实际状态模型](../docs/course/state-model.md)及[完整汇报](../docs/开题报告与第一次汇报/开题报告与第一次汇报.md)位于课程包。下文一页图为原有流程概览，具体生命周期以当前状态模型为准。
+章节 02 对应[双层 Harness](../harness/harness-manifest.md)、[实际状态模型](../docs/course/state-model.md)及[完整汇报](../docs/开题报告与第一次汇报/开题报告与第一次汇报.md)。具体生命周期见状态模型。
 
 ## 目录
 
@@ -11,9 +11,9 @@
 
 ## ADR 一览
 
-当前共有 **41 份 ADR**。`Accepted / 已实施` 表示仍是当前契约；“历史基线”保留当时证据与取舍，但默认行为以其注明的后续 ADR 为准。新增能力必须更新索引和关联 ADR。
+当前共有 **42 份 ADR**。`Accepted / 已实施` 表示仍是当前契约；“历史基线”保留当时证据与取舍，但默认行为以其注明的后续 ADR 为准。新增能力必须更新索引和关联 ADR。
 
-### 当前运行时决策（ADR-0021—0041）
+### 当前运行时决策（ADR-0021—0042）
 
 | 编号 | 决定 | 当前作用 |
 |---|---|---|
@@ -38,6 +38,7 @@
 | [ADR-0039](../ADR/0039-bench-commander-dynamic-budget.md) | Bench Commander 轮次边界动态预算 | 部分 Flag/新增事实可续做或加时；全局储备与次数上限约束，默认关闭 |
 | [ADR-0040](../ADR/0040-agent-efficiency-profiler-and-result-views.md) | 运行性能与工具结果视图 | 记录运行耗时，保留原始工具输出的引用 |
 | [ADR-0041](../ADR/0041-console-plan-queue-and-worker-grid.md) | 执行前澄清、草稿队列与实时网格 | 由用户确认和发送草稿，主会话显示后台终态 |
+| [ADR-0042](../ADR/0042-worker-viewport-and-harness-entry.md) | Worker 四格视口与项目级 Harness 入口 | 按行滚动当前批次，工程规则与验收统一入口 |
 
 ### 基础与历史决策（ADR-0001—0020）
 | 编号 | 决定 | 关键理由 |
