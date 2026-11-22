@@ -158,6 +158,12 @@ COMMANDS: tuple[CommandSpec, ...] = (
                          OptionSpec(("--max-steps",), "决策步数", "<整数>"), OptionSpec(("--approve",), "审批模式", "<模式>", APPROVAL_CHOICES)),
                 examples=('/schedule add --at +10m --target http://127.0.0.1:9099',)),
     CommandSpec("status", "任务", "查看当前任务或上一轮结果", "status", availability="always"),
+    CommandSpec("jobs", "任务", "查看或等待当前后台任务", "jobs [list|wait <any|all> [秒数] [ID …]|unwait|logs <ID>|stop <ID>|message <ID> <文本>]",
+                positional_choices=(ChoiceSpec("list", "查看任务"), ChoiceSpec("wait", "等待任务结束"),
+                                    ChoiceSpec("unwait", "退出等待"), ChoiceSpec("logs", "查看日志"),
+                                    ChoiceSpec("stop", "停止任务"), ChoiceSpec("message", "给 Worker 发送补充")),
+                examples=("/jobs wait any 30", "/jobs logs terminal:job-123", "/jobs message worker:tests 请汇总测试结果"),
+                availability="always"),
     CommandSpec("board", "任务", "打开状态、证据、覆盖和成本工作台", "board", availability="always"),
     CommandSpec("hypotheses", "研究", "按优先级查看假设台账", "hypotheses"),
     CommandSpec("graph", "研究", "输出证据关系图（Mermaid）", "graph"),
@@ -509,7 +515,7 @@ class EnhancedConsoleInput:
     """可滚动内容区与固定底部的活动、输入、索引和会话用量。"""
 
     def __init__(self, *, status, running, dynamic_values, plain: bool = False, usage=None, activity=None, context=None,
-                 motion: str = "full", output_palette="trina", activity_detail=None) -> None:
+                 motion: str = "full", output_palette="trina", activity_detail=None, cancel_wait=None) -> None:
         from prompt_toolkit import Application
         from prompt_toolkit.buffer import Buffer
         from prompt_toolkit.history import InMemoryHistory
@@ -585,6 +591,8 @@ class EnhancedConsoleInput:
 
         @bindings.add("escape")
         def dismiss(event):
+            if cancel_wait is not None and cancel_wait():
+                return
             self.buffer.cancel_completion()
             self.dismissed = True
             self.transcript_control.clear_selection()
@@ -995,7 +1003,7 @@ class EnhancedConsoleInput:
             marker = ("·", "✧", "✦", "✧")[frame]
             style = "class:thinking" if frame == 2 else "class:thinking.dim"
         else:
-            marker = {"waiting": "◌", "responding": "▸", "tool": "◆", "background": "↻", "retry": "↻",
+            marker = {"waiting": "◌", "background_wait": "◌", "responding": "▸", "tool": "◆", "background": "↻", "retry": "↻",
                       "processing": "◇", "approval": "?", "paused": "Ⅱ", "stopping": "■",
                       "error": "!"}.get(phase, "·")
             style = "class:status" if phase in {"tool", "background", "responding"} else "class:hint"

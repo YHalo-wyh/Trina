@@ -119,6 +119,7 @@ class BackgroundJobs:
                 "stdout": "", "stderr": "", "error": "", "process": proc,
                 "done": threading.Event(),
                 "native_job": native_job,
+                "terminate_lock": threading.Lock(),
                 "owner": owner,
             }
             self._jobs[job_id] = job
@@ -177,13 +178,14 @@ class BackgroundJobs:
                 proc.wait(timeout=max(.01, timeout))
             except subprocess.TimeoutExpired:
                 timed_out = True
-                _terminate_background(proc, native_job)
             finally:
                 # 主程序正常退出也回收它留下的子进程及管道。
-                _terminate_background(proc, native_job)
-                if native_job is not None:
-                    import ctypes
-                    ctypes.windll.kernel32.CloseHandle(native_job)
+                with job["terminate_lock"]:
+                    _terminate_background(proc, native_job)
+                    if native_job is not None:
+                        import ctypes
+                        ctypes.windll.kernel32.CloseHandle(native_job)
+                        job["native_job"] = None
                 for reader in readers:
                     reader.join(timeout=.5)
                 with self._lock:
@@ -228,7 +230,8 @@ class BackgroundJobs:
                 "exit_code": job["exit_code"], "error": job["error"],
                 "finished": job["done"].is_set(),
                 "elapsed_seconds": round(time.monotonic() - job["started"], 2) if job["status"] == "running" else job["elapsed_seconds"],
-                "stdout_tail": job["stdout"][-tail:], "stderr_tail": job["stderr"][-tail:],
+                "stdout_tail": job["stdout"][-tail:] if tail else "",
+                "stderr_tail": job["stderr"][-tail:] if tail else "",
             } for job in selected_rows]
 
     def wait(self, job_id: str, seconds: float) -> None:
@@ -255,11 +258,14 @@ class BackgroundJobs:
                 raise ValueError("后台作业不存在或不属于当前会话")
             job = self._jobs[job_id]
             proc = None
-            if job["status"] == "running":
+            if job["status"] == "running" and job["process"].poll() is None:
                 job["status"], job["error"] = "cancelled", "操作者或任务生命周期取消"
-                proc, native_job = job["process"], job["native_job"]
+                proc = job["process"]
         if proc is not None:
-            _terminate_background(proc, native_job)
+            # 监控线程关闭原生句柄后，不再向可被系统复用的旧句柄发送停止。
+            with job["terminate_lock"]:
+                if proc.poll() is None:
+                    _terminate_background(proc, job["native_job"])
         self.wait(job_id, 2)
 
     def close(self) -> None:

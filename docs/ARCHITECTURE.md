@@ -83,6 +83,8 @@ ScopeSentry由外置Capability通过 `mcp_http` 复用 `ctx.http`；浏览器采
 
 等待外部输出时，通过 `terminal_start` 返回句柄，让后续模型决策推进独立工作；依赖结果时再用 `terminal_status` 回收，独立分析分支用 `worker_tasks`。同步调用本身不触发并行模型决策。后台线程只维护作业状态和输出事件，`terminal_status` 在作业与输出流完成后经注册表归档证据，保持事实提交和执行租约契约。
 
+控制台的 `/jobs` 合并当前对话的终端作业和控制台的 Worker。命令使用列表中的完整 ID，例如 `/jobs wait any 30 terminal:job-…` 或 `/jobs wait all 30`，省略 ID 时按开始等待时的活跃任务取样。完成事件唤醒等待并刷新所选任务的状态。Esc 和 `/jobs unwait` 只结束用户的等待，`/jobs stop <ID>` 才向指定任务发停止请求。用 `/jobs logs <ID>` 查看近期输出及原有事件记录位置，用 `/jobs message worker:<ID> <文本>` 向指定 Worker 发补充。
+
 ## 3. 模块契约
 
 | 模块 | 关键类型 / 函数 | 约定 |

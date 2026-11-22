@@ -63,6 +63,25 @@ class Subworkers:
         with self._lock:
             return [dict(row) for row in self._rows.values()]
 
+    def monitor_rows(self) -> tuple[str, list[dict[str, Any]]]:
+        """一次读取运行 ID 和面板行，避免切换任务组时串联同名任务。"""
+        with self._lock:
+            run_id = self._snapshot.get("run_id", "")
+            error = self._snapshot.get("error", "")
+            rows = self.rows()
+            for row in rows:
+                if error and row["status"] in {"pending", "running"}:
+                    row.update(status="failed", error=error)
+                elif task_error := self._snapshot["tasks"].get(row["id"], {}).get("error"):
+                    row["error"] = task_error
+            return run_id, rows
+
+    def monitor_log(self, run_id: str, task_id: str, width: int) -> tuple[list[tuple[str, str]], str]:
+        with self._lock:
+            if self.runtime is None or self.runtime.run_id != run_id:
+                raise ValueError("该 Worker 已不属于当前任务组")
+            return self.dialog_lines(task_id, width), str(self.runtime.event_bus.path)
+
     def _progress(self, event: Any) -> None:
         with self._lock:
             row = self._rows.get(event.task_id)
@@ -195,12 +214,15 @@ class Subworkers:
             future = self.runtime.submit_task(task)
         return future.result(timeout=5)
 
-    def task_control(self, task_id: str, action: str, text: str = "") -> None:
-        if self.runtime is None or not self.running:
-            raise ValueError("没有运行中的任务")
-        self.runtime.control_task(task_id, action, text).result(timeout=5)
+    def task_control(self, task_id: str, action: str, text: str = "", *, run_id: str = "") -> None:
         with self._lock:
-            self._record(task_id, "control-" + str(time.monotonic_ns()), "补充" if action == "message" else "控制", text or "请求取消")
+            runtime = self.runtime
+            if runtime is None or not self.running or (run_id and run_id != runtime.run_id):
+                raise ValueError("该 Worker 已不在当前任务组运行")
+        runtime.control_task(task_id, action, text).result(timeout=5)
+        with self._lock:
+            if self.runtime is runtime:
+                self._record(task_id, "control-" + str(time.monotonic_ns()), "补充" if action == "message" else "控制", text or "请求取消")
 
     def _update(self, snapshot: dict[str, Any]) -> None:
         # 只在 Commander 提交检查点时投影；每个渲染帧不复制 DAG 或访问磁盘。

@@ -23,6 +23,7 @@ import threading
 import time
 from typing import Any, Callable
 
+from .background_view import ACTIVE, STATUS_LABELS, BackgroundRow, BackgroundWait
 from .config import TrinaConfig
 from .console_state import ConsoleContext, ConsoleState, TrackedBackend
 from .model_names import display_model as _display_model
@@ -121,12 +122,12 @@ class Console:
         self._task_max_steps = 0
         self._active_worker = "commander"
         self._worker_sessions: dict[str, str] = {}
+        self._job_wait = BackgroundWait(self._background_rows, self._report_job_wait)
         self._branch = self._read_branch()
         self._git_branches = [self._branch] if self._branch else []
         self._git_files: list[str] = []
         from .subworkers import Subworkers
-        self.subworkers = Subworkers(lambda text: self._emit(text, prefix="Subworker"),
-                                     on_finished=self._background_notice)
+        self.subworkers = Subworkers(self._subworker_summary, on_finished=self._background_notice)
 
     # ------------------------------------------------------------------ 输出
     def _display(self, text: str) -> None:
@@ -144,11 +145,127 @@ class Console:
             self._emit(message)
 
     def _background_notice(self, name: str, status: str) -> None:
-        label = {"completed": "完成", "failed": "失败", "timed_out": "超时", "cancelled": "已取消",
-                 "blocked": "受阻", "skipped": "跳过"}.get(status, "已结束")
-        message = f"{name} · {label}"
+        self._job_wait.changed()
+        if self._cleanup_done:
+            return
+        message = f"{name} · {STATUS_LABELS.get(status, '已结束')}"
         self._emit(message, prefix="后台")
         self._notify_agent(message, error=status in {"failed", "timed_out", "blocked"})
+
+    def _subworker_summary(self, text: str) -> None:
+        self._job_wait.changed()
+        if not self._cleanup_done:
+            self._emit(text, prefix="Subworker")
+
+    def _background_rows(self) -> list[BackgroundRow]:
+        rows = []
+        chat = self.chat
+        jobs = chat.ctx.extra.get("background_jobs") if chat is not None else None
+        if jobs is not None:
+            for item in jobs.snapshot(tail=0, include_all=True):
+                status = item["status"]
+                if status == "cancelled" and not item["finished"] and item["exit_code"] is None:
+                    status = "stopping"
+                detail = item["error"]
+                if item["exit_code"] is not None:
+                    detail = f"退出码 {item['exit_code']}" + (f" · {detail}" if detail else "")
+                rows.append(BackgroundRow("terminal:" + item["id"], chat.run_id, status, item["elapsed_seconds"], detail))
+        run_id, workers = self.subworkers.monitor_rows()
+        for item in workers:
+            started = item.get("started_at") or 0
+            elapsed = (item.get("ended_at") or time.time()) - started if started else 0
+            rows.append(BackgroundRow("worker:" + item["id"], run_id, item["status"], elapsed,
+                                      item.get("error") or item["goal"]))
+        return rows
+
+    def _show_background(self, title: str, rows: list[BackgroundRow]) -> None:
+        if not rows:
+            self._emit(f"{title} · 当前没有可显示的后台任务", prefix="后台")
+            return
+        values = []
+        for row in rows:
+            kind = "终端" if row.id.startswith("terminal:") else "Worker"
+            details = f"{row.id} · {STATUS_LABELS.get(row.status, row.status)} · {max(0, row.elapsed):.1f}s"
+            if row.detail:
+                details += " · " + clean_text(row.detail).replace("\n", " ")[:240]
+            values.append((kind, details))
+        self._display(render_panel(title, rows=values, color=self.color))
+
+    def _report_job_wait(self, reason: str, rows: list[BackgroundRow]) -> None:
+        if not self._cleanup_done:
+            self._show_background(reason, rows)
+
+    def _cancel_job_wait(self) -> bool:
+        if not self._job_wait.cancel():
+            return False
+        self._emit("已退出等待，后台任务继续运行", prefix="后台")
+        return True
+
+    def _cmd_jobs(self, args: list[str]) -> None:
+        action, *values = args or ["list"]
+        if action == "unwait" and not values:
+            if not self._cancel_job_wait():
+                self._emit("当前没有等待", prefix="后台")
+            return
+        rows = self._background_rows()
+        if action == "list" and not values:
+            running = sum(row.status in ACTIVE for row in rows)
+            self._show_background(f"后台任务 · {running} 项运行或排队", rows)
+            return
+        by_id = {row.id: row for row in rows}
+        if action == "wait" and values and values[0] in {"any", "all"}:
+            mode, *ids = values
+            timeout = float(ids.pop(0)) if ids and ":" not in ids[0] else 30.0
+            if any(key not in by_id for key in ids):
+                raise ValueError("存在已失效或不属于当前视图的任务 ID；用 /jobs list 查看")
+            selected = [by_id[key] for key in dict.fromkeys(ids)] if ids else [row for row in rows if row.status in ACTIVE]
+            if selected:
+                self._job_wait.start(mode, selected, timeout)
+                if self._enhanced_input is not None:
+                    self._enhanced_input.app.invalidate()
+                elif self._job_wait.activity():
+                    self._emit(f"等待 {len(selected)} 项后台任务 · /jobs unwait 退出等待", prefix="后台")
+            else:
+                self._emit("当前没有任务需要等待", prefix="后台")
+            return
+        if action in {"logs", "stop", "message"} and values:
+            if (action != "message" and len(values) != 1) or (action == "message" and len(values) < 2):
+                raise ValueError("使用 /help jobs 查看命令参数")
+            row = by_id.get(values[0])
+            if row is None:
+                raise ValueError("任务不存在或不属于当前视图；用 /jobs list 查看")
+            kind, task_id = row.id.split(":", 1)
+            if action == "logs":
+                self._show_background_log(row, kind, task_id)
+            elif row.status not in ACTIVE:
+                self._show_background("任务已结束", [row])
+            elif kind == "worker":
+                self.subworkers.task_control(task_id, "cancel" if action == "stop" else "message",
+                                             " ".join(values[1:]), run_id=row.owner)
+                self._emit(f"{row.id} · {'已请求停止' if action == 'stop' else '已发送补充'}", prefix="后台")
+            elif action == "stop":
+                ctx = self.chat.ctx
+                jobs = ctx.extra["background_jobs"]
+                jobs.stop(task_id)
+                ctx.audit.append("external.background.stop", job_id=task_id, source="operator")
+                self._show_background("停止请求", [item for item in self._background_rows() if item.key == row.key])
+            else:
+                raise ValueError("终端作业只支持查看日志和停止")
+            return
+        raise ValueError("使用 /help jobs 查看命令参数")
+
+    def _show_background_log(self, row: BackgroundRow, kind: str, task_id: str) -> None:
+        if kind == "terminal":
+            jobs = self.chat.ctx.extra["background_jobs"]
+            item = jobs.snapshot(task_id, tail=16_000)[0]
+            sections = [(label, item[key]) for key, label in (("stdout_tail", "标准输出"), ("stderr_tail", "标准错误"))
+                        if item[key]]
+            event_path = self.chat.events.path
+        else:
+            lines, event_path = self.subworkers.monitor_log(row.owner, task_id, max(20, terminal_width() - 8))
+            sections = [("近期记录", "\n".join(line for _, line in lines))] if lines else []
+        self._display(render_panel(row.id, sections=sections or [("日志", "暂无输出")],
+                                   footer=f"事件记录 {event_path}", color=self.color))
 
     def _agent_log(self, message: str) -> None:
         import re
@@ -171,7 +288,7 @@ class Console:
         self._requested_action = None
         self._live_action_hint = ""
 
-    def _on_runtime_event(self, event: RuntimeEvent) -> None:
+    def _on_runtime_event(self, event: RuntimeEvent, *, replayed: bool = False) -> None:
         from .event_view import EventTranscript
         if self._event_transcript is None:
             self._event_transcript = EventTranscript(self._display, editor=self._enhanced_input, color=self.color, palette=self._output_palette)
@@ -201,11 +318,14 @@ class Console:
             self.view.set_activity("retry", f"等待重试 · 第 {event.payload.get('attempt')} 次")
         elif event.kind == "model.error":
             self.view.set_activity("error", "模型请求失败")
-        elif event.kind == "job.finished":
+        elif event.kind == "job.finished" and not replayed:
             job_id = str(event.payload.get("job_id") or event.call_id)
             identity = (event.stream_id, job_id)
-            if job_id and identity not in self._job_notices:
-                self._job_notices.append(identity)
+            with self._lock:
+                unseen = job_id and identity not in self._job_notices
+                if unseen:
+                    self._job_notices.append(identity)
+            if unseen:
                 self._background_notice(job_id, str(event.payload.get("status") or ""))
         self._event_transcript.consume(event)
 
@@ -235,7 +355,7 @@ class Console:
                 dynamic_values=self._completion_values, plain=self._plain or not self.color,
                 usage=self._footer_usage, activity=self._activity, motion=self.config.ui.motion,
                 context=self._footer_context, activity_detail=lambda: self._live_action_hint,
-                output_palette=self._output_palette,
+                output_palette=self._output_palette, cancel_wait=self._cancel_job_wait,
             )
             original_output = self.output
             self.output = self._enhanced_input.write
@@ -276,13 +396,22 @@ class Console:
             return "stopping", "停止中", 0
         if self.session.pause_event.is_set() and self.session.running:
             return "paused", "已暂停", 0
+        if (waiting := self._job_wait.activity()) is not None:
+            count, elapsed = waiting
+            return "background_wait", f"等待 {count} 项后台任务 · Esc 退出等待", elapsed
         if not self.session.running:
+            worker_badge = self.subworkers.badge if self.subworkers.running else ""
             if self.chat is not None:
                 jobs = self.chat.ctx.extra.get("background_jobs")
                 if jobs is not None:
                     count, elapsed = jobs.running_activity()
                     if count:
-                        return "background", f"后台终端 · {count} 项运行中", elapsed
+                        label = f"终端 {count} 项运行中"
+                        if worker_badge:
+                            label += f" · Worker {worker_badge}"
+                        return "background", label, elapsed
+            if worker_badge:
+                return "background", f"后台 Worker · {worker_badge}", 0
             return "idle", "就绪", 0
         return self.view.activity()
 
@@ -373,6 +502,14 @@ class Console:
         return f"trina · {status} · {short} > " if terminal_width() >= 60 else f"trina · {status} > "
 
     def _completion_values(self, command: str, completed_args: list[str]) -> list[ChoiceSpec]:
+        if command == "jobs" and completed_args:
+            action = completed_args[0]
+            if completed_args == ["wait"]:
+                return [ChoiceSpec("any", "任意一项结束"), ChoiceSpec("all", "所有选中任务结束")]
+            if action in {"logs", "stop", "message", "wait"} and (action == "wait" or len(completed_args) == 1):
+                return [ChoiceSpec(row.id, STATUS_LABELS.get(row.status, row.status))
+                        for row in self._background_rows()
+                        if row.id not in completed_args and (action != "message" or row.id.startswith("worker:"))]
         if command == "plan" and completed_args == ["choose"] and self._plan_review:
             return [ChoiceSpec(str(index), option) for index, option in enumerate(self._plan_review.options, 1)]
         if command == "queue" and completed_args in (["send"], ["drop"]):
@@ -497,9 +634,10 @@ class Console:
             return True
         command, args = argv[0], argv[1:]
 
-        if command in {"subworker", "queue", "plan"}:
+        if command in {"subworker", "queue", "plan", "jobs"}:
             try:
-                {"subworker": self._cmd_subworker, "queue": self._cmd_queue, "plan": self._cmd_plan}[command](args)
+                {"subworker": self._cmd_subworker, "queue": self._cmd_queue,
+                 "plan": self._cmd_plan, "jobs": self._cmd_jobs}[command](args)
             except (KeyboardInterrupt, EOFError):
                 self._emit("已返回主会话")
             except Exception as exc:
@@ -1009,6 +1147,7 @@ class Console:
         if self.session.running:
             self._emit("有任务在跑：先 /stop 再开新会话")
             return
+        self._job_wait.cancel()
         if self.chat is not None:
             self.chat.close()
         self.chat = None
@@ -1051,6 +1190,7 @@ class Console:
         if target:
             self._cmd_resume([target])
             return
+        self._job_wait.cancel()
         if self.chat is not None:
             self.chat.close()
         self.chat = None
@@ -1425,6 +1565,7 @@ class Console:
         except Exception:
             restored.close()
             raise
+        self._job_wait.cancel()
         self.chat = restored
         self._active_worker = restored.worker_role
         self._worker_sessions[self._active_worker] = restored.run_id
@@ -1456,7 +1597,7 @@ class Console:
             after = 0
             while batch := restored.events.replay(after):
                 for event in batch:
-                    self._on_runtime_event(event)
+                    self._on_runtime_event(event, replayed=True)
                 after = batch[-1].seq
             restored._event_subscription = restored.events.subscribe(self._on_runtime_event, after=after)
             return
@@ -1944,6 +2085,7 @@ class Console:
             return
         with Shutdown(self._emit) as shutdown:
             self._cleanup_done = True
+            self._job_wait.close()
             # 先通知所有生产者停止，再等待；再次 Ctrl+C 只跳过线程等待。
             if self._scheduler is not None:
                 shutdown.call("调度器", self._scheduler.stop_event.set)
