@@ -259,19 +259,30 @@ def check(root: Path = PROJECT_ROOT, *, data: dict[str, Any] | None = None) -> C
     return report
 
 
+def execute_check(root: Path, identifier: str, *, timeout: float | None = None) -> dict[str, Any]:
+    """执行一个固定检查，返回完整输出；超时也保留已捕获的输出。"""
+    argv = [sys.executable if part == "{python}" else part for part in ALLOWED_COMMANDS[identifier]]
+    try:
+        completed = subprocess.run(argv, cwd=root, text=True, capture_output=True, encoding="utf-8",
+                                   errors="replace", timeout=timeout)
+    except subprocess.TimeoutExpired as exc:
+        output = b"".join(part for part in (exc.stdout, exc.stderr) if part).decode("utf-8", "replace")
+        return {"argv": argv, "exit_code": None, "output": output, "timed_out": True}
+    return {"argv": argv, "exit_code": completed.returncode, "output": completed.stdout + completed.stderr,
+            "timed_out": False}
+
+
 def execute_whitelisted(root: Path, report: ContractReport) -> None:
-    """只执行代码内固定的验证命令，不执行 JSON 中的任意字符串。"""
+    """只执行代码内固定的验证命令。"""
     for identifier in ("V-COURSE", "V-TESTS", "V-DIFF"):
-        argv = [sys.executable if part == "{python}" else part for part in ALLOWED_COMMANDS[identifier]]
-        completed = subprocess.run(argv, cwd=root, text=True, capture_output=True, encoding="utf-8", errors="replace")
-        output = (completed.stdout + completed.stderr).strip()
+        result = execute_check(root, identifier)
         report.commands[identifier] = {
-            "argv": argv,
-            "exit_code": completed.returncode,
-            "output_tail": output[-4000:],
+            "argv": result["argv"],
+            "exit_code": result["exit_code"],
+            "output_tail": result["output"].strip()[-4000:],
         }
-        if completed.returncode != 0:
-            report.errors.append(f"{identifier} 执行失败，退出码 {completed.returncode}")
+        if result["exit_code"] != 0:
+            report.errors.append(f"{identifier} 执行失败，退出码 {result['exit_code']}")
 
 
 def main() -> int:

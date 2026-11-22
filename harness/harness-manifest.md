@@ -47,6 +47,8 @@ Host 在此指维护者控制的 Python 程序、配置、工具装配和运行�
 
 `trina doctor` 会检查模型后端 health，可能调用配置后端，不能列入本次零付费固定验证路径。只读查看工具使用 `python -m trina tools --json`；查看范围使用 `python -m trina guard summary`。现有验证脚本和 unittest 承担对应层验证，不新增一套自造扫描命令。
 
+需要跨会话交接仓库检查时，使用[项目验证工作单](project-verification.md)记录工作区、输入哈希、前提和证据。工作单给 `V-CONTRACT` 和课程包检查提供总预算，记录检查失败、运行错误和超时的各自状态。
+
 ## 5. 环境和初始化
 
 首次安装前确认 Python 版本与依赖来源。Windows 可执行：
