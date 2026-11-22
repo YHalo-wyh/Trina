@@ -374,7 +374,18 @@ class TranscriptTests(unittest.TestCase):
                     self.assertEqual(editor._scrollback, 3)
                     self.assertIn("\x1b[3T", delta)
                     self.assertIn("\x1b[r", delta)
-                    self.assertEqual(editor.buffer.text, "")
+                    editor.buffer.text = "保留输入"
+                    before = len(stream.getvalue())
+                    self.input.send_text("\x1b[<64;1;1M" * 5)
+                    await asyncio.sleep(.15)
+                    delta = stream.getvalue()[before:]
+                    self.assertEqual(editor._scrollback, 18)
+                    self.assertEqual(delta.count("\x1b[15T"), 1)
+                    editor._wheel_scroll(3)
+                    editor._scroll_to_latest()
+                    await asyncio.sleep(.02)
+                    self.assertEqual(editor._scrollback, 0)
+                    self.assertEqual(editor.buffer.text, "保留输入")
                     editor.app.exit()
                 except BaseException as exc:
                     editor.app.exit(exception=exc)

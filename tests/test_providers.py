@@ -4,6 +4,7 @@ from __future__ import annotations
 import io
 import json
 import os
+import ssl
 import tempfile
 import unittest
 import urllib.error
@@ -268,6 +269,22 @@ class ProviderTests(unittest.TestCase):
         with patch('trina.llm.openai_backend.urllib.request.urlopen', side_effect=urllib.error.URLError('timeout')):
             self.assertIn('不可达', manager.test_connection(self.profile()))
         self.assertFalse(self.path.exists())
+
+    def test_connection_test_rechecks_tls_eof_without_credentials(self):
+        manager, _, _ = self.manager()
+        item = self.profile()
+        eof = urllib.error.URLError(ssl.SSLEOFError(8, "[SSL: UNEXPECTED_EOF_WHILE_READING]"))
+        reachable = urllib.error.HTTPError(item.base_url, 404, "not found", {}, io.BytesIO(b""))
+        with patch("trina.llm.openai_backend.urllib.request.urlopen", side_effect=[eof, reachable]) as send:
+            self.assertIn("HTTP 404", manager.test_connection(item))
+        self.assertEqual(send.call_count, 2)
+        for call in send.call_args_list:
+            request = call.args[0]
+            self.assertIsNone(request.get_header("Authorization"))
+            self.assertIsNone(request.data)
+        with patch("trina.llm.openai_backend.urllib.request.urlopen", side_effect=eof) as send:
+            self.assertIn("TLS 连接提前关闭", manager.test_connection(item))
+        self.assertEqual(send.call_count, 2)
 
     def test_model_validation_uses_unsaved_key_and_does_not_change_active_provider(self):
         manager, cfg, _ = self.manager()

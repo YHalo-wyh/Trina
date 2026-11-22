@@ -179,10 +179,10 @@ class TranscriptControl(UIControl):
 
     def mouse_handler(self, event):
         if event.event_type == MouseEventType.SCROLL_UP:
-            self.owner._scroll_by(3)
+            self.owner._wheel_scroll(3)
             return None
         if event.event_type == MouseEventType.SCROLL_DOWN:
-            self.owner._scroll_by(-3)
+            self.owner._wheel_scroll(-3)
             return None
         if event.button == MouseButton.RIGHT and event.event_type == MouseEventType.MOUSE_UP:
             self.copy_selection()

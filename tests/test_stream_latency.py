@@ -161,6 +161,24 @@ class StreamLatencyTests(unittest.TestCase):
                 restored.consume(event)
             self.assertEqual(restored_editor.update_stream.call_args_list, editor.update_stream.call_args_list)
 
+    def test_tls_disconnect_keeps_visible_partial_reply_and_reports_once(self):
+        with tempfile.TemporaryDirectory() as tmp, create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
+            bus = EventBus(Path(tmp) / "events.sqlite3", "ui")
+            editor = EnhancedConsoleInput(status=lambda: "ready", running=lambda: True, dynamic_values=lambda *_: (), plain=True)
+            bus.subscribe(EventTranscript(editor.write, editor=editor).consume)
+            editor.buffer.text = "未提交的补充"
+            bus.publish("model.started", request_id="r", visible_text=False)
+            bus.publish("assistant.delta", message_id="m", delta="这是一段已收到的正文")
+            error = "请求失败: <urlopen error [SSL: UNEXPECTED_EOF_WHILE_READING]>"
+            bus.publish("model.error", request_id="r", error=error)
+            bus.publish("model.finished", request_id="r", ok=False, error=error)
+            bus.publish("assistant.message", message_id="m", text="", final=True)
+            text = "\n".join(str(chunk) for chunk in editor._chunks)
+            self.assertIn("这是一段已收到的正文", text)
+            self.assertIn("正文不完整", text)
+            self.assertEqual(text.count("模型连接提前关闭"), 1)
+            self.assertEqual(editor.buffer.text, "未提交的补充")
+
     def test_thinking_text_and_tool_output_update_independent_blocks(self):
         with tempfile.TemporaryDirectory() as tmp, create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
             bus = EventBus(Path(tmp) / "events.sqlite3", "ui")

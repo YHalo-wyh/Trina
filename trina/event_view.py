@@ -39,6 +39,8 @@ class EventTranscript:
             from .brain.chat import _VisibleStream
             self._model_text = _VisibleStream(self._visible_text) if payload.get("visible_text") else None
             self._model_final_text = ""
+            self._assistant_id = None
+            self._assistant_text = ""
         elif event.kind == "model.thinking_delta":
             text = self._thinking.get(request_id, "") + str(payload.get("delta", ""))
             self._thinking[request_id] = text
@@ -57,18 +59,29 @@ class EventTranscript:
             self._model_text = None
         elif event.kind == "model.error" or (event.kind == "model.finished" and payload.get("ok") is False):
             self._finish_thinking(request_id)
+            partial = self._assistant_text or (self._model_text.displayed if self._model_text is not None else "")
             self._model_text = None
             self._assistant_id = None
             self._assistant_text = ""
             identity = (event.stream_id, str(payload.get("request_id", event.seq)))
             if identity not in self._model_errors:
-                if self.editor is not None:
-                    self.editor.update_stream("", final=True)
                 from .brain.failure import LLM_FAILURE_CN, classify_llm_response
                 from .llm import LLMResponse
+                from .llm.openai_backend import is_tls_eof
+
                 error = str(payload.get("error") or "供应商未返回错误详情")
-                kind = classify_llm_response(LLMResponse(ok=False, error=error))
-                self.output(render_message(f"{LLM_FAILURE_CN[kind]} · {error}", label="错误", color=self.color, palette=self.palette))
+                if is_tls_eof(error):
+                    if self.editor is not None:
+                        self.editor.update_stream(partial, final=True)
+                    message = "模型连接提前关闭（TLS）。可在 /model 中检测当前供应商的连接。"
+                    if partial:
+                        message = "回复中断，已显示的正文不完整。 " + message
+                else:
+                    if self.editor is not None:
+                        self.editor.update_stream("", final=True)
+                    kind = classify_llm_response(LLMResponse(ok=False, error=error))
+                    message = f"{LLM_FAILURE_CN[kind]} · {error}"
+                self.output(render_message(message, label="错误", color=self.color, palette=self.palette))
                 self._model_errors[identity] = None
                 while len(self._model_errors) > 256:
                     self._model_errors.popitem(last=False)

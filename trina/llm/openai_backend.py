@@ -31,6 +31,12 @@ def _provider_error(value: Any) -> str:
     return str(value)
 
 
+def is_tls_eof(error: str) -> bool:
+    """识别 urllib 包装后的 TLS 提前断开错误。"""
+    detail = error.upper()
+    return "UNEXPECTED_EOF_WHILE_READING" in detail or "SSLEOFERROR" in detail
+
+
 class OpenAICompatBackend(LLMBackend):
     """支持三种常用官方方言；多轮消息始终以结构化列表传递。"""
 
@@ -160,7 +166,12 @@ class OpenAICompatBackend(LLMBackend):
         validate_address(self.base_url)
         started = time.monotonic()
         body, error = self._request_json(self.base_url, connectivity=True)
+        if is_tls_eof(error):
+            # 地址检测不带凭据和请求正文，可在新连接上复测一次。
+            body, error = self._request_json(self.base_url, connectivity=True)
         if error:
+            if is_tls_eof(error):
+                return False, "模型地址的 TLS 连接提前关闭。请检查供应商连接或代理后再检测。"
             return False, f"地址不可达：{error}"
         elapsed = round((time.monotonic() - started) * 1000)
         return True, f"地址可达 · HTTP {body['status']} · {elapsed} ms；Key / 模型未验证"

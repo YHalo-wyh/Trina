@@ -27,6 +27,7 @@ except ImportError:  # pragma: no cover - 缺少可选输入库时仍允许普�
 
 _KEY_SEQUENCE_TIMEOUT = .05
 _KEY_BINDING_TIMEOUT = .1
+_REDRAW_INTERVAL = 1 / 120
 
 
 def _low_latency_keys(app):
@@ -554,6 +555,8 @@ class EnhancedConsoleInput:
         #: 最近一次渲染出的真实行数；光标越界会直接把 prompt_toolkit 的滚动逻辑打崩。
         self._rendered_lines = 1
         self._scrollback = 0
+        self._wheel_lines = 0
+        self._wheel_timer: asyncio.TimerHandle | None = None
         # 只有用户主动上翻历史时才暂停尾随；不能用残留选区猜测用户意图。
         self._follow_latest = True
         self.running = running
@@ -714,6 +717,7 @@ class EnhancedConsoleInput:
                 return rows
 
             def _seek(self, y: int) -> None:
+                owner._cancel_wheel_scroll()
                 control = owner.transcript_control
                 height = self._height()
                 maximum = control.max_scrollback()
@@ -733,10 +737,10 @@ class EnhancedConsoleInput:
             def mouse_handler(self, event):
                 from prompt_toolkit.mouse_events import MouseButton, MouseEventType
                 if event.event_type == MouseEventType.SCROLL_UP:
-                    owner._scroll_by(3)
+                    owner._wheel_scroll(3)
                     return None
                 if event.event_type == MouseEventType.SCROLL_DOWN:
-                    owner._scroll_by(-3)
+                    owner._wheel_scroll(-3)
                     return None
                 if event.button == MouseButton.LEFT:
                     if event.event_type == MouseEventType.MOUSE_DOWN:
@@ -790,7 +794,7 @@ class EnhancedConsoleInput:
             key_bindings=bindings, style=style, full_screen=True,
             paste_mode=True,
             refresh_interval=0.2 if motion == "full" else None,
-            min_redraw_interval=1 / 120, max_render_postpone_time=0,
+            min_redraw_interval=_REDRAW_INTERVAL, max_render_postpone_time=0,
             mouse_support=Condition(lambda: self._mouse_enabled),
             color_depth=None if plain else ColorDepth.DEPTH_24_BIT,
         )
@@ -878,11 +882,35 @@ class EnhancedConsoleInput:
             return max(1, info.window_height - 1)
         return max(1, self.app.output.get_size().rows // 2)
 
+    def _wheel_scroll(self, lines: int) -> None:
+        """把同一重绘间隔内的鼠标刻度合并，保留逐刻度钳制到边界的顺序。"""
+        loop = getattr(self.app, "loop", None)
+        if loop is None or not loop.is_running():
+            self._scroll_by(lines)
+            return
+        maximum = self.transcript_control.max_scrollback()
+        target = min(maximum, max(0, self._scrollback + self._wheel_lines + lines))
+        self._wheel_lines = target - self._scrollback
+        if self._wheel_timer is None:
+            if self._wheel_lines:
+                self._wheel_timer = loop.call_later(_REDRAW_INTERVAL, self._scroll_by, 0)
+            elif lines < 0:
+                self._scroll_by(lines)
+
+    def _cancel_wheel_scroll(self) -> int:
+        if self._wheel_timer is not None:
+            self._wheel_timer.cancel()
+            self._wheel_timer = None
+        lines = self._wheel_lines
+        self._wheel_lines = 0
+        return lines
+
     def _scroll_by(self, lines: int) -> None:
         """正数向历史滚动，负数向最新输出滚动。"""
         old_start = self.transcript_control.viewport_start()
         maximum = self.transcript_control.max_scrollback()
-        updated = min(maximum, max(0, self._scrollback + lines))
+        pending = min(maximum, max(0, self._scrollback + self._cancel_wheel_scroll()))
+        updated = min(maximum, max(0, pending + lines))
         if updated == self._scrollback:
             if lines < 0 and updated == 0:
                 self._follow_latest = True
@@ -896,6 +924,7 @@ class EnhancedConsoleInput:
         self.app.invalidate()
 
     def _scroll_to_oldest(self) -> None:
+        self._cancel_wheel_scroll()
         old_start = self.transcript_control.viewport_start()
         updated = self.transcript_control.max_scrollback()
         if updated == self._scrollback:
@@ -906,6 +935,7 @@ class EnhancedConsoleInput:
         self.app.invalidate()
 
     def _scroll_to_latest(self) -> None:
+        self._cancel_wheel_scroll()
         selected = self.transcript_control.anchor is not None
         if not self._scrollback and not selected:
             return
@@ -1042,6 +1072,7 @@ class EnhancedConsoleInput:
     def clear_transcript(self) -> None:
         """切换对话时替换内容，保留输入区与应用生命周期。"""
         with self._content_lock:
+            self._cancel_wheel_scroll()
             self._chunks.clear()
             self._tool_indices.clear()
             self._thinking_indices.clear()
@@ -1214,6 +1245,7 @@ class EnhancedConsoleInput:
         try:
             self.app.run(pre_run=lambda: self.app.create_background_task(self._consume()))
         finally:
+            self._cancel_wheel_scroll()
             self._handler = None
 
 
