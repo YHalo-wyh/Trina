@@ -213,16 +213,37 @@ def cmd_tools(args: argparse.Namespace) -> int:
 
     registry = build_registry()
     show_all = bool(getattr(args, "all", False))
-    visible = set(registry.names()) if show_all else visible_tool_names(registry, getattr(args, "route", "general"))
+    route = getattr(args, "route", "general")
+    visible = visible_tool_names(registry, route)
+    displayed = set(registry.names()) if show_all else visible
     if args.json:
-        rows = [item for item in registry.describe() if registry.resolve_name(item["name"]) in visible]
+        from .tool_catalog import build_tool_catalog
+
+        explanations = {item.internal_name: item for item in build_tool_catalog(
+            registry, visible=visible, route=route,
+        )}
+        rows = []
+        for item in registry.describe():
+            name = registry.resolve_name(item["name"])
+            if name not in displayed:
+                continue
+            entry = explanations[name]
+            rows.append({
+                **item,
+                "visible": entry.visible,
+                "available": entry.available,
+                "visibility_reason": entry.visibility_reason,
+                "resolution": list(entry.resolution),
+                "source": entry.source,
+                "source_kind": entry.source_kind,
+            })
         print(json.dumps(rows, ensure_ascii=False, indent=2))
         return 0
     if LOAD_ERRORS:
         for module, error in LOAD_ERRORS.items():
             out(f"[警告] 工具模块 {module} 未加载: {error}", "yellow")
-    rule(f"已封装工具（{len(visible)} 个" + ("，完整注册表" if show_all else "，CTF 按需面") + "）")
-    print(registry.prompt_block(include=visible, verbose=args.verbose))
+    rule(f"已封装工具（{len(displayed)} 个" + ("，完整注册表" if show_all else "，CTF 按需面") + "）")
+    print(registry.prompt_block(include=displayed, verbose=args.verbose))
     return 0
 
 
@@ -1054,7 +1075,7 @@ def build_parser() -> argparse.ArgumentParser:
     tools.add_argument("--verbose", "-v", action="store_true")
     tools.add_argument("--json", action="store_true")
     tools.add_argument("--all", action="store_true", help="显示完整注册表，默认只显示 CTF 按需工具面")
-    tools.add_argument("--route", choices=["general", "web", "binary"], default="general",
+    tools.add_argument("--route", choices=["general", "ctf", "web", "binary", "code"], default="general",
                        help="CTF 按需工具题型，默认 general")
     tools.set_defaults(func=cmd_tools)
 

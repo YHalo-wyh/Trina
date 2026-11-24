@@ -4,7 +4,7 @@
 
 Trina 是面向 CTF 与授权攻防环境的自动化 Agent，提供真实浏览器、原生二进制分析、任务级并行 Worker、证据链和可恢复运行状态。
 
-**v0.6.0** 新增双栏模型目录。输入 `/model` 或按 `Alt+P`，即可按连接浏览、按能力筛选，预览参数后按 Enter 切换。[模型操作说明](docs/MODELS.md) · [版本记录](docs/CHANGELOG/CHANGELOG.md)
+**v0.6.0** 提供双栏模型目录和会话任务清单。输入 `/model` 或按 `Alt+P` 可按连接与能力筛选模型；复杂任务会在输入区上方显示实时清单，`/tasks` 查看完整进度，`/resume` 保留任务状态。[模型操作说明](docs/MODELS.md) · [界面说明](docs/CLI_UI.md) · [版本记录](docs/CHANGELOG/CHANGELOG.md)
 
 ## 文档导航
 
@@ -151,6 +151,7 @@ scripts/dev.sh play --target 127.0.0.1
 | 能力 | 命令 | 说明 |
 |---|---|---|
 | **对话式控制台** | `trina`（或 `trina console`） | **直接说人话**：需要动手时直接调用工具。默认 `full` 信任且人工审批关闭；只有显式 `--approve` 才进入确认。`/help` 看命令，`/model` 管理模型 |
+| 工具控制中心 | `/tools` | 搜索完整注册表，查看当前 Agent 的可见/隐藏原因、参数、来源和会话调用统计；选择不会直接执行工具 |
 | 一条命令开打 | `trina play [--target T] [--range NAME] [--goal G] [--approve MODE]` | 自动准备靶场（默认内置 lab）→ 跑完整任务（含阶段机与结论/覆盖统计）→ 出报告 |
 | 历史对话 | `/resume` · `/resume list` · `/resume last` · `/resume <编号或ID>` | 搜索并切换当前项目的已保存聊天，恢复上下文、事实与用量；`/new` 开新对话 |
 | 仓库与工作树 | `/repo` · `/branch` · `/worktree` | 查看状态/Diff，显式暂存与提交，管理分支、远端同步和独立 worktree；不强制覆盖本地修改 |

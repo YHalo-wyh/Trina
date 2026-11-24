@@ -447,6 +447,9 @@ class PentestAgent:
             # 权威验证器仍可通过 terminal_exec 进入事实库并参与最终判定。
             visible_names.difference_update({"list_goals", "prove_goal"})
         ctx.extra["tool_allowlist"] = set(visible_names)
+        ctx.extra["tool_route"] = task_route_key
+        ctx.extra["tool_route_browser"] = browser_needed
+        ctx.extra["tool_route_terminal_session"] = terminal_session_needed
         tool_payload: list[dict[str, Any]] | None = (
             tool_schemas(
                 self.registry,

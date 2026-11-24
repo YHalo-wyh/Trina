@@ -36,6 +36,8 @@ Host 在此指维护者控制的 Python 程序、配置、工具装配和运行�
 | V-CONTRACT | `python -m scripts.verify_contract` | 退出 0：六类交付物、当前需求、规则 ID、实现路径和测试声明一致 | 只读静态解析 JSON、Markdown、路径和测试 AST |
 | V-DOC | `python -m scripts.verify_course_pack` | 退出 0：文档、ID、测试引用和本地链接通过；非零输出具体错误 | 只读，发现测试但不运行目标用例 |
 | V-WORKER-UI | `python -m unittest discover -s tests -p test_worker_dashboard.py -k grid` | 四格与窄屏布局、滚动定位及对话缓存测试通过 | 使用合成会话和终端回放 |
+| V-TODO | `python -m unittest tests.test_todo tests.test_tool_profile` | 会话任务清单、工具事件、恢复、固定卡片和工具路由通过 | 使用临时会话数据库和合成终端，不调用在线模型 |
+| V-TOOLS | `python -m unittest tests.test_tool_catalog tests.test_tool_profile tests.test_registry` | 工具目录的搜索、可见性解析、会话统计与真实 Schema/执行边界一致 | 只读取注册表与合成状态，不执行目标工具或调用在线模型 |
 | V-FAST | `python -m unittest discover -s tests -p test_scope.py` | 0：范围与动作规则用例通过；失败保留 traceback | 本地测试，拒绝分支不请求公网输入 |
 | V-POLICY | `python -m unittest discover -s tests -p test_policy.py` | 0：注册、预算、撤权与结论相关测试通过 | 部分用例运行回环扫描，耗时与扫描器条件有关 |
 | V-HTTP | `python -m unittest discover -s tests -p test_http.py` | 0：跳转、方法、请求体和重试语义通过 | 创建并回收回环服务 |

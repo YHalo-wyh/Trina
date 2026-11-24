@@ -128,6 +128,7 @@ class ChatAgent:
         self.current_request = ""
         self.ctx.extra["llm_backend"] = self.backend
         self.ctx.extra["stop_event"] = self.stop_event
+        self.todo = self.ctx.extra["todo_list"]
         from ..conversation import ConversationContext
         self.context = ConversationContext(self.ctx)
         self.turns = 0
@@ -348,6 +349,9 @@ class ChatAgent:
                                            terminal_session=terminal_session_needed) - set(hidden_tools)
         self._contract_tool_names = visible_names
         self.ctx.extra["tool_allowlist"] = set(visible_names)
+        self.ctx.extra["tool_route"] = task_route_key
+        self.ctx.extra["tool_route_browser"] = browser_needed
+        self.ctx.extra["tool_route_terminal_session"] = terminal_session_needed
         role = role_for_registry(self.registry, self.config.llm.role_profile, include=visible_names)
         if self.worker_role != "commander":
             role += "\n\n# 当前 Worker\n" + WORKER_ROLES[self.worker_role][1]
@@ -602,9 +606,13 @@ class ChatAgent:
                              "title": self.title, "turns": self.turns, "in_flight": self.in_flight,
                              "worker_role": self.worker_role,
                              "tool_allowlist": sorted(self._contract_tool_names),
+                             "tool_route": self.ctx.extra.get("tool_route", "general"),
+                             "tool_route_browser": bool(self.ctx.extra.get("tool_route_browser")),
+                             "tool_route_terminal_session": bool(self.ctx.extra.get("tool_route_terminal_session")),
                              "history": self.history, "messages": self._messages, "state": self.state.to_dict(),
                              "binary_sessions": self.ctx.extra["binary_sessions"].snapshot(),
                              "browser_sessions": self.ctx.extra["browser_sessions"].snapshot(),
+                             "todo": self.todo.snapshot(),
                              "hypotheses": self.ledger.to_dict(), "usage": self.usage.to_dict(),
                              "usage_gaps": self.usage_gaps,
                              "controller": self._controller.coverage() if self._controller is not None else {},
@@ -631,6 +639,7 @@ class ChatAgent:
                                                     for row in data.get("binary_sessions", [])]
         self.ctx.extra["browser_sessions"].previous = [{**row, "state": "EXPIRED", "live": False}
                                                        for row in data.get("browser_sessions", [])]
+        self.todo.restore(data.get("todo"))
         self.history = data["history"]
         self._messages = data["messages"]
         self._messages_ready = bool(self._messages)
@@ -644,6 +653,9 @@ class ChatAgent:
                 tool_names.intersection_update(self.registry.resolve_name(name) for name in data["tool_allowlist"])
             self._contract_tool_names = tool_names
             self.ctx.extra["tool_allowlist"] = tool_names.intersection(self.registry.names())
+            self.ctx.extra["tool_route"] = str(data.get("tool_route") or "general")
+            self.ctx.extra["tool_route_browser"] = bool(data.get("tool_route_browser"))
+            self.ctx.extra["tool_route_terminal_session"] = bool(data.get("tool_route_terminal_session"))
         else:
             # 旧版 /ask 仅保存文本问答。首次普通请求会在合同之后继承这些消息。
             self._previous_text_messages = [{"role": row["role"], "content": row["content"]}
@@ -849,6 +861,7 @@ class ChatAgent:
             "checks_used": coverage.get("checks_used", 0),
             "executed": coverage.get("executed", []),
             "hypotheses": ledger,
+            "todo": self.todo.snapshot(),
             "redundant_rate": self.loop_guard.redundant_rate,
             "audit": str(self.audit.path),
         }

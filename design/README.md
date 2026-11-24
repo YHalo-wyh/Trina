@@ -11,9 +11,9 @@
 
 ## ADR 一览
 
-当前共有 **42 份 ADR**。`Accepted / 已实施` 表示仍是当前契约；“历史基线”保留当时证据与取舍，但默认行为以其注明的后续 ADR 为准。新增能力必须更新索引和关联 ADR。
+当前共有 **44 份 ADR**。`Accepted / 已实施` 表示仍是当前契约；“历史基线”保留当时证据与取舍，但默认行为以其注明的后续 ADR 为准。新增能力必须更新索引和关联 ADR。
 
-### 当前运行时决策（ADR-0021—0042）
+### 当前运行时决策（ADR-0021—0044）
 
 | 编号 | 决定 | 当前作用 |
 |---|---|---|
@@ -39,6 +39,8 @@
 | [ADR-0040](../ADR/0040-agent-efficiency-profiler-and-result-views.md) | 运行性能与工具结果视图 | 记录运行耗时，保留原始工具输出的引用 |
 | [ADR-0041](../ADR/0041-console-plan-queue-and-worker-grid.md) | 执行前澄清、草稿队列与实时网格 | 由用户确认和发送草稿，主会话显示后台终态 |
 | [ADR-0042](../ADR/0042-worker-viewport-and-harness-entry.md) | Worker 四格视口与项目级 Harness 入口 | 按行滚动当前批次，工程规则与验收统一入口 |
+| [ADR-0043](../ADR/0043-session-todo-and-sticky-task-card.md) | 会话任务清单与固定任务卡 | 工具、恢复和 TUI 共用清单状态；完整清单由 `/tasks` 查看 |
+| [ADR-0044](../ADR/0044-tool-control-center-and-resolution-view.md) | 工具控制中心与可见性解析 | 搜索注册工具，解释当前 Schema 绑定并显示会话统计 |
 
 ### 基础与历史决策（ADR-0001—0020）
 | 编号 | 决定 | 关键理由 |

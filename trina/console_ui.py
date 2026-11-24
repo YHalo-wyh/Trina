@@ -90,7 +90,7 @@ COMMAND_ICONS = {
 }
 COMMAND_SYMBOLS = {
     "model": "✧", "status": "◉", "help": "?", "resume": "↶", "new": "+",
-    "play": "▷", "run": "→", "plan": "☑", "schedule": "◷", "jobs": "▤",
+    "play": "▷", "run": "→", "plan": "☑", "tasks": "≡", "schedule": "◷", "jobs": "▤",
     "board": "▦", "queue": "≡", "pause": "Ⅱ", "stop": "□",
     "history": "≣", "save": "↓", "quit": "↗",
 }
@@ -178,6 +178,9 @@ COMMANDS: tuple[CommandSpec, ...] = (
                 positional_choices=(ChoiceSpec("show", "查看计划"), ChoiceSpec("choose", "选择编号"),
                                     ChoiceSpec("reply", "补充答案"), ChoiceSpec("queue", "计划加入待发队列"),
                                     ChoiceSpec("cancel", "取消计划")), availability="always"),
+    CommandSpec("tasks", "任务", "查看当前会话的实时任务清单", "tasks [show|clear]", aliases=("todo",),
+                positional_choices=(ChoiceSpec("show", "查看完整清单"), ChoiceSpec("clear", "清空清单")),
+                availability="always"),
     CommandSpec("schedule", "任务", "定时启动任务", "schedule <add|list|cancel> [选项]",
                 aliases=("scheduled", "schedualed"), availability="always",
                 positional_choices=(ChoiceSpec("add", "安排任务"), ChoiceSpec("list", "查看任务"), ChoiceSpec("cancel", "取消任务")),
@@ -196,10 +199,17 @@ COMMANDS: tuple[CommandSpec, ...] = (
     CommandSpec("hypotheses", "研究", "按优先级查看假设台账", "hypotheses"),
     CommandSpec("graph", "研究", "输出证据关系图（Mermaid）", "graph"),
     CommandSpec(
-        "tools", "工具", "列出已注册工具及参数", "tools [--verbose|--json]",
+        "tools", "工具", "搜索工具并解释当前 Agent 的可见性", "tools [--verbose|--json|--all] [--route 路由]",
         options=(
             OptionSpec(("--verbose", "-v"), "显示完整参数表"),
             OptionSpec(("--json",), "输出 JSON"),
+            OptionSpec(("--all",), "显示完整注册表"),
+            OptionSpec(("--route",), "查看指定任务路由", "<路由>", tuple(
+                ChoiceSpec(name, label) for name, label in (
+                    ("general", "通用 CTF"), ("ctf", "本地题目文件"), ("web", "Web/API"),
+                    ("binary", "Pwn/Reverse"), ("code", "代码仓库"),
+                )
+            )),
         ),
     ),
     CommandSpec(
@@ -602,7 +612,7 @@ class EnhancedConsoleInput:
 
     def __init__(self, *, status, running, dynamic_values, plain: bool = False, usage=None, activity=None, context=None,
                  motion: str = "full", output_palette="trina", activity_detail=None, cancel_wait=None,
-                 command_icons: Callable[[], bool] | None = None) -> None:
+                 command_icons: Callable[[], bool] | None = None, tasks=None) -> None:
         from prompt_toolkit import Application
         from prompt_toolkit.buffer import Buffer
         from prompt_toolkit.history import InMemoryHistory
@@ -620,9 +630,12 @@ class EnhancedConsoleInput:
         self.status = status
         self.context = context
         self._frame_context = None
+        self._frame_tasks = None
+        self._task_rows_cache = (None, [])
         self.usage = usage or (lambda _width, _compact=False: "")
         self.activity = activity or (lambda: ("processing", "运行中", 0) if running() else ("idle", "就绪", 0))
         self.activity_detail = activity_detail or (lambda: "")
+        self.tasks = tasks or (lambda: {})
         self._handler = None
         self._dispatching = False
         self._queue = None
@@ -793,6 +806,9 @@ class EnhancedConsoleInput:
             "toast.error": "bg:#542c38 #ffdce3 bold",
             "selection": "bg:" + THEME["selected"] + " " + THEME["text"],
             "scrollbar.thumb": THEME["rose"], "scrollbar.track": THEME["muted"],
+            "todo.header": "bold " + THEME["text"], "todo.active": THEME["rose"],
+            "todo.pending": THEME["text"], "todo.blocked": "#e5bb86",
+            "todo.closed": THEME["muted"], "todo.more": THEME["muted"],
         })
         control = BufferControl(buffer=self.buffer, input_processors=[BeforeInput(
             lambda: [("class:prompt", "补充  › " if self.running() else "Trina  › ")])])
@@ -818,6 +834,8 @@ class EnhancedConsoleInput:
         )
         self.scrollbar_window = Window(self.scrollbar_control, width=1, wrap_lines=False, always_hide_cursor=True)
         self.activity_window = Window(FormattedTextControl(self._activity), height=1, wrap_lines=False)
+        self.tasks_window = Window(FormattedTextControl(self._tasks), wrap_lines=False,
+                                   dont_extend_height=True, height=self._tasks_height)
         self.input_window = Window(control, wrap_lines=True, height=Dimension(min=1, max=3), dont_extend_height=True)
         self.usage_window = Window(
             FormattedTextControl(self._usage), wrap_lines=False, dont_extend_height=True,
@@ -825,6 +843,7 @@ class EnhancedConsoleInput:
         )
         content = HSplit([
                 VSplit([self.output_window, self.scrollbar_window]),
+                ConditionalContainer(self.tasks_window, Condition(lambda: self._tasks_height() > 0)),
                 self.activity_window,
                 Window(FormattedTextControl(self._rail), height=1, wrap_lines=False),
                 self.input_window,
@@ -862,11 +881,13 @@ class EnhancedConsoleInput:
         self._animate_home()
         if self.context is not None:
             self._frame_context = self.context()
+        self._frame_tasks = self.tasks()
 
     def _after_render(self, _app) -> None:
         self.transcript_control.remember_viewport()
         self.scrollbar_control.finish_frame(_app, self.scrollbar_window, _REDRAW_INTERVAL)
         self._frame_context = None
+        self._frame_tasks = None
 
     def _context_view(self):
         """一帧内共享底栏快照，避免重复读取用量和 Worker 状态。"""
@@ -1017,6 +1038,69 @@ class EnhancedConsoleInput:
         self._follow_latest = self._scrollback == 0
         if self._follow_latest:
             self.transcript_control.clear_selection()
+
+    def _tasks_snapshot(self) -> dict:
+        value = self._frame_tasks if self._frame_tasks is not None else self.tasks()
+        return value if isinstance(value, dict) else {}
+
+    def _task_rows(self) -> list[tuple[str, str]]:
+        """生成固定任务卡；任务多时折叠，完整清单由 ``/tasks`` 展示。"""
+        snapshot = self._tasks_snapshot()
+        tasks = snapshot.get("tasks", [])
+        size = self.app.output.get_size()
+        cache_key = (snapshot.get("revision"), size.rows, size.columns)
+        if cache_key == self._task_rows_cache[0]:
+            return self._task_rows_cache[1]
+        if not isinstance(tasks, list) or not tasks:
+            self._task_rows_cache = (cache_key, [])
+            return []
+        counts = snapshot.get("counts", {}) if isinstance(snapshot.get("counts"), dict) else {}
+        active = int(counts.get("in_progress", 0) or 0)
+        pending = int(counts.get("pending", 0) or 0)
+        blocked = int(counts.get("blocked", 0) or 0)
+        completed = int(counts.get("completed", 0) or 0)
+        abandoned = int(counts.get("abandoned", 0) or 0)
+        parts = [f"{active} 进行中", f"{pending} 待处理"]
+        if blocked:
+            parts.append(f"{blocked} 阻塞")
+        if not (active or pending or blocked):
+            parts = [f"{completed} 已完成"]
+            if abandoned:
+                parts.append(f"{abandoned} 已取消")
+        rows: list[tuple[str, str]] = [("class:todo.header", "≡ 任务  " + " · ".join(parts) + "  ▾")]
+        open_tasks = [row for row in tasks if isinstance(row, dict) and row.get("status") in
+                      {"in_progress", "blocked", "pending"}]
+        visible = open_tasks if open_tasks else [row for row in tasks if isinstance(row, dict)][-1:]
+        order = {"in_progress": 0, "blocked": 1, "pending": 2, "completed": 3, "abandoned": 4}
+        ordered = sorted(enumerate(visible), key=lambda pair: (order.get(str(pair[1].get("status")), 9), pair[0]))
+        limit = max(2, min(6, size.rows // 4))
+        shown = [row for _, row in ordered[:limit]]
+        markers = {"in_progress": "◉", "pending": "○", "blocked": "!", "completed": "✓", "abandoned": "–"}
+        styles = {"in_progress": "class:todo.active", "pending": "class:todo.pending",
+                  "blocked": "class:todo.blocked", "completed": "class:todo.closed",
+                  "abandoned": "class:todo.closed"}
+        for row in shown:
+            status = str(row.get("status") or "pending")
+            phase = str(row.get("phase") or "").strip()
+            label = f"{phase} · " if phase else ""
+            rows.append((styles.get(status, "class:todo.pending"),
+                         f"  {markers.get(status, '○')} {label}{str(row.get('text') or '').strip()}"))
+        hidden = len(visible) - len(shown)
+        if hidden:
+            rows.append(("class:todo.more", f"    … 另有 {hidden} 项，输入 /tasks 查看完整清单"))
+        self._task_rows_cache = (cache_key, rows)
+        return rows
+
+    def _tasks(self):
+        from .console_state import _fit_cells
+        width = max(1, self.app.output.get_size().columns)
+        fragments = []
+        for index, (style, value) in enumerate(self._task_rows()):
+            fragments.append((style, ("\n" if index else "") + _fit_cells(value, width)))
+        return fragments
+
+    def _tasks_height(self) -> int:
+        return len(self._task_rows())
 
     def _status(self):
         from .terminal import clean_text
@@ -1301,7 +1385,7 @@ class EnhancedConsoleInput:
                 words = text.strip().lstrip("/").split(maxsplit=2)
                 command = words[0] if words else ""
                 # 模型表单暂时接管终端，结束后恢复同一内容区和未提交输入。
-                modal = command in {"model", "models", "setup", "worker", "subworker", "branch", "repo", "worktree", "wt", "theme", "colors", "footer"} and (not self.running() or command == "subworker")
+                modal = command in {"model", "models", "tools", "setup", "worker", "subworker", "branch", "repo", "worktree", "wt", "theme", "colors", "footer"} and (not self.running() or command == "subworker")
                 modal = modal or (words == ["plan", "choose"] and not self.running())
                 keep = await run_in_terminal(call, in_executor=True) if modal else await run_in_executor_with_context(call)
                 if not keep:

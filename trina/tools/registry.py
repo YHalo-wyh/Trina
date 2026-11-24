@@ -372,6 +372,8 @@ class ToolContext:
         from ..traffic import TrafficStore
         self.extra["traffic"] = TrafficStore(self.workspace)
         self.state.artifacts["traffic_path"] = str(self.extra["traffic"].path)
+        from ..todo import TodoList
+        self.extra["todo_list"] = TodoList()
 
     # -------------------------------------------------------------- 便捷方法
     def log(self, message: str) -> None:

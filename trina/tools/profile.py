@@ -27,11 +27,11 @@ CTF_CORE_TOOLS = frozenset({
     "record_fact", "report_finding", "prove_goal", "list_goals",
     "poc_scan", "sqli_test", "lfi_test", "cmd_inject_test", "file_upload_test",
     "http_form_login", "weak_password_brute",
-    "browser_open", "browser_close", "worker_tasks",
+    "browser_open", "browser_close", "worker_tasks", "todo",
 })
 
 CTF_FILE_TOOLS = frozenset({
-    "terminal_exec", "workspace_read", "workspace_read_many", "workspace_search", "workspace_write", "workspace_edit", "workspace_edit_many",
+    "terminal_exec", "workspace_read", "workspace_read_many", "workspace_search", "workspace_write", "workspace_edit", "workspace_edit_many", "todo",
 })
 
 CTF_WEB_TOOLS = frozenset({
@@ -57,7 +57,7 @@ CTF_BINARY_COORDINATION_TOOLS = frozenset({"list_goals", "workspace_git", "worke
 
 CODE_CORE_TOOLS = frozenset({
     "terminal_exec", "workspace_read", "workspace_read_many", "workspace_search",
-    "workspace_write", "workspace_edit", "workspace_edit_many", "workspace_git",
+    "workspace_write", "workspace_edit", "workspace_edit_many", "workspace_git", "todo",
 })
 
 

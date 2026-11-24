@@ -58,6 +58,7 @@ _TOOL_ACTIVITY = {
     "workspace_git": "执行 Git 操作",
     "web_search": "搜索资料",
     "worker_tasks": "处理子 Worker 任务",
+    "todo": "更新任务清单",
 }
 
 
@@ -123,6 +124,7 @@ class Console:
         self._event_transcript = None
         self._task_title = ""
         self._task_max_steps = 0
+        self._todo_snapshot: dict[str, Any] = {}
         self._active_worker = "commander"
         self._worker_sessions: dict[str, str] = {}
         self._job_wait = BackgroundWait(self._background_rows, self._report_job_wait)
@@ -326,6 +328,12 @@ class Console:
             self.view.set_activity("error", "模型请求失败")
         elif event.kind == "chat.title" and self._enhanced_input is not None:
             self._enhanced_input.app.invalidate()
+        elif event.kind == "todo.updated":
+            snapshot = event.payload.get("snapshot")
+            if isinstance(snapshot, dict):
+                self._todo_snapshot = snapshot
+            if self._enhanced_input is not None:
+                self._enhanced_input.app.invalidate()
         elif event.kind == "job.finished":
             job_id = str(event.payload.get("job_id") or event.call_id)
             identity = (event.stream_id, job_id)
@@ -336,6 +344,52 @@ class Console:
             if unseen:
                 self._background_notice(job_id, str(event.payload.get("status") or ""))
         self._event_transcript.consume(event)
+
+    def _todo_view(self) -> dict[str, Any]:
+        """给固定任务卡返回同一份会话状态，不从 transcript 反向推断。"""
+        if self.chat is not None:
+            snapshot = self.chat.todo.view()
+            self._todo_snapshot = snapshot
+            return snapshot
+        return self._todo_snapshot
+
+    def _cmd_tasks(self, args: list[str]) -> None:
+        action = (args or ["show"])[0].casefold()
+        if action not in {"show", "list", "clear"}:
+            raise ValueError("用法：/tasks [show|clear]")
+        if action == "clear":
+            chat = self._ensure_chat()
+            snapshot = chat.todo.clear()
+            self._todo_snapshot = snapshot
+            chat.ctx.emit("todo.updated", snapshot=snapshot, action="clear", source="operator")
+            chat.save()
+            self._emit("任务清单已清空", prefix="任务")
+            return
+        snapshot = self._todo_view()
+        rows = snapshot.get("tasks", []) if isinstance(snapshot, dict) else []
+        if not rows:
+            self._emit("当前没有任务清单；复杂多步任务开始后会自动出现。", prefix="任务")
+            return
+        counts = snapshot.get("counts", {})
+        summary = (f"{int(counts.get('in_progress', 0) or 0)} 进行中 · "
+                   f"{int(counts.get('pending', 0) or 0)} 待处理 · "
+                   f"{int(counts.get('blocked', 0) or 0)} 阻塞 · "
+                   f"{int(counts.get('completed', 0) or 0)} 已完成")
+        markers = {"in_progress": "◉", "pending": "○", "blocked": "!",
+                   "completed": "✓", "abandoned": "–"}
+        labels = {"in_progress": "进行中", "pending": "待处理", "blocked": "阻塞",
+                  "completed": "已完成", "abandoned": "已取消"}
+        lines = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            status = str(row.get("status") or "pending")
+            phase = str(row.get("phase") or "").strip()
+            prefix = f"{phase} · " if phase else ""
+            note = f" — {row.get('note')}" if row.get("note") else ""
+            lines.append(f"{markers.get(status, '○')} {row.get('id')}  {prefix}{row.get('text')}  [{labels.get(status, status)}]{note}")
+        self._display(render_panel("任务清单", sections=[("进度", summary), ("任务", "\n".join(lines))],
+                                   footer="清单随会话保存 · /tasks clear 清空", color=self.color))
 
     def _show_help(self, args: list[str] | None = None) -> None:
         name = (args or [""])[0].lstrip("/")
@@ -365,6 +419,7 @@ class Console:
                 context=self._footer_context, activity_detail=lambda: self._live_action_hint,
                 output_palette=self._output_palette, cancel_wait=self._cancel_job_wait,
                 command_icons=lambda: self.config.ui.command_icons,
+                tasks=self._todo_view,
             )
             original_output = self.output
             self.output = self._enhanced_input.write
@@ -656,10 +711,11 @@ class Console:
             return True
         command, args = ("model" if argv[0] == "models" else argv[0]), argv[1:]
 
-        if command in {"subworker", "queue", "plan", "jobs", "resume"}:
+        if command in {"subworker", "queue", "plan", "jobs", "resume", "tasks", "todo"}:
             try:
                 {"subworker": self._cmd_subworker, "queue": self._cmd_queue,
-                 "plan": self._cmd_plan, "jobs": self._cmd_jobs, "resume": self._cmd_resume}[command](args)
+                 "plan": self._cmd_plan, "jobs": self._cmd_jobs, "resume": self._cmd_resume,
+                 "tasks": self._cmd_tasks, "todo": self._cmd_tasks}[command](args)
             except (KeyboardInterrupt, EOFError):
                 self._emit("已返回主会话")
             except Exception as exc:
@@ -690,7 +746,7 @@ class Console:
             "grant": lambda: self._cmd_revoke(args, False),
             "y": lambda: self._emit("当前没有待审批的动作"),
             "n": lambda: self._emit("当前没有待审批的动作"),
-            "tools": lambda: self._delegate(["tools", *args]),
+            "tools": lambda: self._cmd_tools(args),
             "tool": lambda: self._cmd_tool(args),
             "guard": lambda: self._delegate(["guard", *args]),
             "ranges": lambda: self._delegate(["ranges", *args]),
@@ -1193,6 +1249,7 @@ class Console:
         if self.chat is not None:
             self.chat.close()
         self.chat = None
+        self._todo_snapshot = {}
         self._task_title = ""
         self.session.state = self._last_state = None
         self.view.reset()
@@ -1298,6 +1355,7 @@ class Console:
         if self.chat is not None:
             self.chat.close()
         self.chat = None
+        self._todo_snapshot = {}
         self._active_worker = selected
         self._task_config = None
         self._task_title = ""
@@ -1585,9 +1643,97 @@ class Console:
         state = "开启" if self.config.ui.completion_notify else "关闭"
         self._emit(f"完成提醒已{state}；配置项 ui.completion_notify", prefix="通知")
 
+    def _tool_registry(self):
+        """返回控制台使用的真实注册表；目录与执行始终共享同一对象。"""
+        if self.chat is not None:
+            self.registry = self.chat.registry
+        if self.registry is None:
+            from .tools import build_registry
+
+            self.registry = build_registry()
+        return self.registry
+
+    def _tool_catalog(self):
+        from .tool_catalog import build_tool_catalog
+        from .tools.profile import visible_tool_names
+
+        registry = self._tool_registry()
+        chat = self.chat
+        route = "general"
+        browser = terminal_session = False
+        state = self.session.state or self._last_state
+        if chat is not None:
+            context = chat.ctx.extra
+            route = str(context.get("tool_route") or "general")
+            browser = bool(context.get("tool_route_browser"))
+            terminal_session = bool(context.get("tool_route_terminal_session"))
+            state = chat.state
+            visible = context.get("tool_allowlist")
+        else:
+            visible = None
+        if visible is None:
+            visible = visible_tool_names(registry, route, browser=browser,
+                                         terminal_session=terminal_session)
+        visible = set(visible)
+        if not self.subworkers.running:
+            visible.discard("worker_tasks")
+        return build_tool_catalog(
+            registry,
+            visible=visible,
+            route=route,
+            role=self._active_worker,
+            browser=browser,
+            terminal_session=terminal_session,
+            subworkers=bool(self.subworkers.running),
+            state=state,
+        )
+
+    def _show_tool_detail(self, entry) -> None:
+        rows = [
+            ("公开名称", entry.name),
+            ("内部标识", entry.internal_name),
+            ("类别 / 动作", f"{entry.spec.category} / {entry.spec.action_level}"),
+            ("来源", f"{entry.source_kind} · {entry.source}"),
+            ("当前状态", "模型可见" if entry.visible else "按需隐藏"),
+        ]
+        params = []
+        for name, spec in entry.spec.params.items():
+            flags = [spec.type, "必填" if spec.required else f"可选 · 默认 {spec.default!r}"]
+            if spec.enum:
+                flags.append("取值 " + " | ".join(map(str, spec.enum)))
+            if spec.description:
+                flags.append(spec.description)
+            params.append(f"{name}: " + " · ".join(flags))
+        p50 = "—" if entry.stats.p50_seconds is None else f"{entry.stats.p50_seconds:.3f}s"
+        p95 = "—" if entry.stats.p95_seconds is None else f"{entry.stats.p95_seconds:.3f}s"
+        self._display(render_panel(
+            f"工具 · {entry.name}",
+            rows=rows,
+            sections=[
+                ("用途", entry.spec.summary),
+                ("参数", "\n".join(params) or "无"),
+                ("可见性解析", " → ".join(entry.resolution) + "\n" + entry.visibility_reason),
+                ("当前会话统计", f"{entry.stats.calls} 次调用 · {entry.stats.failed} 次失败 · p50 {p50} · p95 {p95}"),
+            ],
+            footer="只读目录；实际调用仍经过 ToolRegistry、护栏、审计与超时",
+            color=self.color,
+        ))
+
+    def _cmd_tools(self, args: list[str]) -> None:
+        """空参数打开工具控制中心；显式 CLI 选项保持原兼容行为。"""
+        if args or self._enhanced_input is None:
+            self._delegate(["tools", *args])
+            return
+        from .tool_picker import select_tool
+
+        selected = select_tool(self._tool_catalog(), plain=self._plain or not self.color)
+        if selected is not None:
+            self._show_tool_detail(selected)
+
     def _cmd_tool(self, args: list[str]) -> None:
         """持久二进制/浏览器手工调用与当前聊天共用生命周期。"""
-        tool = self.registry.get(args[0]) if args else None
+        registry = self._tool_registry()
+        tool = registry.get(args[0]) if args else None
         if tool is None or tool.spec.category not in {"binary", "browser"}:
             self._delegate(["tool", *args])
             return
@@ -1692,7 +1838,8 @@ class Console:
 
         restored = ChatAgent.resume(self.config, run_id, registry=self.registry, backend=self._backend(),
             approval=self.session.request_approval, steer_queue=self.session.steers, stop_event=self.session.stop_event,
-            pause_event=self.session.pause_event, logger=self._agent_log, on_tool=self._on_tool_result)
+            pause_event=self.session.pause_event, logger=self._agent_log, on_tool=self._on_tool_result,
+            on_event=self._on_runtime_event)
         try:
             if self.chat is not None:
                 if self.chat.history:
@@ -1703,6 +1850,7 @@ class Console:
             raise
         self._job_wait.cancel()
         self.chat = restored
+        self._todo_snapshot = restored.todo.view()
         self._active_worker = restored.worker_role
         self._worker_sessions[self._active_worker] = restored.run_id
         self._task_config = None
