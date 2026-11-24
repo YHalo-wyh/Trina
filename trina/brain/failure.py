@@ -26,7 +26,7 @@ FAILURE_CN = {
     "tool_error": "工具调用错误",
     "environment_error": "环境错误",
     "hypothesis_error": "假设错误（跑了但没新信息）",
-    "budget_exhausted": "预算耗尽",
+    "budget_exhausted": "达到执行上限",
     "boundary_denied": "被护栏/控制器拒绝",
 }
 
@@ -165,7 +165,7 @@ def advice_for(kind: str, *, alternatives: list[str] | None = None, attempt: int
     if kind == "environment_error":
         return "先确认目标服务/权限/网络是否可用（例如换端口重探、检查是否需要登录）"
     if kind == "budget_exhausted":
-        return "缩小任务范围或请求人工决定是否追加预算"
+        return "缩小任务范围或请用户决定是否调整执行上限"
     if kind == "boundary_denied":
         return "该动作被判为越界：换合规路径，或请人工确认授权后再继续"
     if kind == "hypothesis_error":

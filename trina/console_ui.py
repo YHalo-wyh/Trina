@@ -207,8 +207,8 @@ COMMANDS: tuple[CommandSpec, ...] = (
         ),
     ),
     CommandSpec(
-        "model", "会话与模型", "管理供应商、模型和上下文窗口", "model [add|edit|remove|test|use <供应商>|context auto|500K|1M|list|模型规格]",
-        positional_choices=(ChoiceSpec("add", "添加供应商配置"), ChoiceSpec("edit", "编辑供应商整条配置"),
+        "model", "会话与模型", "搜索和切换模型（Alt+P）", "model [settings|add|edit|remove|test|use <供应商>|context auto|500K|1M|list|模型规格]",
+        positional_choices=(ChoiceSpec("settings", "管理供应商与模型选项"), ChoiceSpec("add", "添加供应商配置"), ChoiceSpec("edit", "编辑供应商整条配置"),
                             ChoiceSpec("remove", "删除供应商配置"), ChoiceSpec("test", "测试供应商地址连通性"),
                             ChoiceSpec("use", "切换供应商"), ChoiceSpec("context", "上下文窗口：auto / 500K / 1M / Token 整数"), ChoiceSpec("list", "列出模型与供应商")),
         examples=("/model", "/model add", "/model edit", "/model context 500K", "/model test"),
@@ -251,7 +251,7 @@ COMMANDS: tuple[CommandSpec, ...] = (
                                     ChoiceSpec("test", "立即显示测试提醒"))),
     CommandSpec("footer", "会话与模型", "切换底栏信息密度", "footer [default|compact|full]",
                 positional_choices=(ChoiceSpec("default", "均衡"), ChoiceSpec("compact", "精简"), ChoiceSpec("full", "完整"))),
-    CommandSpec("context", "会话与模型", "查看上下文预算、前缀变化和缓存诊断", "context"),
+    CommandSpec("context", "会话与模型", "查看上下文上限、前缀变化和缓存诊断", "context"),
     CommandSpec("compact", "会话与模型", "创建继承检查点并保存完整历史", "compact"),
     CommandSpec(
         "history", "会话与模型", "查看最近的对话与工具摘要", "history [条数]",
@@ -635,6 +635,10 @@ class EnhancedConsoleInput:
             self.transcript_control.clear_selection()
             self.app.invalidate()
 
+        @bindings.add("escape", "p", filter=Condition(lambda: self._queue is not None and not self._dispatching and not self.running()))
+        def open_model_picker(event):
+            self._queue.put_nowait("/model")
+
         @bindings.add("c-d")
         def eof(event):
             if not self.buffer.text:
@@ -755,12 +759,14 @@ class EnhancedConsoleInput:
         self.app.after_render += self._after_render
 
     def _before_render(self, _app) -> None:
-        self.scrollbar_control.apply_pending()
+        self.scrollbar_control.begin_frame()
         self._animate_home()
         if self.context is not None:
             self._frame_context = self.context()
 
     def _after_render(self, _app) -> None:
+        self.transcript_control.remember_viewport()
+        self.scrollbar_control.finish_frame(_app, self.scrollbar_window, _REDRAW_INTERVAL)
         self._frame_context = None
 
     def _context_view(self):
@@ -905,7 +911,10 @@ class EnhancedConsoleInput:
 
     def _seek_viewport(self, offset: int, drag_maximum: int) -> None:
         maximum = self.transcript_control.max_scrollback()
-        self._scrollback = 0 if offset == drag_maximum else max(0, maximum - offset)
+        updated = 0 if offset == drag_maximum else max(0, maximum - offset)
+        if updated != self._scrollback:
+            self.transcript_control.mark_drag_seek()
+        self._scrollback = updated
         self._follow_latest = self._scrollback == 0
         if self._follow_latest:
             self.transcript_control.clear_selection()
@@ -1173,6 +1182,15 @@ class EnhancedConsoleInput:
             self._fragments = fragments or [("", "")]
         return self._fragments
 
+    def pick_option(self, title: str, choices: list[ChoiceSpec], *, subtitle: str) -> str | None:
+        """命令线程只在选择器打开时挂起主界面，随后继续后台读取历史。"""
+        from prompt_toolkit.application import run_in_terminal
+
+        async def choose():
+            return await run_in_terminal(lambda: select_option(title, choices, subtitle=subtitle), in_executor=True)
+
+        return asyncio.run_coroutine_threadsafe(choose(), self.app.loop).result()
+
     async def _consume(self) -> None:
         from prompt_toolkit.application import run_in_terminal
         from prompt_toolkit.eventloop import run_in_executor_with_context
@@ -1184,7 +1202,7 @@ class EnhancedConsoleInput:
                 words = text.strip().lstrip("/").split(maxsplit=2)
                 command = words[0] if words else ""
                 # 模型表单暂时接管终端，结束后恢复同一内容区和未提交输入。
-                modal = command in {"model", "resume", "worker", "subworker", "branch", "repo", "worktree", "wt", "theme", "colors", "footer"} and (not self.running() or command == "subworker")
+                modal = command in {"model", "worker", "subworker", "branch", "repo", "worktree", "wt", "theme", "colors", "footer"} and (not self.running() or command == "subworker")
                 modal = modal or (words == ["plan", "choose"] and not self.running())
                 keep = await run_in_terminal(call, in_executor=True) if modal else await run_in_executor_with_context(call)
                 if not keep:
@@ -1313,7 +1331,7 @@ def select_option(title: str, choices: list[ChoiceSpec], *, subtitle: str = "") 
     return run_panel(_panel_app(body, title, bindings, control))
 
 
-def _panel_app(body, title: str, bindings, focused, *, completion_menu: bool = False):
+def _panel_app(body, title: str, bindings, focused, *, completion_menu: bool = False, plain: bool = False, expanded: bool = False):
     """所有模型配置页共用方角边框；退出后恢复主控制台。"""
     from prompt_toolkit import Application
     from prompt_toolkit.application.current import get_app
@@ -1324,20 +1342,23 @@ def _panel_app(body, title: str, bindings, focused, *, completion_menu: bool = F
     from prompt_toolkit.widgets import Frame, Box
     from .terminal import clean_text, use_color, THEME
 
+    color = use_color(plain=plain)
     panel = Frame(Box(body, padding=1), title=clean_text(title), style="class:panel")
-    floats = [Float(
-        content=panel, width=lambda: max(4, min(96, get_app().output.get_size().columns - 2)),
-    )]
+    if expanded:
+        floats = [Float(content=panel, left=1, right=1, top=0, bottom=0)]
+    else:
+        floats = [Float(content=panel, width=lambda: max(4, min(96, get_app().output.get_size().columns - 2)))]
     if completion_menu:
         floats.append(Float(xcursor=True, ycursor=True, content=CompletionsMenu(max_height=5)))
     layout = Layout(FloatContainer(Window(), floats), focused_element=focused)
     app = Application(layout=layout, key_bindings=bindings, full_screen=True, erase_when_done=True,
+                      mouse_support=expanded,
                       min_redraw_interval=1 / 120, max_render_postpone_time=0,
-                      color_depth=ColorDepth.DEPTH_24_BIT if use_color() else None,
+                      color_depth=ColorDepth.DEPTH_24_BIT if color else None,
                       style=Style.from_dict({"panel.border": THEME["violet"], "panel.label": "bold " + THEME["rose"],
                                              "dim": THEME["muted"], "chosen": "bg:" + THEME["selected"] + " " + THEME["text"] + " bold",
                                              "field": "bg:" + THEME["ink"] + " " + THEME["text"],
-                                             "button.focused": "bg:" + THEME["selected"] + " " + THEME["text"] + " bold"} if use_color() else {}))
+                                             "button.focused": "bg:" + THEME["selected"] + " " + THEME["text"] + " bold"} if color else {}))
     return _low_latency_keys(app)
 
 

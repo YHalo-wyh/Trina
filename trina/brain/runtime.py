@@ -111,7 +111,7 @@ class AgentRuntime:
                 cancellation = cancellation or self.interrupted()
                 reason = cancellation
                 if stopping or reason or (self.max_steps and self.steps >= self.max_steps):
-                    outcome = ActionOutcome(observation=reason or "未执行：本次任务已停止或动作预算已用尽", ok=False)
+                    outcome = ActionOutcome(observation=reason or "未执行：本轮已停止或达到执行上限", ok=False)
                 elif any(not outcomes[index].ok for index in item.dependencies):
                     outcome = ActionOutcome(observation="未执行：依赖调用失败或未执行", ok=False)
                 else:

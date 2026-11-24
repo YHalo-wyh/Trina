@@ -136,7 +136,7 @@ class ConversationContext:
         if len(messages) <= 3:
             if size > limit:
                 self._record_prepare(started, compacted=False)
-                raise ContextBudgetError("上下文预算不足：稳定合同与最近执行链已超过预算；请调整 context_window 或减少工具集")
+                raise ContextBudgetError("稳定合同与最近执行链超过上下文输入上限，请调整 context_window 或减少工具集")
             self._record_prepare(started, compacted=False)
             return
         # 压缩后尽量降到触发线的 75%，避免连续几轮重写缓存。
@@ -173,7 +173,7 @@ class ConversationContext:
                     self._record_prepare(started, compacted=False)
                     return
                 self._record_prepare(started, compacted=False)
-                raise ContextBudgetError("上下文预算不足：用户约束、当前事实及最新请求无法完整保留；未删除历史，请调整 context_window")
+                raise ContextBudgetError("当前上下文输入上限无法容纳用户约束、事实及最新请求。历史已保留，请调整 context_window")
             cut = next_cut
         try:
             path = self._archive(messages, candidate)

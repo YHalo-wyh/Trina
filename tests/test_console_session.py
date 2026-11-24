@@ -13,6 +13,52 @@ from trina.llm.base import LLMResponse, LLMStreamEvent, LLMUsage
 
 
 class ConsoleSessionTests(unittest.TestCase):
+    def test_model_directory_combines_connection_filter_and_search(self):
+        from prompt_toolkit.application.current import create_app_session
+        from prompt_toolkit.input import create_pipe_input
+        from prompt_toolkit.output import DummyOutput
+        from trina.model_picker import ModelChoice, select_model
+
+        choices = [
+            ModelChoice("first", "First", "alpha", current=True),
+            ModelChoice("second", "Second", "alpha"),
+            ModelChoice("second", "Second", "beta", context_window=500_000, levels=("default", "high")),
+        ]
+        # 两次 Tab 选中第二个连接。Alt+方向键在当前连接内筛选。
+        for keys, expected in [("\t\talpha\r", choices[1]),
+                               ("\t\t\x1b\x1b[Cbe\r", choices[2]),
+                               ("\x1b\x1b[D\r", choices[2]),
+                               ("absent\r\x03", None)]:
+            with self.subTest(keys=keys), create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
+                pipe.send_text(keys)
+                self.assertEqual(select_model(choices), expected)
+
+    def test_drag_model_scrollbar_to_end_then_confirm(self):
+        from prompt_toolkit.application.current import create_app_session
+        from prompt_toolkit.data_structures import Size
+        from prompt_toolkit.input import create_pipe_input
+        from prompt_toolkit.output.vt100 import Vt100_Output
+        from trina import console_ui
+        from trina.model_picker import ModelChoice, select_model
+        from trina.scrollbar import ScrollbarControl
+
+        choices = [ModelChoice("test", "test", f"model-{n}") for n in range(100)]
+        factory = console_ui._panel_app
+        def panel(*args, **kwargs):
+            app = factory(*args, **kwargs)
+            def send_drag(_):
+                app.after_render -= send_drag
+                info = next(w.render_info for w in app.layout.visible_windows if isinstance(w.content, ScrollbarControl))
+                x, top = info._x_offset + 1, info._y_offset + 1
+                bottom = top + info.window_height - 1
+                pipe.send_text(f"\x1b[<0;{x};{top}M\x1b[<32;{x};{bottom}M\x1b[<0;{x};{bottom}m\r")
+            app.after_render += send_drag
+            return app
+
+        output = Vt100_Output(io.StringIO(), lambda: Size(rows=18, columns=90), enable_cpr=False)
+        with create_pipe_input() as pipe, create_app_session(input=pipe, output=output), patch.object(console_ui, "_panel_app", panel):
+            self.assertIn(select_model(choices), choices[-10:])
+
     def test_suspended_main_input_does_not_consume_modal_keys(self):
         from trina.console_ui import _ModalInput
         source = SimpleNamespace(read_keys=lambda: ["enter"], flush_keys=lambda: ["escape"])
@@ -203,34 +249,35 @@ class ConsoleSessionTests(unittest.TestCase):
         from prompt_toolkit.input import create_pipe_input
         from prompt_toolkit.output.vt100 import Vt100_Output
         from trina.config import TrinaConfig
-        from trina.console_ui import EnhancedConsoleInput, ChoiceSpec, select_option
+        from trina import console_ui
+        from trina.console_ui import EnhancedConsoleInput
         from trina.interactive import Console
-        from trina.brain.chat import ChatAgent
+        from trina.providers import ProfileStore, ProviderProfile
         from trina.tools import build_registry
-        entered, release, model_opened, model_closed = (threading.Event() for _ in range(4))
+        entered, release, model_opened, settings_opened = (threading.Event() for _ in range(4))
         def complete(*_):
             entered.set()
             release.wait(3)
             return LLMResponse(text="正式回答", usage=LLMUsage(input_tokens=100, output_tokens=20, cache_read_tokens=60))
-        def model_dialog():
-            from trina import console_ui
+        factory = console_ui._panel_app
+        def panel(*args, **kwargs):
             from prompt_toolkit.application.current import get_app
             parent_loop = get_app().loop
-            factory = console_ui._panel_app
-            def panel(*args, **kwargs):
-                app = factory(*args, **kwargs)
-                def ready(_):
-                    self.assertIs(app.loop, parent_loop, "嵌套面板必须复用主 UI 事件循环")
-                    model_opened.set()
-                app.after_render += ready
-                return app
-            # 第一帧才表示嵌套应用已接管输入，避免回车发给正在挂起的主界面。
-            with patch("trina.console_ui._panel_app", side_effect=panel):
-                self.assertEqual(select_option("Model", [ChoiceSpec("back", "返回")]), "back")
-            model_closed.set()
+            app = factory(*args, **kwargs)
+            def ready(_):
+                self.assertIs(app.loop, parent_loop, "嵌套面板必须复用主 UI 事件循环")
+                (settings_opened if args[1] == "模型设置" else model_opened).set()
+            app.after_render += ready
+            return app
         stream = io.StringIO()
-        output = Vt100_Output(stream, lambda: Size(rows=26, columns=88), enable_cpr=False)
+        size = [Size(rows=26, columns=88)]
+        output = Vt100_Output(stream, lambda: size[0], enable_cpr=False)
         with tempfile.TemporaryDirectory() as directory, patch.dict("os.environ", {"TRINA_PROVIDERS_FILE": str(Path(directory) / "providers.json")}):
+            store = ProfileStore()
+            store.profiles = {name: ProviderProfile(name, "deepseek", "https://api.deepseek.com/v1", "deepseek-chat", api_key=f"test-{name}-private")
+                              for name in ("primary", "secondary")}
+            store.active = "primary"
+            store.save()
             config = TrinaConfig.load().with_overrides(policy__mode="free", run__workspace=str(Path(directory) / "runs"), audit__dir=str(Path(directory) / "logs"))
             console = Console(config, backend=SimpleNamespace(complete=complete), registry=build_registry(), plain=True, autostart_lab=False)
             with create_pipe_input() as pipe, create_app_session(input=pipe, output=output):
@@ -259,14 +306,35 @@ class ConsoleSessionTests(unittest.TestCase):
                             self.assertIn("正式回答", "".join(editor._chunks))
                             self.assertNotIn("轮次", "".join(editor._chunks))
                             self.assertNotIn("目标 未指定", "".join(editor._chunks))
-                            editor.buffer.reset()
-                            pipe.send_text("/model\r")
+                            pipe.send_text("\x1bp")
                             await until(model_opened.is_set)
-                            pipe.send_text("\r")
-                            await until(model_closed.is_set)
+                            self.assertIn("●", stream.getvalue())
+                            self.assertIn("secondary", stream.getvalue())
+                            pipe.send_text("secondary reasoner\r")
+                            await until(lambda: console.config.llm.model == "deepseek-reasoner")
                             await until(lambda: not editor.app._running_in_terminal)
                             self.assertTrue(editor.app.is_running)
+                            self.assertEqual(editor.buffer.text, "保留未发送补充")
+                            self.assertEqual(ProfileStore().active, "secondary")
+                            self.assertNotIn("test-secondary-private", stream.getvalue())
                             self.assertEqual(console.view.usage_data()["total_tokens"], 120)
+                            editor.buffer.reset()
+                            model_opened.clear()
+                            size[0] = Size(rows=12, columns=38)
+                            pipe.send_text("/model\r")
+                            await until(model_opened.is_set)
+                            self.assertIn("↑↓ Enter F2 Esc", stream.getvalue())
+                            pipe.send_text("\x1b")
+                            await until(lambda: not editor.app._running_in_terminal)
+                            self.assertEqual(ProfileStore().active, "secondary")
+                            size[0] = Size(rows=26, columns=88)
+                            model_opened.clear()
+                            pipe.send_text("/model\r")
+                            await until(model_opened.is_set)
+                            pipe.send_text("\x1bOQ")
+                            await until(settings_opened.is_set)
+                            pipe.send_text("\x1b")
+                            await until(lambda: not editor.app._running_in_terminal)
                             pipe.send_text("/new\r")
                             await until(lambda: console.view.usage_data()["calls"] == 0)
                             self.assertEqual(console._footer_context().task, "新对话")
@@ -283,9 +351,8 @@ class ConsoleSessionTests(unittest.TestCase):
                             app.create_background_task(exercise())
                     editor.app.after_render += rendered
                     return editor
-                with patch("trina.interactive.enhanced_input_available", return_value=True), patch("trina.interactive.EnhancedConsoleInput", side_effect=editor_factory), patch.object(console, "_model_manager", return_value=SimpleNamespace(run=model_dialog)):
+                with patch("trina.interactive.enhanced_input_available", return_value=True), patch("trina.interactive.EnhancedConsoleInput", side_effect=editor_factory), patch("trina.console_ui._panel_app", side_effect=panel):
                     self.assertEqual(console.run(), 0)
-                self.assertTrue(model_closed.is_set())
 
     def test_thinking_marker_moves_but_idle_does_not(self):
         from prompt_toolkit.application.current import create_app_session

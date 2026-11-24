@@ -21,7 +21,7 @@ from ..state import RunState
 from ..tools import ToolRegistry, build_registry
 from ..tools.http import HttpClient
 from ..tools.registry import ToolContext
-from ..tools.schema import tool_schemas
+from ..tools.schema import FINISH_TOOL_NAME, tool_schemas
 from .failure import LoopGuard, advice_for, classify_failure
 
 def render_chat_prompt(include_hypothesis: bool = True) -> str:
@@ -237,7 +237,9 @@ class ChatAgent:
 
         def say(reply, response, interim=False):
             if interim:
-                self._finish_stream(reply)
+                calls = response.tool_calls
+                if not (self._native_tools_enabled() and len(calls) == 1 and calls[0].name == FINISH_TOOL_NAME):
+                    self._finish_stream(reply)
                 return ActionOutcome()
             from .prompts import _looks_like_dsml
             if _looks_like_dsml(reply):
@@ -265,7 +267,12 @@ class ChatAgent:
                 final = action["final"]
                 reply = str(final.get("summary") if isinstance(final, dict) else final) or "（完成）"
                 self.history.append({"role": "assistant", "content": reply})
+                if self._pending_stream is None:
+                    self._message_id = uuid.uuid4().hex
+                    self._pending_stream = _VisibleStream(self._visible_update)
                 self._finish_stream(reply)
+                if isinstance(final, dict) and final.get("status") in ("partial", "failed"):
+                    self.ctx.emit("chat.turn_finished", reason="model_summary")
                 return ActionOutcome(observation=reply, answer=reply, stop=True)
             self.history.append({"role": "assistant", "content": json.dumps(action, ensure_ascii=False)})
             self.save()
@@ -299,6 +306,9 @@ class ChatAgent:
             return terminal_reply
         if outcome.answer is not None:
             return outcome.answer
+        if runtime.max_steps and max(runtime.steps, runtime.rounds) >= runtime.max_steps:
+            counter = "actions" if runtime.steps >= runtime.max_steps else "rounds"
+            self.ctx.emit("chat.turn_finished", reason="step_limit", counter=counter, limit=runtime.max_steps)
         self.logger(f"[提示] 单条消息内已执行 {runtime.steps} 个动作，正在整理阶段性结果")
         if self.ctx.extra.get("hard_model_budget"):
             # 外部临时 Harness 可声明模型调用是硬预算；核心不绑定任何具体平台名称。
@@ -378,9 +388,12 @@ class ChatAgent:
         runtime_parts = [self.context.state_update(state_projection(
             self.state, hypotheses=self.ledger.to_dict() if self.use_ledger else None, registered=registered))]
         from ..runtime_status import render_agent_status
+        from .prompts import DELIVERY_PROGRESS_STYLE
         last_observation = self.history[-1]["content"] if self.history and self.history[-1]["content"].startswith("[工具结果]") else ""
         runtime_parts.append(render_agent_status(self.ctx, step=step, max_steps=self.MAX_TOOL_STEPS,
                                                turn=self.turns, observation=last_observation, compact=True))
+        if step == 1 and DELIVERY_PROGRESS_STYLE not in self._messages[0]["content"]:
+            runtime_parts.append(DELIVERY_PROGRESS_STYLE)
         if final_instruction:
             runtime_parts.append(final_instruction)
         # 动态状态作为新的 user 消息追加；绝不重写 system 或把历史压成角色标签字符串。
@@ -438,9 +451,9 @@ class ChatAgent:
         return response
 
     def _summarize_budget_exhaustion(self, steps: int) -> str:
-        """动作预算耗尽后再做一次无工具总结，避免真实结果只留在观察历史里。"""
+        """达到本轮上限后用已有工具结果生成总结。"""
         instruction = (
-            "[动作预算已用尽] 现在只根据本轮已经返回的真实工具结果，直接回答用户最初的请求。"
+            "[已达到本轮执行上限] 现在只根据本轮已经返回的真实工具结果，直接回答用户最初的请求。"
             "禁止继续调用任何工具，不要输出 JSON action、DSML 或工具调用协议。"
             "给出当前结论和关键证据；如果尚未完成，明确未完成项与下一步。"
         )

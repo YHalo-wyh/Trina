@@ -11,6 +11,7 @@ from __future__ import annotations
 MODEL_ALIASES: dict[str, str] = {
     # DeepSeek
     "deepseek-flash": "DeepSeek V4.1 Flash",
+    "deepseek-v4.1-flash": "DeepSeek V4.1 Flash",
     "deepseek-v4-flash": "DeepSeek V4 Flash",
     "deepseek-v4-pro": "DeepSeek V4 Pro",
     "deepseek-chat": "DeepSeek Chat",

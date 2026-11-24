@@ -417,6 +417,109 @@ class ChatResumeTests(unittest.TestCase):
             self.assertTrue(any(item.value == target.run_id for item in picker.call_args.args[1]))
         self.assertIs(console.chat, current)
 
+    def test_vt_resume_previews_while_busy_and_switches_without_exiting(self):
+        import asyncio
+        import io
+        from prompt_toolkit.application.current import create_app_session
+        from prompt_toolkit.data_structures import Size
+        from prompt_toolkit.input import create_pipe_input
+        from prompt_toolkit.output.vt100 import Vt100_Output
+        from trina import console_ui
+
+        target = self.chat(run_id="saved-preview")
+        target.ask("待查看的历史内容")
+        target.close()
+        current = self.chat(run_id="current-preview")
+        current.ask("当前对话")
+        backend = self.backend()
+        console = Console(self.config, backend=backend, registry=ToolRegistry([]), plain=True, autostart_lab=False)
+        console.chat = current
+        busy = threading.Event()
+        busy.set()
+        console.session.thread = SimpleNamespace(is_alive=busy.is_set)
+        panel_ready = threading.Event()
+        original_panel = console_ui._panel_app
+        switch_chat = console._switch_chat
+
+        def switch_with_main_visible(run_id):
+            self.assertFalse(console._enhanced_input.app._running_in_terminal)
+            switch_chat(run_id)
+
+        def panel_factory(*args, **kwargs):
+            panel = original_panel(*args, **kwargs)
+            panel.after_render += lambda _: panel_ready.set()
+            return panel
+
+        output = Vt100_Output(io.StringIO(), lambda: Size(rows=25, columns=96), enable_cpr=False)
+        with create_pipe_input() as pipe, create_app_session(input=pipe, output=output):
+            def editor_factory(**kwargs):
+                editor = console_ui.EnhancedConsoleInput(**kwargs)
+                scheduled = False
+
+                async def until(condition):
+                    for _ in range(400):
+                        if condition():
+                            return
+                        await asyncio.sleep(.01)
+                    raise AssertionError("历史选择器未完成操作")
+
+                async def exercise():
+                    try:
+                        pipe.send_text("/resume\r")
+                        await until(panel_ready.is_set)
+                        self.assertTrue(editor.app._running_in_terminal)
+                        pipe.send_text("saved-preview\r")
+                        await until(lambda: "历史预览" in "".join(editor._chunks))
+                        self.assertIn("待查看的历史内容", "".join(editor._chunks))
+                        self.assertIs(console.chat, current)
+                        self.assertTrue(console.session.running)
+                        self.assertFalse(console.session.stop_event.is_set())
+                        self.assertFalse(editor.app._running_in_terminal)
+
+                        busy.clear()
+                        panel_ready.clear()
+                        pipe.send_text("/resume\r")
+                        await until(panel_ready.is_set)
+                        pipe.send_text("saved-preview\r")
+                        await until(lambda: console.chat.run_id == target.run_id and "待查看的历史内容" in "".join(editor._chunks))
+                        self.assertTrue(editor.app.is_running)
+                        self.assertFalse(editor.app._running_in_terminal)
+                        self.assertEqual(backend.inputs, [])
+                        console.session.thread = None
+                        pipe.send_text("/quit\r")
+                    except BaseException as exc:
+                        console.session.thread = None
+                        pipe.send_text("\x03")
+                        if editor.app.is_running:
+                            editor.app.exit(exception=exc)
+
+                def rendered(app):
+                    nonlocal scheduled
+                    if not scheduled:
+                        scheduled = True
+                        app.create_background_task(exercise())
+
+                editor.app.after_render += rendered
+                return editor
+
+            with patch("trina.interactive.enhanced_input_available", return_value=True), \
+                    patch("trina.interactive.EnhancedConsoleInput", side_effect=editor_factory), \
+                    patch("trina.console_ui._panel_app", side_effect=panel_factory), \
+                    patch.object(console, "_switch_chat", side_effect=switch_with_main_visible):
+                self.assertEqual(console.run(), 0)
+
+    def test_internal_failure_classification_and_old_pause_command_are_not_displayed(self):
+        output = []
+        console = Console(self.config, backend=self.backend(), registry=ToolRegistry([]), output=output.append)
+        console._agent_log("[失败分类] hypothesis_error：换参数或换切入点")
+        console._agent_log("已读取测试日志")
+        console.session.toggle_pause()
+        text = "".join(output)
+        self.assertIn("已读取测试日志", text)
+        self.assertIn("/unpause", text)
+        self.assertNotIn("hypothesis_error", text)
+        self.assertNotIn("输入 resume", text)
+
     def test_list_last_and_prefix_switch_without_rendering_tool_json_as_answer(self):
         target = self.chat(run_id="chat-target")
         target.ask("查看旧工具记录")

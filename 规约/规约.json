@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "contract_id": "trina-product-contract",
-  "product_version": "0.5.0",
-  "updated_at": "2026-11-16",
+  "product_version": "0.6.0",
+  "updated_at": "2026-11-24",
   "normative_document": "规约/规约.md",
   "requirements_document": "需求/需求.md",
   "verification_commands": {

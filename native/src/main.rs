@@ -181,7 +181,7 @@ fn main() -> ExitCode {
     }
     let result = match args[1].as_str() {
         "version" => {
-            println!("trina-native 0.5.0");
+            println!("trina-native {}", env!("CARGO_PKG_VERSION"));
             Ok(())
         }
         "read" => command_read(&args[1..]),

@@ -6,6 +6,7 @@ import os
 from typing import Callable
 
 from .console_ui import ChoiceSpec, edit_field, enhanced_input_available, select_option
+from .model_picker import ModelChoice, select_model
 from .providers import PRESETS, PRESET_BY_ID, ProfileStore, ProviderProfile, normalize_endpoint, validate_address
 
 
@@ -70,6 +71,59 @@ class ModelManager:
         window = f"{llm.effective_context_window:,}" + ("（自动）" if not llm.context_window else "（手动）")
         return f"供应商  {name}\n请求地址 {address}\n模型    {llm.model}\n上下文  {window}\n思考    {effort}\nAPI Key {key_status}"
 
+    def model_choices(self) -> list[ModelChoice]:
+        """列出当前模型、已保存连接和对应预设，不请求远端目录。"""
+        llm = self.config.llm
+        current = self.current()
+        label = llm.profile or (current.id if llm.base_url else "当前配置")
+        from .llm.reasoning import reasoning_support
+
+        def choice(profile_id, name, model, profile, *, active=False):
+            candidate = copy.copy(llm)
+            if not active:
+                candidate.backend, candidate.api = "openai", profile.api
+                candidate.base_url, candidate.context_window = profile.base_url, profile.context_window
+            candidate.model = model
+            levels = reasoning_support(candidate).levels
+            return ModelChoice(profile_id, name, model, active, candidate.api, candidate.effective_context_window,
+                               bool(candidate.context_window), levels)
+
+        choices: list[ModelChoice] = []
+        if llm.model:
+            choices.append(choice(llm.profile, label, llm.model, current, active=True))
+        profiles = [(item.id, item.id, item) for item in self.store.profiles.values()]
+        if llm.profile not in self.store.profiles and llm.backend == "openai":
+            profiles.insert(0, ("", label, current))
+        for profile_id, name, item in profiles:
+            preset = PRESET_BY_ID.get(item.provider)
+            for model in dict.fromkeys((item.model, *(preset.models if preset else ()))):
+                if model and (profile_id, model) != (llm.profile, llm.model):
+                    choices.append(choice(profile_id, name, model, item))
+        return choices
+
+    def pick_quick(self, *, plain: bool = False):
+        return select_model(self.model_choices(), plain=plain)
+
+    def switch_model(self, choice: ModelChoice) -> bool:
+        llm = self.config.llm
+        if (choice.connection_id, choice.model) == (llm.profile, llm.model):
+            return False
+        if choice.connection_id:
+            item = copy.deepcopy(self.store.profiles[choice.connection_id])
+            item.model = choice.model
+            self._commit(item, previous_id=item.id)
+        else:
+            from .llm.reasoning import reasoning_support
+
+            candidate = copy.copy(llm)
+            candidate.model = choice.model
+            if candidate.reasoning_effort not in reasoning_support(candidate).levels:
+                candidate.reasoning_effort = "default"
+            candidate.validate()
+            llm.model, llm.reasoning_effort = candidate.model, candidate.reasoning_effort
+            self.reload()
+        return True
+
     def run(self) -> None:
         notice = ""
         while True:
@@ -77,7 +131,7 @@ class ModelManager:
                        ChoiceSpec("reasoning", "思考强度"), ChoiceSpec("context", "上下文窗口"), ChoiceSpec("add", "添加供应商"),
                        ChoiceSpec("edit", "编辑供应商"), ChoiceSpec("remove", "删除供应商"),
                        ChoiceSpec("test", "测试当前供应商"), ChoiceSpec("back", "返回")]
-            selected = self.choose("Model", choices, subtitle=self.status_text() + ("\n" + notice if notice else ""))
+            selected = self.choose("模型设置", choices, subtitle=self.status_text() + ("\n" + notice if notice else ""))
             notice = ""
             if selected in (None, "back"):
                 return

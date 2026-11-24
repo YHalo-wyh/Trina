@@ -274,13 +274,23 @@ class TranscriptTests(unittest.TestCase):
             return MouseEvent(Point(x=x, y=y), kind, MouseButton.LEFT, frozenset())
         with patch("trina.transcript.copy_to_terminal") as clipboard:
             control.mouse_handler(mouse(MouseEventType.MOUSE_DOWN, 1, 0))
-            control.mouse_handler(mouse(MouseEventType.MOUSE_MOVE, 3, 1))
+            control.mouse_handler(mouse(MouseEventType.MOUSE_MOVE, 2, 1))
             selected_row = control.get_line(0)
             self.assertTrue(any("class:selection" in style for style, _ in selected_row))
-            control.mouse_handler(mouse(MouseEventType.MOUSE_UP, 3, 1))
+            control.mouse_handler(mouse(MouseEventType.MOUSE_UP, 2, 1))
             self.assertEqual(self.editor.app.clipboard.get_data().text, "一行 abc\n第二行")
             clipboard.assert_called_once()
         self.assertEqual(self.editor.buffer.text, "尚未发送")
+
+    def test_reverse_selection_keeps_the_tail_combining_mark_and_selected_spaces(self):
+        self.editor.write("甲  \n乙e\u0301")
+        control = self.editor.transcript_control
+        control.create_content(80, 20)
+        with patch("trina.transcript.copy_to_terminal") as clipboard:
+            control.mouse_handler(MouseEvent(Point(1, 1), MouseEventType.MOUSE_DOWN, MouseButton.LEFT, frozenset()))
+            control.mouse_handler(MouseEvent(Point(0, 0), MouseEventType.MOUSE_UP, MouseButton.LEFT, frozenset()))
+        self.assertEqual(clipboard.call_args.args[0], "甲  \n乙e\u0301")
+        self.assertEqual("".join(text for style, text in control.get_line(1) if "class:selection" in style), "乙e\u0301")
 
     def test_selection_and_history_anchor_survive_stream_updates(self):
         self.editor.write("\n".join(f"line {i}" for i in range(30)))
@@ -358,14 +368,14 @@ class TranscriptTests(unittest.TestCase):
         output = Vt100_Output(io.StringIO(), lambda: Size(rows=24, columns=80), enable_cpr=False)
         with create_app_session(input=self.input, output=output), patch("trina.transcript.copy_to_terminal"):
             editor = EnhancedConsoleInput(status=lambda: "ready", running=lambda: False, dynamic_values=lambda *_: (), plain=True)
-            editor.write("alpha beta\nsecond line")
+            editor.write("alpha beta\nsecond行")
             scheduled = False
             async def exercise():
                 try:
                     editor.buffer.text = "keep draft"
-                    self.input.send_text("\x1b[<0;1;1M\x1b[<32;7;2M\x1b[<0;7;2m")
+                    self.input.send_text("\x1b[<0;1;1M\x1b[<32;8;2M\x1b[<0;8;2m")
                     await asyncio.sleep(.15)
-                    self.assertEqual(editor.app.clipboard.get_data().text, "alpha beta\nsecond")
+                    self.assertEqual(editor.app.clipboard.get_data().text, "alpha beta\nsecond行")
                     self.assertEqual(editor.buffer.text, "keep draft")
                     editor.app.exit()
                 except BaseException as exc:
@@ -460,6 +470,49 @@ class TranscriptTests(unittest.TestCase):
                     self.assertFalse(bar.dragging)
                     self.assertTrue(editor._follow_latest)
                     self.assertEqual(editor.buffer.text, "保留输入")
+                    editor.app.exit()
+                except BaseException as exc:
+                    editor.app.exit(exception=exc)
+
+            editor.app.run(pre_run=lambda: editor.app.create_background_task(exercise()))
+
+    def test_real_vt_drag_reuses_overlapping_rows_and_captures_off_rail_release(self):
+        import io
+        from prompt_toolkit.data_structures import Size
+        from prompt_toolkit.output.vt100 import Vt100_Output
+
+        stream = io.StringIO()
+        output = Vt100_Output(stream, lambda: Size(rows=34, columns=120), enable_cpr=False)
+        with create_app_session(input=self.input, output=output):
+            editor = EnhancedConsoleInput(status=lambda: "ready", running=lambda: False,
+                                          dynamic_values=lambda *_: (), plain=True, motion="none")
+            editor.write("\n".join(f"line {i:03d} " + (str(i % 10) * 100) for i in range(240)))
+            bar, control = editor.scrollbar_control, editor.transcript_control
+
+            async def until(predicate):
+                for _ in range(100):
+                    if predicate():
+                        return
+                    await asyncio.sleep(.01)
+                self.fail("拖动事件未在终端界面生效")
+
+            async def exercise():
+                try:
+                    height = control.viewport_height
+                    self.input.send_text(f"\x1b[<0;120;{height}M")
+                    await until(lambda: bar.dragging)
+                    before = stream.tell()
+                    # 鼠标移入正文后仍由滚动条消费，重叠行只需在终端搬运。
+                    self.input.send_text(f"\x1b[<32;65;{height - 1}M")
+                    await until(lambda: editor._scrollback > 0)
+                    delta = stream.getvalue()[before:]
+                    self.assertRegex(delta, r"\x1b\[\d+T")
+                    self.assertLess(len(delta), 2200)
+                    self.assertIsNone(control.anchor)
+
+                    self.input.send_text(f"\x1b[<0;65;{height + 1}m")
+                    await until(lambda: not bar.dragging and editor._follow_latest)
+                    self.assertEqual(editor._scrollback, 0)
                     editor.app.exit()
                 except BaseException as exc:
                     editor.app.exit(exception=exc)

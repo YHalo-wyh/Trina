@@ -321,8 +321,43 @@ class TestChatAgent(unittest.TestCase):
         self.assertEqual(supplied, [True, False], "收尾调用不得继续暴露工具")
         self.assertEqual(chat.usage.calls, 2)
         self.assertEqual(chat.state.counters.get("tool_calls"), 1)
-        self.assertIn("动作预算已用尽", chat._messages[-2]["content"])
+        self.assertIn("已达到本轮执行上限", chat._messages[-2]["content"])
+        ends = chat.events.replay(kinds=("chat.turn_finished",))
+        self.assertEqual([event.payload for event in ends], [{"reason": "step_limit", "counter": "actions", "limit": 1}])
         self.assertEqual(chat._messages[-1], {"role": "assistant", "content": reply})
+
+    def test_finish_summary_replaces_provisional_text_and_reports_model_source(self):
+        from trina.event_view import EventTranscript
+
+        output = []
+        view = EventTranscript(output.append)
+        frames = []
+        editor = SimpleNamespace(update_stream=lambda text, final=False: frames.append((text, final)))
+        live = EventTranscript(lambda _text: None, editor=editor)
+
+        def consume(event):
+            view.consume(event)
+            live.consume(event)
+
+        summary = "已完成格式检查。界面验收尚未完成。"
+        chat = self._chat([{
+            "native_only": True,
+            "response": "这轮没能在预算内完成验收。",
+            "tool_calls": [{"id": "finish-docs", "name": "finish", "arguments": {
+                "status": "partial", "summary": summary,
+            }}],
+        }], on_event=consume)
+        self.addCleanup(chat.close)
+
+        self.assertEqual(chat.ask("汇总文档验收进度"), summary)
+        rows = "\n".join(output)
+        self.assertIn(summary, rows)
+        self.assertIn("模型已提交阶段性总结", rows)
+        self.assertNotIn("预算", rows)
+        self.assertNotIn("上限", rows)
+        self.assertEqual([text for text, final in frames if final], [summary])
+        self.assertTrue(chat.last_reply_streamed)
+        self.assertEqual(chat.usage.calls, 1)
 
     def test_external_harness_can_preserve_a_hard_model_call_budget_without_platform_code(self):
         chat = self._chat([
@@ -505,7 +540,7 @@ class TestConsole(unittest.TestCase):
                 console.session.thread.join(3)
                 self.assertFalse(console.session.running)
                 self.assertEqual(console.view.activity()[0], "idle")
-                self.assertIn("上下文预算不足", "\n".join(output))
+                self.assertIn("当前上下文输入上限", "\n".join(output))
                 self.assertEqual(backend.calls, 0)
             finally:
                 console._cleanup()

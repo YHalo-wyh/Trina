@@ -56,8 +56,11 @@ class MarkdownViewTests(unittest.TestCase):
             plain = "".join(text for _, text in fragments)
             self.assertNotIn("\x1b", plain)
             self.assertIn("─── Output ───", plain)
-            self.assertNotIn("python", plain)
+            self.assertIn("python -V", plain)
             self.assertTrue(all(cell_len(line) <= width for line in plain.splitlines()))
+            divider = next(line for line in plain.splitlines() if "─── Output ───" in line)
+            self.assertRegex(divider, r"^├─── Output ─+┤$")
+            self.assertEqual(cell_len(divider), width)
 
     def test_tool_card_separates_input_output_and_failures_without_empty_sections(self):
         def text(*args, **kwargs):
@@ -68,9 +71,8 @@ class MarkdownViewTests(unittest.TestCase):
         self.assertIn("shell · Error", card.splitlines()[0])
         self.assertIn("0.3s · exit 1", card.splitlines()[0])
         self.assertNotIn(" 命令 ", card)
-        self.assertNotIn("python", card)
-        divider = next(line for line in card.splitlines() if "─── Output ───" in line)
-        self.assertTrue(divider.startswith("│") and divider.endswith("│"))
+        self.assertLess(card.index("python -V"), card.index("─── Output"))
+        self.assertLess(card.index("─── Output"), card.index("已生成摘要"))
         self.assertLess(card.index("─── Output"), card.index(" stderr "))
         self.assertEqual(card.count("命令执行出错"), 1)
 
@@ -83,6 +85,20 @@ class MarkdownViewTests(unittest.TestCase):
         self.assertIn("read · 已拒绝", failure.splitlines()[0])
         self.assertIn("工作目录不可读", failure)
         self.assertNotIn(" 参数 ", failure)
+
+    def test_shell_keeps_multiline_argv_and_supports_old_command_only_events(self):
+        fragments = render_tool_call_fragments("shell", {"argv": ["python", "-c", "print('中')\nprint(42)"]}, width=70)
+        card = "".join(part for _, part in fragments)
+        header, _, _ = card.partition("─── Output")
+        self.assertIn("python -c", header)
+        self.assertIn("print(42)", header)
+        self.assertNotIn(" 参数 ", header)
+
+        fragments = render_tool_call_fragments("terminal_start", {}, command="python -V\x1b[2J", output="Python 3.11")
+        card = "".join(part for _, part in fragments)
+        self.assertNotIn("\x1b", card)
+        self.assertLess(card.index("python -V"), card.index("─── Output"))
+        self.assertLess(card.index("─── Output"), card.index("Python 3.11"))
 
     def test_compiler_output_preserves_tab_alignment_and_wrapped_gutter(self):
         from prompt_toolkit.utils import get_cwidth

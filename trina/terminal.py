@@ -4,6 +4,7 @@ from __future__ import annotations
 import io
 import os
 import re
+import shlex
 import shutil
 import sys
 import unicodedata
@@ -245,8 +246,13 @@ def render_tool_call(tool: str, params: dict[str, Any], *, status: str = "runnin
                           lambda new_width: render_tool_call_fragments(**original, width=new_width))
 
 
-def tool_card_params(params: dict[str, Any], command: str = "") -> dict[str, Any]:
-    """终端命令留在运行记录，卡片上省略命令行。"""
+def tool_card_input(tool: str, params: dict[str, Any], command: str = "") -> str | list[str] | tuple[str, ...] | dict[str, Any]:
+    """Shell 卡片优先读取原始参数边界，旧事件可用记录中的命令。"""
+    if public_tool_name(tool) in {"shell", "terminal_start"}:
+        argv = params.get("argv")
+        if isinstance(argv, (list, tuple)) and argv and all(isinstance(arg, str) for arg in argv):
+            return argv
+        return command
     return {} if command or "argv" in params else params
 
 
@@ -260,16 +266,21 @@ def render_tool_call_fragments(tool: str, params: dict[str, Any], *, status: str
     label = {"requested": "准备", "awaiting_approval": "待审批", "running": "运行中", "completed": "完成",
              "failed": "Error", "denied": "已拒绝", "invalid": "参数错误", "unavailable": "不可用",
              "timed_out": "超时", "interrupted": "已中断", "cancelled": "已取消"}.get(status, status)
-    visible_params = tool_card_params(params, command)
-    arguments = json.dumps(visible_params, ensure_ascii=False) if visible_params else ""
-    if _cells(arguments) > width - 4:
-        arguments = json.dumps(visible_params, ensure_ascii=False, indent=2)
+    visible_input = tool_card_input(tool, params, command)
+    if isinstance(visible_input, dict):
+        arguments = json.dumps(visible_input, ensure_ascii=False) if visible_input else ""
+        if _cells(arguments) > width - 4:
+            arguments = json.dumps(visible_input, ensure_ascii=False, indent=2)
+        input_label = "参数"
+    else:
+        arguments = visible_input if isinstance(visible_input, str) else shlex.join(visible_input)
+        input_label = ""
     title = f"{clean_text(public_tool_name(tool))} · {label}"
     details = f"{duration:.1f}s" if status not in {"requested", "awaiting_approval", "running"} or duration else ""
     if exit_code is not None:
         details = " · ".join(part for part in (details, f"exit {exit_code}") if part)
     return _render_tool_box_fragments(title, arguments, output, stderr, error, details, record,
-                                      width=width, color=color, palette=palette, status=status,
+                                      width=width, color=color, palette=palette, status=status, input_label=input_label,
                                       is_diff=tool == "workspace_git" and params.get("action") == "diff")
 
 
@@ -329,7 +340,7 @@ def _wrap_tool_line(line: str, width: int) -> list[str]:
 
 
 def _render_tool_box_fragments(title: str, arguments: str, output: str, stderr: str, error: str,
-                               details: str, record: str, *,
+                               details: str, record: str, *, input_label: str,
                                width: int, color: bool, palette: Palette = "trina", status: str = "running",
                                is_diff: bool = False) -> list[tuple[str, str]]:
     """线性绘制工具窗口；输出增量只进行文本折行和补齐。"""
@@ -373,11 +384,12 @@ def _render_tool_box_fragments(title: str, arguments: str, output: str, stderr: 
     if details and not details_fit:
         for wrapped in _wrap_clean_line(details, inner):
             lines.append(row(wrapped, border_style))
-    safe_output, safe_stderr, safe_error = map(_clean_tool_text, (output, stderr, error))
-    section("参数", clean_text(arguments), input_style)
-    if safe_output.strip() or safe_stderr.strip() or safe_error.strip():
-        lead = "─── Output "
-        lines.append(row(lead + "─" * (inner - _cells(lead)), section_style))
+    safe_input, safe_output, safe_stderr, safe_error = map(_clean_tool_text, (arguments, output, stderr, error))
+    section(input_label, safe_input, input_style)
+    if (not input_label and safe_input.strip()) or safe_output.strip() or safe_stderr.strip() or safe_error.strip():
+        lead, label = "├───", " Output "
+        fill = "─" * (width - _cells(lead + label) - 1)
+        lines.append([(border_style, lead), (section_style, label), (border_style, fill + "┤")])
     section("", safe_output, text_style, diff=is_diff)
     section("stderr" if safe_output.strip() else "", safe_stderr, stderr_style)
     if safe_error.strip() not in {safe_output.strip(), safe_stderr.strip()}:

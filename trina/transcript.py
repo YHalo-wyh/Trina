@@ -28,6 +28,8 @@ class TranscriptControl(UIControl):
         self.dirty = 0
         self._blocks: dict[int, tuple[Any, list]] = {}
         self._changed: set[int] = set()
+        self._drag_seek = False
+        self._painted: tuple[int, int, list, bool, bool] | None = None
         self.anchor: tuple[int, int] | None = None
         self.head: tuple[int, int] | None = None
         self.dragging = False
@@ -85,7 +87,7 @@ class TranscriptControl(UIControl):
             delta = new_start - old_start
             # 尾随新增行时先搬运稳定视口，差分只写新露出的行。
             # 宽度/高度变化或旧行改写时由普通屏幕差分处理。
-            if (can_shift and not owner.scrollbar_control.dragging and not owner._scrollback
+            if (can_shift and not self._drag_seek and not owner.scrollbar_control.dragging and not owner._scrollback
                     and self.anchor is None and 0 < delta < self.viewport_height
                     and len(old_visible) == self.viewport_height
                     and old_visible[delta:] == self.rows[new_start:new_start + self.viewport_height - delta]):
@@ -94,10 +96,38 @@ class TranscriptControl(UIControl):
     def create_content(self, width: int, height: int) -> UIContent:
         self.viewport_height = max(1, height)
         self.sync(max(1, width))
+        if self._drag_seek:
+            self._drag_seek = False
+            self._reuse_drag_rows()
         return UIContent(
             get_line=self.get_line, line_count=max(1, len(self.rows)),
             cursor_position=Point(x=0, y=self.owner._cursor_line()), show_cursor=False,
         )
+
+    def mark_drag_seek(self) -> None:
+        self._drag_seek = True
+
+    def remember_viewport(self) -> None:
+        """记住最后一帧实际显示的行，供拖动复用。"""
+        start = self.viewport_start()
+        self._painted = (self.width, start, self.rows[start:start + self.viewport_height],
+                         self.anchor is not None, bool(self.owner._toast_message))
+
+    def _reuse_drag_rows(self) -> None:
+        if self._painted is None or self.anchor is not None or self.owner._toast_message:
+            return
+        width, old_start, previous, selected, overlay = self._painted
+        if selected or overlay or width != self.width or len(previous) != self.viewport_height:
+            return
+        new_start = self.viewport_start()
+        delta = new_start - old_start
+        if not 0 < abs(delta) < self.viewport_height:
+            return
+        shared = self.viewport_height - abs(delta)
+        old_offset = max(0, delta)
+        new_offset = new_start + max(0, -delta)
+        if previous[old_offset:old_offset + shared] == self.rows[new_offset:new_offset + shared]:
+            self.precondition_scroll(old_start, new_start, in_frame=True)
 
     def viewport_start(self) -> int:
         """当前可见区首行；排版后滚动只改变这个整数。"""
@@ -107,7 +137,7 @@ class TranscriptControl(UIControl):
         """只允许滚到首屏，避免顶部仍有一整屏无画面变化的空行程。"""
         return max(0, self.owner._rendered_lines - self.viewport_height)
 
-    def precondition_scroll(self, old_start: int, new_start: int) -> bool:
+    def precondition_scroll(self, old_start: int, new_start: int, *, in_frame: bool = False) -> bool:
         """用终端滚动区域搬运不变行，并同步 prompt_toolkit 的旧屏。
 
         下一帧差分只需绘制新露出的行。缺少真实 VT 屏幕、首次渲染、
@@ -128,10 +158,9 @@ class TranscriptControl(UIControl):
         bottom = top + height - 1
         direction = "S" if delta > 0 else "T"  # SU 向最新；SD 向历史。
         try:
-            output.write_raw(
-                f"\x1b[?2026h\x1b7\x1b[{top + 1};{bottom + 1}r"
-                f"\x1b[{top + 1};1H\x1b[{count}{direction}\x1b[r\x1b8\x1b[?2026l"
-            )
+            sequence = (f"\x1b7\x1b[{top + 1};{bottom + 1}r"
+                        f"\x1b[{top + 1};1H\x1b[{count}{direction}\x1b[r\x1b8")
+            output.write_raw(sequence if in_frame else f"\x1b[?2026h{sequence}\x1b[?2026l")
         except Exception:
             return False
         _shift_screen_rows(screen.data_buffer, top, bottom, delta)
@@ -140,35 +169,51 @@ class TranscriptControl(UIControl):
 
     def get_line(self, index: int):
         row = self.rows[index] if 0 <= index < len(self.rows) else [("", "")]
-        if self.anchor is None or self.head is None or self.anchor == self.head:
+        columns = self._selection_slice(index)
+        if columns is None:
             return row
-        start, end = sorted((self.anchor, self.head))
-        if not start[0] <= index <= end[0]:
-            return row
-        left = start[1] if index == start[0] else 0
-        right = end[1] if index == end[0] else len(fragment_list_to_text(row))
         selected, offset = [], 0
         for style, text, *_ in row:
-            before, after = max(0, left - offset), max(0, right - offset)
+            before = max(0, columns.start - offset)
+            after = len(text) if columns.stop is None else max(0, columns.stop - offset)
             for content, active in ((text[:before], False), (text[before:after], True), (text[max(before, after):], False)):
                 if content:
                     selected.append((style + (" class:selection" if active else ""), content))
             offset += len(text)
         return selected
 
+    def _selection_slice(self, index: int, text: str | None = None) -> slice | None:
+        """鼠标指向字符本身；让高亮和剪贴板包含同一个尾字符。"""
+        anchor, head = self.anchor, self.head
+        if anchor is None or head is None or anchor == head:
+            return None
+        start, end = sorted((anchor, head))
+        if not start[0] <= index <= end[0]:
+            return None
+        left = start[1] if index == start[0] else 0
+        right = None
+        if index == end[0]:
+            if text is None:
+                text = fragment_list_to_text(self.rows[index]) if 0 <= index < len(self.rows) else ""
+            right = min(end[1] + 1, len(text))
+            while right < len(text) and get_cwidth(text[right]) == 0:
+                right += 1
+        return slice(left, right)
+
     def clear_selection(self) -> None:
         self.anchor = self.head = None
         self.dragging = False
 
     def selected_text(self) -> str:
-        if self.anchor is None or self.head is None:
-            return ""
-        start, end = sorted((self.anchor, self.head))
-        selected = []
-        for index in range(start[0], min(len(self.rows), end[0] + 1)):
-            text = fragment_list_to_text(self.rows[index])
-            selected.append(text[start[1] if index == start[0] else 0:end[1] if index == end[0] else len(text)].rstrip())
-        return "\n".join(selected)
+        with self.owner._content_lock:
+            if self.anchor is None or self.head is None or self.anchor == self.head:
+                return ""
+            start, end = sorted((self.anchor, self.head))
+            selected = []
+            for index in range(start[0], min(len(self.rows), end[0] + 1)):
+                text = fragment_list_to_text(self.rows[index])
+                selected.append(text[self._selection_slice(index, text)])
+            return "\n".join(selected)
 
     def copy_selection(self) -> bool:
         text = self.selected_text()
@@ -191,7 +236,10 @@ class TranscriptControl(UIControl):
         if event.button == MouseButton.LEFT:
             row = max(0, min(event.position.y, len(self.rows) - 1))
             text = fragment_list_to_text(self.rows[row]) if self.rows else ""
-            position = (row, max(0, min(event.position.x, len(text))))
+            column = max(0, min(event.position.x, len(text)))
+            while 0 < column < len(text) and get_cwidth(text[column]) == 0:
+                column -= 1
+            position = (row, column)
             if event.event_type == MouseEventType.MOUSE_DOWN:
                 self.anchor = self.head = position
                 self.dragging = True

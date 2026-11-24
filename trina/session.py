@@ -139,7 +139,7 @@ class Session:
             self.emit("[暂停] 已恢复运行")
             return False
         self.pause_event.set()
-        self.emit("[暂停] 已暂停（输入 resume 继续、stop 停止）")
+        self.emit("[暂停] 已暂停（/unpause 继续 · /stop 停止）")
         return True
 
     # ------------------------------------------------------------------ 查询

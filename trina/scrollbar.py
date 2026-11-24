@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from time import perf_counter
 from typing import Callable
 
+from prompt_toolkit.data_structures import Point
 from prompt_toolkit.layout.controls import UIContent, UIControl
 from prompt_toolkit.mouse_events import MouseButton, MouseEvent, MouseEventType
 
@@ -27,6 +29,30 @@ class _Track:
         return round(min(self.travel, max(0, top)) * self.maximum / self.travel)
 
 
+class _DragMouseRow:
+    def __init__(self, row, bar: ScrollbarControl, top: int):
+        self.row, self.bar, self.top = row, bar, top
+
+    def __getitem__(self, column: int):
+        def dispatch(event: MouseEvent):
+            if self.bar.dragging and event.button in (MouseButton.LEFT, MouseButton.UNKNOWN) and event.event_type in (
+                    MouseEventType.MOUSE_MOVE, MouseEventType.MOUSE_UP):
+                point = Point(event.position.x, event.position.y - self.top)
+                return self.bar.mouse_handler(MouseEvent(point, event.event_type, event.button, event.modifiers))
+            return self.row[column](event)
+        return dispatch
+
+
+class _DragMouseRows:
+    """在终端完成坐标解码后转发已抓住滑块的移动和释放。"""
+
+    def __init__(self, rows, bar: ScrollbarControl, top: int):
+        self.rows, self.bar, self.top = rows, bar, top
+
+    def __getitem__(self, row: int):
+        return _DragMouseRow(self.rows[row], self.bar, self.top) if self.bar.dragging else self.rows[row]
+
+
 class ScrollbarControl(UIControl):
     """鼠标移动只更新待绘制位置，视口与滑块由同一帧提交。"""
 
@@ -44,7 +70,9 @@ class ScrollbarControl(UIControl):
         self._painted: _Track | None = None
         self._drag_track: _Track | None = None
         self._last_y = self._grab = self._thumb_start = 0
+        self._last_offset: int | None = None
         self._pending: tuple[int, int] | None = None
+        self._frame_started = 0.0
 
     @property
     def dragging(self) -> bool:
@@ -52,7 +80,22 @@ class ScrollbarControl(UIControl):
 
     def cancel_drag(self) -> None:
         self._drag_track = None
+        self._last_offset = None
         self._pending = None
+
+    def begin_frame(self) -> None:
+        self._frame_started = perf_counter()
+        self.apply_pending()
+
+    def finish_frame(self, app, window, normal_interval: float) -> None:
+        """交还输入处理时间，重帧后等最新位置进入下一帧。"""
+        elapsed = perf_counter() - self._frame_started
+        app.min_redraw_interval = max(1 / 60, min(1 / 30, elapsed * 2)) if self.dragging else normal_interval
+        top = getattr(window.render_info, "_y_offset", None)
+        if top is not None and window in app.layout.visible_windows:
+            table = app.renderer.mouse_handlers
+            if not isinstance(table.mouse_handlers, _DragMouseRows):
+                table.mouse_handlers = _DragMouseRows(table.mouse_handlers, self, top)
 
     def apply_pending(self) -> None:
         pending, self._pending = self._pending, None
@@ -75,8 +118,12 @@ class ScrollbarControl(UIControl):
 
     def _queue(self, y: int, track: _Track):
         self._last_y = y
+        offset = track.offset(y - self._grab)
+        if self._last_offset == offset:
+            return NotImplemented
+        self._last_offset = offset
         redraw = self._pending is None
-        self._pending = track.offset(y - self._grab), track.maximum
+        self._pending = offset, track.maximum
         # prompt_toolkit 会调度重绘。已经有一帧待绘制时只覆盖坐标。
         return None if redraw else NotImplemented
 

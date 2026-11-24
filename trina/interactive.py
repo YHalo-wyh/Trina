@@ -270,8 +270,8 @@ class Console:
 
     def _agent_log(self, message: str) -> None:
         import re
-        if message.startswith(("[用户] ", "[动作 ")) or re.match(r"^\[\d+/(?:\d+|不限)\]", message) or message.lstrip().startswith("→"):
-            return  # 已由结构化事件渲染，避免日志重复成为另一条消息。
+        if message.startswith(("[用户] ", "[动作 ", "[失败分类]")) or re.match(r"^\[\d+/(?:\d+|不限)\]", message) or message.lstrip().startswith("→"):
+            return  # 正文由结构化事件渲染，内部诊断不占一条消息。
         if "想法：" in message:
             self._display(render_process(message.split("想法：", 1)[1].strip(), label="思考摘要", color=self.color, palette=self._output_palette))
         else:
@@ -293,6 +293,9 @@ class Console:
         from .event_view import EventTranscript
         if self._event_transcript is None:
             self._event_transcript = EventTranscript(self._display, editor=self._enhanced_input, color=self.color, palette=self._output_palette)
+        if replayed:
+            self._event_transcript.consume(event)
+            return
         if event.kind == "tool.requested":
             step = event.payload.get("step")
             self._requested_action = (event.call_id, step if isinstance(step, int) and step > 0 else None)
@@ -321,7 +324,7 @@ class Console:
             self.view.set_activity("error", "模型请求失败")
         elif event.kind == "chat.title" and self._enhanced_input is not None:
             self._enhanced_input.app.invalidate()
-        elif event.kind == "job.finished" and not replayed:
+        elif event.kind == "job.finished":
             job_id = str(event.payload.get("job_id") or event.call_id)
             identity = (event.stream_id, job_id)
             with self._lock:
@@ -646,10 +649,10 @@ class Console:
             return True
         command, args = argv[0], argv[1:]
 
-        if command in {"subworker", "queue", "plan", "jobs"}:
+        if command in {"subworker", "queue", "plan", "jobs", "resume"}:
             try:
                 {"subworker": self._cmd_subworker, "queue": self._cmd_queue,
-                 "plan": self._cmd_plan, "jobs": self._cmd_jobs}[command](args)
+                 "plan": self._cmd_plan, "jobs": self._cmd_jobs, "resume": self._cmd_resume}[command](args)
             except (KeyboardInterrupt, EOFError):
                 self._emit("已返回主会话")
             except Exception as exc:
@@ -674,7 +677,6 @@ class Console:
             "approve": lambda: self._cmd_approve(args),
             "hint": lambda: self._emit("当前没有运行中的任务"),
             "pause": lambda: self._emit("当前没有运行中的任务"),
-            "resume": lambda: self._cmd_resume(args),
             "unpause": lambda: self._emit("当前没有运行中的任务"),
             "stop": lambda: self._emit("当前没有运行中的任务"),
             "revoke": lambda: self._cmd_revoke(args, True),
@@ -756,12 +758,6 @@ class Console:
                 self.session.toggle_pause()
             else:
                 self._emit("任务未处于暂停状态")
-            return True
-        if command == "resume":
-            if args == ["list"]:
-                self._cmd_resume(args)
-                return True
-            self._emit("任务运行中不能切换对话；/unpause 继续暂停的任务，/stop 停止后再 /resume")
             return True
         if command == "stop":
             self.session.request_stop()
@@ -1042,10 +1038,29 @@ class Console:
     def _cmd_model(self, args: list[str]) -> None:
         llm = self.config.llm
         if not args:
-            if self._input is not None or enhanced_input_available():
+            if self._input is not None:
                 self._model_manager().run()
+            elif enhanced_input_available():
+                manager = self._model_manager()
+                choice = manager.pick_quick(plain=self._plain or not self.color)
+                if choice == "settings":
+                    manager.run()
+                elif choice is not None:
+                    if not self._launch_lock.acquire(blocking=False):
+                        raise ValueError("任务正在启动，空闲时可切换模型")
+                    try:
+                        if self.session.running:
+                            raise ValueError("任务运行中，空闲时可切换模型")
+                        changed = manager.switch_model(choice)
+                    finally:
+                        self._launch_lock.release()
+                    if changed:
+                        self._emit(f"已切换模型 · {_display_model(llm.model, llm.reasoning_effort)} · {llm.profile or '本会话'}")
             else:
-                self._emit(f"当前 {llm.profile or llm.backend} / {_display_model(llm.model, llm.reasoning_effort)} · /model add 添加供应商 · /model edit 编辑供应商 · /model list 查看预设")
+                self._emit(f"当前 {llm.profile or llm.backend} / {_display_model(llm.model, llm.reasoning_effort)} · /model settings 管理连接 · /model list 查看预设")
+            return
+        if args == ["settings"]:
+            self._model_manager().run()
             return
         if args[0] == "context":
             if len(args) != 2:
@@ -1092,7 +1107,7 @@ class Console:
             for entry in entries:
                 marker = " ←当前" if entry.spec.endswith(llm.model) else ""
                 self.output(f"    {entry.render()}{marker}")
-            self._emit(f"内置 {len(PRESETS)} 个供应商预设 · /model 打开管理页 · /model add 添加连接")
+            self._emit(f"内置 {len(PRESETS)} 个供应商预设 · /model settings 打开管理页 · /model add 添加连接")
             for preset in PRESETS:
                 self.output(f"    {preset.id:<16} {preset.name}")
             return
@@ -1533,10 +1548,10 @@ class Console:
 
     def _cmd_resume(self, args: list[str]) -> None:
         from .chat_store import ChatStore
-        from .brain.chat import ChatAgent
         from .console_ui import select_option
         if len(args) > 1:
             raise ValueError("用法：/resume [list|last|编号|ID]")
+        preview_only = self.session.running
         store = ChatStore(self.config.workspace_dir)
         rows = store.list()
         if not rows:
@@ -1547,14 +1562,18 @@ class Console:
         if selector in {"", "list"}:
             choices = [ChoiceSpec(row["id"],
                 f"{'● ' if row['id'] == current else ''}{row['title']} · {time.strftime('%m-%d %H:%M', time.localtime(row['updated']))} · {row['turns']} 轮 · {row['id']}") for row in rows]
-            if not selector and self._input is None and not self._custom_output and enhanced_input_available():
-                selected = select_option("历史对话", choices, subtitle="搜索标题或 ID · Enter 切换 · Esc 返回")
+            if not args and self._input is None and not self._custom_output and enhanced_input_available():
+                editor = self._enhanced_input
+                pick = editor.pick_option if editor is not None and editor.app.is_running else select_option
+                action = "预览" if preview_only else "切换"
+                selected = pick("历史对话", choices, subtitle=f"搜索标题或 ID · Enter {action} · Esc 返回")
                 if selected is None:
                     return
                 selector = selected
             else:
+                action = "预览" if preview_only else "切换"
                 self._display(render_panel("历史对话", sections=[("", "\n".join(f"{i:02d}  {item.description}" for i, item in enumerate(choices, 1)))],
-                                           footer="/resume <编号或ID> 切换 · /resume last 最近一条", color=self.color))
+                                           footer=f"/resume <编号或ID> {action} · /resume last 最近一条", color=self.color))
                 return
         if selector == "last":
             selector = next((row["id"] for row in rows if row["id"] != current), rows[0]["id"])
@@ -1566,10 +1585,35 @@ class Console:
         matches = [row["id"] for row in rows if row["id"] == selector] or [row["id"] for row in rows if row["id"].startswith(selector)]
         if len(matches) != 1:
             raise ValueError("对话 ID 不存在或前缀不唯一；使用 /resume list 查看")
-        if matches[0] == current:
+        run_id = matches[0]
+        if run_id == current:
             self._emit("已经是当前对话")
             return
-        restored = ChatAgent.resume(self.config, matches[0], registry=self.registry, backend=self._backend(),
+        if not preview_only and not self.session.running and self._launch_lock.acquire(blocking=False):
+            try:
+                if not self.session.running:
+                    self._switch_chat(run_id)
+                    return
+            finally:
+                self._launch_lock.release()
+
+        saved = store.load(run_id)
+        lines = []
+        for item in reversed(saved.get("text_messages") or saved["history"]):
+            role = {"user": "你", "assistant": "Trina"}.get(item.get("role"))
+            text = clean_text(item.get("content", "")).strip()
+            if role and text and not text.startswith(("[工具结果]", "[手动工具]", "{")):
+                lines.append((role, text if len(text) <= 600 else text[:599] + "…"))
+                if len(lines) == 8:
+                    break
+        self._display(render_panel(f"历史预览 · {saved.get('title') or run_id}",
+                                  sections=list(reversed(lines)) or [("历史", "暂无消息")],
+                                  footer="空闲时可用 /resume 切换", color=self.color))
+
+    def _switch_chat(self, run_id: str) -> None:
+        from .brain.chat import ChatAgent
+
+        restored = ChatAgent.resume(self.config, run_id, registry=self.registry, backend=self._backend(),
             approval=self.session.request_approval, steer_queue=self.session.steers, stop_event=self.session.stop_event,
             pause_event=self.session.pause_event, logger=self._agent_log, on_tool=self._on_tool_result)
         try:
@@ -1587,6 +1631,7 @@ class Console:
         self._task_config = None
         self._live_step = None
         self._task_title = restored.title
+        self._branch = self._read_branch()
         restored.save()
         self.session.reset_for_run()
         self.session.state = self._last_state = restored.state
@@ -1658,7 +1703,7 @@ class Console:
             self._emit("当前会话尚无上下文诊断")
             return
         last = data.get("last_request", {})
-        rows = [("输入估算 / 预算", f"{data.get('estimated_input_tokens', 0)} / {data.get('input_budget', 0)}"),
+        rows = [("输入估算 / 上限", f"{data.get('estimated_input_tokens', 0)} / {data.get('input_budget', 0)}"),
                 ("继承检查点", data.get("compactions", 0)), ("前缀变化", last.get("reason", "")),
                 ("公共前缀字节", last.get("visible_prefix_bytes", 0)),
                 ("新增输入字节" if last.get("reason") == "append" else "变化后缀字节", last.get("suffix_visible_bytes", 0))]

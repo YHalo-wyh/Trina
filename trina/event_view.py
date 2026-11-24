@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from .events import RuntimeEvent
-from .terminal import render_answer, render_message, render_process, render_tool_call, tool_card_params
+from .terminal import render_answer, render_message, render_process, render_tool_call, tool_card_input
 from .tool_names import public_tool_name
 
 
@@ -123,6 +123,14 @@ class EventTranscript:
         elif event.kind == "model.retry":
             self.output(render_process(f"第 {payload.get('attempt')} 次重试 · {payload.get('delay')}s 后重试",
                                        label="模型", color=self.color, palette=self.palette))
+        elif event.kind == "chat.turn_finished":
+            reason = payload.get("reason")
+            if reason == "model_summary":
+                self.output(render_process("模型已提交阶段性总结", label="收尾", color=self.color, palette=self.palette))
+            elif reason == "step_limit" and isinstance(limit := payload.get("limit"), int) and limit > 0:
+                unit = "动作次数" if payload.get("counter") == "actions" else "决策轮数"
+                self.output(render_process(f"已达到本轮{unit}上限（{limit}）",
+                                           label="收尾", color=self.color, palette=self.palette))
         elif event.kind == "user.message":
             self.output(render_message(str(payload.get("text", "")), label="你", color=self.color, palette=self.palette))
         elif event.kind == "assistant.delta" and self.editor is not None:
@@ -170,7 +178,8 @@ class EventTranscript:
                     row["stderr"] = _OutputPreview()
                     row["stderr"].append(str(stderr))
                 row.update(status=payload.get("status", "failed"), error=payload.get("error", ""),
-                           duration=float(payload.get("duration") or 0), command=payload.get("command", ""),
+                           duration=float(payload.get("duration") or 0), command=payload.get("command", "") or "",
+                           tool=payload.get("tool", row["tool"]),
                            exit_code=data.get("exit_code"), artifact_ref=payload.get("artifact_ref"))
             if self.editor is not None or kind == "tool.finished":
                 self._show_tool(event.call_id, row)
@@ -191,8 +200,8 @@ class EventTranscript:
         from .terminal import ResponsiveText, render_tool_call_fragments
 
         # 历史缓冲按卡片实际保留的可显示内容计量。
-        params = tool_card_params(row["params"], row.get("command", ""))
-        raw = (f"{public_tool_name(row['tool'])} · {row['status']}\n{params}\n{output}\n{stderr}\n"
+        visible_input = tool_card_input(row["tool"], row["params"], row.get("command", ""))
+        raw = (f"{public_tool_name(row['tool'])} · {row['status']}\n{visible_input}\n{output}\n{stderr}\n"
                f"{row.get('error', '')}\n{snapshot.get('record', '')}")
         card = ResponsiveText(raw, lambda width: str(render_tool_call(
             **snapshot, color=self.color, width=width, palette=self.palette)),

@@ -119,7 +119,7 @@ def show_subworkers(manager, config, *, notice: str = "", view: str = "grid"):
     from prompt_toolkit.layout.controls import FormattedTextControl
     from prompt_toolkit.styles import Style
     from prompt_toolkit.output import ColorDepth
-    from .console_ui import _low_latency_keys, run_panel
+    from .console_ui import _REDRAW_INTERVAL, _low_latency_keys, run_panel
     from .scrollbar import ScrollbarControl
     from .swarm import task_llm
     from .output_styles import output_style
@@ -174,8 +174,8 @@ def show_subworkers(manager, config, *, notice: str = "", view: str = "grid"):
 
     def before_render(_app):
         nonlocal rows
+        scrollbar.begin_frame()
         rows = manager.rows()
-        scrollbar.apply_pending()
 
     def header():
         metrics = manager.usage.footer(width(), compact=True)
@@ -269,16 +269,18 @@ def show_subworkers(manager, config, *, notice: str = "", view: str = "grid"):
         viewport, lambda offset, _maximum: move_view(offset), lambda direction: move_view(first_row[0] - direction),
         thumb_style="class:focusborder", track_style="class:rail", hide_when_fits=True,
     )
+    scrollbar_window = Window(scrollbar, width=1, wrap_lines=False)
     app = Application(layout=Layout(HSplit([
         Window(FormattedTextControl(header), height=2, wrap_lines=False),
         Window(FormattedTextControl(defaults), height=1, wrap_lines=False),
         Window(FormattedTextControl(lambda: [("class:rail", "─" * width())]), height=1),
-        VSplit([Window(body, wrap_lines=False), Window(scrollbar, width=1, wrap_lines=False)],
+        VSplit([Window(body, wrap_lines=False), scrollbar_window],
                width=width),
         Window(FormattedTextControl(lambda: [("class:title", _fit_cells(notice, width()))]), height=1 if notice else 0, wrap_lines=False),
         Window(FormattedTextControl(lambda: [("class:dim", _fit_cells(" 滚轮/拖动浏览 · Tab 切换 · G 列表/网格 · Z 放大 · PgUp/Dn 对话 · F 补充 · Esc 返回", width()))]), height=1),
     ]), focused_element=body), key_bindings=bindings, full_screen=True, erase_when_done=True,
-        refresh_interval=.25, min_redraw_interval=1 / 120, max_render_postpone_time=0, before_render=before_render,
+        refresh_interval=.25, min_redraw_interval=_REDRAW_INTERVAL, max_render_postpone_time=0, before_render=before_render,
+        after_render=lambda app: scrollbar.finish_frame(app, scrollbar_window, _REDRAW_INTERVAL),
         color_depth=ColorDepth.DEPTH_24_BIT, mouse_support=True,
         style=Style.from_dict({"title": "bold " + THEME["rose"], "chosen": "bold " + THEME["rose"],
                               "name": output_style("text", config.ui.output_palette), "model": THEME["lilac"],

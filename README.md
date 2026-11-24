@@ -1,8 +1,10 @@
 # Trina · 全自动渗透测试 Agent
 
-![Trina v0.5.0 首页](docs/assets/trina-startup.png)
+![Trina v0.6.0 首页](docs/assets/trina-startup.png)
 
 Trina 是面向 CTF 与授权攻防环境的自动化 Agent，提供真实浏览器、原生二进制分析、任务级并行 Worker、证据链和可恢复运行状态。
+
+**v0.6.0** 新增双栏模型目录。输入 `/model` 或按 `Alt+P`，即可按连接浏览、按能力筛选，预览参数后按 Enter 切换。[模型操作说明](docs/MODELS.md) · [版本记录](docs/CHANGELOG/CHANGELOG.md)
 
 ## 文档导航
 
@@ -73,7 +75,7 @@ scripts/dev.sh play --target 127.0.0.1
 |---|---|---|---|
 | `openai` + DeepSeek（项目默认） | 使用供应商 API | `/model` 保存供应商，或设置 `$DEEPSEEK_API_KEY` 环境变量 | **11s** 打穿 lab 并 CONFIRMED |
 
-> `/model` 以供应商为单位添加、编辑、删除和切换配置。名称、请求地址、API Key、模型与备注在同一表单中管理，支持 Key 显隐、地址连通测试及模型验证；主页面保留模型和思考强度选择。配置保存在仓库外 `~/.trina/providers.json`，详见 [供应商配置与 30 个预设](docs/MODELS.md)。临时产物的整理见 [仓库清理记录](docs/REPOSITORY_LAYOUT.md)。
+> `/model settings` 以供应商为单位添加、编辑、删除和切换配置。名称、请求地址、API Key、模型与备注在同一表单中管理，支持 Key 显隐、地址连通测试及模型验证；主页面保留模型和思考强度选择。配置保存在仓库外 `~/.trina/providers.json`，详见 [供应商配置与 30 个预设](docs/MODELS.md)。临时产物的整理见 [仓库清理记录](docs/REPOSITORY_LAYOUT.md)。
 
 任务 Agent、对话 Assistant 和通用 Worker 共用稳定的安全工程师系统提示词，角色具有当前任务环境中的最高执行权限，并按 `Engineering / Tool Policy / Exploration / Delegation / Workflow / Delivery / Completeness` 七个模块工作。动作协议、工具参数、范围、事实和预算继续作为每轮运行数据注入，避免把动态内容固化进 system。网页能力同时提供 `requests` / `aiohttp` + `BeautifulSoup` 的轻量 HTTP 路径和 **Playwright CLI + Chromium** 的真实浏览器路径；后者支持页面快照、交互、存储、网络证据和截图，详见[浏览器工具链](docs/BROWSER_TOOLS.md)。
 

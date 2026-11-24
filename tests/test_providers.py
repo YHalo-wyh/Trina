@@ -79,6 +79,21 @@ class ProviderTests(unittest.TestCase):
         self.assertEqual(cfg.llm.base_url, second.base_url)
         self.assertEqual(OpenAICompatBackend(cfg.llm).api_key(), 'second-key')
 
+    def test_quick_choices_prefer_current_and_select_the_correct_connection(self):
+        manager, cfg, _ = self.manager()
+        manager._commit(self.profile('first'))
+        manager._commit(self.profile('second', 'second-key'), activate=False)
+        choices = manager.model_choices()
+        self.assertTrue(choices[0].current)
+        self.assertEqual((choices[0].connection_id, choices[0].model), ('first', 'deepseek-chat'))
+        self.assertEqual(len({(row.connection_id, row.model) for row in choices}), len(choices))
+        self.assertFalse(manager.switch_model(choices[0]))
+        other = next(row for row in choices if (row.connection_id, row.model) == ('second', 'deepseek-reasoner'))
+        self.assertTrue(manager.switch_model(other))
+        self.assertEqual((cfg.llm.profile, cfg.llm.model), ('second', 'deepseek-reasoner'))
+        self.assertEqual(OpenAICompatBackend(cfg.llm).api_key(), 'second-key')
+        self.assertEqual(ProfileStore().profiles['first'].model, 'deepseek-chat')
+
     def test_explicit_config_environment_and_overrides_keep_priority(self):
         manager, _, _ = self.manager()
         manager._commit(self.profile('first'))
