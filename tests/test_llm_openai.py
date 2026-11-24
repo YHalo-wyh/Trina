@@ -14,6 +14,73 @@ from trina.llm.openai_backend import OpenAICompatBackend
 
 
 class OpenCodeGoHeadersTest(unittest.TestCase):
+    def test_sse_delivers_frames_immediately_and_reuses_http_connection(self):
+        import threading
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+        from urllib3.response import HTTPResponse
+
+        ports = []
+        first_frame = threading.Event()
+
+        class SSE(BaseHTTPRequestHandler):
+            protocol_version = "HTTP/1.1"
+
+            def log_message(self, *_):
+                pass
+
+            def do_POST(self):
+                self.rfile.read(int(self.headers["Content-Length"]))
+                ports.append(self.client_address[1])
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream")
+                self.send_header("Transfer-Encoding", "chunked")
+                self.end_headers()
+
+                def chunk(body):
+                    self.wfile.write(f"{len(body):X}\r\n".encode() + body + b"\r\n")
+                    self.wfile.flush()
+
+                chunk(b'data: {"choices":[{"delta":{"reasoning_content":"think"}}]}\n\n')
+                if not first_frame.wait(2):
+                    return
+                chunk(b'data: {"choices":[{"delta":{"content":"ok"}}]}\n\ndata: [DONE]\n\n')
+                self.wfile.write(b"0\r\n\r\n")
+                self.wfile.flush()
+
+        with ThreadingHTTPServer(("127.0.0.1", 0), SSE) as server:
+            worker = threading.Thread(target=server.serve_forever, daemon=True)
+            worker.start()
+            try:
+                address = f"http://127.0.0.1:{server.server_port}/v1"
+                backend = OpenAICompatBackend(LLMConfig(base_url=address, timeout=3), key_override="")
+                responses = []
+                types = []
+
+                def on_event(event):
+                    types.append(event.type)
+                    if event.type == "thinking_delta":
+                        first_frame.set()
+
+                with patch.dict("os.environ", {"no_proxy": "127.0.0.1"}):
+                    for _ in range(2):
+                        first_frame.clear()
+                        responses.append(backend.complete_messages([{"role": "user", "content": "ping"}], on_event=on_event))
+                self.assertEqual([response.text for response in responses], ["ok", "ok"])
+                self.assertEqual(types, ["start", "thinking_delta", "text_delta", "done"] * 2)
+                self.assertEqual(len(ports), 2)
+                if hasattr(HTTPResponse, "read1"):
+                    self.assertEqual(ports[0], ports[1])
+                    self.assertFalse(responses[0].transport["connection_reused"])
+                    self.assertTrue(responses[1].transport["connection_reused"])
+                    self.assertEqual(responses[1].transport["connect_seconds"], 0)
+                else:
+                    self.assertNotEqual(ports[0], ports[1])
+                for response in responses:
+                    self.assertGreaterEqual(response.transport["first_event_seconds"], response.transport["headers_seconds"])
+            finally:
+                server.shutdown()
+                worker.join()
+
     def test_go_session_header_is_stable_for_a_conversation(self) -> None:
         backend = OpenAICompatBackend(LLMConfig(
             backend="openai",

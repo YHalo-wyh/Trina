@@ -6,6 +6,7 @@ requires-python = ">=3.10"
 dependencies = [
     "pyyaml>=6.0",
     "requests>=2.31",
+    "urllib3>=2.3,<3",
     "paramiko>=3.4",
     "rich>=13.0",
     "prompt-toolkit>=3.0.45",

@@ -47,6 +47,8 @@ Swarm 可由已验证资产/发现/凭据生成有界后继 Intent；Bench 默�
 ```bash
 scripts/install.sh               # 装成全局命令，使用 /model 选择已保存连接
 trina                            # 交互控制台（人工可随时介入）
+trina update --check             # 查询官方镜像上的更新
+trina update                     # 应用可用更新
 trina goal set "验证登录流程"     # 保存当前项目目标；后续 run/play 默认沿用
 trina play --target 127.0.0.1    # 一条命令执行并生成报告
 trina schedule add --at +10m --target 127.0.0.1  # 一次性定时启动
@@ -60,6 +62,8 @@ trina review                     # 评价 Agent：只读复核最近一次运行
 scripts/dev.sh                   # 控制台
 scripts/dev.sh doctor            # 环境自检
 ```
+
+`trina update` 会更新当前运行的 Trina。源码和可编辑安装从官方 `main` 快进更新，pip 安装使用最新正式版本标签。可用 `--mirror github` 或 `--mirror gitee` 指定官方镜像。[更新说明](docs/CLI_UI.md#检查与安装更新)
 
 完整任务流程：
 

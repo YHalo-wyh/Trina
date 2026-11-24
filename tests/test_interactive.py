@@ -494,6 +494,29 @@ class TestConsole(unittest.TestCase):
         )
         return console, output
 
+    def test_setup_persists_ui_preferences_and_config_overrides_still_win(self):
+        with tempfile.TemporaryDirectory() as folder, patch.dict("os.environ", {"TRINA_HOME": folder}):
+            console, output = self._console([])
+            console.handle("/setup")
+            self.assertIn("/setup model", "\n".join(output))
+            console.handle("/setup icons off")
+            console.handle("/setup footer compact")
+            console.handle("/setup notify on")
+            console.handle("/setup error-notify on")
+            console.handle("/setup theme contrast")
+            console.handle("/setup footer invalid")
+            loaded = TrinaConfig.load()
+            self.assertFalse(loaded.ui.command_icons)
+            self.assertEqual(loaded.ui.status_line_preset, "compact")
+            self.assertTrue(loaded.ui.completion_notify and loaded.ui.error_notify)
+            self.assertEqual(loaded.ui.output_palette, "contrast")
+            self.assertTrue(TrinaConfig.load(overrides={"ui.command_icons": True}).ui.command_icons)
+            source = Path(folder) / "explicit.yaml"
+            source.write_text("ui:\n  command_icons: true\n", encoding="utf-8")
+            self.assertTrue(TrinaConfig.load(source).ui.command_icons)
+            self.assertEqual([choice.value for choice in console._completion_values("setup", ["icons"])], ["on", "off"])
+            self.assertIn("命令执行失败", "\n".join(output))
+
     def test_finding_rows_show_distinct_titles_and_hide_exact_duplicates(self):
         console, output = self._console([])
         finding = {

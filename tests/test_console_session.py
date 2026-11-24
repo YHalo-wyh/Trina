@@ -13,6 +13,38 @@ from trina.llm.base import LLMResponse, LLMStreamEvent, LLMUsage
 
 
 class ConsoleSessionTests(unittest.TestCase):
+    def test_command_icons_are_display_only_and_fit_narrow_terminal(self):
+        from prompt_toolkit.application.current import create_app_session
+        from prompt_toolkit.data_structures import Size
+        from prompt_toolkit.input import create_pipe_input
+        from prompt_toolkit.output.vt100 import Vt100_Output
+        from prompt_toolkit.utils import get_cwidth
+        from trina.console_ui import COMMAND_ICONS, COMMAND_SYMBOLS, EnhancedConsoleInput
+
+        for glyph in [*(icon for icon, _ in COMMAND_ICONS.values()), *COMMAND_SYMBOLS.values()]:
+            self.assertEqual(get_cwidth(glyph), 1, glyph)
+        enabled = True
+        output = Vt100_Output(io.StringIO(), lambda: Size(rows=18, columns=34), enable_cpr=False)
+        with create_pipe_input() as pipe, create_app_session(input=pipe, output=output):
+            editor = EnhancedConsoleInput(status=lambda: "就绪", running=lambda: False, dynamic_values=lambda *_: (),
+                                          plain=True, command_icons=lambda: enabled)
+            editor.buffer.text = "/"
+            editor.buffer.cursor_position = 1
+            root = "".join(fragment[1] for fragment in editor._menu())
+            self.assertIn("✧ /model", root)
+            self.assertIn("◉ /status", root)
+            self.assertIn("▷ /play", root)
+            self.assertIn("→ /run", root)
+            editor.buffer.text = "/setu"
+            editor.buffer.cursor_position = 5
+            preview = "".join(fragment[1] for fragment in editor._menu())
+            self.assertIn("⚙ /setup", preview)
+            self.assertTrue(all(get_cwidth(line) <= 34 for line in preview.splitlines()))
+            enabled = False
+            self.assertNotIn("⚙", "".join(fragment[1] for fragment in editor._menu()))
+            editor._accept_menu(add_space=True)
+            self.assertEqual(editor.buffer.text, "/setup ")
+
     def test_slash_menu_navigates_before_submitting_and_completes_arguments(self):
         from prompt_toolkit.application.current import create_app_session
         from prompt_toolkit.input import create_pipe_input

@@ -53,6 +53,137 @@ def read_provider_catalog(url: str, headers: dict[str, str], timeout: float) -> 
     return data
 
 
+class _ModelStreamResponse:
+    """只消耗已经到达的字节，保留 SSE 的逐行时序。"""
+
+    def __init__(self, raw, *, pooled: bool):
+        self.raw = raw
+        self.pooled = pooled
+
+    def __iter__(self):
+        if not self.pooled:
+            yield from self.raw
+            return
+        pending = b""
+        while chunk := self.raw.read1(8192):
+            *lines, pending = (pending + chunk).split(b"\n")
+            yield from (line + b"\n" for line in lines)
+        if pending:
+            yield pending
+
+    def read_tail(self, seconds: float = .025) -> bytes:
+        """尝试收完终止事件后的 HTTP 帧；等待过久就让该连接退出复用。"""
+        from urllib3.exceptions import HTTPError
+
+        if not self.pooled or self.raw.closed:
+            return b""
+        connection = self.raw.connection
+        sock = connection.sock if connection is not None else None
+        if sock is None:
+            fp = getattr(getattr(self.raw, "_fp", None), "fp", None)
+            sock = getattr(getattr(fp, "raw", None), "_sock", None)
+        if sock is None:
+            return b""
+        timeout = sock.gettimeout()
+        try:
+            sock.settimeout(seconds if timeout is None else min(seconds, timeout))
+            return self.raw.read1(8192)
+        except (HTTPError, OSError, ValueError):
+            return b""
+        finally:
+            if sock.fileno() >= 0:
+                sock.settimeout(timeout)
+
+
+class ModelStreamTransport:
+    """模型 SSE 按后端复用连接，保留系统代理和证书，不自动重发 POST。"""
+
+    def __init__(self):
+        self._route = None
+        self._pool = None
+
+    @staticmethod
+    def _manager(proxy: str):
+        import ssl
+        from urllib.parse import unquote, urlunsplit
+        from urllib3 import PoolManager, ProxyManager
+        from urllib3.connection import HTTPConnection, HTTPSConnection
+        from urllib3.connectionpool import HTTPConnectionPool, HTTPSConnectionPool
+        from urllib3.util import make_headers
+
+        class MeasuredConnect:
+            def connect(self):
+                started = time.perf_counter()
+                super().connect()
+                self.trina_connect = started, time.perf_counter() - started
+
+        class TimedHTTP(MeasuredConnect, HTTPConnection):
+            pass
+
+        class TimedHTTPS(MeasuredConnect, HTTPSConnection):
+            pass
+
+        class TimedHTTPPool(HTTPConnectionPool):
+            ConnectionCls = TimedHTTP
+
+        class TimedHTTPSPool(HTTPSConnectionPool):
+            ConnectionCls = TimedHTTPS
+
+        options = dict(num_pools=2, maxsize=2, ssl_context=ssl.create_default_context())
+        if proxy:
+            parts = urlsplit(proxy)
+            proxy_auth = (make_headers(proxy_basic_auth=f"{unquote(parts.username)}:{unquote(parts.password or '')}")
+                          if parts.username is not None else None)
+            address = urlunsplit((parts.scheme, parts.netloc.rsplit("@", 1)[-1], parts.path, "", ""))
+            manager = ProxyManager(address, proxy_headers=proxy_auth, **options)
+        else:
+            manager = PoolManager(**options)
+        manager.pool_classes_by_scheme = {"http": TimedHTTPPool, "https": TimedHTTPSPool}
+        return manager
+
+    @contextmanager
+    def open(self, request, timeout: float, timing: dict):
+        import io
+        import urllib.error
+        import urllib.request
+        from urllib3.response import HTTPResponse
+
+        parts = urlsplit(request.full_url)
+        proxy = urllib.request.getproxies().get(parts.scheme) if not urllib.request.proxy_bypass(parts.netloc) else ""
+        proxy = proxy or ""
+        if proxy and "://" not in proxy:
+            proxy = "http://" + proxy
+        # 旧版 urllib3 缺少 read1，保留原有逐行传输以免流式输出被缓冲。
+        if not hasattr(HTTPResponse, "read1") or (proxy and urlsplit(proxy).scheme not in {"http", "https"}):
+            with urllib.request.urlopen(request, timeout=timeout) as raw:
+                yield _ModelStreamResponse(raw, pooled=False)
+            return
+        if proxy != self._route:
+            pool = self._manager(proxy)
+            if self._pool is not None:
+                self._pool.clear()
+            self._pool, self._route = pool, proxy
+        started = time.perf_counter()
+        headers = dict(request.header_items())
+        headers["Accept-Encoding"] = "identity"
+        raw = self._pool.request(request.get_method(), request.full_url, body=request.data, headers=headers,
+                                 preload_content=False, redirect=False, retries=False, timeout=timeout)
+        try:
+            timing["headers_seconds"] = round(time.perf_counter() - started, 4)
+            stamp = getattr(raw.connection, "trina_connect", None)
+            if stamp:
+                timing["connection_reused"] = stamp[0] < started
+                timing["connect_seconds"] = 0.0 if stamp[0] < started else round(stamp[1], 4)
+            response = _ModelStreamResponse(raw, pooled=True)
+            if not 200 <= raw.status < 300:
+                body = response.read_tail(seconds=1.0)
+                raise urllib.error.HTTPError(request.full_url, raw.status, raw.reason, raw.headers, io.BytesIO(body))
+            yield response
+        finally:
+            raw.close()
+            raw.release_conn()
+
+
 @dataclass
 class ExecutionLease:
     """单次工具调用的可撤销执行租约，不是目标授权来源。"""
@@ -157,6 +288,48 @@ def execute_streamed(argv: list[str], *, timeout: float, cwd: str | None, env: d
     if errors:
         raise errors[0]
     return subprocess.CompletedProcess(argv, proc.returncode, "".join(buffers["stdout"]), "".join(buffers["stderr"]))
+
+
+def reinstall_after_launcher_exit(argv: list[str]) -> None:
+    """Windows 控制台启动器退出后再替换其 exe，避免 pip 遇到文件占用。"""
+    import ctypes
+    import os
+    import subprocess
+    import tempfile
+    from ctypes import wintypes
+
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    open_process, close_handle = kernel.OpenProcess, kernel.CloseHandle
+    open_process.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+    open_process.restype = wintypes.HANDLE
+    close_handle.argtypes = (wintypes.HANDLE,)
+    launcher = open_process(0x00100000, True, os.getppid())  # SYNCHRONIZE
+    if not launcher:
+        raise ctypes.WinError(ctypes.get_last_error())
+
+    helper = """import ctypes, subprocess, sys
+from ctypes import wintypes
+
+kernel = ctypes.WinDLL("kernel32")
+kernel.WaitForSingleObject.argtypes = (wintypes.HANDLE, wintypes.DWORD)
+kernel.CloseHandle.argtypes = (wintypes.HANDLE,)
+handle = int(sys.argv[1])
+status = kernel.WaitForSingleObject(handle, 30_000)
+kernel.CloseHandle(handle)
+if status != 0:
+    raise SystemExit("未能等待 Trina 启动器退出，请重试更新")
+code = subprocess.call(sys.argv[2:])
+if code == 0:
+    print("Trina 已更新，重新运行 trina 即可使用。", flush=True)
+raise SystemExit(code)
+"""
+    try:
+        startup = subprocess.STARTUPINFO(lpAttributeList={"handle_list": [launcher]})
+        subprocess.Popen([argv[0], "-c", helper, str(launcher), *argv], startupinfo=startup,
+                         cwd=tempfile.gettempdir(), stdin=subprocess.DEVNULL, close_fds=True,
+                         env=dict(os.environ, GIT_TERMINAL_PROMPT="0", GCM_INTERACTIVE="never", PYTHONIOENCODING="utf-8"))
+    finally:
+        close_handle(launcher)
 
 
 @contextmanager

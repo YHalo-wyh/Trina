@@ -61,7 +61,7 @@ llm:
   # 连续 N 步动作完全重复则注入纠正提示
   stall_limit: 3
   # OpenAI 兼容后端参数（backend=openai 时生效）
-  base_url: "https://opencode.ai/zen/v1"
+  base_url: "https://opencode.ai/inference/go/openai/v1"
   api_key_env: "DEEPSEEK_API_KEY"
   # 模型协议：auto=后端支持就用原生 Tool Calling；json=只用 JSON Action；native=强制原生
   tool_protocol: auto

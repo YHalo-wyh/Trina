@@ -229,6 +229,8 @@ class ConversationContext:
                                                  if usage.input_reported and usage.cache_read_reported else None),
                           duration_seconds=response.duration, ok=response.ok)
         diagnostic["cache_policy"] = response.cache_diagnostic
+        if response.transport:
+            diagnostic["transport"] = response.transport
         self.events.append(diagnostic)
         self.events = self.events[-20:]
         self.stats.update(last_request=diagnostic, recent_requests=self.events, state_revision=self.revision)

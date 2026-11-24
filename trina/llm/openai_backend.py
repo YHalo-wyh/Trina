@@ -20,6 +20,7 @@ from urllib.parse import urlsplit
 from .. import __version__
 from ..config import LLMConfig
 from ..models import CatalogModel
+from ..scope import ModelStreamTransport
 from .base import (
     LLMBackend, LLMMessage, LLMResponse, LLMStreamEvent, LLMUsage, StreamCallback, ToolCall,
 )
@@ -58,6 +59,7 @@ class OpenAICompatBackend(LLMBackend):
         # 一个后端实例对应一段 Agent 会话；Go 用稳定会话号做路由与缓存。
         self._session_id = uuid.uuid4().hex if self._opencode_go else ""
         self._cache_rejected: set[tuple[str, str, str]] = set()
+        self._stream_transport = ModelStreamTransport()
 
     def api_key(self) -> str:
         if self._key_override is not None:
@@ -399,7 +401,7 @@ class OpenAICompatBackend(LLMBackend):
             headers=self._headers(),
             method="POST",
         )
-        started = time.monotonic()
+        started = time.perf_counter()
         parts: list[str] = []
         reasoning_parts: list[str] = []
         tool_parts: dict[int, dict[str, str]] = {}
@@ -408,8 +410,10 @@ class OpenAICompatBackend(LLMBackend):
         terminal_error = ""
         model = self.config.model
         last_event: dict[str, Any] = {}
+        timing: dict[str, float | bool] = {}
         try:
-            with urllib.request.urlopen(request, timeout=self.config.timeout) as response:
+            with self._stream_transport.open(request, self.config.timeout, timing) as response:
+                timing.setdefault("headers_seconds", round(time.perf_counter() - started, 4))
                 if on_event is not None:
                     on_event(LLMStreamEvent("start"))
                 for event_name, data in _iter_sse(response):
@@ -439,6 +443,8 @@ class OpenAICompatBackend(LLMBackend):
                     terminal = terminal or ended
                     if error:
                         terminal_error = error
+                    if (deltas or tool_deltas) and "first_event_seconds" not in timing:
+                        timing["first_event_seconds"] = round(time.perf_counter() - started, 4)
                     for kind, delta in deltas:
                         if kind == "text_delta":
                             parts.append(delta)
@@ -450,39 +456,41 @@ class OpenAICompatBackend(LLMBackend):
                         break
                     if terminal and self.config.api != "chat":
                         break
+                if terminal and not terminal_error:
+                    response.read_tail()
         except urllib.error.HTTPError as exc:
             return self._finish_error(self._http_error(exc), on_event=on_event,
-                                      duration=round(time.monotonic() - started, 2))
+                                      duration=round(time.perf_counter() - started, 2), transport=timing)
         except Exception as exc:  # noqa: BLE001 - 网络/流解析失败统一返回
             return self._finish_error(
                 f"请求失败: {self._redact_error(exc)}", on_event=on_event,
                 usage=_parse_usage(usage_raw, self.config.api, model),
-                duration=round(time.monotonic() - started, 2),
+                duration=round(time.perf_counter() - started, 2), transport=timing,
             )
 
-        duration = round(time.monotonic() - started, 2)
+        duration = round(time.perf_counter() - started, 2)
         usage = _parse_usage(usage_raw, self.config.api, model)
         if terminal_error:
             return self._finish_error(
                 f"流式响应失败: {terminal_error}", usage=usage, duration=duration,
-                raw=last_event, on_event=on_event,
-            )
-        if not terminal:
-            return self._finish_error(
-                "流式响应在终止事件前结束，已丢弃不完整输出", usage=usage,
-                duration=duration, raw=last_event, on_event=on_event,
+                raw=last_event, on_event=on_event, transport=timing,
             )
         text = "".join(parts)
         tool_calls = _build_tool_calls(tool_parts)
+        if tool_parts and not _tool_call_stream_complete(tool_parts):
+            return self._finish_error(
+                "流式响应结束时工具调用参数不完整", usage=usage, duration=duration,
+                raw=last_event, on_event=on_event, transport=timing,
+            )
         if not text.strip() and not tool_calls:
             return self._finish_error(
                 "模型未返回正式输出", usage=usage, duration=duration,
-                raw=last_event, on_event=on_event,
+                raw=last_event, on_event=on_event, transport=timing,
             )
         result = self._tally(LLMResponse(
             text=text, usage=usage, duration=duration, raw=last_event,
             tool_calls=tool_calls, reasoning="".join(reasoning_parts),
-            finish_reason="tool_calls" if tool_calls else "",
+            finish_reason="tool_calls" if tool_calls else ("" if terminal else "eof"), transport=timing,
         ))
         if on_event is not None:
             on_event(LLMStreamEvent("done", response=result))
@@ -496,10 +504,11 @@ class OpenAICompatBackend(LLMBackend):
         duration: float = 0.0,
         raw: dict[str, Any] | None = None,
         on_event: StreamCallback | None = None,
+        transport: dict[str, float | bool] | None = None,
     ) -> LLMResponse:
         result = self._tally(LLMResponse(
             ok=False, error=self._redact_error(error), usage=usage or LLMUsage(model=self.config.model),
-            duration=duration, raw=raw or {},
+            duration=duration, raw=raw or {}, transport=transport or {},
         ))
         if on_event is not None:
             on_event(LLMStreamEvent("error", delta=result.error, response=result))
@@ -708,6 +717,20 @@ def _build_tool_calls(slots: dict[int, dict[str, str]]) -> list[ToolCall]:
         calls.append(ToolCall(id=slot.get("id") or f"call_{index}", name=slot["name"],
                               arguments=slot.get("arguments") or "{}"))
     return calls
+
+
+def _tool_call_stream_complete(slots: dict[int, dict[str, str]]) -> bool:
+    """正常 EOF 可以结束 SSE，但不能把半截工具参数交给执行器。"""
+    for slot in slots.values():
+        if not slot.get("name"):
+            return False
+        try:
+            arguments = json.loads(slot.get("arguments") or "{}")
+        except json.JSONDecodeError:
+            return False
+        if not isinstance(arguments, dict):
+            return False
+    return True
 
 
 def _merge_usage(current: dict[str, Any], update: dict[str, Any]) -> dict[str, Any]:

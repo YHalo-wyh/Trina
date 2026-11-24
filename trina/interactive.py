@@ -364,6 +364,7 @@ class Console:
                 usage=self._footer_usage, activity=self._activity, motion=self.config.ui.motion,
                 context=self._footer_context, activity_detail=lambda: self._live_action_hint,
                 output_palette=self._output_palette, cancel_wait=self._cancel_job_wait,
+                command_icons=lambda: self.config.ui.command_icons,
             )
             original_output = self.output
             self.output = self._enhanced_input.write
@@ -511,6 +512,10 @@ class Console:
         return f"trina · {status} · {short} > " if terminal_width() >= 60 else f"trina · {status} > "
 
     def _completion_values(self, command: str, completed_args: list[str]) -> list[ChoiceSpec]:
+        if command == "setup" and len(completed_args) == 1:
+            from .ui_preferences import PREFERENCES
+            preference = PREFERENCES.get(completed_args[0])
+            return [ChoiceSpec(value, label) for value, label in preference.choices] if preference else []
         if command == "jobs" and completed_args:
             action = completed_args[0]
             if completed_args == ["wait"]:
@@ -694,6 +699,7 @@ class Console:
             "audit": lambda: self._delegate(["audit", *args]),
             "lab": lambda: self._delegate(["lab", *args]),
             "model": lambda: self._cmd_model(args),
+            "setup": lambda: self._cmd_setup(args),
             "worker": lambda: self._cmd_worker(args),
             "branch": lambda: self._cmd_branch(args),
             "repo": lambda: self._cmd_repo(args),
@@ -1193,6 +1199,68 @@ class Console:
         self._worker_sessions.pop(self._active_worker, None)
         self._emit("已开启新对话会话；上一次对话已保存，可用 /resume 切换。")
 
+    def _cmd_setup(self, args: list[str]) -> None:
+        """统一设置入口，个人显示偏好保存到本机。"""
+        from .config import _user_data_root
+        from .console_ui import SETUP_SECTIONS, select_option
+        from .ui_preferences import PREFERENCES, save_preference
+
+        interactive = self._input is None and not self._custom_output and enhanced_input_available()
+
+        def current(name: str) -> str:
+            preference = PREFERENCES[name]
+            value = preference.encode(getattr(self.config.ui, preference.field))
+            return dict(preference.choices)[value]
+
+        def edit(section: str, value: str | None = None) -> None:
+            if section == "model" and value is None:
+                if not self._launch_lock.acquire(blocking=False):
+                    raise ValueError("任务正在启动，空闲时可修改模型")
+                try:
+                    if self.session.running:
+                        raise ValueError("任务运行中，空闲时可修改模型")
+                    self._cmd_model(["settings"])
+                finally:
+                    self._launch_lock.release()
+                return
+            if section not in PREFERENCES:
+                raise ValueError("用法 /setup [项目 [值]]")
+            preference = PREFERENCES[section]
+            if value is None and not interactive:
+                choices = " / ".join(key for key, _ in preference.choices)
+                self._emit(f"{preference.label} · {current(section)} · /setup {section} {choices}", prefix="设置")
+                return
+            if value is None:
+                active = preference.encode(getattr(self.config.ui, preference.field))
+                value = select_option(preference.label,
+                                      [ChoiceSpec(key, ("● " if key == active else "") + label)
+                                       for key, label in preference.choices], plain=self._plain or not self.color)
+            if value is None:
+                return
+            setting = preference.decode(value)
+            save_preference(_user_data_root(), section, value)
+            setattr(self.config.ui, preference.field, setting)
+            if section == "theme":
+                self._refresh_output_palette()
+            self._emit(f"{preference.label} · {current(section)} · 已保存", prefix="设置")
+
+        if args:
+            if len(args) > 2:
+                raise ValueError("用法 /setup [项目 [值]]")
+            edit(*args)
+            return
+        if not interactive:
+            self._display(render_panel("设置", rows=[(item.description, f"/setup {item.value}") for item in SETUP_SECTIONS],
+                                       color=self.color))
+            return
+        while True:
+            options = [ChoiceSpec(item.value, item.description if item.value == "model"
+                                  else f"{item.description}  ·  {current(item.value)}") for item in SETUP_SECTIONS]
+            selected = select_option("设置", options, plain=self._plain or not self.color)
+            if selected is None:
+                return
+            edit(selected)
+
     def _cmd_footer(self, args: list[str]) -> None:
         if args:
             if len(args) != 1 or args[0] not in {"default", "compact", "full"}:
@@ -1470,6 +1538,13 @@ class Console:
         else:
             self._execute_repo(parse_repo_args(args, "worktree"))
 
+    def _refresh_output_palette(self) -> None:
+        if self._enhanced_input is not None:
+            control = self._enhanced_input.transcript_control
+            control._blocks.clear()
+            control.invalidate_from(0)
+            self._enhanced_input.app.invalidate()
+
     def _cmd_theme(self, args: list[str]) -> None:
         from .console_ui import select_option
         from .output_styles import PALETTES
@@ -1483,11 +1558,7 @@ class Console:
             if value not in PALETTES:
                 raise ValueError("/theme trina|contrast|mono")
             self.config.ui.output_palette = value
-            if self._enhanced_input is not None:
-                control = self._enhanced_input.transcript_control
-                control._blocks.clear()
-                control.invalidate_from(0)
-                self._enhanced_input.app.invalidate()
+            self._refresh_output_palette()
         self._display(render_answer("## 输出配色 · " + self.config.ui.output_palette + "\n\n"
                                     "正文 **强调** 与 `代码`\n\n```diff\n@@ 示例 @@\n- removed\n+ added\n```",
                                     color=self.color, palette=self._output_palette))
@@ -1715,6 +1786,14 @@ class Console:
                 ("新增输入字节" if last.get("reason") == "append" else "变化后缀字节", last.get("suffix_visible_bytes", 0))]
         if last.get("uncached_input_tokens") is not None:
             rows.append(("供应商未命中输入 Token", last["uncached_input_tokens"]))
+        transport = last.get("transport") or {}
+        if "connect_seconds" in transport:
+            label = "复用" if transport.get("connection_reused") else f"{transport['connect_seconds']:.3f}s"
+            rows.append(("网络连接与握手", label))
+        if "headers_seconds" in transport:
+            rows.append(("到 HTTP 响应头", f"{transport['headers_seconds']:.3f}s"))
+        if "first_event_seconds" in transport:
+            rows.append(("到首段模型输出", f"{transport['first_event_seconds']:.3f}s"))
         policy = last.get("cache_policy") or {}
         if policy:
             rows.extend([("缓存策略", f"{policy.get('mode')} / {policy.get('source')}"),
@@ -2151,9 +2230,12 @@ class Console:
             return
         with Shutdown(self._emit) as shutdown:
             self._cleanup_done = True
-            self._job_wait.close()
-            if self._model_catalog is not None:
-                self._model_catalog.close()
+            job_wait = getattr(self, "_job_wait", None)
+            if job_wait is not None:
+                job_wait.close()
+            model_catalog = getattr(self, "_model_catalog", None)
+            if model_catalog is not None:
+                model_catalog.close()
             # 先通知所有生产者停止，再等待；再次 Ctrl+C 只跳过线程等待。
             if self._scheduler is not None:
                 shutdown.call("调度器", self._scheduler.stop_event.set)

@@ -372,6 +372,7 @@ class UIConfig:
     output_palette: str = "trina"
     completion_notify: bool = True
     error_notify: bool = False
+    command_icons: bool = True
 
     def validate(self) -> None:
         if self.status_line_preset not in {"default", "compact", "full"}:
@@ -382,8 +383,9 @@ class UIConfig:
             raise ConfigError("ui.context_bar 必须为布尔值，ui.motion 必须为 full/reduced/none")
         if self.output_palette not in {"trina", "contrast", "mono"}:
             raise ConfigError("ui.output_palette 必须为 trina/contrast/mono")
-        if type(self.completion_notify) is not bool or type(self.error_notify) is not bool:
-            raise ConfigError("ui.completion_notify 与 ui.error_notify 必须为布尔值")
+        for name in ("completion_notify", "error_notify", "command_icons"):
+            if type(getattr(self, name)) is not bool:
+                raise ConfigError(f"ui.{name} 必须为布尔值")
 
 
 @dataclass
@@ -417,6 +419,10 @@ class TrinaConfig:
             raise ConfigError(f"配置文件不存在: {cfg_path}")
 
         cfg = cls._from_mapping(raw)
+        if path is None:
+            from .ui_preferences import read_preferences
+            for name, value in read_preferences(_user_data_root()).items():
+                setattr(cfg.ui, name, value)
         # 仅默认启动载入所选连接；显式配置文件仍控制自己的模型设置。
         from .providers import ProfileStore
 

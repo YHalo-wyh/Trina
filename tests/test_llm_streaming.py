@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import io
+from contextlib import nullcontext
 import json
 import tempfile
 import threading
@@ -15,6 +16,7 @@ from trina.config import LLMConfig, TrinaConfig
 from trina.llm import LLMResponse, LLMStreamEvent
 from trina.llm.openai_backend import OpenAICompatBackend
 from trina.llm.replay_backend import ReplayBackend
+from trina.scope import _ModelStreamResponse
 from trina.tools.registry import ToolRegistry
 
 
@@ -168,7 +170,7 @@ class StreamingTests(unittest.TestCase):
             {"choices": [], "usage": {"prompt_tokens": 100, "completion_tokens": 2,
                                         "prompt_tokens_details": {"cached_tokens": 60}}}, "[DONE]",
         )
-        with patch("trina.llm.openai_backend.urllib.request.urlopen", return_value=body) as send:
+        with patch.object(backend._stream_transport, "open", return_value=nullcontext(_ModelStreamResponse(body, pooled=False))) as send:
             result = backend.complete_messages(messages, on_event=events.append)
         payload = json.loads(send.call_args.args[0].data)
         self.assertEqual(payload["messages"], messages)
@@ -195,7 +197,7 @@ class StreamingTests(unittest.TestCase):
         for api, rows in cases:
             with self.subTest(api=api):
                 backend = OpenAICompatBackend(LLMConfig(base_url="https://service.example/v1", api=api), key_override="test")
-                with patch("trina.llm.openai_backend.urllib.request.urlopen", return_value=sse(*rows)) as send:
+                with patch.object(backend._stream_transport, "open", return_value=nullcontext(_ModelStreamResponse(sse(*rows), pooled=False))) as send:
                     result = backend.complete_messages(messages)
                 payload = json.loads(send.call_args.args[0].data)
                 self.assertEqual(payload["messages" if api == "anthropic" else "input"], messages[1:])
@@ -203,20 +205,44 @@ class StreamingTests(unittest.TestCase):
                 self.assertTrue(result.ok, result.error)
                 self.assertEqual((result.text, result.usage.input_tokens, result.usage.output_tokens), ("OK", 10, 2))
 
-    def test_missing_terminal_or_responses_incomplete_never_succeeds(self):
-        for api, rows in [
-            ("chat", [{"choices": [{"delta": {"content": "partial"}}]}]),
-            ("responses", [{"type": "response.output_text.delta", "delta": "partial"},
-                           {"type": "response.incomplete", "response": {"incomplete_details": {"reason": "max_output_tokens"}}}]),
-        ]:
-            with self.subTest(api=api):
-                backend = OpenAICompatBackend(LLMConfig(base_url="https://service.example/v1", api=api), key_override="test")
-                events = []
-                with patch("trina.llm.openai_backend.urllib.request.urlopen", return_value=sse(*rows)):
-                    result = backend.complete_messages([{"role": "user", "content": "test"}], on_event=events.append)
-                self.assertFalse(result.ok)
-                self.assertEqual(result.text, "")
-                self.assertEqual(events[-1].type, "error")
+    def test_clean_eof_keeps_complete_chat_output_without_done_event(self):
+        backend = OpenAICompatBackend(LLMConfig(base_url="https://service.example/v1"), key_override="test")
+        events = []
+        body = sse({"choices": [{"delta": {"content": "完整回答"}}]})
+        with patch.object(backend._stream_transport, "open",
+                          return_value=nullcontext(_ModelStreamResponse(body, pooled=False))):
+            result = backend.complete_messages([{"role": "user", "content": "test"}], on_event=events.append)
+        self.assertTrue(result.ok, result.error)
+        self.assertEqual(result.text, "完整回答")
+        self.assertEqual(result.finish_reason, "eof")
+        self.assertEqual([event.type for event in events], ["start", "text_delta", "done"])
+
+    def test_clean_eof_rejects_incomplete_tool_arguments(self):
+        backend = OpenAICompatBackend(LLMConfig(base_url="https://service.example/v1"), key_override="test")
+        body = sse({"choices": [{"delta": {"tool_calls": [{
+            "index": 0, "id": "call_1", "function": {"name": "shell", "arguments": '{"command":'},
+        }]}}]})
+        with patch.object(backend._stream_transport, "open",
+                          return_value=nullcontext(_ModelStreamResponse(body, pooled=False))):
+            result = backend.complete_messages([{"role": "user", "content": "test"}])
+        self.assertFalse(result.ok)
+        self.assertIn("工具调用参数不完整", result.error)
+
+    def test_explicit_responses_incomplete_never_succeeds(self):
+        backend = OpenAICompatBackend(LLMConfig(
+            base_url="https://service.example/v1", api="responses"), key_override="test")
+        events = []
+        body = sse(
+            {"type": "response.output_text.delta", "delta": "partial"},
+            {"type": "response.incomplete", "response": {
+                "incomplete_details": {"reason": "max_output_tokens"}}},
+        )
+        with patch.object(backend._stream_transport, "open",
+                          return_value=nullcontext(_ModelStreamResponse(body, pooled=False))):
+            result = backend.complete_messages([{"role": "user", "content": "test"}], on_event=events.append)
+        self.assertFalse(result.ok)
+        self.assertEqual(result.text, "")
+        self.assertEqual(events[-1].type, "error")
 
     def test_chat_history_is_append_only_and_protocol_is_not_streamed(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -279,7 +305,7 @@ class StreamingTests(unittest.TestCase):
             sse({"choices": [{"delta": {"content": "partial"}, "finish_reason": "length"}]}),
         ):
             backend = OpenAICompatBackend(LLMConfig(base_url="https://service.example/v1"), key_override="test")
-            with patch("trina.llm.openai_backend.urllib.request.urlopen", return_value=body):
+            with patch.object(backend._stream_transport, "open", return_value=nullcontext(_ModelStreamResponse(body, pooled=False))):
                 result = backend.complete_messages([{"role": "user", "content": "test"}])
             self.assertFalse(result.ok)
             self.assertEqual(result.text, "")

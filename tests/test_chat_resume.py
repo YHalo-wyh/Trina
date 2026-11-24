@@ -124,6 +124,31 @@ class ChatResumeTests(unittest.TestCase):
         self.assertEqual(self.store.load(chat.run_id)["title"], "整理单元测试")
         self.assertEqual(chat.events.replay(kinds=("chat.title",)), [])
 
+    def test_online_title_waits_until_all_model_rounds_in_the_turn_finish(self):
+        from trina.llm.base import ToolCall
+
+        class Probe(Tool):
+            spec = ToolSpec(name="probe", summary="测试本地读取")
+
+            def run(self, ctx):
+                return ToolResult(summary="ok")
+
+        chat, backend = self._online_chat()
+        chat.registry.register(Probe())
+        started = Mock()
+        chat._start_title = started
+        replies = iter([LLMResponse(tool_calls=[ToolCall("probe-1", "probe", "{}")]),
+                        LLMResponse(text="已读取")])
+
+        def respond(*args, **kwargs):
+            started.assert_not_called()
+            return next(replies)
+
+        backend.complete_messages.side_effect = respond
+        chat.ask("读取本地测试数据")
+        self.assertEqual(backend.complete_messages.call_count, 2)
+        started.assert_called_once_with("读取本地测试数据", "读取本地测试数据")
+
     def test_saved_chat_restores_messages_facts_ledger_usage_and_delta_baseline(self):
         chat = self.chat()
         chat.state.host("127.0.0.1").add_port(80, service="http")

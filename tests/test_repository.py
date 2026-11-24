@@ -9,6 +9,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from trina.config import TrinaConfig
+from trina.console_ui import SlashCommandCompleter
 from trina.interactive import Console
 from trina.llm.replay_backend import ReplayBackend
 from trina.repo_ui import parse_repo_args
@@ -174,7 +175,9 @@ class RepositoryTests(unittest.TestCase):
         self.assertIn("main", self.console._git_branches)
         with patch.object(self.chat.registry, "execute") as execute:
             self.assertIn("main", [choice.value for choice in self.console._completion_values("branch", ["switch"])])
-            self.assertEqual([choice.value for choice in self.console._completion_values("repo", ["stage"])], ["'中文 file.txt'"])
+            choices = self.console._completion_values("repo", ["stage"])
+            self.assertEqual([choice.value for choice in choices], ["中文 file.txt"])
+            self.assertEqual(SlashCommandCompleter._choice_completion(choices[0], "").text, "'中文 file.txt'")
             execute.assert_not_called()
         self.assertEqual(self.console.view.usage_data()["calls"], 0)
 

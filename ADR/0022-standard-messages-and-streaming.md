@@ -20,7 +20,7 @@ OMP 进程后端引入第二套模型目录、凭据来源与持久化字段。�
 2. Agent 调用 `complete_messages()`，保留 `role/content`、assistant 回复与原生工具回执。Chat 使用 `messages`；Messages 使用 `system + messages`；Responses 使用 `instructions + input` 数组。禁止以角色标签字符串模拟多轮对话。
 3. system 和初始运行合同固定在前缀；动态状态、观察和人工补充只追加。模型切换保留消息历史，不修改旧消息。缓存命中只采用供应商报告，不把本地请求字节一致直接等同于缓存命中。
 4. 在线 Agent 使用 SSE；方言转换后产生 start、text_delta、thinking_delta、done、error。健康检查与模型表单短验证继续使用非流式接口。
-5. 终端原位刷新正文卡片，解析前隐藏 JSON/DSML 后缀；思考增量不作为正文。流中断、无终止事件、非法 SSE、输出截断或供应商错误均返回失败，未完成卡片撤回。最终答复只保留一次。
+5. 终端原位刷新正文卡片，解析前隐藏 JSON/DSML 后缀；思考增量不作为正文。正常 HTTP EOF 可结束已经完整解析的正文或工具调用。传输截断、显式 incomplete、非法 SSE、未闭合工具参数、输出截断或供应商错误均返回失败，未完成卡片撤回。最终答复只保留一次。
 
 ## 代价与限制
 
@@ -30,7 +30,7 @@ OMP 进程后端引入第二套模型目录、凭据来源与持久化字段。�
 
 ## 验证
 
-`tests/test_llm_streaming.py` 检查真实回环 HTTP 在响应结束前交付增量、三种 API 的结构化请求、多轮前缀继承、终止事件校验、协议隐藏和终端草稿保留。`tests/test_llm_openai.py`、`test_providers.py` 检查用量及移除 OMP 后的配置生命周期。当前产品机器规则为 TR-03-R03、TR-04-R03。
+`tests/test_llm_streaming.py` 检查真实回环 HTTP 在响应结束前交付增量、三种 API 的结构化请求、多轮前缀继承、正常 EOF、显式 incomplete、协议隐藏和终端草稿保留。`tests/test_llm_openai.py`、`test_providers.py` 检查用量及移除 OMP 后的配置生命周期。当前产品机器规则为 TR-03-R03、TR-04-R03。
 
 本地协议测试证明请求与解析机制，不替代所有付费供应商的真实账户兼容性测试。
 

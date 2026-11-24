@@ -1,6 +1,7 @@
 """Trina 命令行入口。
 
     trina doctor                       环境自检（模型后端/外部工具/护栏边界）
+    trina update [--check]             检查并安装官方更新
     trina tools [--verbose] [--json]   查看已封装的工具清单
     trina guard check <target>         测试目标是否在授权范围内
     trina guard argv -- <命令>          测试一条外部命令是否会被拒
@@ -1019,6 +1020,18 @@ def cmd_schedule(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_update(args: argparse.Namespace) -> int:
+    """根据当前安装来源检查或应用更新。"""
+    from .updater import UpdateError, update
+
+    try:
+        update(check=args.check, mirror=args.mirror)
+    except UpdateError as exc:
+        print(f"更新失败 · {exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="trina", description="Trina · 全自动渗透测试 Agent")
     parser.add_argument("--version", action="version", version=f"trina {__version__}")
@@ -1031,6 +1044,11 @@ def build_parser() -> argparse.ArgumentParser:
     doctor = sub.add_parser("doctor", help="环境自检")
     add_common(doctor)
     doctor.set_defaults(func=cmd_doctor)
+
+    update = sub.add_parser("update", help="检查并安装官方更新")
+    update.add_argument("-c", "--check", action="store_true", help="只检查版本，不修改本地安装")
+    update.add_argument("--mirror", choices=("github", "gitee"), help="指定官方镜像")
+    update.set_defaults(func=cmd_update)
 
     tools = sub.add_parser("tools", help="列出已封装工具")
     tools.add_argument("--verbose", "-v", action="store_true")

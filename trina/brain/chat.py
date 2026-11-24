@@ -83,6 +83,7 @@ class ChatAgent:
         self._closed = False
         self._closing = False
         self._title_lock = threading.RLock()
+        self._pending_title: tuple[str, str] | None = None
         self.in_flight = False
         self.title = ""
         self.worker_role = "commander"
@@ -173,12 +174,17 @@ class ChatAgent:
         if self._closed or self._closing:
             raise ValueError("对话已关闭，请使用 /resume 恢复")
         self.in_flight = True
+        self._pending_title = None
         try:
             with self.events.keep_open():
-                return self._ask_turn(message)
+                reply = self._ask_turn(message)
         finally:
             self.in_flight = False
             self.save()
+        pending_title, self._pending_title = self._pending_title, None
+        if pending_title and not (self.stop_event and self.stop_event.is_set()):
+            self._start_title(*pending_title)
+        return reply
 
     def _ask_turn(self, message: str) -> str:
         """处理一条用户消息：回答，或边执行工具边推进；返回最终自然语言回复。"""
@@ -222,9 +228,6 @@ class ChatAgent:
                 self._cancel_stream()
                 terminal_reply = "（已按你的要求停止）"
                 return None
-            if provisional_title:
-                self._start_title(text, provisional_title)
-                provisional_title = ""
             if self._accept_steer():
                 self.audit.append("chat.response_superseded", decision="defer", reason="收到补充，重新决策")
                 self._cancel_stream()
@@ -234,6 +237,9 @@ class ChatAgent:
                 self.last_reply_streamed = self.on_event is not None
                 terminal_reply = f"（模型调用失败：{response.error}）"
                 return None
+            if provisional_title:
+                self._pending_title = text, provisional_title
+                provisional_title = ""
             return response
 
         def say(reply, response, interim=False):
@@ -498,7 +504,9 @@ class ChatAgent:
             self.usage_gaps[name] += int(not getattr(usage, name[8:] + "_reported"))
 
     def _start_title(self, message: str, provisional: str) -> None:
-        """首个主回复返回后，用独立后端生成会话标题。"""
+        """完成当前对话轮次后，用独立后端生成标题。"""
+        if self._closing or self._closed:
+            return
         backend = getattr(self.backend, "backend", self.backend)
         if not isinstance(backend, LLMBackend) or backend.name != "openai":
             return
@@ -525,7 +533,7 @@ class ChatAgent:
         with self._title_lock:
             if self._closing or self._closed or self.title != provisional:
                 return
-            details = {"usage": response.usage.to_dict()} if response is not None else {}
+            details = {"usage": response.usage.to_dict(), "duration_seconds": response.duration} if response is not None else {}
             if title and title != "新对话":
                 try:
                     saved = self.store.replace_title(self.run_id, provisional, title)

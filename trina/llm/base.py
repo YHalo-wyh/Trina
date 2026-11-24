@@ -183,6 +183,7 @@ class LLMResponse:
     reasoning: str = ""
     #: 结束原因（stop / tool_calls / length / content_filter）
     finish_reason: str = ""
+    transport: dict[str, float | bool] = field(default_factory=dict)
 
     @property
     def empty(self) -> bool:
