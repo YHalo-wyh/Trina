@@ -56,6 +56,7 @@ class TestTerminalUI(unittest.TestCase):
         self.assertEqual(values("/sta"), ["status"])
         self.assertIn("--goal", values("/play --"))
         self.assertIn("verify", values("/approve v"))
+        self.assertIn("--json", values("/tools --all --"))
 
     def test_running_slash_index_is_context_aware(self):
         from prompt_toolkit.document import Document

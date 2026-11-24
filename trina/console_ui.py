@@ -90,6 +90,7 @@ COMMAND_ICONS = {
 }
 COMMAND_SYMBOLS = {
     "model": "✧", "status": "◉", "help": "?", "resume": "↶", "new": "+",
+    "tools": "◇",
     "play": "▷", "run": "→", "plan": "☑", "tasks": "≡", "schedule": "◷", "jobs": "▤",
     "board": "▦", "queue": "≡", "pause": "Ⅱ", "stop": "□",
     "history": "≣", "save": "↓", "quit": "↗",
@@ -199,7 +200,7 @@ COMMANDS: tuple[CommandSpec, ...] = (
     CommandSpec("hypotheses", "研究", "按优先级查看假设台账", "hypotheses"),
     CommandSpec("graph", "研究", "输出证据关系图（Mermaid）", "graph"),
     CommandSpec(
-        "tools", "工具", "搜索工具并解释当前 Agent 的可见性", "tools [--verbose|--json|--all] [--route 路由]",
+        "tools", "工具", "浏览工具目录（Alt+T）", "tools [--verbose|--json|--all] [--route 路由]",
         options=(
             OptionSpec(("--verbose", "-v"), "显示完整参数表"),
             OptionSpec(("--json",), "输出 JSON"),
@@ -560,7 +561,7 @@ class SlashCommandCompleter(_Completer):
             return
 
         previous = completed_args[-1] if completed_args else ""
-        value_option = next((item for item in spec.options if previous in item.flags), None)
+        value_option = next((item for item in spec.options if item.value and previous in item.flags), None)
         if value_option is not None:
             choices = list(value_option.choices) or list(self.dynamic_values(spec.name, completed_args))
             for choice in self._matching_values(prefix, choices):
@@ -612,7 +613,8 @@ class EnhancedConsoleInput:
 
     def __init__(self, *, status, running, dynamic_values, plain: bool = False, usage=None, activity=None, context=None,
                  motion: str = "full", output_palette="trina", activity_detail=None, cancel_wait=None,
-                 command_icons: Callable[[], bool] | None = None, tasks=None) -> None:
+                 command_icons: Callable[[], bool] | None = None, tasks=None,
+                 pending_draft: Callable[[], int | None] | None = None) -> None:
         from prompt_toolkit import Application
         from prompt_toolkit.buffer import Buffer
         from prompt_toolkit.history import InMemoryHistory
@@ -620,7 +622,7 @@ class EnhancedConsoleInput:
         from prompt_toolkit.layout import Layout, HSplit, VSplit, Window, ConditionalContainer, FloatContainer, Float
         from prompt_toolkit.layout.controls import BufferControl, FormattedTextControl
         from prompt_toolkit.layout.dimension import Dimension
-        from prompt_toolkit.layout.processors import BeforeInput
+        from prompt_toolkit.layout.processors import AfterInput, BeforeInput
         from prompt_toolkit.filters import Condition
         from prompt_toolkit.styles import Style
         from prompt_toolkit.output import ColorDepth
@@ -636,6 +638,7 @@ class EnhancedConsoleInput:
         self.activity = activity or (lambda: ("processing", "运行中", 0) if running() else ("idle", "就绪", 0))
         self.activity_detail = activity_detail or (lambda: "")
         self.tasks = tasks or (lambda: {})
+        self._pending_draft = pending_draft or (lambda: None)
         self._handler = None
         self._dispatching = False
         self._queue = None
@@ -700,7 +703,7 @@ class EnhancedConsoleInput:
 
         @bindings.add("escape")
         def dismiss(event):
-            if cancel_wait is not None and cancel_wait():
+            if not self._menu_height() and cancel_wait is not None and cancel_wait():
                 return
             self.buffer.cancel_completion()
             self.dismissed = True
@@ -739,9 +742,24 @@ class EnhancedConsoleInput:
             self.transcript_control.clear_selection()
             self.app.invalidate()
 
-        @bindings.add("escape", "p", filter=Condition(lambda: self._queue is not None and not self._dispatching and not self.running()))
-        def open_model_picker(event):
-            self._queue.put_nowait("/model")
+        ready = Condition(lambda: self._queue is not None and not self._dispatching)
+        idle = ready & Condition(lambda: not self.running())
+
+        @bindings.add("escape", "p", filter=idle)
+        @bindings.add("escape", "t", filter=idle)
+        def open_directory(event):
+            command = "/model" if event.data == "p" else "/tools"
+            self._queue.put_nowait(command)
+
+        @bindings.add("f1", filter=ready)
+        def show_command_help(event):
+            parts = self.buffer.text.lstrip().split(maxsplit=1)
+            spec = find_command(parts[0]) if parts and parts[0].startswith("/") else None
+            if spec is None and (items := self._items()):
+                spec = find_command(items[self._menu_selected].display_text)
+            self.dismissed = True
+            self._scroll_to_latest()
+            self._queue.put_nowait(f"/help {spec.name}" if spec else "/help")
 
         @bindings.add("c-d")
         def eof(event):
@@ -784,6 +802,7 @@ class EnhancedConsoleInput:
             "prompt": "bold " + THEME["rose"], "index": THEME["muted"],
             "selected": "bg:#33283c " + THEME["text"], "hint": THEME["muted"],
             "command.rule": "#675471", "command.key": "bold " + THEME["lilac"],
+            "command.match": "bold underline",
             "command.description": THEME["muted"],
             **{f"command.icon.{tone}": color for tone, color in COMMAND_ICON_COLORS.items()},
             "status": THEME["lilac"], "title": "bold " + THEME["rose"],
@@ -810,8 +829,9 @@ class EnhancedConsoleInput:
             "todo.pending": THEME["text"], "todo.blocked": "#e5bb86",
             "todo.closed": THEME["muted"], "todo.more": THEME["muted"],
         })
-        control = BufferControl(buffer=self.buffer, input_processors=[BeforeInput(
-            lambda: [("class:prompt", "补充  › " if self.running() else "Trina  › ")])])
+        control = BufferControl(buffer=self.buffer, input_processors=[
+            BeforeInput(self._input_label), AfterInput(self._input_hint),
+        ])
         from .transcript import TranscriptControl
 
         self.transcript_control = TranscriptControl(self)
@@ -1419,6 +1439,28 @@ class EnhancedConsoleInput:
         self._menu_selected = self._menu_start = 0
         self._menu_navigated = False
 
+    def _input_label(self):
+        label = "补充" if self.running() else "Trina"
+        if self.buffer.text.startswith("/"):
+            label = "命令"
+        return [("class:prompt", f" {label} › ")]
+
+    def _input_hint(self):
+        from .console_state import _cells
+        from .model_picker_view import key_hints
+
+        if self.buffer.text:
+            return []
+        width = self.app.output.get_size().columns - _cells(self._input_label()[0][1]) - 1
+        if self.running():
+            number = self._pending_draft()
+            pairs = [("Enter", f"发送草稿 #{number}"), ("/queue", "查看")] if number is not None else [
+                ("Enter", "提交到队列"), ("!", "立即补充"),
+            ]
+        else:
+            pairs = [("/", "命令"), ("Alt+P", "模型"), ("Alt+T", "工具"), ("F1", "帮助")]
+        return key_hints(pairs, width, key_style="class:hint", label_style="class:hint")
+
     def _items(self):
         if self.dismissed or not self.buffer.text.startswith("/"):
             return []
@@ -1432,9 +1474,12 @@ class EnhancedConsoleInput:
     def _menu_limit(self) -> int:
         return max(1, min(8, self.app.output.get_size().rows - 10))
 
+    def _menu_has_footer(self) -> bool:
+        return self.app.output.get_size().rows >= 12
+
     def _menu_height(self) -> int:
         items = self._items()
-        return min(len(items), self._menu_limit()) + 1 if items else int(self._unmatched_command())
+        return min(len(items), self._menu_limit()) + 1 + self._menu_has_footer() if items else int(self._unmatched_command())
 
     def _unmatched_command(self) -> bool:
         text = self.buffer.text
@@ -1478,19 +1523,24 @@ class EnhancedConsoleInput:
     def _menu(self):
         from prompt_toolkit.mouse_events import MouseEventType
         from .console_state import _cells, _fit_cells
-        from .model_picker_view import padded
+        from .model_picker_view import key_hints, marked_text, padded
 
         items = self._items()
+        width = min(108, self.app.output.get_size().columns)
         if not items:
-            return [("class:hint", " 没有匹配命令 · /help 查看命令列表")] if self._unmatched_command() else []
+            hint = _fit_cells("没有匹配命令 · F1 查看帮助", width - 1)
+            return [("class:hint", " " + hint)] if self._unmatched_command() else []
         selected, limit = self._menu_selected, self._menu_limit()
         self._menu_start = max(0, selected - limit + 1, min(self._menu_start, selected))
-        width = min(92, self.app.output.get_size().columns)
-        arguments = any(ch.isspace() for ch in self.buffer.document.text_before_cursor)
-        icons = not arguments and width >= 24 and self._command_icons()
+        typed = self.buffer.document.text_before_cursor
+        arguments = any(ch.isspace() for ch in typed)
+        icons = not arguments and width >= 20 and self._command_icons()
         icon_width = 2 if icons else 0
-        name_width = min(max(_cells(item.display_text) for item in items) + 1,
-                         width // 2 if width >= 42 else width - 4 - icon_width)
+        name_room = max(0, width - 6 - icon_width)
+        name_width = min(max(_cells(item.display_text) for item in items),
+                         min(name_room, width * 2 // 5) if width >= 42 else name_room)
+        query = typed[1:] if not arguments else ""
+        pattern = re.compile(re.escape(query), re.IGNORECASE) if query else None
 
         def mouse(position):
             def handle(event):
@@ -1503,26 +1553,31 @@ class EnhancedConsoleInput:
                     return NotImplemented
             return handle
 
-        summary = f" {selected + 1}/{len(items)} "
-        keys = "↑↓ 浏览  Tab 补全  Esc 收起"
-        heading = " 参数 " if arguments else " 命令 "
-        spec = find_command(items[selected].display_text) if not arguments else None
-        if spec and width >= 52:
-            heading = f" 命令 · {spec.category} "
-        spare = width - _cells(heading + summary) - 2
-        hint = keys if _cells(keys) <= spare else ""
-        result = [("class:command.rule", "╭─"), ("class:command.key", heading),
-                  ("class:command.rule", "─" * max(0, spare - _cells(hint))),
-                  ("class:hint", hint), ("class:command.key", summary)]
+        if width < 8:
+            return [("class:hint", _fit_cells("命令", width))] + [
+                ("class:hint", "\n" + _fit_cells(item.display_text, width))
+                for item in items[self._menu_start:self._menu_start + limit]
+            ] + ([("", "\n")] if self._menu_has_footer() else [])
+        heading = "参数" if arguments else "命令"
+        spec = find_command(typed.split(maxsplit=1)[0]) if arguments else find_command(items[selected].display_text)
+        if spec:
+            heading += f" · {'/' + spec.name if arguments else spec.category}"
+        count = f" {selected + 1}/{len(items)} " if width >= 16 else ""
+        title = " " + _fit_cells(heading, width - len(count) - 5) + " "
+        result = [
+            ("class:command.rule", "╭─"), ("class:command.key", title),
+            ("class:command.rule", "─" * (width - _cells(title + count) - 3)),
+            ("class:hint", count), ("class:command.rule", "╮"),
+        ]
         for pos in range(self._menu_start, min(self._menu_start + limit, len(items))):
             item = items[pos]
             focus = pos == selected
             style = ("reverse" if self._plain else "class:selected") if focus else ""
-            description = _fit_cells(item.display_meta_text, width - name_width - 5 - icon_width) if width >= 42 else ""
+            detail_width = name_room - name_width
+            description = _fit_cells(item.display_meta_text, detail_width - 2) if detail_width >= 6 else ""
             marker = "▸ " if focus else "  "
             name = padded(item.display_text, name_width)
-            meta = " " + description if description else ""
-            spacing = " " * max(0, width - _cells(marker + name + meta) - 2 - icon_width)
+            meta = "  " + padded(description, detail_width - 2) if description else " " * detail_width
             handle = mouse(pos)
             result.extend([("", "\n"), ("class:command.rule", "│ ", handle), (style, marker, handle)])
             if icons:
@@ -1532,8 +1587,18 @@ class EnhancedConsoleInput:
                     glyph = COMMAND_SYMBOLS.get(command.name, glyph)
                 icon_style = style if self._plain else f"{style} class:command.icon.{tone}"
                 result.append((icon_style, padded(glyph, icon_width), handle))
-            result.extend([(style, name, handle),
-                           (style if focus else "class:command.description", meta + spacing, handle)])
+            result.extend((tone, value, handle) for tone, value in marked_text(
+                name, pattern, style, "underline" if self._plain else "class:command.match",
+            ) if value)
+            result.extend([(style if focus else "class:command.description", meta + " ", handle),
+                           ("class:command.rule", "│", handle)])
+        if self._menu_has_footer():
+            hints = key_hints([("Tab", "补全"), ("Esc", "收起"), ("↑↓", "浏览"), ("F1", "帮助")],
+                              width - 6, key_style="class:command.key", label_style="class:hint")
+            result.append(("class:command.rule", "\n╰" + ("─ " if hints else "")))
+            result.extend(hints)
+            used = 3 + sum(_cells(value) for _, value in hints) if hints else 1
+            result.append(("class:command.rule", (" " if hints else "") + "─" * (width - used - 1 - bool(hints)) + "╯"))
         return result
 
     def read(self) -> str:
@@ -1605,7 +1670,7 @@ def select_option(title: str, choices: list[ChoiceSpec], *, subtitle: str = "", 
 
 
 def _panel_app(body, title: str, bindings, focused, *, completion_menu: bool = False, plain: bool = False, expanded: bool = False):
-    """所有模型配置页共用方角边框；退出后恢复主控制台。"""
+    """目录和配置页共用面板样式，退出后恢复主控制台。"""
     from prompt_toolkit import Application
     from prompt_toolkit.application.current import get_app
     from prompt_toolkit.layout import Float, FloatContainer, Layout, Window
@@ -1617,7 +1682,7 @@ def _panel_app(body, title: str, bindings, focused, *, completion_menu: bool = F
 
     color = use_color(plain=plain)
     if expanded:
-        panel = Box(body, padding=0, padding_left=2, padding_right=2)
+        panel = Frame(Box(body, padding=0, padding_left=1, padding_right=1))
         floats = [Float(content=panel, left=0, right=0, top=0, bottom=0)]
     else:
         panel = Frame(Box(body, padding=1), title=clean_text(title), style="class:panel")
@@ -1630,11 +1695,15 @@ def _panel_app(body, title: str, bindings, focused, *, completion_menu: bool = F
                       min_redraw_interval=1 / 120, max_render_postpone_time=0,
                       color_depth=ColorDepth.DEPTH_24_BIT if color else None,
                       style=Style.from_dict({"panel.border": THEME["violet"], "panel.label": "bold " + THEME["rose"],
+                                             "frame.border": "#675471" if expanded else THEME["violet"],
+                                             "frame.label": "bold " + THEME["rose"],
                                              "model.accent": THEME["lilac"] + " bold",
                                              "model.live": "#99d7bc", "model.rule": "#504957",
                                              "model.key": "#d5c2e3 bold", "model.search": "bg:#24202b " + THEME["text"],
                                              "model.row": "bg:#33283c " + THEME["text"],
                                              "model.tab": "bg:#cbb2dc #221b29 bold",
+                                             "model.heading": "bg:#211a2a " + THEME["muted"],
+                                             "model.warning": "#e5bb86",
                                              "dim": THEME["muted"], "chosen": "bg:" + THEME["selected"] + " " + THEME["text"] + " bold",
                                              "field": "bg:" + THEME["ink"] + " " + THEME["text"],
                                              "button.focused": "bg:" + THEME["selected"] + " " + THEME["text"] + " bold"} if color else {}))

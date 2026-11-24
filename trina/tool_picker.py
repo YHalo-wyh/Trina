@@ -1,9 +1,10 @@
 """OMP 风格的终端工具目录；只浏览真实 ToolRegistry 投影。"""
 from __future__ import annotations
 
+import re
 from collections import Counter
 
-from .model_picker_view import key_hints, padded
+from .model_picker_view import directory_header, key_hints, marked_text, padded
 from .tool_catalog import ToolCatalogEntry, filter_tool_catalog
 
 
@@ -22,7 +23,7 @@ def select_tool(entries: list[ToolCatalogEntry], *, plain: bool = False) -> Tool
     from .console_state import _cells, _fit_cells
     from .console_ui import _REDRAW_INTERVAL, _panel_app, run_panel
     from .scrollbar import ScrollbarControl
-    from .terminal import clean_text
+    from .terminal import _wrap, clean_text
 
     search = Buffer(multiline=False)
     help_open = False
@@ -35,27 +36,40 @@ def select_tool(entries: list[ToolCatalogEntry], *, plain: bool = False) -> Tool
         ("hidden", "按需隐藏", sum(not item.visible for item in entries)),
         ("unavailable", "当前不可用", sum(not item.available for item in entries)),
         *((f"category:{name}", name, count) for name, count in sorted(counts.items())),
-        *((f"source:{name}", name, count) for name, count in sorted(sources.items()) if name != "System"),
+        *((f"source:{name}", name, count) for name, count in sorted(sources.items())),
     ]
     group = selected = 0
     visible: list[ToolCatalogEntry] = []
+    matches: re.Pattern[str] | None = None
     keys = KeyBindings()
     highlight = "reverse" if plain else "class:model.row"
+    header_context = f"{groups[1][2]} 可见 / {len(entries)} 注册"
+    if entries:
+        header_context += f"  ·  {entries[0].route} / {entries[0].role}"
 
     def width() -> int:
         return max(1, get_app().output.get_size().columns - 4)
 
     wide = Condition(lambda: width() >= 76)
-    roomy = Condition(lambda: get_app().output.get_size().rows >= 15)
+    roomy = Condition(lambda: get_app().output.get_size().rows >= 16)
+    side_details = Condition(lambda: width() >= 120 and get_app().output.get_size().rows >= 22)
+    side_preview = side_details & ~Condition(lambda: help_open)
     side_width = 22
 
+    def detail_width() -> int:
+        return min(49, width() // 3) if side_details() else width()
+
     def list_width() -> int:
-        return max(1, width() - (side_width + 3 if wide() else 0))
+        remaining = width() - (side_width + 3 if wide() else 0)
+        return max(1, remaining - (detail_width() + 3 if side_preview() else 0))
 
     def refresh(_buffer=None) -> None:
-        nonlocal visible, selected, browsing_groups
-        visible = filter_tool_catalog(entries, query=search.text, group=groups[group][0])
-        selected = min(selected, max(0, len(visible) - 1))
+        nonlocal visible, selected, browsing_groups, matches
+        query = search.text
+        visible = filter_tool_catalog(entries, query=query, group=groups[group][0])
+        terms = query.split()
+        matches = re.compile("|".join(map(re.escape, terms)), re.IGNORECASE) if terms else None
+        selected = 0
         if _buffer is not None:
             browsing_groups = False
 
@@ -63,10 +77,11 @@ def select_tool(entries: list[ToolCatalogEntry], *, plain: bool = False) -> Tool
     search.on_text_changed += refresh
 
     def choose_group(pos: int) -> None:
-        nonlocal group, browsing_groups
-        group = pos % len(groups)
-        browsing_groups = True
-        refresh()
+        nonlocal group
+        index = pos % len(groups)
+        if index != group:
+            group = index
+            refresh()
 
     def choose_row(pos: int) -> None:
         nonlocal selected, browsing_groups
@@ -88,10 +103,14 @@ def select_tool(entries: list[ToolCatalogEntry], *, plain: bool = False) -> Tool
                              cursor_position=Point(x=0, y=group), show_cursor=False)
 
         def mouse_handler(self, event):
+            nonlocal browsing_groups
             if event.event_type == MouseEventType.MOUSE_UP and 0 <= event.position.y < len(groups):
+                browsing_groups = True
                 choose_group(event.position.y)
             elif event.event_type in (MouseEventType.SCROLL_UP, MouseEventType.SCROLL_DOWN):
-                choose_group(group + (-1 if event.event_type == MouseEventType.SCROLL_UP else 1))
+                browsing_groups = True
+                offset = -1 if event.event_type == MouseEventType.SCROLL_UP else 1
+                choose_group(max(0, min(len(groups) - 1, group + offset)))
             else:
                 return NotImplemented
 
@@ -102,10 +121,8 @@ def select_tool(entries: list[ToolCatalogEntry], *, plain: bool = False) -> Tool
         if table_width >= 61:
             fields.append(("动作", 8))
         if table_width >= 74:
-            fields.append(("状态", 10))
-        if table_width >= 88:
             fields.append(("调用", 6))
-        return [("工具", max(8, table_width - 4 - sum(size + 2 for _, size in fields))), *fields]
+        return [("工具", max(0, table_width - 4 - sum(size + 2 for _, size in fields))), *fields]
 
     class Headings(UIControl):
         def create_content(self, table_width: int, height: int) -> UIContent:
@@ -113,7 +130,7 @@ def select_tool(entries: list[ToolCatalogEntry], *, plain: bool = False) -> Tool
             value = "    " + padded(first[0], first[1])
             for name, size in rest:
                 value += "  " + padded(name, size, right=name == "调用")
-            return UIContent(get_line=lambda _: [("class:dim", value)], line_count=1, show_cursor=False)
+            return UIContent(get_line=lambda _: [("class:model.heading", value)], line_count=1, show_cursor=False)
 
     class ToolRows(UIControl):
         def create_content(self, table_width: int, height: int) -> UIContent:
@@ -125,17 +142,13 @@ def select_tool(entries: list[ToolCatalogEntry], *, plain: bool = False) -> Tool
                 item = visible[pos]
                 focused = pos == selected and not browsing_groups
                 base = highlight if focused else ""
-                state = "不可用" if not item.available else "模型可见" if item.visible else "按需隐藏"
-                state_style = "class:model.live" if item.visible and item.available else "class:dim"
-                parts = [(base + " class:model.accent", "▸ " if focused else "  "),
-                         (base + " " + ("class:model.live" if item.visible else "class:dim"),
-                          "● " if item.visible else "○ "),
-                         (base, padded(item.name, first[1]))]
+                marker, state_style = tool_marker(item)
+                parts = [(base + " class:model.accent", "▸ " if focused else "  "), (f"{base} {state_style}", marker + " ")]
+                parts.extend(marked_text(padded(item.name, first[1]), matches, base, "class:model.accent underline"))
                 values = {"类别": item.spec.category, "动作": item.spec.action_level,
-                          "状态": state, "调用": str(item.stats.calls)}
+                          "调用": str(item.stats.calls)}
                 for name, size in rest:
-                    style = base + (" " + state_style if name == "状态" else " class:dim")
-                    parts.append((style, "  " + padded(values[name], size, right=name == "调用")))
+                    parts.append((base + " class:dim", "  " + padded(values[name], size, right=name == "调用")))
                 return parts
 
             return UIContent(get_line=row, line_count=max(1, len(visible)),
@@ -149,37 +162,48 @@ def select_tool(entries: list[ToolCatalogEntry], *, plain: bool = False) -> Tool
             else:
                 return NotImplemented
 
+    def tool_marker(item: ToolCatalogEntry) -> tuple[str, str]:
+        if not item.available:
+            return "!", "class:model.warning"
+        return ("●", "class:model.live") if item.visible else ("○", "class:dim")
+
     def header():
-        route = entries[0].route if entries else "general"
-        role = entries[0].role if entries else "commander"
-        title = "TRINA  /  工具控制中心" if width() >= 48 else "工具控制中心"
-        right = f"{sum(item.visible for item in entries)} 可见 / {len(entries)} 注册  ·  {route} · {role}"
-        right = _fit_cells(right, max(0, width() - _cells(title) - 3))
-        return [("class:model.accent", title), ("", " " * max(1, width() - _cells(title + right))),
-                ("class:model.live", right)]
+        return directory_header("◇", "工具控制中心", header_context, width())
 
     def details():
         if not visible:
-            return [("class:dim", "没有可显示的工具")]
+            return []
         item = visible[selected]
-        params = ", ".join(
-            name + ("*" if spec.required else "") + ":" + spec.type
-            for name, spec in item.spec.params.items()
-        ) or "无"
-        p95 = "—" if item.stats.p95_seconds is None else f"{item.stats.p95_seconds:.3f}s"
-        availability = "可用" if item.available else "不可用 · " + item.availability_reason
-        lines = [
-            ("bold", _fit_cells(f"{item.name}  ·  {item.source_kind}  ·  {availability}", width())),
-            ("", "\n" + _fit_cells(item.spec.summary, width())),
-            ("class:dim", "\n" + _fit_cells("参数  " + params, width())),
-            ("class:model.live" if item.visible else "class:dim",
-             "\n" + _fit_cells("解析  " + " → ".join(item.resolution), width())),
-            ("class:dim", "\n" + _fit_cells(
-                f"原因  {item.visibility_reason}  ·  来源 {item.source}  ·  本会话 {item.stats.calls} 次 / {item.stats.failed} 失败 / p95 {p95}",
-                width(),
-            )),
-        ]
-        return lines
+        columns = detail_width()
+        marker, style = tool_marker(item)
+        status = "模型可见" if item.visible else "按需隐藏"
+        if not item.available:
+            status += " · 不可用"
+        reason = item.availability_reason if not item.available else item.visibility_reason
+        latency = f" · p95 {item.stats.p95_seconds:.3f}s" if item.stats.p95_seconds is not None else ""
+        usage = f"会话 {item.stats.calls} 次 · {item.stats.failed} 失败{latency}"
+        if side_details():
+            params = [f"{name}{'*' if spec.required else ''}  {spec.type}" for name, spec in item.spec.params.items()]
+            reason_lines = _wrap(reason, columns).splitlines()
+            rows = [
+                ("bold", item.name), (style, f"{marker} {status}"),
+                ("class:dim", f"{item.spec.category} / {item.spec.action_level}  ·  {item.source_kind}"),
+                ("", ""), *(("", line) for line in _wrap(item.spec.summary, columns).splitlines()[:3]),
+                ("", ""), ("class:model.accent", "可见性"), *(("class:dim", line) for line in reason_lines[:3]),
+                ("class:dim", usage), ("", ""),
+                ("class:model.accent", f"参数 ({len(params)})"),
+                *(("", line) for line in params[:4]),
+            ]
+            if len(params) > 4:
+                rows.append(("class:dim", f"… 另有 {len(params) - 4} 项"))
+        else:
+            rows = [
+                ("bold", f"{item.name}  ·  {marker} {status}  ·  {item.spec.action_level}"),
+                ("", item.spec.summary), (style, reason),
+                ("class:dim", f"{usage}  ·  {len(item.spec.params)} 个参数"),
+            ]
+        return [(tone, ("\n" if index else "") + _fit_cells(value, columns))
+                for index, (tone, value) in enumerate(rows)]
 
     def help_rows():
         return [
@@ -197,7 +221,10 @@ def select_tool(entries: list[ToolCatalogEntry], *, plain: bool = False) -> Tool
         window = sidebar if browsing_groups else tool_window
         page = max(1, window.render_info.window_height if window.render_info else 1)
         delta = {"up": -1, "down": 1, "pageup": -page, "pagedown": page}[event.key_sequence[-1].key.value]
-        choose_group(group + delta) if browsing_groups else choose_row(selected + delta)
+        if browsing_groups:
+            choose_group(max(0, min(len(groups) - 1, group + delta)))
+        else:
+            choose_row(selected + delta)
 
     @keys.add("left", filter=Condition(lambda: not search.text))
     def focus_groups(event):
@@ -242,11 +269,14 @@ def select_tool(entries: list[ToolCatalogEntry], *, plain: bool = False) -> Tool
         event.app.exit(result=None)
 
     def search_label():
-        scope = groups[group][1] + " / " if not wide() and group else ""
+        scope = _fit_cells(groups[group][1], list_width() // 4) + " / " if not wide() and group else ""
         return [("class:model.accent", " " + scope + "搜索 › ")]
 
     def placeholder():
-        return [] if search.text else [("class:dim", "工具名、说明、参数或来源")]
+        room = list_width() - _cells(search_label()[0][1]) - _cells(counter()[0][1]) - 1
+        if search.text or room < 5:
+            return []
+        return [("class:dim", _fit_cells("工具名、说明、参数或来源", room))]
 
     def counter():
         return [("class:dim", f" {selected + 1 if visible else 0} / {len(visible)} ")]
@@ -277,28 +307,35 @@ def select_tool(entries: list[ToolCatalogEntry], *, plain: bool = False) -> Tool
         return Window(FormattedTextControl(content), height=height, wrap_lines=False)
 
     def footer():
-        return key_hints([("Enter", "保留详情"), ("Esc", "返回"), ("F1", "按键"),
+        return key_hints([("Enter", "查看列表" if browsing_groups else "完整详情"), ("Esc", "返回"), ("F1", "按键"),
                           ("↑↓", "浏览"), ("←→", "分栏"), ("Tab", "筛选")], width())
 
     def rule():
         return Window(height=1, char="─", style="class:model.rule")
 
-    providers_visible = Condition(lambda: wide() or browsing_groups)
+    groups_visible = Condition(lambda: wide() or browsing_groups)
     tools_visible = Condition(lambda: wide() or not browsing_groups)
-    table = VSplit([HSplit([Window(Headings(), height=1), tool_window]),
-                    HSplit([Window(height=1), track])])
+    table = VSplit([HSplit([Window(Headings(), height=1, style="class:model.heading"), tool_window]),
+                    HSplit([Window(height=1, style="class:model.heading"), track])])
+
+    def divider():
+        return VSplit([Window(width=1), Window(width=1, char="│", style="class:model.rule"), Window(width=1)])
+
+    bottom_preview = roomy & ~side_details & ~Condition(lambda: help_open)
     body = HSplit([
         line(header), rule(),
         VSplit([
-            ConditionalContainer(HSplit([sidebar], width=lambda: side_width if wide() else None),
-                                 filter=providers_visible),
-            ConditionalContainer(VSplit([Window(width=1), Window(width=1, char="│", style="class:model.rule"),
-                                         Window(width=1)]), filter=wide),
+            ConditionalContainer(HSplit([line([("class:model.accent", " 筛选")]), sidebar],
+                                        width=lambda: side_width if wide() else None), filter=groups_visible),
+            ConditionalContainer(divider(), filter=wide),
             ConditionalContainer(HSplit([search_bar, table]), filter=tools_visible),
+            ConditionalContainer(divider(), filter=side_preview),
+            ConditionalContainer(Window(FormattedTextControl(details), width=detail_width, wrap_lines=False,
+                                        always_hide_cursor=True), filter=side_preview),
         ]),
         rule(),
-        ConditionalContainer(line(details, 5), filter=roomy & Condition(lambda: not help_open)),
-        ConditionalContainer(line(help_rows, 3), filter=Condition(lambda: help_open)),
+        ConditionalContainer(line(details, 4), filter=bottom_preview),
+        ConditionalContainer(line(help_rows, 2), filter=Condition(lambda: help_open)),
         line(footer),
     ])
     app = _panel_app(body, "工具控制中心", keys, field, plain=plain, expanded=True)

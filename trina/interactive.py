@@ -420,6 +420,7 @@ class Console:
                 output_palette=self._output_palette, cancel_wait=self._cancel_job_wait,
                 command_icons=lambda: self.config.ui.command_icons,
                 tasks=self._todo_view,
+                pending_draft=self._pending_draft_number,
             )
             original_output = self.output
             self.output = self._enhanced_input.write
@@ -860,6 +861,14 @@ class Console:
                 self._emit(str(exc), prefix="错误")
         else:
             self._start_chat_turn(text)
+
+    def _pending_draft_number(self) -> int | None:
+        armed = self._enter_draft
+        if armed is not None:
+            number, owner = armed
+            if self.session.running and self.session.thread is owner and number in self._drafts:
+                return number
+        return None
 
     def _enqueue_draft(self, text: str, *, task_id: str = "", on_enter: bool = False) -> None:
         if not text.strip():

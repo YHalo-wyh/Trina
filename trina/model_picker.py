@@ -9,7 +9,7 @@ from typing import Literal
 
 from .models import CatalogModel
 from .model_names import base_name
-from .model_picker_view import columns, key_hints, padded, tokens
+from .model_picker_view import columns, directory_header, key_hints, marked_text, padded, tokens
 from .providers import ProviderPreset
 
 
@@ -118,25 +118,20 @@ def select_model(choices: list[ModelChoice], *, plain: bool = False, discover=No
         return max(1, get_app().output.get_size().columns - 4)
 
     wide = Condition(lambda: width() >= 70)
-    roomy = Condition(lambda: get_app().output.get_size().rows >= 13)
+    roomy = Condition(lambda: get_app().output.get_size().rows >= 15)
     side_width = 24
 
     def list_width():
         return max(1, width() - (side_width + 3 if wide() else 0))
 
     def header():
-        brand = "TRINA" if width() >= 48 else ""
-        title = "  /  模型目录" if brand else "模型目录"
-        left = _cells(brand + title)
         if notice:
-            tag, value, style = "", notice, "class:dim"
+            value, style = notice, "class:dim"
         elif active:
-            tag, value, style = "● 当前  " if brand else "● ", base_name(active.model), "class:model.live"
+            value, style = "● 当前  " + base_name(active.model), "class:model.live"
         else:
-            tag, value, style = "", "", ""
-        right = _fit_cells(tag + value, width() - left - 3)
-        return [("class:model.accent", brand), ("bold", title),
-                ("", " " * max(0, width() - left - _cells(right))), (style, right)]
+            value, style = "", "class:dim"
+        return directory_header("✧", "模型目录", value, width(), style=style)
 
     def sidebar_title():
         style = "class:model.accent" if browsing_providers else "class:dim"
@@ -207,7 +202,7 @@ def select_model(choices: list[ModelChoice], *, plain: bool = False, discover=No
             labels = "    " + padded(first[0], first[1])
             for name, size in rest:
                 labels += "  " + padded(name, size, right=name in ("窗口", "输出"))
-            return UIContent(get_line=lambda _: [("class:dim", labels)], line_count=1, show_cursor=False)
+            return UIContent(get_line=lambda _: [("class:model.heading", labels)], line_count=1, show_cursor=False)
 
     class ModelRows(UIControl):
         def create_content(self, width: int, height: int) -> UIContent:
@@ -226,15 +221,10 @@ def select_model(choices: list[ModelChoice], *, plain: bool = False, discover=No
                 item = visible[pos]
                 focused = pos == selected and not browsing_providers
                 base = highlight if focused else ""
-                title = _fit_cells(item.model, first[1])
+                title = padded(item.model, first[1])
                 parts = [(base + " class:model.accent", "▸ " if focused else "  "),
                          (base + " class:model.live", "● " if item.current else "  ")]
-                cursor = 0
-                for match in matches.finditer(title) if matches else ():
-                    parts.extend([(base, title[cursor:match.start()]),
-                                  (base + " class:model.accent underline", match.group())])
-                    cursor = match.end()
-                parts.append((base, title[cursor:] + " " * max(0, first[1] - _cells(title))))
+                parts.extend(marked_text(title, matches, base, "class:model.accent underline"))
                 values = {"连接": item.connection_label, "类型": item.meta.kind,
                           "窗口": tokens(item.meta.context), "输出": tokens(item.meta.output)}
                 for name, size in rest:
@@ -473,7 +463,8 @@ def select_model(choices: list[ModelChoice], *, plain: bool = False, discover=No
 
     def breathing_room():
         return ConditionalContainer(Window(height=1), filter=Condition(lambda: get_app().output.get_size().rows >= 20))
-    table = VSplit([HSplit([Window(ColumnHeadings(), height=1), model_window]), HSplit([Window(height=1), track])])
+    table = VSplit([HSplit([Window(ColumnHeadings(), height=1, style="class:model.heading"), model_window]),
+                    HSplit([Window(height=1, style="class:model.heading"), track])])
     providers_visible = Condition(lambda: wide() or browsing_providers)
     models_visible = Condition(lambda: wide() or not browsing_providers)
     body = HSplit([

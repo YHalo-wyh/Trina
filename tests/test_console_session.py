@@ -39,7 +39,9 @@ class ConsoleSessionTests(unittest.TestCase):
             editor.buffer.cursor_position = 5
             preview = "".join(fragment[1] for fragment in editor._menu())
             self.assertIn("⚙ /setup", preview)
-            self.assertTrue(all(get_cwidth(line) <= 34 for line in preview.splitlines()))
+            self.assertTrue(all(get_cwidth(line) == 34 for line in preview.splitlines()))
+            self.assertEqual(len(preview.splitlines()), editor._menu_height())
+            self.assertTrue(preview.splitlines()[-1].endswith("╯"))
             enabled = False
             self.assertNotIn("⚙", "".join(fragment[1] for fragment in editor._menu()))
             editor._accept_menu(add_space=True)
@@ -84,6 +86,33 @@ class ConsoleSessionTests(unittest.TestCase):
                                           dynamic_values=lambda *_: (), plain=True)
             pipe.send_text("\x00help 供应商\t\r")
             self.assertEqual(editor.read(), "/help save ")
+
+    def test_directory_shortcut_and_contextual_help_preserve_the_draft(self):
+        from prompt_toolkit.application.current import create_app_session
+        from prompt_toolkit.input import create_pipe_input
+        from prompt_toolkit.output import DummyOutput
+        from trina.console_ui import EnhancedConsoleInput
+
+        for keys, expected in (("\x1bt", "/tools"), ("\x1bOP", "/help setup")):
+            with self.subTest(command=expected), create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
+                editor = EnhancedConsoleInput(status=lambda: "就绪", running=lambda: False,
+                                              dynamic_values=lambda *_: (), plain=True)
+                draft = "/setup footer "
+                editor.buffer.text = draft
+                editor.buffer.cursor_position = len(draft)
+                submitted = []
+
+                def submit(value):
+                    submitted.append(value)
+                    return False
+
+                editor.app.pre_run_callables.append(
+                    lambda: editor.app.loop.call_later(2, lambda: editor.app.exit(exception=TimeoutError(expected)))
+                )
+                pipe.send_text(keys)
+                editor.run(submit)
+                self.assertEqual(submitted, [expected])
+                self.assertEqual(editor.buffer.text, draft)
 
     def test_model_directory_combines_connection_filter_and_search(self):
         from prompt_toolkit.application.current import create_app_session

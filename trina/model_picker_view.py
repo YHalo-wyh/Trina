@@ -1,5 +1,7 @@
-"""模型目录的列宽、数值和按键提示，共用终端字符宽度。"""
+"""终端目录的列宽、标题和按键提示。"""
 from __future__ import annotations
+
+from re import Pattern
 
 from .console_state import _cells, _fit_cells
 
@@ -32,7 +34,26 @@ def padded(text: str, width: int, *, right: bool = False) -> str:
     return pad + text if right else text + pad
 
 
-def key_hints(pairs, width: int):
+def directory_header(icon: str, title: str, context: str, width: int, *, style: str = "class:dim"):
+    left = _fit_cells(f"{icon}  {title}", width)
+    right = _fit_cells(context, width - _cells(left) - 3)
+    return [("class:model.accent", left),
+            ("", " " * max(0, width - _cells(left + right))),
+            (style, right)]
+
+
+def marked_text(text: str, pattern: Pattern[str] | None, style: str, mark_style: str):
+    """在已截断的显示文本上标出搜索命中，保持列宽。"""
+    fragments = []
+    start = 0
+    for match in pattern.finditer(text) if pattern else ():
+        fragments.extend([(style, text[start:match.start()]), (f"{style} {mark_style}", match.group())])
+        start = match.end()
+    fragments.append((style, text[start:]))
+    return fragments
+
+
+def key_hints(pairs, width: int, *, key_style: str = "class:model.key", label_style: str = "class:dim"):
     result = []
     used = 0
     for key, action in pairs:
@@ -41,6 +62,6 @@ def key_hints(pairs, width: int):
             continue
         if result:
             result.append(("", "   "))
-        result.extend([("class:model.key", key), ("class:dim", " " + action)])
+        result.extend([(key_style, key), (label_style, " " + action)])
         used += size
     return result
