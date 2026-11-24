@@ -82,6 +82,10 @@ class EventBus:
         db.execute("PRAGMA cache_size=-8192")
         return db
 
+    def keep_open(self):
+        """保留无事务的连接，让同一轮对话写入的 WAL 在轮末统一收尾。"""
+        return closing(self._connect())
+
     @classmethod
     def open_existing(cls, path: str | Path) -> EventBus:
         resolved = Path(path).resolve()

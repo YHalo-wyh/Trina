@@ -1,20 +1,104 @@
 """模型页及以供应商为单位的配置生命周期。"""
 from __future__ import annotations
 
+import asyncio
 import copy
+import hashlib
+import json
+import tempfile
+import time
+import threading
+from concurrent.futures import Future, ThreadPoolExecutor
+from pathlib import Path
 import os
 from typing import Callable
 
 from .console_ui import ChoiceSpec, edit_field, enhanced_input_available, select_option
+from .models import CatalogModel
 from .model_picker import ModelChoice, select_model
 from .providers import PRESETS, PRESET_BY_ID, ProfileStore, ProviderProfile, normalize_endpoint, validate_address
 
 
+class ModelCatalogCache:
+    """一个控制台复用目录和进行中的读取，关闭面板不会重发请求。"""
+
+    def __init__(self, directory: Path):
+        self.directory = directory
+        self._pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="trina-model-list")
+        self._lock = threading.Lock()
+        self._entries: dict[tuple, tuple[float, dict[str, CatalogModel]]] = {}
+        self._pending: dict[tuple, Future] = {}
+
+    def _file(self, key) -> Path:
+        digest = hashlib.sha256(json.dumps(key, ensure_ascii=False).encode()).hexdigest()
+        return self.directory / (digest + ".json")
+
+    def get(self, key):
+        with self._lock:
+            if key not in self._entries:
+                try:
+                    data = json.loads(self._file(key).read_text(encoding="utf8"))
+                    rows = {name: CatalogModel.from_row(row) for name, row in data["models"].items()
+                            if isinstance(row, dict) and name == row.get("id") and name.isprintable()}
+                    self._entries[key] = float(data["updated"]), rows
+                except (OSError, ValueError, TypeError, KeyError, AttributeError):
+                    return None
+            return self._entries[key]
+
+    def _save(self, key, updated, models):
+        rows = {name: {"id": name, "type": model.kind, "limit": {"context": model.context, "output": model.output},
+                       "modalities": {"input": ["image"] if model.vision else []}} for name, model in models.items()}
+        self.directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+        tmp = tempfile.NamedTemporaryFile(mode="w", encoding="utf8", dir=self.directory, delete=False)
+        path = Path(tmp.name)
+        try:
+            with tmp:
+                json.dump({"updated": updated, "models": rows}, tmp, ensure_ascii=False)
+            path.replace(self._file(key))
+        finally:
+            path.unlink(missing_ok=True)
+
+    def request(self, key, fetch, *, force):
+        def read():
+            try:
+                models = fetch()
+                with self._lock:
+                    updated = time.time()
+                    self._entries[key] = updated, models
+                try:
+                    self._save(key, updated, models)
+                except OSError:
+                    pass  # 只读配置目录仍可使用进程内的最新结果。
+                return ""
+            except (ValueError, OSError) as exc:
+                reason = str(exc)
+                return reason if reason.startswith("HTTP ") and reason[5:].isdigit() else "读取失败"
+            finally:
+                with self._lock:
+                    self._pending.pop(key, None)
+
+        self.get(key)
+        with self._lock:
+            if key in self._pending:
+                return self._pending[key]
+            saved = self._entries.get(key)
+            if not force and saved and 0 <= time.time() - saved[0] < 300:
+                return None
+            future = self._pool.submit(read)
+            self._pending[key] = future
+            return future
+
+    def close(self):
+        self._pool.shutdown(wait=False, cancel_futures=True)
+
+
 class ModelManager:
     def __init__(self, config, *, emit: Callable[[str], None], reload: Callable[[], None],
-                 ask=None, choose=None, form=None, store: ProfileStore | None = None):
+                 ask=None, choose=None, form=None, store: ProfileStore | None = None, catalog: ModelCatalogCache | None = None, recent_models: list[tuple[str, str]] | None = None):
         self.config, self.emit, self.reload = config, emit, reload
         self.store = store or ProfileStore()
+        self.recent_models = recent_models if recent_models is not None else []
+        self.catalog = catalog or ModelCatalogCache(self.store.path.parent / "model-catalog")
         self.ask, self.choose, self.form = ask or self._ask, choose or select_option, form
 
     @staticmethod
@@ -71,14 +155,51 @@ class ModelManager:
         window = f"{llm.effective_context_window:,}" + ("（自动）" if not llm.context_window else "（手动）")
         return f"供应商  {name}\n请求地址 {address}\n模型    {llm.model}\n上下文  {window}\n思考    {effort}\nAPI Key {key_status}"
 
+    def _connections(self):
+        llm = self.config.llm
+        profiles = list(self.store.profiles.items())
+        if llm.profile not in self.store.profiles and llm.backend == "openai" and llm.base_url:
+            profiles.insert(0, ("", self.current()))
+        return profiles
+
+    @staticmethod
+    def _catalog_key(item: ProviderProfile) -> tuple[str, ...]:
+        secret = item.api_key or os.environ.get(item.api_key_env, "")
+        return item.id, item.api, item.base_url, hashlib.sha256(secret.encode()).hexdigest()
+
+    async def discover(self, force: bool = False):
+        """并行读取连接，各目录完成即交给界面。缓存按连接与凭据隔离。"""
+        async def received(name, future):
+            return name, await asyncio.shield(asyncio.wrap_future(future))
+
+        tasks = []
+        for _, item in self._connections():
+            future = self.catalog.request(self._catalog_key(item), self._backend_for(item).remote_catalog, force=force)
+            if future is not None:
+                tasks.append(asyncio.create_task(received(item.id, future)))
+        failures = []
+        try:
+            for done, pending in enumerate(asyncio.as_completed(tasks), 1):
+                name, error = await pending
+                if error:
+                    failures.append(f"{name} {error}")
+                progress = [f"读取目录 {done}/{len(tasks)}"] if done < len(tasks) else []
+                yield self.model_choices(), " · ".join(progress + failures)
+            if not tasks:
+                yield self.model_choices(), ""
+        finally:
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+
     def model_choices(self) -> list[ModelChoice]:
-        """列出当前模型、已保存连接和对应预设，不请求远端目录。"""
+        """用最近成功的供应商目录组装列表，首次打开以本地预设填充。"""
         llm = self.config.llm
         current = self.current()
         label = llm.profile or (current.id if llm.base_url else "当前配置")
         from .llm.reasoning import reasoning_support
 
-        def choice(profile_id, name, model, profile, *, active=False):
+        def choice(profile_id, name, model, profile, *, active=False, source="预设", meta=CatalogModel()):
             candidate = copy.copy(llm)
             if not active:
                 candidate.backend, candidate.api = "openai", profile.api
@@ -86,27 +207,35 @@ class ModelManager:
             candidate.model = model
             levels = reasoning_support(candidate).levels
             return ModelChoice(profile_id, name, model, active, candidate.api, candidate.effective_context_window,
-                               bool(candidate.context_window), levels)
+                               bool(candidate.context_window), levels if meta.kind == "chat" else (), source, meta)
 
         choices: list[ModelChoice] = []
         if llm.model:
-            choices.append(choice(llm.profile, label, llm.model, current, active=True))
-        profiles = [(item.id, item.id, item) for item in self.store.profiles.values()]
-        if llm.profile not in self.store.profiles and llm.backend == "openai":
-            profiles.insert(0, ("", label, current))
-        for profile_id, name, item in profiles:
+            active_entry = self.catalog.get(self._catalog_key(current))
+            metadata = active_entry[1].get(llm.model, CatalogModel()) if active_entry else CatalogModel()
+            choices.append(choice(llm.profile, label, llm.model, current, active=True, source="当前配置", meta=metadata))
+        for profile_id, item in self._connections():
+            name = item.id
             preset = PRESET_BY_ID.get(item.provider)
-            for model in dict.fromkeys((item.model, *(preset.models if preset else ()))):
+            cached = self.catalog.get(self._catalog_key(item))
+            fallback = preset.models if preset else ()
+            models = cached[1] if cached else fallback
+            for model in dict.fromkeys((item.model, *models)):
                 if model and (profile_id, model) != (llm.profile, llm.model):
-                    choices.append(choice(profile_id, name, model, item))
+                    source = "供应商目录" if cached and model in models else "已配置" if model == item.model else "预设"
+                    meta = cached[1].get(model, CatalogModel()) if cached else CatalogModel()
+                    choices.append(choice(profile_id, name, model, item, source=source, meta=meta))
         return choices
 
     def pick_quick(self, *, plain: bool = False):
-        return select_model(self.model_choices(), plain=plain)
+        return select_model(self.model_choices(), plain=plain, discover=self.discover, recent=self.recent_models)
 
     def switch_model(self, choice: ModelChoice) -> bool:
+        if choice.meta.kind != "chat":
+            raise ValueError("此模型仅供浏览，请选择聊天模型")
         llm = self.config.llm
-        if (choice.connection_id, choice.model) == (llm.profile, llm.model):
+        previous = (llm.profile, llm.model)
+        if (choice.connection_id, choice.model) == previous:
             return False
         if choice.connection_id:
             item = copy.deepcopy(self.store.profiles[choice.connection_id])
@@ -122,6 +251,8 @@ class ModelManager:
             candidate.validate()
             llm.model, llm.reasoning_effort = candidate.model, candidate.reasoning_effort
             self.reload()
+        used = ((choice.connection_id, choice.model), previous, *self.recent_models)
+        self.recent_models[:] = list(dict.fromkeys(used))[:5]
         return True
 
     def run(self) -> None:

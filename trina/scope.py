@@ -29,6 +29,30 @@ from urllib.parse import unquote_plus, urlsplit
 
 from .config import ACTION_LEVELS, ScopeConfig
 
+def read_provider_catalog(url: str, headers: dict[str, str], timeout: float) -> dict:
+    """只读取所选供应商的模型目录，带凭据的请求不跟随重定向。"""
+    import json
+    import urllib.request
+    from .providers import validate_address
+
+    # 分页参数由调用方编码，连接地址沿用供应商表单校验。
+    validate_address(url.split("?", 1)[0])
+
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, *args, **kwargs):
+            return None
+
+    request = urllib.request.Request(url, headers={**headers, "Accept": "application/json"})
+    with urllib.request.build_opener(NoRedirect).open(request, timeout=timeout) as response:
+        raw = response.read(8 * 1024 * 1024 + 1)
+    if len(raw) > 8 * 1024 * 1024:
+        raise ValueError("模型目录响应过大")
+    data = json.loads(raw)
+    if not isinstance(data, dict):
+        raise ValueError("模型目录格式错误")
+    return data
+
+
 @dataclass
 class ExecutionLease:
     """单次工具调用的可撤销执行租约，不是目标授权来源。"""

@@ -13,6 +13,34 @@ from trina.llm.base import LLMResponse, LLMStreamEvent, LLMUsage
 
 
 class ConsoleSessionTests(unittest.TestCase):
+    def test_slash_menu_navigates_before_submitting_and_completes_arguments(self):
+        from prompt_toolkit.application.current import create_app_session
+        from prompt_toolkit.input import create_pipe_input
+        from prompt_toolkit.output import DummyOutput
+        from trina.console_ui import ChoiceSpec, EnhancedConsoleInput
+
+        with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
+            editor = EnhancedConsoleInput(status=lambda: "就绪", running=lambda: False, plain=True,
+                                          dynamic_values=lambda *_: [ChoiceSpec("公司 DeepSeek")])
+            editor.buffer.text = "/"
+            editor.buffer.cursor_position = 1
+            editor._move(1)
+            self.assertEqual(editor.buffer.text, "/")
+            self.assertTrue(editor._complete_before_submit())
+            self.assertEqual(editor.buffer.text, "/status")
+            self.assertFalse(editor._complete_before_submit())
+
+            editor.buffer.text = "/model use '公司 Dee"
+            editor.buffer.cursor_position = len(editor.buffer.text)
+            editor._accept_menu(add_space=True)
+            self.assertEqual(editor.buffer.text, "/model use '公司 DeepSeek' ")
+
+            editor.buffer.text = "/对话与工具"
+            editor.buffer.cursor_position = len(editor.buffer.text)
+            self.assertIn("/history", [item.display_text for item in editor._items()])
+            editor.dismissed = True
+            self.assertFalse(editor._complete_before_submit())
+
     def test_model_directory_combines_connection_filter_and_search(self):
         from prompt_toolkit.application.current import create_app_session
         from prompt_toolkit.input import create_pipe_input
@@ -28,10 +56,27 @@ class ConsoleSessionTests(unittest.TestCase):
         for keys, expected in [("\t\talpha\r", choices[1]),
                                ("\t\t\x1b\x1b[Cbe\r", choices[2]),
                                ("\x1b\x1b[D\r", choices[2]),
+                               ("\x1b[D\x1b[B\x1b[B\x1b[Cbta\r", choices[2]),
                                ("absent\r\x03", None)]:
             with self.subTest(keys=keys), create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
                 pipe.send_text(keys)
                 self.assertEqual(select_model(choices), expected)
+
+    def test_picker_delivers_new_catalog_while_query_is_active(self):
+        from prompt_toolkit.application.current import create_app_session
+        from prompt_toolkit.input import create_pipe_input
+        from prompt_toolkit.output import DummyOutput
+        from trina.model_picker import ModelChoice, select_model
+
+        local = ModelChoice("work", "Work", "local", current=True)
+        remote = ModelChoice("work", "Work", "remote-only")
+        async def discover(force):
+            pipe.send_text("rmtonly")
+            await asyncio.sleep(.04)
+            yield [local, remote], ""
+            pipe.send_text("\r")
+        with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
+            self.assertEqual(select_model([local], discover=discover), remote)
 
     def test_drag_model_scrollbar_to_end_then_confirm(self):
         from prompt_toolkit.application.current import create_app_session
@@ -323,7 +368,7 @@ class ConsoleSessionTests(unittest.TestCase):
                             size[0] = Size(rows=12, columns=38)
                             pipe.send_text("/model\r")
                             await until(model_opened.is_set)
-                            self.assertIn("↑↓ Enter F2 Esc", stream.getvalue())
+                            self.assertIn("F1", stream.getvalue())
                             pipe.send_text("\x1b")
                             await until(lambda: not editor.app._running_in_terminal)
                             self.assertEqual(ProfileStore().active, "secondary")
@@ -351,7 +396,7 @@ class ConsoleSessionTests(unittest.TestCase):
                             app.create_background_task(exercise())
                     editor.app.after_render += rendered
                     return editor
-                with patch("trina.interactive.enhanced_input_available", return_value=True), patch("trina.interactive.EnhancedConsoleInput", side_effect=editor_factory), patch("trina.console_ui._panel_app", side_effect=panel):
+                with patch("trina.llm.openai_backend.OpenAICompatBackend.remote_catalog", side_effect=ValueError("offline")), patch("trina.interactive.enhanced_input_available", return_value=True), patch("trina.interactive.EnhancedConsoleInput", side_effect=editor_factory), patch("trina.console_ui._panel_app", side_effect=panel):
                     self.assertEqual(console.run(), 0)
 
     def test_thinking_marker_moves_but_idle_does_not(self):
@@ -409,7 +454,7 @@ class ConsoleSessionTests(unittest.TestCase):
                             activity = "".join(text for _, text in editor._activity())
                             self.assertNotIn("\n", activity)
                             self.assertEqual(editor._activity_height(), 1)
-                            self.assertEqual(editor._hint(), "")
+                            self.assertEqual(editor._menu_height(), 0)
                             self.assertLessEqual(max(cell_len(line) for line in footer.splitlines()), columns)
                             self.assertLessEqual(cell_len(rail), columns)
                             self.assertLessEqual(max(cell_len(line) for line in activity.splitlines()), columns)

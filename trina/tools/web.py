@@ -15,11 +15,11 @@ import asyncio
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 from urllib.parse import parse_qsl, urljoin, urlsplit
 
-import aiohttp
-from bs4 import BeautifulSoup, Comment
+if TYPE_CHECKING:
+    import aiohttp
 
 from .http import DEFAULT_HEADERS
 from .registry import ParamSpec, Tool, ToolResult, ToolSpec, denied_result
@@ -161,6 +161,8 @@ async def _scan_core(
     client=None,
 ) -> dict[str, Any]:
     """并发扫描 + 软 404 过滤。返回 {results, baseline, scanned, raw_count}。"""
+    import aiohttp
+
     host = _host_of(base_url)
     statuses = {int(s) for s in (match_status or DEFAULT_MATCH_STATUS)}
     method_list = [str(m).upper() for m in (methods or ["GET"])]
@@ -372,6 +374,8 @@ class WebSurfaceTool(Tool):
                 error=res.error,
                 evidence=[res.as_evidence(note="web_surface 拉取失败")],
             )
+
+        from bs4 import BeautifulSoup, Comment
 
         soup = BeautifulSoup(res.body or "", "html.parser")
 

@@ -180,7 +180,7 @@ class WorkerDashboardTests(unittest.TestCase):
         self.assertEqual(manager.task_result("a")["status"], "cancelled")
         self.assertEqual(manager.task_result("b")["status"], "completed")
 
-    def test_ui_hides_hint_and_normal_weight_role_and_keeps_grid_keyboard(self):
+    def test_command_menu_and_normal_weight_role_keep_grid_keyboard(self):
         from prompt_toolkit.application.current import create_app_session
         from prompt_toolkit.data_structures import Size
         from prompt_toolkit.input import create_pipe_input
@@ -192,9 +192,9 @@ class WorkerDashboardTests(unittest.TestCase):
             editor = EnhancedConsoleInput(status=lambda: "ready", running=lambda: False, dynamic_values=lambda *_: ())
             editor.buffer.text = "/"
             editor.buffer.cursor_position = 1
-            self.assertEqual(editor._hint(), "")
+            self.assertGreater(editor._menu_height(), 0)
             self.assertTrue(editor._items())
-            self.assertNotIn("Tab 填入", "".join(t for _, t in editor._menu()))
+            self.assertIn("Tab 补全", "".join(fragment[1] for fragment in editor._menu()))
             self.assertFalse(editor.app.style.get_attrs_for_style_str("class:context.role").bold)
             pipe.send_text("\tzf")
             self.assertEqual(show_subworkers(self.manager(), self.config), ("message", "worker-2"))

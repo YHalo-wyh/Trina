@@ -100,6 +100,8 @@ class Console:
         self._custom_output = output is not None
         #: 测试可注入的后端工厂（形如 make_backend(llm_config) -> LLMBackend）
         self._backend_factory = None
+        self._model_catalog = None
+        self._recent_models: list[tuple[str, str]] = []
         self.registry = registry
         self.autostart_lab = autostart_lab
         self._lock = threading.RLock()
@@ -1097,19 +1099,20 @@ class Console:
             return
         if args[0] in ("list", "ls", "?"):
             self._emit(f"当前后端 {llm.backend} · 模型 {_display_model(llm.model, llm.reasoning_effort)}" + (f" · base_url {llm.base_url}" if llm.backend == "openai" else ""))
-            from .models import list_models
+            import asyncio
+            manager = self._model_manager()
 
-            entries = list_models(limit=25)
-            if not entries:
-                self._emit("（没能列出可选模型：可手动 /model provider/model）")
-                return
-            self._emit("可选模型（/model <spec> 切换；加 /save 持久化）:")
-            for entry in entries:
-                marker = " ←当前" if entry.spec.endswith(llm.model) else ""
-                self.output(f"    {entry.render()}{marker}")
-            self._emit(f"内置 {len(PRESETS)} 个供应商预设 · /model settings 打开管理页 · /model add 添加连接")
-            for preset in PRESETS:
-                self.output(f"    {preset.id:<16} {preset.name}")
+            async def catalog():
+                async for rows, notice in manager.discover():
+                    pass
+                return rows, notice
+
+            rows, notice = asyncio.run(catalog())
+            self._emit(f"模型目录（{len(rows)} 项，可用于聊天 {sum(row.meta.kind == 'chat' for row in rows)} 项）")
+            for row in rows:
+                self.output(f"    {'●' if row.current else ' '} {row.connection_label}/{row.model} · {row.meta.kind} · {row.source}")
+            if notice:
+                self._emit(notice, prefix="提示")
             return
         spec = args[0]
         from .models import normalize_spec
@@ -1151,7 +1154,10 @@ class Console:
                 return choices[int(value) - 1].value
             return next((c.value for c in choices if c.value == value), None)
 
-        return ModelManager(self.config, emit=self._emit, reload=self._reload_backend, ask=ask, choose=choose)
+        manager = ModelManager(self.config, emit=self._emit, reload=self._reload_backend, ask=ask, choose=choose,
+                               catalog=self._model_catalog, recent_models=self._recent_models)
+        self._model_catalog = manager.catalog
+        return manager
 
     def _cmd_history(self, args: list[str]) -> None:
         if self.chat is None or not self.chat.history:
@@ -2146,6 +2152,8 @@ class Console:
         with Shutdown(self._emit) as shutdown:
             self._cleanup_done = True
             self._job_wait.close()
+            if self._model_catalog is not None:
+                self._model_catalog.close()
             # 先通知所有生产者停止，再等待；再次 Ctrl+C 只跳过线程等待。
             if self._scheduler is not None:
                 shutdown.call("调度器", self._scheduler.stop_event.set)

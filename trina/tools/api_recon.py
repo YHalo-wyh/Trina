@@ -7,7 +7,6 @@ from collections import deque
 from typing import Any
 from urllib.parse import parse_qs, urldefrag, urljoin, urlsplit
 
-from bs4 import BeautifulSoup
 
 from .browser import _browser_error, _call_result, _pool, _preview
 from ..browser import BrowserError
@@ -64,6 +63,8 @@ class ApiReconStatic(Tool):
             text = res.body
             candidates: list[tuple[str, bool]] = []
             if "<html" in text.lower() or "text/html" in res.headers.get("Content-Type", "").lower():
+                from bs4 import BeautifulSoup
+
                 soup = BeautifulSoup(text, "html.parser")
                 for tag in soup.find_all(["script", "a", "link", "form"]):
                     raw = tag.get("src") or tag.get("href") or tag.get("action")

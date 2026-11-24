@@ -138,7 +138,15 @@ def render_message(message: str, *, label: str = "提示", width: int | None = N
     requested_color = color
     color = color and palette_name(palette) != "mono"
     width = max(20, width if width is not None else terminal_width())
-    text = f"{clean_text(label)}  {clean_text(message)}"
+    heading, body = clean_text(label), clean_text(message)
+    text = f"{heading}  {body}"
+    role = "error" if label.strip("[] ") in ("错误", "拒绝") else "warning" if label.strip("[] ") in ("警告", "超时") else "heading"
+    if text.isprintable() and len(text) <= width and get_cwidth(text) <= width:
+        from .markdown_view import fragments_to_ansi
+        fragments = [(output_style(role, palette, color=color), heading),
+                     (output_style("text", palette, color=color), "  " + body)]
+        return _responsive(fragments_to_ansi(fragments), lambda new_width: str(render_message(
+            message, label=label, width=new_width, color=requested_color, palette=palette)), requested_width)
     try:
         from rich.console import Console
         from rich.text import Text
@@ -148,7 +156,6 @@ def render_message(message: str, *, label: str = "提示", width: int | None = N
             message, label=label, width=new_width, color=requested_color, palette=palette)), requested_width)
     stream = io.StringIO()
     content = Text(text, style=output_style("text", palette, color=color), overflow="fold")
-    role = "error" if label.strip("[] ") in ("错误", "拒绝") else "warning" if label.strip("[] ") in ("警告", "超时") else "heading"
     content.stylize(output_style(role, palette, color=color), 0, len(clean_text(label)))
     Console(file=stream, width=width, height=25, force_terminal=color, color_system="truecolor" if color else None,
             no_color=not color, legacy_windows=False, highlight=False).print(content)

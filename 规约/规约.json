@@ -202,8 +202,8 @@
         {
           "id": "TR-03-R08",
           "level": "MUST",
-          "statement": "固定补全教学行必须隐藏且保留候选；角色普通字重。每屏最多四张卡片，滚轮和滚动条可遍历当前批次，支持聚焦和窄屏回退，稳定对话缓存不得因其他任务更新重排；原始模型协议不得作为可见对话。",
-          "tests": ["tests.test_worker_dashboard.WorkerDashboardTests.test_ui_hides_hint_and_normal_weight_role_and_keeps_grid_keyboard", "tests.test_worker_dashboard.WorkerDashboardTests.test_grid_layout_pages_resize_zoom_and_reuses_unchanged_dialog", "tests.test_worker_dashboard.WorkerDashboardTests.test_live_projection_ignores_raw_model_protocol_and_tracks_final_output"]
+          "statement": "候选必须显示在输入下方，快捷键说明与候选一同收起；角色普通字重。每屏最多四张卡片，滚轮和滚动条可遍历当前批次，支持聚焦和窄屏回退，稳定对话缓存不得因其他任务更新重排；原始模型协议不得作为可见对话。",
+          "tests": ["tests.test_worker_dashboard.WorkerDashboardTests.test_command_menu_and_normal_weight_role_keep_grid_keyboard", "tests.test_worker_dashboard.WorkerDashboardTests.test_grid_layout_pages_resize_zoom_and_reuses_unchanged_dialog", "tests.test_worker_dashboard.WorkerDashboardTests.test_live_projection_ignores_raw_model_protocol_and_tracks_final_output"]
         },
         {
           "id": "TR-03-R09",

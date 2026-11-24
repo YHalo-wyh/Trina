@@ -41,6 +41,17 @@ class _EventTool(Tool):
 
 
 class EventTests(unittest.TestCase):
+    def test_chat_turn_connection_keeps_committed_events_visible(self):
+        import sqlite3
+        with tempfile.TemporaryDirectory() as tmp:
+            bus = EventBus(Path(tmp) / "events.db", "chat")
+            with bus.keep_open() as anchor:
+                bus.publish("user.message", text="hello")
+                self.assertFalse(anchor.in_transaction)
+                self.assertEqual(EventBus.open_existing(bus.path).last_seq, 1)
+            with self.assertRaises(sqlite3.ProgrammingError):
+                anchor.execute("SELECT 1")
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

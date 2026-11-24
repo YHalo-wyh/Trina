@@ -149,10 +149,10 @@ class TestTerminalUI(unittest.TestCase):
                                           dynamic_values=lambda *_: (), plain=True)
             editor.buffer.text = "/h"
             editor.buffer.cursor_position = 2
-            menu = "".join(text for _, text in editor._menu())
+            menu = "".join(fragment[1] for fragment in editor._menu())
             self.assertIn("/help", menu)
             self.assertIn("/history", menu)
-            pipe.send_text("/h\r")
+            pipe.send_text("/h\r\r")
             self.assertEqual(editor.read(), "/help")
 
     def test_one_enter_sends_multiline_supplement_while_running(self):
@@ -164,7 +164,7 @@ class TestTerminalUI(unittest.TestCase):
         with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
             editor = EnhancedConsoleInput(status=lambda: "运行中", running=lambda: True,
                                           dynamic_values=lambda *_: (), plain=True)
-            self.assertEqual(editor._hint(), "")
+            self.assertEqual(editor._menu_height(), 0)
             pipe.send_text("\x1b[200~" + text + "\x1b[201~\r")
             self.assertEqual(editor.read(), text)
 

@@ -19,6 +19,7 @@ from urllib.parse import urlsplit
 
 from .. import __version__
 from ..config import LLMConfig
+from ..models import CatalogModel
 from .base import (
     LLMBackend, LLMMessage, LLMResponse, LLMStreamEvent, LLMUsage, StreamCallback, ToolCall,
 )
@@ -142,22 +143,41 @@ class OpenAICompatBackend(LLMBackend):
             return {}, f"请求失败: {self._redact_error(exc)}"
 
     def list_remote_models(self) -> list[str]:
-        """仅在模型管理页显式刷新时查询当前连接的模型目录。"""
+        return [name for name, entry in self.remote_catalog().items() if entry.kind == "chat"]
+
+    def remote_catalog(self) -> dict[str, CatalogModel]:
+        """读取供应商目录和能力字段，兼容带游标的分页。"""
+        from urllib.parse import urlencode
+        from ..scope import read_provider_catalog
+
         base = self.base_url
         if self._opencode_go:
             base = base.replace("/go/openai/v1", "/go/v1")
-        body, error = self._request_json(f"{base}/models")
-        if error:
-            raise ValueError(error)
-        rows = body.get("data")
-        if not isinstance(rows, list):
-            raise ValueError("供应商没有返回 data 模型数组；可手动输入模型 ID")
-        return sorted({
-            str(row["id"])
-            for row in rows
-            if isinstance(row, dict) and row.get("id")
-            and not any(tag in str(row["id"]).lower() for tag in ("embed", "whisper", "tts", "rerank"))
-        })
+        url = f"{base}/models"
+        models: dict[str, CatalogModel] = {}
+        cursors: set[str] = set()
+        while True:
+            try:
+                body = read_provider_catalog(url, self._headers(), min(10, max(1, self.config.timeout)))
+            except urllib.error.HTTPError as exc:
+                exc.close()
+                raise ValueError(f"HTTP {exc.code}") from exc
+            except (OSError, ValueError) as exc:
+                raise ValueError(self._redact_error(exc)) from exc
+            rows = body.get("data")
+            if not isinstance(rows, list):
+                raise ValueError("供应商没有返回 data 模型数组")
+            for row in rows:
+                model = row.get("id") if isinstance(row, dict) else None
+                if isinstance(model, str) and model and model.isprintable():
+                    models[model] = CatalogModel.from_row(row)
+            if not body.get("has_more"):
+                return dict(sorted(models.items()))
+            cursor = body.get("last_id")
+            if not isinstance(cursor, str) or not cursor or cursor in cursors:
+                raise ValueError("模型目录分页游标无效")
+            cursors.add(cursor)
+            url = f"{base}/models?" + urlencode({"after_id": cursor})
 
     def check_connectivity(self) -> tuple[bool, str]:
         """只测试配置地址是否可达，不发送凭据或生成模型输出。"""

@@ -19,6 +19,30 @@ OPENAI_PRESETS: dict[str, dict[str, object]] = {
 
 
 @dataclass(frozen=True)
+class CatalogModel:
+    kind: str = "chat"
+    context: int = 0
+    output: int = 0
+    vision: bool = False
+
+    @classmethod
+    def from_row(cls, row: dict) -> CatalogModel:
+        model = row["id"].casefold()
+        kind = row.get("type")
+        if not isinstance(kind, str) or kind in ("", "model"):
+            kind = next((kind for token, kind in (("embed", "embedding"), ("whisper", "stt"),
+                                                  ("tts", "tts"), ("rerank", "rerank")) if token in model), "chat")
+        limits = row.get("limit") if isinstance(row.get("limit"), dict) else {}
+        modalities = row.get("modalities") if isinstance(row.get("modalities"), dict) else {}
+        inputs = modalities.get("input")
+        ctx = limits.get("context", row.get("context_length"))
+        out = limits.get("output")
+        return cls(kind if kind.isascii() and kind.isalnum() else "other",
+                   ctx if type(ctx) is int and ctx > 0 else 0, out if type(out) is int and out > 0 else 0,
+                   isinstance(inputs, list) and any(isinstance(v, str) and v.startswith("image") for v in inputs))
+
+
+@dataclass(frozen=True)
 class ModelEntry:
     spec: str
     name: str = ""

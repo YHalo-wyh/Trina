@@ -625,9 +625,10 @@ class TestConsole(unittest.TestCase):
         console, output = self._console(
             ["/model list", "/history", "/new", "/history", "quit"]
         )
-        console.run()
+        with patch("trina.llm.openai_backend.OpenAICompatBackend.remote_catalog", return_value={}):
+            console.run()
         blob = "\n".join(output)
-        self.assertTrue("可选模型" in blob or "没能列出" in blob)
+        self.assertIn("模型目录", blob)
         self.assertIn("还没有对话历史", blob)
         self.assertIn("已开启新对话会话", blob)
         self.assertEqual(console._footer_context().task, "新对话")

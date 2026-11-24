@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 import sys
 import threading
 import time
@@ -360,7 +361,7 @@ def command_hint(text: str) -> str:
         return ""
     body = line[1:].strip()
     if not body:
-        return "继续输入筛选命令 · ↑↓ 选择 · Tab 补全 · Enter 执行"
+        return "继续输入筛选命令 · ↑↓ 选择 · Tab 补全 · Enter 确认"
     spec = find_command(body.split(None, 1)[0])
     if spec is None:
         matches = [item for item in COMMANDS if item.name.startswith(body)]
@@ -386,11 +387,45 @@ class SlashCommandCompleter(_Completer):
     ) -> None:
         self.running = running or (lambda: False)
         self.dynamic_values = dynamic_values or (lambda _command, _args: ())
+        self.recent: list[str] = []
 
     def _visible_commands(self) -> list[CommandSpec]:
         running = self.running()
         wanted = "running" if running else "idle"
         return [item for item in COMMANDS if item.availability in (wanted, "always")]
+
+    def remember(self, text: str) -> None:
+        parts = text.split(maxsplit=1)
+        spec = find_command(parts[0]) if parts and parts[0].startswith("/") else None
+        if spec is not None:
+            self.recent = [spec.name, *(item for item in self.recent if item != spec.name)][:5]
+
+    def _matching_commands(self, query: str) -> list[CommandSpec]:
+        ranked = []
+        defaults = ("model", "status", "help", "resume", "new")
+        priority = tuple(dict.fromkeys((*self.recent, *defaults)))
+        for spec in self._visible_commands():
+            names = (spec.name, *spec.aliases)
+            if not query:
+                score = priority.index(spec.name) if spec.name in priority else len(priority)
+            elif query in names:
+                score = 0
+            elif any(name.startswith(query) for name in names):
+                score = 1
+            elif any(query in name for name in names):
+                score = 2
+            elif query in (spec.description + " " + spec.category).casefold():
+                score = 3
+            else:
+                score = 4
+                for name in names:
+                    chars = iter(name)
+                    if all(char in chars for char in query):
+                        break
+                else:
+                    continue
+            ranked.append((score, spec))
+        return [spec for _, spec in sorted(ranked, key=lambda entry: (entry[0], len(entry[1].name) if query else 0))]
 
     @staticmethod
     def _choice_completion(choice: ChoiceSpec, prefix: str):
@@ -409,45 +444,51 @@ class SlashCommandCompleter(_Completer):
             from prompt_toolkit.completion import Completion
         except ImportError:  # pragma: no cover - 正式依赖缺失时由普通 input 降级
             return
+        import shlex
+
         text = document.text_before_cursor
-        if not text.startswith("/"):
+        if (not text.startswith("/") or "\n" in document.text or
+                document.text_after_cursor and not document.text_after_cursor[0].isspace()):
             return
         body = text[1:]
-        if not body or not any(ch.isspace() for ch in body):
-            prefix = body.lower()
-            for spec in sorted(self._visible_commands(), key=lambda s: (len(s.name), s.name)) if prefix else self._visible_commands():
-                candidates = (spec.name, *spec.aliases)
-                if prefix and not any(item.startswith(prefix) for item in candidates):
-                    continue
-                yield Completion(
-                    spec.name,
-                    start_position=-len(body),
-                    display=f"/{spec.name}",
-                    display_meta=f"{spec.category} · {spec.description}",
-                )
+        if not any(ch.isspace() for ch in body):
+            for spec in self._matching_commands(body.casefold()):
+                yield Completion(spec.name, start_position=-len(body), display=f"/{spec.name}",
+                                 display_meta=spec.description)
             return
 
-        trailing_space = body[-1:].isspace()
-        parts = body.split()
-        command = parts[0] if parts else ""
-        spec = find_command(command)
-        if spec is None:
+        # 只拆已经输入的 token，允许最后一个参数的引号尚未闭合。
+        tokens = list(re.finditer(r"""(?:[^\s'"\\]|\\.|'[^']*'?|"(?:[^"\\]|\\.)*"?)+""", body))
+        if not tokens:
             return
-        if trailing_space:
-            completed_args, prefix = parts[1:], ""
-        else:
-            completed_args, prefix = parts[1:-1], parts[-1]
+        command = tokens[0][0]
+        spec = find_command(command)
+        if spec is None or spec.availability not in ("always", "running" if self.running() else "idle"):
+            return
+        tail = tokens[1:]
+        pending = tail.pop()[0] if tail and tail[-1].end() == len(body) else ""
+        try:
+            completed_args = shlex.split(body[tokens[0].end():tail[-1].end()]) if tail else []
+        except ValueError:
+            return
+        try:
+            prefix = shlex.split(pending)[0] if pending else ""
+        except ValueError:
+            if not pending.startswith(("'", '"')):
+                return
+            prefix = pending[1:]
 
         # 支持 --approve=v 这类等号形式。
         if prefix.startswith("--") and "=" in prefix:
             flag, value_prefix = prefix.split("=", 1)
+            value_token = pending.split("=", 1)[1]
             option = next((item for item in spec.options if flag in item.flags), None)
             if option:
                 for choice in option.choices:
                     if choice.value.startswith(value_prefix):
                         yield Completion(
                             choice.value,
-                            start_position=-len(value_prefix),
+                            start_position=-len(value_token),
                             display=choice.value,
                             display_meta=choice.description,
                         )
@@ -459,7 +500,7 @@ class SlashCommandCompleter(_Completer):
             choices = list(value_option.choices) or list(self.dynamic_values(spec.name, completed_args))
             for choice in choices:
                 if not prefix or choice.value.lower().startswith(prefix.lower()):
-                    yield self._choice_completion(choice, prefix)
+                    yield self._choice_completion(choice, pending)
             return
 
         # 第一位置参数：子命令、模式、模型或工具名。
@@ -470,7 +511,7 @@ class SlashCommandCompleter(_Completer):
                 if choice.value in seen or (prefix and not choice.value.lower().startswith(prefix.lower())):
                     continue
                 seen.add(choice.value)
-                yield self._choice_completion(choice, prefix)
+                yield self._choice_completion(choice, pending)
             if choices:
                 return
 
@@ -479,12 +520,12 @@ class SlashCommandCompleter(_Completer):
         if dynamic and not prefix.startswith("-"):
             for choice in dynamic:
                 if not prefix or choice.value.lower().startswith(prefix.lower()):
-                    yield self._choice_completion(choice, prefix)
+                    yield self._choice_completion(choice, pending)
             return
 
         if prefix and not prefix.startswith("-"):
             return
-        used = set(completed_args)
+        used = {arg.split("=", 1)[0] for arg in completed_args}
         for option in spec.options:
             if not option.repeatable and any(flag in used for flag in option.flags):
                 continue
@@ -492,7 +533,7 @@ class SlashCommandCompleter(_Completer):
                 continue
             yield Completion(
                 option.primary,
-                start_position=-len(prefix),
+                start_position=-len(pending),
                 display=option.primary + (f" {option.value}" if option.value else ""),
                 display_meta=option.description,
             )
@@ -568,17 +609,18 @@ class EnhancedConsoleInput:
         self.running = running
         self.completer = SlashCommandCompleter(running=running, dynamic_values=dynamic_values)
         self.dismissed = False
+        self._menu_cache = (None, [])
+        self._menu_selected = 0
+        self._menu_start = 0
+        self._menu_navigated = False
         self.buffer = Buffer(history=InMemoryHistory(), completer=self.completer,
-                             complete_while_typing=True, multiline=False)
+                             complete_while_typing=False, multiline=False)
         self.buffer.on_text_changed += lambda _: self._reopen()
         bindings = KeyBindings()
 
         @bindings.add("tab")
         def complete(event):
-            items = self._items()
-            if items:
-                state = self.buffer.complete_state
-                self.buffer.apply_completion(state.current_completion if state and state.current_completion else items[0])
+            self._accept_menu(add_space=True)
 
         @bindings.add("up")
         @bindings.add("s-tab")
@@ -599,16 +641,11 @@ class EnhancedConsoleInput:
 
         @bindings.add("enter")
         def submit(event):
+            if self._complete_before_submit():
+                return
             self._home_animation = False
-            state = self.buffer.complete_state
-            text = self.buffer.text.strip()
-            if text.startswith("/") and state and state.current_completion:
-                self.buffer.apply_completion(state.current_completion)
-            elif text.startswith("/") and not any(c.isspace() for c in text) and not find_command(text):
-                items = self._items()
-                if items:
-                    self.buffer.apply_completion(items[0])
             value = self.buffer.text
+            self.completer.remember(value)
             if self._handler is None:
                 event.app.exit(result=value)
             else:
@@ -648,11 +685,17 @@ class EnhancedConsoleInput:
 
         @bindings.add("pageup")
         def page_up(event):
-            self._scroll_by(self._page_size())
+            if self._items():
+                self._move(-self._menu_limit())
+            else:
+                self._scroll_by(self._page_size())
 
         @bindings.add("pagedown")
         def page_down(event):
-            self._scroll_by(-self._page_size())
+            if self._items():
+                self._move(self._menu_limit())
+            else:
+                self._scroll_by(-self._page_size())
 
         @bindings.add("c-up")
         def line_up(event):
@@ -672,7 +715,8 @@ class EnhancedConsoleInput:
 
         style = Style.from_dict({"selection": "reverse", "toast": "reverse"} if plain else {
             "prompt": "bold " + THEME["rose"], "index": THEME["muted"],
-            "selected": "bg:" + THEME["selected"] + " " + THEME["text"] + " bold", "hint": THEME["muted"],
+            "selected": "bg:#33283c " + THEME["text"], "hint": THEME["muted"],
+            "command.rule": "#675471", "command.key": "bold " + THEME["lilac"],
             "status": THEME["lilac"], "title": "bold " + THEME["rose"],
             "thinking": THEME["rose"], "thinking.dim": THEME["violet"],
             "border": THEME["violet"], "rail": THEME["violet"],
@@ -728,11 +772,10 @@ class EnhancedConsoleInput:
                 self.activity_window,
                 Window(FormattedTextControl(self._rail), height=1, wrap_lines=False),
                 self.input_window,
-                ConditionalContainer(Window(FormattedTextControl(self._menu), dont_extend_height=True,
-                                             height=lambda: Dimension(max=max(2, min(8, self.app.output.get_size().rows - 10)))),
-                                     Condition(lambda: bool(self._items()) and not self.dismissed)),
-                Window(FormattedTextControl(lambda: [("class:hint", self._hint())]),
-                       height=lambda: 1 if self._hint() else 0),
+                ConditionalContainer(
+                    Window(FormattedTextControl(self._menu), wrap_lines=False, dont_extend_height=True,
+                           height=lambda: self._menu_height()),
+                    Condition(lambda: self._menu_height() > 0)),
                 Window(FormattedTextControl(self._status), height=self._status_height, wrap_lines=False),
                 ConditionalContainer(self.usage_window, Condition(lambda: self.context is None)),
             ])
@@ -1233,39 +1276,101 @@ class EnhancedConsoleInput:
 
     def _reopen(self) -> None:
         self.dismissed = False
-
-    def _hint(self) -> str:
-        # 选项菜单保留，固定的操作教学不再占据输入框和模型栏之间的一行。
-        return ""
+        self._menu_selected = self._menu_start = 0
+        self._menu_navigated = False
 
     def _items(self):
-        if not self.buffer.text.startswith("/"):
+        if self.dismissed or not self.buffer.text.startswith("/"):
             return []
-        state = self.buffer.complete_state
-        return list(state.completions) if state else list(self.completer.get_completions(self.buffer.document, None))
+        key = (self.buffer.text, self.buffer.cursor_position, self.running(), tuple(self.completer.recent))
+        if key != self._menu_cache[0]:
+            self._menu_cache = key, list(self.completer.get_completions(self.buffer.document, None))
+            self._menu_selected = self._menu_start = 0
+            self._menu_navigated = False
+        return self._menu_cache[1]
+
+    def _menu_limit(self) -> int:
+        return max(1, min(8, self.app.output.get_size().rows - 10))
+
+    def _menu_height(self) -> int:
+        items = self._items()
+        return min(len(items), self._menu_limit()) + 1 if items else 0
+
+    def _accept_menu(self, *, add_space: bool = False) -> None:
+        items = self._items()
+        if not items:
+            return
+        item = items[self._menu_selected]
+        self.buffer.apply_completion(item)
+        if add_space and not self.buffer.document.text_after_cursor:
+            self.buffer.insert_text(" ")
+        self.dismissed = not add_space
+
+    def _complete_before_submit(self) -> bool:
+        items = self._items()
+        if not items:
+            return False
+        text = self.buffer.document.text_before_cursor
+        if self.buffer.document.text_after_cursor:
+            return False
+        has_args = any(ch.isspace() for ch in text)
+        if not self._menu_navigated and (has_args or find_command(text)):
+            return False
+        item = items[self._menu_selected]
+        if text[len(text) + item.start_position:] == item.text:
+            return False
+        self._accept_menu()
+        return True
 
     def _move(self, direction: int) -> None:
-        if self._items() and not self.dismissed:
-            if self.buffer.complete_state:
-                (self.buffer.complete_next if direction > 0 else self.buffer.complete_previous)()
-            else:
-                self.buffer.start_completion(select_first=direction > 0, select_last=direction < 0)
+        items = self._items()
+        if items:
+            self._menu_selected = (self._menu_selected + direction) % len(items)
+            self._menu_navigated = True
         else:
             (self.buffer.auto_down if direction > 0 else self.buffer.auto_up)()
 
     def _menu(self):
-        from .terminal import clean_text
+        from prompt_toolkit.mouse_events import MouseEventType
+        from .console_state import _cells, _fit_cells
+        from .model_picker_view import padded
+
         items = self._items()
-        state = self.buffer.complete_state
-        selected = state.complete_index if state and state.complete_index is not None else 0
-        limit = max(1, min(6, self.app.output.get_size().rows - 12))
-        start = max(0, selected - limit + 1)
-        result = []
-        for index, item in list(enumerate(items))[start:start + limit]:
-            result.extend([("class:selected" if index == selected else "class:index",
-                            f"  {index + 1:02d}  {clean_text(item.display_text):<24} {clean_text(item.display_meta_text)}"), ("", "\n")])
-        if result:
-            result.pop()  # 去掉最后一项换行，不再附加选择/补全教学行。
+        if not items:
+            return []
+        selected, limit = self._menu_selected, self._menu_limit()
+        self._menu_start = max(0, selected - limit + 1, min(self._menu_start, selected))
+        width = self.app.output.get_size().columns
+        name_width = min(max(_cells(item.display_text) for item in items) + 1, width // 2 if width >= 42 else width - 3)
+
+        def mouse(position):
+            def handle(event):
+                if event.event_type == MouseEventType.MOUSE_UP:
+                    self._menu_selected = position
+                    self._accept_menu(add_space=True)
+                elif event.event_type in (MouseEventType.SCROLL_UP, MouseEventType.SCROLL_DOWN):
+                    self._move(-1 if event.event_type == MouseEventType.SCROLL_UP else 1)
+                else:
+                    return NotImplemented
+            return handle
+
+        summary = f" {selected + 1}/{len(items)} "
+        keys = "↑↓ 浏览  Tab 补全  Esc 收起"
+        heading = " 参数 " if any(ch.isspace() for ch in self.buffer.document.text_before_cursor) else " 命令 "
+        spare = width - _cells(heading + summary) - 2
+        hint = keys if _cells(keys) <= spare else ""
+        result = [("class:command.rule", "╭─"), ("class:command.key", heading),
+                  ("class:command.rule", "─" * max(0, spare - _cells(hint))),
+                  ("class:hint", hint), ("class:command.key", summary)]
+        for pos in range(self._menu_start, min(self._menu_start + limit, len(items))):
+            item = items[pos]
+            focus = pos == selected
+            style = ("reverse" if self._plain else "class:selected") if focus else ""
+            description = _fit_cells(item.display_meta_text, width - name_width - 4) if width >= 42 else ""
+            text = (" ▸ " if focus else "   ") + padded(item.display_text, name_width)
+            if description:
+                text += " " + description
+            result.extend([("", "\n"), (style, text + " " * max(0, width - _cells(text)), mouse(pos))])
         return result
 
     def read(self) -> str:
@@ -1343,10 +1448,11 @@ def _panel_app(body, title: str, bindings, focused, *, completion_menu: bool = F
     from .terminal import clean_text, use_color, THEME
 
     color = use_color(plain=plain)
-    panel = Frame(Box(body, padding=1), title=clean_text(title), style="class:panel")
     if expanded:
-        floats = [Float(content=panel, left=1, right=1, top=0, bottom=0)]
+        panel = Box(body, padding=0, padding_left=2, padding_right=2)
+        floats = [Float(content=panel, left=0, right=0, top=0, bottom=0)]
     else:
+        panel = Frame(Box(body, padding=1), title=clean_text(title), style="class:panel")
         floats = [Float(content=panel, width=lambda: max(4, min(96, get_app().output.get_size().columns - 2)))]
     if completion_menu:
         floats.append(Float(xcursor=True, ycursor=True, content=CompletionsMenu(max_height=5)))
@@ -1356,6 +1462,11 @@ def _panel_app(body, title: str, bindings, focused, *, completion_menu: bool = F
                       min_redraw_interval=1 / 120, max_render_postpone_time=0,
                       color_depth=ColorDepth.DEPTH_24_BIT if color else None,
                       style=Style.from_dict({"panel.border": THEME["violet"], "panel.label": "bold " + THEME["rose"],
+                                             "model.accent": THEME["lilac"] + " bold",
+                                             "model.live": "#99d7bc", "model.rule": "#504957",
+                                             "model.key": "#d5c2e3 bold", "model.search": "bg:#24202b " + THEME["text"],
+                                             "model.row": "bg:#33283c " + THEME["text"],
+                                             "model.tab": "bg:#cbb2dc #221b29 bold",
                                              "dim": THEME["muted"], "chosen": "bg:" + THEME["selected"] + " " + THEME["text"] + " bold",
                                              "field": "bg:" + THEME["ink"] + " " + THEME["text"],
                                              "button.focused": "bg:" + THEME["selected"] + " " + THEME["text"] + " bold"} if color else {}))

@@ -174,7 +174,8 @@ class ChatAgent:
             raise ValueError("对话已关闭，请使用 /resume 恢复")
         self.in_flight = True
         try:
-            return self._ask_turn(message)
+            with self.events.keep_open():
+                return self._ask_turn(message)
         finally:
             self.in_flight = False
             self.save()

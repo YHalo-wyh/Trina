@@ -1,11 +1,15 @@
 """终端模型目录，按连接和本地能力筛选。"""
 from __future__ import annotations
 
+import asyncio
+import re
 from collections import Counter
 from dataclasses import dataclass
 from typing import Literal
 
+from .models import CatalogModel
 from .model_names import base_name
+from .model_picker_view import columns, key_hints, padded, tokens
 
 
 @dataclass(frozen=True)
@@ -18,9 +22,17 @@ class ModelChoice:
     context_window: int = 0
     manual_context: bool = False
     levels: tuple[str, ...] = ("default",)
+    source: str = "已配置"
+    meta: CatalogModel = CatalogModel()
 
 
-def select_model(choices: list[ModelChoice], *, plain: bool = False) -> ModelChoice | Literal["settings"] | None:
+def _subsequence(term: str, text: str) -> bool:
+    chars = iter(text)
+    return all(char in chars for char in term)
+
+
+def select_model(choices: list[ModelChoice], *, plain: bool = False, discover=None,
+                 recent: list[tuple[str, str]] | None = None) -> ModelChoice | Literal["settings"] | None:
     """在搜索框内直接导航，确认时才修改会话。"""
     from prompt_toolkit.application.current import get_app
     from prompt_toolkit.buffer import Buffer
@@ -28,8 +40,8 @@ def select_model(choices: list[ModelChoice], *, plain: bool = False) -> ModelCho
     from prompt_toolkit.filters import Condition
     from prompt_toolkit.key_binding import KeyBindings
     from prompt_toolkit.layout import ConditionalContainer, HSplit, VSplit, Window
-    from prompt_toolkit.layout.controls import BufferControl, FormattedTextControl
-    from prompt_toolkit.layout.processors import BeforeInput
+    from prompt_toolkit.layout.controls import BufferControl, FormattedTextControl, UIContent, UIControl
+    from prompt_toolkit.layout.processors import AfterInput, BeforeInput
     from prompt_toolkit.mouse_events import MouseEventType
 
     from .console_state import _cells, _fit_cells
@@ -38,36 +50,95 @@ def select_model(choices: list[ModelChoice], *, plain: bool = False) -> ModelCho
     from .terminal import clean_text
 
     search = Buffer(multiline=False)
-    providers = dict((item.connection_id, clean_text(item.connection_label)) for item in choices)
-    counts = Counter(item.connection_id for item in choices)
-    groups = [(None, "全部连接", len(choices)), *((key, label, counts[key]) for key, label in providers.items())]
-    index = [(item, " ".join((item.connection_id, item.connection_label, item.model, base_name(item.model))).casefold())
-             for item in choices]
-    filters = ("全部模型", "可调思考", "窗口 ≥500K")
+    matches = None
+    recent_order = {key: i for i, key in enumerate(recent or ())}
+    divider = 0
+    help_open = False
+
+    def directory(items):
+        providers = {item.connection_id: clean_text(item.connection_label) for item in items}
+        counts = Counter(item.connection_id for item in items)
+        groups = [(None, "全部连接", len(items)), *((key, label, counts[key]) for key, label in providers.items())]
+        index = [(item, " ".join((item.connection_id, item.connection_label, item.model, base_name(item.model))).casefold())
+                 for item in items]
+        return groups, index
+
+    groups, index = directory(choices)
+    browsing_providers = False
+    load_task = None
+    notice = ""
+    active = next((item for item in choices if item.current), None)
+
+    def filter_names(items):
+        kinds = sorted({item.meta.kind for item in items})
+        return ["全部模型", "可调思考", "窗口 ≥500K"] + (kinds if kinds != ["chat"] else [])
+
+    filters = filter_names(choices)
     group = kind = selected = 0
     visible = choices[:]
-    highlight = "reverse" if plain else "class:chosen"
+    highlight = "reverse" if plain else "class:model.row"
+    active_tab = "reverse" if plain else "class:model.tab"
     keys = KeyBindings()
 
     def refresh(_buffer=None):
-        nonlocal visible, selected
+        nonlocal visible, selected, browsing_providers, matches, divider
+        if _buffer is not None:
+            browsing_providers = False
         terms = search.text.casefold().split()
+        matches = re.compile("|".join(map(re.escape, terms)), re.IGNORECASE) if terms else None
         provider = groups[group][0]
-        visible = [item for item, text in index
-                   if (provider is None or item.connection_id == provider)
-                   and (kind != 1 or len(item.levels) > 1)
-                   and (kind != 2 or item.context_window >= 500_000)
-                   and all(term in text for term in terms)]
+        direct, fuzzy = [], []
+        for item, text in index:
+            if (provider is not None and item.connection_id != provider
+                    or kind == 1 and len(item.levels) <= 1 or kind == 2 and item.context_window < 500_000
+                    or kind >= 3 and item.meta.kind != filters[kind]):
+                continue
+            if all(term in text for term in terms):
+                direct.append(item)
+            elif all(_subsequence(term, text) for term in terms):
+                fuzzy.append(item)
+        visible = direct + fuzzy
+        divider = 0
+        if not terms and kind == 0:
+            def rank(item):
+                return -1 if item.current else recent_order.get((item.connection_id, item.model), len(recent_order))
+            visible.sort(key=rank)
+            count = sum(rank(item) < len(recent_order) for item in visible)
+            if 1 < count < len(visible):
+                divider = count
         selected = 0
 
+    refresh()
     search.on_text_changed += refresh
 
     def width():
-        return max(1, get_app().output.get_size().columns - 6)
+        return max(1, get_app().output.get_size().columns - 4)
 
     wide = Condition(lambda: width() >= 70)
     roomy = Condition(lambda: get_app().output.get_size().rows >= 13)
-    side_width = 21
+    side_width = 20
+
+    def list_width():
+        return max(1, width() - (side_width + 3 if wide() else 0))
+
+    def header():
+        brand = "TRINA" if width() >= 48 else ""
+        title = "  /  模型目录" if brand else "模型目录"
+        left = _cells(brand + title)
+        if notice:
+            tag, value, style = "", notice, "class:dim"
+        elif active:
+            tag, value, style = "● 当前  " if brand else "● ", base_name(active.model), "class:model.live"
+        else:
+            tag, value, style = "", "", ""
+        right = _fit_cells(tag + value, width() - left - 3)
+        return [("class:model.accent", brand), ("bold", title),
+                ("", " " * max(0, width() - left - _cells(right))), (style, right)]
+
+    def sidebar_title():
+        return [("class:model.accent" if browsing_providers else "class:dim", "连接"),
+                ("class:dim", padded(str(len(groups) - 1), side_width - 5, right=True))]
+
 
     def pick_group(pos):
         nonlocal group
@@ -92,6 +163,11 @@ def select_model(choices: list[ModelChoice], *, plain: bool = False) -> ModelCho
                 navigate(position() + step)
         return handle
 
+    def choose_provider(pos):
+        nonlocal browsing_providers
+        browsing_providers = True
+        pick_group(pos)
+
     def provider_rows():
         result = []
         for pos, (_, label, count) in enumerate(groups):
@@ -99,46 +175,114 @@ def select_model(choices: list[ModelChoice], *, plain: bool = False) -> ModelCho
                 result.append(("", "\n"))
             number = str(count)
             name = _fit_cells(label, side_width - len(number) - 4)
-            line = ("› " if pos == group else "  ") + name
+            line = ("▸ " if pos == group and browsing_providers else "· " if pos == group else "  ") + name
             line += " " * (side_width - _cells(line) - len(number) - 1) + number
-            result.append((highlight if pos == group else "", line,
-                           mouse(pos, pick_group, pick_group, lambda: group)))
+            style = (highlight if browsing_providers else "class:model.accent") if pos == group else "class:dim"
+            result.append((style, line, mouse(pos, choose_provider, choose_provider, lambda: group)))
         return result
 
-    def model_rows():
-        if not visible:
-            return [("class:dim", "没有匹配的模型" if choices else "尚无模型 · F2 配置连接")]
-        result = []
-        available = width() - (side_width + 3 if wide() else 0) - 1
-        for pos, item in enumerate(visible):
-            if pos:
-                result.append(("", "\n"))
-            label = ("● " if item.current else "") + item.model
-            provider = _fit_cells(item.connection_label, min(23, available // 3)) if available >= 38 else ""
-            name = ("› " if pos == selected else "  ") + _fit_cells(label, available - _cells(provider) - 4)
-            line = name + " " * max(1, available - _cells(name + provider)) + provider
-            result.append((highlight if pos == selected else "", line, mouse(pos, pick_row, pick_row, lambda: selected)))
-        return result
+    def model_to_row(index: int) -> int:
+        return index + int(bool(divider and index >= divider))
+
+    def row_to_model(index: int) -> int:
+        return index - int(bool(divider and index > divider))
+
+    class ColumnHeadings(UIControl):
+        def create_content(self, width: int, height: int) -> UIContent:
+            first, *rest = columns(width)
+            labels = "    " + padded(first[0], first[1])
+            for name, size in rest:
+                labels += "  " + padded(name, size, right=name in ("窗口", "输出"))
+            return UIContent(get_line=lambda _: [("class:dim", labels)], line_count=1, show_cursor=False)
+
+    class ModelRows(UIControl):
+        def create_content(self, width: int, height: int) -> UIContent:
+            first, *rest = columns(width)
+            def row(y):
+                if divider and y == divider:
+                    label = " ── 其他模型 "
+                    return [("class:model.rule", _fit_cells(label, width) + "─" * max(0, width - _cells(label)))]
+                pos = row_to_model(y)
+                if not visible:
+                    return [("class:dim", _fit_cells("没有匹配的模型 · 修改关键词或筛选项" if choices
+                                                     else "尚无模型 · F2 配置连接", width))]
+                item = visible[pos]
+                focused = pos == selected and not browsing_providers
+                base = highlight if focused else ""
+                title = _fit_cells(item.model, first[1])
+                parts = [(base + " class:model.accent", "▸ " if focused else "  "),
+                         (base + " class:model.live", "● " if item.current else "  ")]
+                cursor = 0
+                for match in matches.finditer(title) if matches else ():
+                    parts.extend([(base, title[cursor:match.start()]),
+                                  (base + " class:model.accent underline", match.group())])
+                    cursor = match.end()
+                parts.append((base, title[cursor:] + " " * max(0, first[1] - _cells(title))))
+                values = {"连接": item.connection_label, "类型": item.meta.kind,
+                          "窗口": tokens(item.meta.context), "输出": tokens(item.meta.output)}
+                for name, size in rest:
+                    style = base + (" class:model.accent" if name == "类型" and item.meta.kind != "chat" else " class:dim")
+                    parts.append((style, "  " + padded(values[name], size, right=name in ("窗口", "输出"))))
+                return parts
+            return UIContent(get_line=row, line_count=max(1, len(visible) + bool(divider)),
+                             cursor_position=Point(x=0, y=model_to_row(selected)), show_cursor=False)
+
+        def mouse_handler(self, event):
+            nonlocal browsing_providers
+            if event.event_type == MouseEventType.MOUSE_UP:
+                browsing_providers = False
+                if not divider or event.position.y != divider:
+                    pick_row(row_to_model(event.position.y))
+            elif event.event_type in (MouseEventType.SCROLL_UP, MouseEventType.SCROLL_DOWN):
+                pick_row(selected + (-1 if event.event_type == MouseEventType.SCROLL_UP else 1))
+            else:
+                return NotImplemented
 
     def tabs():
-        result = []
-        for pos, label in enumerate(filters):
-            result.append((highlight if pos == kind else "class:dim", (f"[{label}]" if pos == kind else f" {label} "),
+        # 从选中的筛选项向两侧展开，终端缩窄时仍能看到当前项。
+        compact = {"全部模型": "全部", "窗口 ≥500K": "≥500K 窗口"}
+        labels = [f" {compact.get(name, name)} " for name in filters]
+        lo, hi = kind, kind + 1
+        room = list_width() - _cells(labels[kind]) - 4
+        while lo and room >= _cells(labels[lo - 1]) + 1:
+            lo -= 1
+            room -= _cells(labels[lo]) + 1
+        while hi < len(labels) and room >= _cells(labels[hi]) + 1:
+            room -= _cells(labels[hi]) + 1
+            hi += 1
+        result = [("class:dim", "‹ ")] if lo else []
+        for pos in range(lo, hi):
+            result.append((active_tab if pos == kind else "class:dim", labels[pos],
                            mouse(pos, pick_kind, pick_kind, lambda: kind)))
+            result.append(("", " "))
+        if hi < len(labels):
+            result.append(("class:dim", "›"))
         return result
-
-    def status():
-        return [("class:dim", _fit_cells(f"{groups[group][1]}   {selected + 1 if visible else 0} / {len(visible)}", width()))]
 
     def details():
         if not visible:
             return []
         item = visible[selected]
-        title = clean_text(base_name(item.model)) + "  ·  " + clean_text(item.connection_label)
-        context = f"本地窗口 {item.context_window:,}（{'手动' if item.manual_context else '自动'}）"
-        levels = " / ".join(item.levels)
-        return [("bold", _fit_cells(title, width())), ("class:dim", "\n" + _fit_cells(
-            f"{item.api}  ·  {context}  ·  思考 {levels}", width()))]
+        name = clean_text(base_name(item.model))
+        marker = "● 使用中" if item.current else "预览"
+        title = _fit_cells(name, width() - _cells(marker) - 2)
+        facts = [item.connection_label, item.meta.kind]
+        if item.meta.context:
+            facts.append(f"供应商窗口 {item.meta.context:,}" if wide() else f"窗口 {tokens(item.meta.context)}")
+        if item.meta.output:
+            facts.append(f"最大输出 {item.meta.output:,}" if wide() else f"输出 {tokens(item.meta.output)}")
+        if item.meta.vision:
+            facts.append("图像输入")
+        if item.meta.kind == "chat":
+            settings = [item.source, item.api, f"本地窗口 {tokens(item.context_window)}（{'手动' if item.manual_context else '自动'}）"]
+            if len(item.levels) > 1:
+                settings.append("思考 " + "/".join(item.levels))
+            detail = "  ·  ".join(filter(None, settings))
+        else:
+            detail = "仅供浏览 · 当前会话需要聊天模型"
+        return [("bold", title + "  "), ("class:model.live" if item.current else "class:dim", marker),
+                ("", "\n" + _fit_cells("  ·  ".join(facts), width())),
+                ("class:dim", "\n" + _fit_cells(detail, width()))]
 
     @keys.add("up")
     @keys.add("down")
@@ -147,7 +291,20 @@ def select_model(choices: list[ModelChoice], *, plain: bool = False) -> ModelCho
     def move(event):
         page = max(1, model_window.render_info.window_height if model_window.render_info else 1)
         delta = {"up": -1, "down": 1, "pageup": -page, "pagedown": page}[event.key_sequence[-1].key.value]
-        pick_row(selected + delta)
+        if browsing_providers:
+            pick_group(max(0, min(len(groups) - 1, group + delta)))
+        else:
+            pick_row(selected + delta)
+
+    @keys.add("left", filter=Condition(lambda: not search.text))
+    def focus_providers(event):
+        nonlocal browsing_providers
+        browsing_providers = True
+
+    @keys.add("right", filter=Condition(lambda: browsing_providers))
+    def focus_models(event):
+        nonlocal browsing_providers
+        browsing_providers = False
 
     @keys.add("tab")
     def next_provider(event):
@@ -167,31 +324,94 @@ def select_model(choices: list[ModelChoice], *, plain: bool = False) -> ModelCho
 
     @keys.add("enter")
     def confirm(event):
-        if visible:
+        nonlocal browsing_providers, notice
+        if browsing_providers:
+            browsing_providers = False
+        elif visible and visible[selected].meta.kind == "chat":
             event.app.exit(result=visible[selected])
+        elif visible:
+            notice = f"{visible[selected].meta.kind} · 当前会话需要聊天模型"
 
     @keys.add("f2")
     def settings(event):
         event.app.exit(result="settings")
 
-    @keys.add("escape")
+    @keys.add("f1")
+    def show_help(event):
+        nonlocal help_open
+        help_open = not help_open
+
+    @keys.add("escape", filter=Condition(lambda: help_open))
+    def hide_help(event):
+        nonlocal help_open
+        help_open = False
+
+    @keys.add("escape", filter=Condition(lambda: not help_open))
     @keys.add("c-c")
     @keys.add("c-d")
     def cancel(event):
         event.app.exit(result=None)
 
-    field = BufferControl(buffer=search, input_processors=[BeforeInput(" 搜索 › ")])
-    model_window = Window(FormattedTextControl(model_rows, get_cursor_position=lambda: Point(x=0, y=selected)),
+    async def load_catalog(force):
+        nonlocal choices, groups, group, index, selected, notice, filters, kind, active
+        try:
+            async for updated, error in discover(force):
+                old_group = groups[group][0]
+                old = visible[selected] if visible else None
+                active_filter = filters[kind]
+                choices = updated
+                active = next((item for item in updated if item.current), None)
+                filters = filter_names(choices)
+                kind = filters.index(active_filter) if active_filter in filters else 0
+                groups, index = directory(choices)
+                group = next((i for i, (key, _, _) in enumerate(groups) if key == old_group), 0)
+                refresh()
+                if old:
+                    selected = next((i for i, row in enumerate(visible)
+                                     if (row.connection_id, row.model) == (old.connection_id, old.model)), 0)
+                notice = error
+                app.invalidate()
+        except (OSError, ValueError):
+            notice = "目录读取失败 · F5 重试"
+        finally:
+            app.invalidate()
+
+    def start_load(force=False):
+        nonlocal load_task, notice
+        if discover and (load_task is None or load_task.done()):
+            notice = "正在读取目录…"
+            load_task = app.create_background_task(load_catalog(force))
+            app.invalidate()
+
+    @keys.add("f5")
+    def reload_catalog(event):
+        start_load(True)
+
+    def search_label():
+        show_scope = not wide() and (group != 0 or browsing_providers)
+        scope = _fit_cells(groups[group][1], max(4, list_width() // 4)) + " / " if show_scope else ""
+        label = "连接 › " if browsing_providers and not wide() else "搜索 › "
+        return [("class:model.accent", " " + scope + label)]
+
+    def placeholder():
+        taken = _cells(search_label()[0][1]) + _cells(counter()[0][1])
+        if search.text or list_width() - taken < _cells("模型 ID 或连接名") + 1:
+            return []
+        return [("class:dim", "模型 ID 或连接名")]
+
+    field = BufferControl(buffer=search, input_processors=[BeforeInput(search_label), AfterInput(placeholder)])
+    model_window = Window(ModelRows(),
                           wrap_lines=False, always_hide_cursor=True)
 
     def viewport() -> tuple[int, int, int]:
         height = model_window.render_info.window_height if model_window.render_info else 1
-        return height, max(0, len(visible) - height), model_window.vertical_scroll
+        return height, max(0, len(visible) + bool(divider) - height), model_window.vertical_scroll
 
     def seek(offset: int, _maximum: int) -> None:
         height, maximum, first = viewport()
         offset = min(offset, maximum)
-        pick_row(offset + min(height - 1, max(0, selected - first)))
+        row = offset + min(height - 1, max(0, model_to_row(selected) - first))
+        pick_row(row_to_model(row))
         model_window.vertical_scroll = offset
 
     scrollbar = ScrollbarControl(viewport, seek, lambda step: pick_row(selected - step),
@@ -203,18 +423,43 @@ def select_model(choices: list[ModelChoice], *, plain: bool = False) -> ModelCho
         return Window(FormattedTextControl(content), height=height, wrap_lines=False)
 
     def footer():
-        hint = "↑↓ 模型 · Tab/Shift+Tab 连接 · Alt+←/→ 筛选 · Enter 切换 · F2 设置 · Esc 返回"
-        return [("class:dim", hint if _cells(hint) <= width() else "↑↓ Enter F2 Esc · Tab 连接")]
+        accept = "进入" if browsing_providers else "切换" if visible and visible[selected].meta.kind == "chat" else "浏览"
+        pairs = [("Enter", accept), ("Esc", "返回"), ("F1", "按键"), ("↑↓", "浏览"),
+                 ("←→", "分栏"), ("F5", "刷新"), ("F2", "设置")]
+        return key_hints(pairs, width())
 
+    def shortcuts():
+        return [
+            ("class:model.key", "Tab / Shift+Tab"), ("", " 轮换连接\n"),
+            ("class:model.key", "Alt+←/→"), ("", " 切换筛选    "), ("class:model.key", "PgUp/Dn"), ("", " 翻页\n"),
+            ("class:model.key", "F5"), ("", " 刷新目录    "), ("class:model.key", "F2"), ("", " 连接设置")]
+
+    def counter():
+        return [("class:dim", f" {selected + 1 if visible else 0} / {len(visible)} ")]
+
+    search_bar = VSplit([Window(field, height=1, wrap_lines=False),
+                         Window(FormattedTextControl(counter), dont_extend_width=True, height=1)],
+                        style="class:model.search")
+    def rule():
+        return Window(height=1, char="─", style="class:model.rule")
+
+    def breathing_room():
+        return ConditionalContainer(Window(height=1), filter=Condition(lambda: get_app().output.get_size().rows >= 20))
+    table = VSplit([HSplit([Window(ColumnHeadings(), height=1), model_window]), HSplit([Window(height=1), track])])
     body = HSplit([
-        VSplit([ConditionalContainer(HSplit([line("供应商连接"), sidebar]), filter=wide),
-                ConditionalContainer(Window(width=1, char="│", style="class:dim"), filter=wide),
-                HSplit([line(tabs), Window(field, height=1, wrap_lines=False), line(status), VSplit([model_window, track])])],
-               padding=1),
-        ConditionalContainer(Window(height=1, char="─", style="class:dim"), filter=roomy),
-        ConditionalContainer(line(details, 2), filter=roomy), line(footer),
+        breathing_room(), line(header), rule(),
+        VSplit([ConditionalContainer(VSplit([HSplit([line(sidebar_title), sidebar], width=side_width),
+                                            Window(width=1), Window(width=1, char="│", style="class:model.rule"),
+                                            Window(width=1)]), filter=wide),
+                HSplit([search_bar, line(tabs), breathing_room(), table])]),
+        rule(),
+        ConditionalContainer(line(details, 3), filter=roomy & Condition(lambda: not help_open)),
+        ConditionalContainer(line(shortcuts, 3), filter=Condition(lambda: help_open)),
+        line(footer), breathing_room(),
     ])
     app = _panel_app(body, "切换模型", keys, field, plain=plain, expanded=True)
     app.before_render += lambda _: scrollbar.begin_frame()
     app.after_render += lambda current: scrollbar.finish_frame(current, track, _REDRAW_INTERVAL)
+    if discover:
+        app.pre_run_callables.append(start_load)
     return run_panel(app)

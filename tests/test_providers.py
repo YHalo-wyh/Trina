@@ -1,6 +1,7 @@
 """供应商整条配置的保存、编辑、迁移及无副作用测试。"""
 from __future__ import annotations
 
+import asyncio
 import io
 import json
 import os
@@ -40,6 +41,91 @@ class ProviderTests(unittest.TestCase):
         manager = ModelManager(cfg, emit=output.append, reload=lambda: None,
                                choose=lambda *_args, **_kwargs: next(choose), form=form)
         return manager, cfg, output
+
+    def test_remote_directory_pages_cache_and_failure_fallback(self):
+        from trina.models import CatalogModel
+        manager, _, _ = self.manager()
+        manager._commit(self.profile("work"))
+        async def refresh(force=False):
+            return [batch async for batch in manager.discover(force)][-1]
+        pages = [{"has_more": True, "last_id": "x/y", "data": [{"id": "new-chat", "type": "chat",
+                  "limit": {"context": 1_000_000, "output": 384000}, "modalities": {"input": ["image/png"]}}]},
+                 {"data": [{"id": "embed-v2", "type": "embedding"}]}]
+        with patch("trina.scope.read_provider_catalog", side_effect=pages) as request:
+            rows, error = asyncio.run(refresh())
+            self.assertFalse(error)
+            self.assertEqual(request.call_count, 2)
+            self.assertIn("after_id=x%2Fy", request.call_args.args[0])
+            self.assertEqual(asyncio.run(refresh())[0], rows)
+            self.assertEqual(request.call_count, 2)
+        self.assertEqual({row.model for row in rows}, {"deepseek-chat", "new-chat", "embed-v2"})
+        live = next(row for row in rows if row.model == "new-chat")
+        self.assertEqual(live.meta, CatalogModel("chat", 1_000_000, 384000, True))
+        with self.assertRaises(ValueError):
+            manager.switch_model(next(row for row in rows if row.meta.kind == "embedding"))
+        with patch("trina.scope.read_provider_catalog", side_effect=OSError("offline")):
+            self.assertEqual(asyncio.run(refresh(True)), (rows, "work 读取失败"))
+        restarted, _, _ = self.manager()
+        with patch.object(OpenAICompatBackend, "remote_catalog", side_effect=AssertionError("unexpected network")):
+            self.assertIn("new-chat", {row.model for row in restarted.model_choices()})
+            async def cached():
+                return [batch async for batch in restarted.discover()]
+            self.assertEqual(len(asyncio.run(cached())), 1)
+        restarted.catalog.close()
+        manager.store.profiles["work"].api_key = "replacement"
+        self.assertNotIn("new-chat", {row.model for row in manager.model_choices()})
+
+    def test_reopening_picker_shares_an_inflight_request(self):
+        from threading import Event
+        manager, _, _ = self.manager()
+        manager._commit(self.profile("work"))
+        started, release = Event(), Event()
+
+        def fetch():
+            started.set()
+            release.wait(3)
+            return {}
+
+        async def exercise():
+            first = asyncio.create_task(anext(manager.discover()))
+            await asyncio.to_thread(started.wait, 2)
+            first.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await first
+            second = asyncio.create_task(anext(manager.discover()))
+            await asyncio.sleep(0)
+            release.set()
+            _, error = await second
+            self.assertFalse(error)
+
+        with patch.object(OpenAICompatBackend, "remote_catalog", side_effect=fetch) as mocked:
+            asyncio.run(exercise())
+            self.assertEqual(mocked.call_count, 1)
+        manager.catalog.close()
+
+    def test_catalog_refuses_to_forward_credentials_on_redirect(self):
+        import threading
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+        requests = []
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                requests.append((self.path, self.headers.get("Authorization")))
+                self.send_response(302 if self.path == "/v1/models" else 200)
+                self.send_header("Location", "/elsewhere")
+                self.end_headers()
+            def log_message(self, *_):
+                pass
+        with ThreadingHTTPServer(("127.0.0.1", 0), Handler) as server:
+            worker = threading.Thread(target=server.serve_forever)
+            worker.start()
+            try:
+                item = replace(self.profile(), base_url=f"http://127.0.0.1:{server.server_port}/v1")
+                with self.assertRaisesRegex(ValueError, "302"):
+                    self.manager()[0]._backend_for(item).remote_catalog()
+                self.assertEqual(requests, [("/v1/models", "Bearer test-work")])
+            finally:
+                server.shutdown()
+                worker.join()
 
     def test_selected_provider_and_key_survive_restart(self):
         manager, cfg, _ = self.manager()
