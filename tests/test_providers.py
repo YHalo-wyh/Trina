@@ -42,6 +42,24 @@ class ProviderTests(unittest.TestCase):
                                choose=lambda *_args, **_kwargs: next(choose), form=form)
         return manager, cfg, output
 
+    def test_picker_adds_provider_without_switching_model(self):
+        from trina.providers import PRESET_BY_ID
+        manager, config, _ = self.manager()
+        original = config.llm.model
+        preset = PRESET_BY_ID["ollama"]
+
+        def form(profile, **_):
+            return replace(profile, model="local-chat")
+
+        manager.form = form
+        with patch("trina.model_ui.select_model", side_effect=[preset, None]) as picker:
+            self.assertIsNone(manager.pick_quick(plain=True))
+        self.assertIn(preset, picker.call_args_list[0].kwargs["presets"])
+        self.assertNotIn(preset, picker.call_args_list[1].kwargs["presets"])
+        self.assertTrue(any(item.provider == "ollama" for item in manager.store.profiles.values()))
+        self.assertEqual(config.llm.model, original)
+        self.assertEqual(config.llm.profile, "")
+
     def test_remote_directory_pages_cache_and_failure_fallback(self):
         from trina.models import CatalogModel
         manager, _, _ = self.manager()

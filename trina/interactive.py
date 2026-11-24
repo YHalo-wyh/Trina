@@ -528,7 +528,7 @@ class Console:
         if command == "branch" and completed_args in ([], ["switch"], ["delete"]):
             return [ChoiceSpec(name, "本地分支") for name in self._git_branches]
         if command == "repo" and completed_args in (["stage"], ["unstage"], ["diff"]):
-            return [ChoiceSpec(shlex.quote(name), "最近状态中的文件") for name in self._git_files]
+            return [ChoiceSpec(name, "最近状态中的文件") for name in self._git_files]
         if command == "subworker":
             if completed_args == ["inspect"]:
                 return [ChoiceSpec(item["id"], item["goal"]) for item in self.subworkers.rows()]
@@ -649,7 +649,7 @@ class Console:
             self._emit(f"命令解析失败，按对话处理: {line[:60]}")
             self._handle_chat_input(line)
             return True
-        command, args = argv[0], argv[1:]
+        command, args = ("model" if argv[0] == "models" else argv[0]), argv[1:]
 
         if command in {"subworker", "queue", "plan", "jobs", "resume"}:
             try:

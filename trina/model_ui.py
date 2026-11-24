@@ -16,7 +16,7 @@ from typing import Callable
 from .console_ui import ChoiceSpec, edit_field, enhanced_input_available, select_option
 from .models import CatalogModel
 from .model_picker import ModelChoice, select_model
-from .providers import PRESETS, PRESET_BY_ID, ProfileStore, ProviderProfile, normalize_endpoint, validate_address
+from .providers import PRESETS, PRESET_BY_ID, ProfileStore, ProviderPreset, ProviderProfile, normalize_endpoint, validate_address
 
 
 class ModelCatalogCache:
@@ -133,7 +133,7 @@ class ModelManager:
         except Exception:
             self.store.profiles, self.store.active = old_profiles, old_active
             raise
-        if activate or self.config.llm.profile in (profile.id, previous_id):
+        if activate or (previous_id and self.config.llm.profile == previous_id):
             self.store.apply(self.config.llm, profile.id)
             self.reload()
 
@@ -228,7 +228,14 @@ class ModelManager:
         return choices
 
     def pick_quick(self, *, plain: bool = False):
-        return select_model(self.model_choices(), plain=plain, discover=self.discover, recent=self.recent_models)
+        while True:
+            configured = {item.provider for _, item in self._connections()}
+            presets = tuple(sorted((item for item in PRESETS if item.id not in configured), key=lambda item: item.id))
+            selected = select_model(self.model_choices(), plain=plain, discover=self.discover,
+                                    recent=self.recent_models, presets=presets)
+            if not isinstance(selected, ProviderPreset):
+                return selected
+            self.add(selected.id, activate=False)
 
     def switch_model(self, choice: ModelChoice) -> bool:
         if choice.meta.kind != "chat":
@@ -368,7 +375,7 @@ class ModelManager:
                 return None
             self.emit(self.test_model(draft) if selected == "model" else self.test_connection(draft))
 
-    def add(self, provider_id: str = "") -> None:
+    def add(self, provider_id: str = "", *, activate: bool = True) -> None:
         selected = provider_id or self.choose("供应商预设", [ChoiceSpec("custom", "自定义请求地址")] + [ChoiceSpec(p.id, f"{p.name} · {p.group}") for p in PRESETS])
         if not selected:
             return
@@ -380,7 +387,7 @@ class ModelManager:
         item = ProviderProfile(name, selected, preset.base_url if preset else "", preset.models[0] if preset and preset.models else "", preset.api_key_env if preset else "TRINA_LLM_API_KEY", preset.api if preset else "chat")
         draft = self._edit_form(item, is_new=True)
         if draft:
-            self._commit(draft)
+            self._commit(draft, activate=activate)
 
     def edit(self, name: str = "") -> None:
         if not name:

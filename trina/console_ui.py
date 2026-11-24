@@ -213,6 +213,7 @@ COMMANDS: tuple[CommandSpec, ...] = (
                             ChoiceSpec("remove", "删除供应商配置"), ChoiceSpec("test", "测试供应商地址连通性"),
                             ChoiceSpec("use", "切换供应商"), ChoiceSpec("context", "上下文窗口：auto / 500K / 1M / Token 整数"), ChoiceSpec("list", "列出模型与供应商")),
         examples=("/model", "/model add", "/model edit", "/model context 500K", "/model test"),
+        aliases=("models",),
     ),
     CommandSpec(
         "approve", "会话与模型", "调整动作审批闸门", "approve <off|exploit|verify|all>",
@@ -417,15 +418,39 @@ class SlashCommandCompleter(_Completer):
             elif query in (spec.description + " " + spec.category).casefold():
                 score = 3
             else:
-                score = 4
-                for name in names:
-                    chars = iter(name)
-                    if all(char in chars for char in query):
-                        break
-                else:
+                if not any(self._matches_in_order(query, name) for name in names):
                     continue
+                score = 4
             ranked.append((score, spec))
         return [spec for _, spec in sorted(ranked, key=lambda entry: (entry[0], len(entry[1].name) if query else 0))]
+
+    @staticmethod
+    def _matches_in_order(query: str, value: str) -> bool:
+        chars = iter(value)
+        return all(char in chars for char in query)
+
+    @classmethod
+    def _matching_values(cls, query: str, choices: Iterable[ChoiceSpec]) -> list[ChoiceSpec]:
+        needle = query.casefold()
+        ranked = []
+        seen = set()
+        for choice in choices:
+            value, description = choice.value.casefold(), choice.description.casefold()
+            if choice.value in seen:
+                continue
+            seen.add(choice.value)
+            if not needle or value == needle:
+                score = 0
+            elif value.startswith(needle):
+                score = 1
+            elif needle in value or needle in description:
+                score = 2
+            elif cls._matches_in_order(needle, value):
+                score = 3
+            else:
+                continue
+            ranked.append((score, choice))
+        return [choice for _, choice in sorted(ranked, key=lambda entry: entry[0])]
 
     @staticmethod
     def _choice_completion(choice: ChoiceSpec, prefix: str):
@@ -498,30 +523,20 @@ class SlashCommandCompleter(_Completer):
         value_option = next((item for item in spec.options if previous in item.flags), None)
         if value_option is not None:
             choices = list(value_option.choices) or list(self.dynamic_values(spec.name, completed_args))
-            for choice in choices:
-                if not prefix or choice.value.lower().startswith(prefix.lower()):
-                    yield self._choice_completion(choice, pending)
-            return
-
-        # 第一位置参数：子命令、模式、模型或工具名。
-        if not completed_args and not prefix.startswith("-"):
-            choices = [*spec.positional_choices, *self.dynamic_values(spec.name, completed_args)]
-            seen: set[str] = set()
-            for choice in choices:
-                if choice.value in seen or (prefix and not choice.value.lower().startswith(prefix.lower())):
-                    continue
-                seen.add(choice.value)
+            for choice in self._matching_values(prefix, choices):
                 yield self._choice_completion(choice, pending)
-            if choices:
-                return
-
-        # 更深层级的动态值，例如 /ranges status <名称>。
-        dynamic = list(self.dynamic_values(spec.name, completed_args))
-        if dynamic and not prefix.startswith("-"):
-            for choice in dynamic:
-                if not prefix or choice.value.lower().startswith(prefix.lower()):
-                    yield self._choice_completion(choice, pending)
             return
+
+        if not prefix.startswith("-"):
+            dynamic = list(self.dynamic_values(spec.name, completed_args))
+            positional = list(spec.positional_choices) if not completed_args else []
+            if spec.name == "help" and not completed_args:
+                positional.extend(ChoiceSpec(item.name, item.description) for item in COMMANDS)
+            choices = positional + dynamic
+            if choices:
+                for choice in self._matching_values(prefix, choices):
+                    yield self._choice_completion(choice, pending)
+                return
 
         if prefix and not prefix.startswith("-"):
             return
@@ -617,6 +632,13 @@ class EnhancedConsoleInput:
                              complete_while_typing=False, multiline=False)
         self.buffer.on_text_changed += lambda _: self._reopen()
         bindings = KeyBindings()
+
+        @bindings.add("c-space", filter=Condition(lambda: not self.buffer.text or self.buffer.text.startswith("/")))
+        def open_commands(event):
+            if not self.buffer.text:
+                self.buffer.insert_text("/")
+            else:
+                self.dismissed = False
 
         @bindings.add("tab")
         def complete(event):
@@ -717,6 +739,7 @@ class EnhancedConsoleInput:
             "prompt": "bold " + THEME["rose"], "index": THEME["muted"],
             "selected": "bg:#33283c " + THEME["text"], "hint": THEME["muted"],
             "command.rule": "#675471", "command.key": "bold " + THEME["lilac"],
+            "command.description": THEME["muted"],
             "status": THEME["lilac"], "title": "bold " + THEME["rose"],
             "thinking": THEME["rose"], "thinking.dim": THEME["violet"],
             "border": THEME["violet"], "rail": THEME["violet"],
@@ -1245,7 +1268,7 @@ class EnhancedConsoleInput:
                 words = text.strip().lstrip("/").split(maxsplit=2)
                 command = words[0] if words else ""
                 # 模型表单暂时接管终端，结束后恢复同一内容区和未提交输入。
-                modal = command in {"model", "worker", "subworker", "branch", "repo", "worktree", "wt", "theme", "colors", "footer"} and (not self.running() or command == "subworker")
+                modal = command in {"model", "models", "worker", "subworker", "branch", "repo", "worktree", "wt", "theme", "colors", "footer"} and (not self.running() or command == "subworker")
                 modal = modal or (words == ["plan", "choose"] and not self.running())
                 keep = await run_in_terminal(call, in_executor=True) if modal else await run_in_executor_with_context(call)
                 if not keep:
@@ -1294,7 +1317,12 @@ class EnhancedConsoleInput:
 
     def _menu_height(self) -> int:
         items = self._items()
-        return min(len(items), self._menu_limit()) + 1 if items else 0
+        return min(len(items), self._menu_limit()) + 1 if items else int(self._unmatched_command())
+
+    def _unmatched_command(self) -> bool:
+        text = self.buffer.text
+        return (not self.dismissed and self.buffer.cursor_position == len(text) and text.startswith("/")
+                and len(text) > 1 and not any(ch.isspace() for ch in text))
 
     def _accept_menu(self, *, add_space: bool = False) -> None:
         items = self._items()
@@ -1337,10 +1365,10 @@ class EnhancedConsoleInput:
 
         items = self._items()
         if not items:
-            return []
+            return [("class:hint", " 没有匹配命令 · /help 查看命令列表")] if self._unmatched_command() else []
         selected, limit = self._menu_selected, self._menu_limit()
         self._menu_start = max(0, selected - limit + 1, min(self._menu_start, selected))
-        width = self.app.output.get_size().columns
+        width = min(92, self.app.output.get_size().columns)
         name_width = min(max(_cells(item.display_text) for item in items) + 1, width // 2 if width >= 42 else width - 3)
 
         def mouse(position):
@@ -1366,11 +1394,15 @@ class EnhancedConsoleInput:
             item = items[pos]
             focus = pos == selected
             style = ("reverse" if self._plain else "class:selected") if focus else ""
-            description = _fit_cells(item.display_meta_text, width - name_width - 4) if width >= 42 else ""
-            text = (" ▸ " if focus else "   ") + padded(item.display_text, name_width)
-            if description:
-                text += " " + description
-            result.extend([("", "\n"), (style, text + " " * max(0, width - _cells(text)), mouse(pos))])
+            description = _fit_cells(item.display_meta_text, width - name_width - 5) if width >= 42 else ""
+            marker = "▸ " if focus else "  "
+            name = padded(item.display_text, name_width)
+            meta = " " + description if description else ""
+            spacing = " " * max(0, width - _cells(marker + name + meta) - 2)
+            handle = mouse(pos)
+            result.extend([("", "\n"), ("class:command.rule", "│ ", handle),
+                           (style, marker + name, handle),
+                           (style if focus else "class:command.description", meta + spacing, handle)])
         return result
 
     def read(self) -> str:

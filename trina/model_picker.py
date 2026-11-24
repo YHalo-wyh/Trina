@@ -10,6 +10,7 @@ from typing import Literal
 from .models import CatalogModel
 from .model_names import base_name
 from .model_picker_view import columns, key_hints, padded, tokens
+from .providers import ProviderPreset
 
 
 @dataclass(frozen=True)
@@ -32,7 +33,8 @@ def _subsequence(term: str, text: str) -> bool:
 
 
 def select_model(choices: list[ModelChoice], *, plain: bool = False, discover=None,
-                 recent: list[tuple[str, str]] | None = None) -> ModelChoice | Literal["settings"] | None:
+                 recent: list[tuple[str, str]] | None = None,
+                 presets: tuple[ProviderPreset, ...] = ()) -> ModelChoice | ProviderPreset | Literal["settings"] | None:
     """在搜索框内直接导航，确认时才修改会话。"""
     from prompt_toolkit.application.current import get_app
     from prompt_toolkit.buffer import Buffer
@@ -58,7 +60,8 @@ def select_model(choices: list[ModelChoice], *, plain: bool = False, discover=No
     def directory(items):
         providers = {item.connection_id: clean_text(item.connection_label) for item in items}
         counts = Counter(item.connection_id for item in items)
-        groups = [(None, "全部连接", len(items)), *((key, label, counts[key]) for key, label in providers.items())]
+        groups = [(None, "所有模型", len(items)), *((key, label, counts[key]) for key, label in providers.items()),
+                  *((preset, preset.id, None) for preset in presets)]
         index = [(item, " ".join((item.connection_id, item.connection_label, item.model, base_name(item.model))).casefold())
                  for item in items]
         return groups, index
@@ -116,7 +119,7 @@ def select_model(choices: list[ModelChoice], *, plain: bool = False, discover=No
 
     wide = Condition(lambda: width() >= 70)
     roomy = Condition(lambda: get_app().output.get_size().rows >= 13)
-    side_width = 20
+    side_width = 24
 
     def list_width():
         return max(1, width() - (side_width + 3 if wide() else 0))
@@ -136,9 +139,8 @@ def select_model(choices: list[ModelChoice], *, plain: bool = False, discover=No
                 ("", " " * max(0, width() - left - _cells(right))), (style, right)]
 
     def sidebar_title():
-        return [("class:model.accent" if browsing_providers else "class:dim", "连接"),
-                ("class:dim", padded(str(len(groups) - 1), side_width - 5, right=True))]
-
+        style = "class:model.accent" if browsing_providers else "class:dim"
+        return [(style, " 供应商"), ("class:dim", "  ·  " + str(len(groups) - 1))]
 
     def pick_group(pos):
         nonlocal group
@@ -168,18 +170,30 @@ def select_model(choices: list[ModelChoice], *, plain: bool = False, discover=No
         browsing_providers = True
         pick_group(pos)
 
-    def provider_rows():
-        result = []
-        for pos, (_, label, count) in enumerate(groups):
-            if pos:
-                result.append(("", "\n"))
-            number = str(count)
-            name = _fit_cells(label, side_width - len(number) - 4)
-            line = ("▸ " if pos == group and browsing_providers else "· " if pos == group else "  ") + name
-            line += " " * (side_width - _cells(line) - len(number) - 1) + number
-            style = (highlight if browsing_providers else "class:model.accent") if pos == group else "class:dim"
-            result.append((style, line, mouse(pos, choose_provider, choose_provider, lambda: group)))
-        return result
+    class ProviderRows(UIControl):
+        def create_content(self, width: int, height: int) -> UIContent:
+            # 清单仍按视口绘制。预设排在已连接之后，标记使用不同字形。
+            def row(pos):
+                key, label, count = groups[pos]
+                selected_group = pos == group
+                focused = selected_group and browsing_providers
+                base = highlight if focused else ""
+                status = "未连接" if count is None and width >= 29 else "" if count is None else str(count)
+                marker = "◦" if isinstance(key, ProviderPreset) else "●" if pos else "·"
+                prefix = ("▸" if selected_group else " ") + f" {marker} "
+                name = padded(label, max(0, width - _cells(prefix) - _cells(status) - 2))
+                style = "class:model.accent" if selected_group else "class:dim" if count is None else ""
+                return [(base + " " + style, prefix + name), (base + " class:dim", status + " ")]
+            return UIContent(get_line=row, line_count=len(groups), cursor_position=Point(x=0, y=group), show_cursor=False)
+
+        def mouse_handler(self, event):
+            if event.event_type == MouseEventType.MOUSE_UP and 0 <= event.position.y < len(groups):
+                choose_provider(event.position.y)
+            elif event.event_type in (MouseEventType.SCROLL_UP, MouseEventType.SCROLL_DOWN):
+                choose_provider(max(0, min(len(groups) - 1, group +
+                                (-1 if event.event_type == MouseEventType.SCROLL_UP else 1))))
+            else:
+                return NotImplemented
 
     def model_to_row(index: int) -> int:
         return index + int(bool(divider and index >= divider))
@@ -204,8 +218,11 @@ def select_model(choices: list[ModelChoice], *, plain: bool = False, discover=No
                     return [("class:model.rule", _fit_cells(label, width) + "─" * max(0, width - _cells(label)))]
                 pos = row_to_model(y)
                 if not visible:
-                    return [("class:dim", _fit_cells("没有匹配的模型 · 修改关键词或筛选项" if choices
-                                                     else "尚无模型 · F2 配置连接", width))]
+                    if isinstance(groups[group][0], ProviderPreset):
+                        message = "此供应商尚未连接 · Enter 添加"
+                    else:
+                        message = "没有匹配的模型 · 修改关键词或筛选项" if choices else "尚无模型 · F2 配置连接"
+                    return [("class:dim", _fit_cells(message, width))]
                 item = visible[pos]
                 focused = pos == selected and not browsing_providers
                 base = highlight if focused else ""
@@ -260,6 +277,9 @@ def select_model(choices: list[ModelChoice], *, plain: bool = False, discover=No
         return result
 
     def details():
+        preset = groups[group][0]
+        if isinstance(preset, ProviderPreset):
+            return [("bold", _fit_cells(preset.name, width())), ("class:dim", "\n按 Enter 打开连接表单")]
         if not visible:
             return []
         item = visible[selected]
@@ -289,7 +309,8 @@ def select_model(choices: list[ModelChoice], *, plain: bool = False, discover=No
     @keys.add("pageup")
     @keys.add("pagedown")
     def move(event):
-        page = max(1, model_window.render_info.window_height if model_window.render_info else 1)
+        window = sidebar if browsing_providers else model_window
+        page = max(1, window.render_info.window_height if window.render_info else 1)
         delta = {"up": -1, "down": 1, "pageup": -page, "pagedown": page}[event.key_sequence[-1].key.value]
         if browsing_providers:
             pick_group(max(0, min(len(groups) - 1, group + delta)))
@@ -325,7 +346,10 @@ def select_model(choices: list[ModelChoice], *, plain: bool = False, discover=No
     @keys.add("enter")
     def confirm(event):
         nonlocal browsing_providers, notice
-        if browsing_providers:
+        preset = groups[group][0]
+        if isinstance(preset, ProviderPreset):
+            event.app.exit(result=preset)
+        elif browsing_providers:
             browsing_providers = False
         elif visible and visible[selected].meta.kind == "chat":
             event.app.exit(result=visible[selected])
@@ -417,13 +441,17 @@ def select_model(choices: list[ModelChoice], *, plain: bool = False, discover=No
     scrollbar = ScrollbarControl(viewport, seek, lambda step: pick_row(selected - step),
                                  thumb_style="class:panel.border", track_style="class:dim", hide_when_fits=True)
     track = Window(scrollbar, width=1)
-    sidebar = Window(FormattedTextControl(provider_rows, get_cursor_position=lambda: Point(x=0, y=group)),
-                     width=side_width, wrap_lines=False, always_hide_cursor=True)
+    sidebar = Window(ProviderRows(), wrap_lines=False, always_hide_cursor=True)
     def line(content, height=1):
         return Window(FormattedTextControl(content), height=height, wrap_lines=False)
 
     def footer():
-        accept = "进入" if browsing_providers else "切换" if visible and visible[selected].meta.kind == "chat" else "浏览"
+        if isinstance(groups[group][0], ProviderPreset):
+            accept = "连接"
+        elif browsing_providers:
+            accept = "打开"
+        else:
+            accept = "切换" if visible and visible[selected].meta.kind == "chat" else "浏览"
         pairs = [("Enter", accept), ("Esc", "返回"), ("F1", "按键"), ("↑↓", "浏览"),
                  ("←→", "分栏"), ("F5", "刷新"), ("F2", "设置")]
         return key_hints(pairs, width())
@@ -446,12 +474,17 @@ def select_model(choices: list[ModelChoice], *, plain: bool = False, discover=No
     def breathing_room():
         return ConditionalContainer(Window(height=1), filter=Condition(lambda: get_app().output.get_size().rows >= 20))
     table = VSplit([HSplit([Window(ColumnHeadings(), height=1), model_window]), HSplit([Window(height=1), track])])
+    providers_visible = Condition(lambda: wide() or browsing_providers)
+    models_visible = Condition(lambda: wide() or not browsing_providers)
     body = HSplit([
         breathing_room(), line(header), rule(),
-        VSplit([ConditionalContainer(VSplit([HSplit([line(sidebar_title), sidebar], width=side_width),
-                                            Window(width=1), Window(width=1, char="│", style="class:model.rule"),
-                                            Window(width=1)]), filter=wide),
-                HSplit([search_bar, line(tabs), breathing_room(), table])]),
+        VSplit([
+            ConditionalContainer(HSplit([line(sidebar_title), sidebar], width=lambda: side_width if wide() else None),
+                                 filter=providers_visible),
+            ConditionalContainer(VSplit([Window(width=1), Window(width=1, char="│", style="class:model.rule"),
+                                         Window(width=1)]), filter=wide),
+            ConditionalContainer(HSplit([search_bar, line(tabs), breathing_room(), table]), filter=models_visible),
+        ]),
         rule(),
         ConditionalContainer(line(details, 3), filter=roomy & Condition(lambda: not help_open)),
         ConditionalContainer(line(shortcuts, 3), filter=Condition(lambda: help_open)),

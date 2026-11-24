@@ -18,6 +18,41 @@ from trina.models import CatalogModel
 
 
 class ModelDirectoryViewTests(unittest.TestCase):
+    def test_narrow_directory_shows_connection_list_and_returns_selected_preset(self):
+        from trina.providers import PRESET_BY_ID
+        output = Vt100_Output(io.StringIO(), lambda: Size(rows=12, columns=38), enable_cpr=False)
+        preset = PRESET_BY_ID["ollama"]
+        choices = [ModelChoice("workspace", "Workspace", "chat-test", current=True)]
+        factory = console_ui._panel_app
+
+        def panel(*args, **kwargs):
+            app = factory(*args, **kwargs)
+            frames = 0
+
+            def ready(_):
+                nonlocal frames
+                frames += 1
+                if frames == 1:
+                    pipe.send_text("\x1b[D\x1b[B\x1b[B")
+                elif frames == 2:
+                    app.after_render -= ready
+                    try:
+                        screen = app.renderer.last_rendered_screen
+                        text = "\n".join("".join(cell.char for _, cell in sorted(row.items()))
+                                         for row in screen.data_buffer.values())
+                        self.assertIn("ollama", text)
+                        self.assertIn("Workspace", text)
+                        self.assertIn("未连接", text)
+                        pipe.send_text("\r")
+                    except AssertionError as exc:
+                        app.exit(exception=exc)
+
+            app.after_render += ready
+            return app
+
+        with create_pipe_input() as pipe, create_app_session(input=pipe, output=output), patch.object(console_ui, "_panel_app", panel):
+            self.assertEqual(select_model(choices, plain=True, presets=(preset,)), preset)
+
     def test_resize_keeps_filter_visible_and_help_returns_to_selection(self):
         output_size = [Size(rows=22, columns=116)]
         output = Vt100_Output(io.StringIO(), lambda: output_size[0], enable_cpr=False)

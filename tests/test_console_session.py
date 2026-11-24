@@ -41,6 +41,18 @@ class ConsoleSessionTests(unittest.TestCase):
             editor.dismissed = True
             self.assertFalse(editor._complete_before_submit())
 
+    def test_ctrl_space_reopens_command_menu_and_help_matches_description(self):
+        from prompt_toolkit.application.current import create_app_session
+        from prompt_toolkit.input import create_pipe_input
+        from prompt_toolkit.output import DummyOutput
+        from trina.console_ui import EnhancedConsoleInput
+
+        with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
+            editor = EnhancedConsoleInput(status=lambda: "就绪", running=lambda: False,
+                                          dynamic_values=lambda *_: (), plain=True)
+            pipe.send_text("\x00help 供应商\t\r")
+            self.assertEqual(editor.read(), "/help save ")
+
     def test_model_directory_combines_connection_filter_and_search(self):
         from prompt_toolkit.application.current import create_app_session
         from prompt_toolkit.input import create_pipe_input
@@ -366,7 +378,7 @@ class ConsoleSessionTests(unittest.TestCase):
                             editor.buffer.reset()
                             model_opened.clear()
                             size[0] = Size(rows=12, columns=38)
-                            pipe.send_text("/model\r")
+                            pipe.send_text("/models\r")
                             await until(model_opened.is_set)
                             self.assertIn("F1", stream.getvalue())
                             pipe.send_text("\x1b")

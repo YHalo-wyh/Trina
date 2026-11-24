@@ -21,7 +21,7 @@ def columns(width: int) -> list[tuple[str, int]]:
         fields.append(("类型", 9))
     if width >= 35:
         fields.append(("窗口", 6))
-    if width >= 80:
+    if width >= 76:
         fields.append(("输出", 6))
     return [("模型 ID", max(0, width - 4 - sum(n + 2 for _, n in fields))), *fields]
 
