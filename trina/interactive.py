@@ -930,11 +930,14 @@ class Console:
             self._display(render_panel("请选择", sections=[(review.question, "\n".join(
                 f"{index}. {option}" for index, option in enumerate(review.options, 1)
             ))], footer="/plan choose [编号] · /plan reply <其他答案> · /plan cancel", color=self.color))
+        elif review and review.layers:
+            self._display(render_panel("分工预览", sections=review.split_sections(),
+                                       footer="/plan show 查看 · /plan cancel 关闭", color=self.color))
         elif review and review.criteria:
             self._display(render_panel("计划核对", sections=[("", review.draft())],
                                        footer="/plan queue 加入待发草稿 · /plan cancel 关闭", color=self.color))
         else:
-            self._emit("/plan <任务> 开始澄清", prefix="计划")
+            self._emit("/plan <任务> 澄清 · /plan split <任务> 预览工程分工", prefix="计划")
 
     def _cmd_plan(self, args: list[str]) -> None:
         action = args[0] if args else "show"
@@ -951,6 +954,8 @@ class Console:
             raise ValueError("当前会话正在运行")
         review = self._plan_review
         if action == "queue":
+            if review is not None and review.split_preview:
+                raise ValueError("分工预览仅供查看")
             if review is None or not review.criteria:
                 raise ValueError("请先完成计划澄清")
             self._enqueue_draft(review.draft())
@@ -979,6 +984,11 @@ class Console:
                 if not answer:
                     raise ValueError("/plan reply <答案>")
             draft = review.followup(answer)
+        elif action == "split":
+            task = " ".join(args[1:]).strip()
+            if not task:
+                raise ValueError("用法 /plan split <工程任务>")
+            draft = PlanReview(task, split_preview=True)
         else:
             draft = PlanReview(" ".join(args))
         with self._launch_lock:
@@ -988,6 +998,8 @@ class Console:
             self.session.state = None
             self.session.started_at = time.monotonic()
             backend = self._backend()
+            if action == "split":
+                self._plan_review = draft
             self._planning = True
 
             def review_task() -> None:

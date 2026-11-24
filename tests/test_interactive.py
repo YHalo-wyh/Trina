@@ -814,6 +814,35 @@ class TestConsole(unittest.TestCase):
         console._start_chat_turn.assert_called_once()
         self.assertIn("输出可解析的 JSON", console._start_chat_turn.call_args.args[0])
 
+    def test_plan_split_displays_dependencies_and_never_dispatches(self):
+        from unittest.mock import Mock
+        from trina.llm.base import LLMResponse
+
+        console, output = self._console([])
+        branches = [
+            {"id": "docs", "title": "更新文档", "depends_on": [], "owner": "worker",
+             "deliverable": "新版使用说明", "reason": "可独立审阅"},
+            {"id": "tests", "title": "整理测试清单", "depends_on": [], "owner": "worker",
+             "deliverable": "新版测试清单", "reason": "与文档修改分离"},
+            {"id": "review", "title": "核对两份交付", "depends_on": ["docs", "tests"], "owner": "commander",
+             "deliverable": "发布检查表", "reason": "需要两份产物"},
+        ]
+        backend = Mock()
+        backend.complete_messages.return_value = LLMResponse(text=json.dumps({"branches": branches}, ensure_ascii=False))
+        console._backend = lambda: backend
+        console._start_chat_turn = Mock()
+        console.subworkers.start = Mock()
+        console.handle("/plan split 更新文档并整理测试清单，最后做发布核对")
+        console.session.thread.join(2)
+        self.assertFalse(console.session.thread.is_alive())
+        console.handle("/plan queue")
+        rendered = "\n".join(output)
+        for expected in ("可并行开始", "前置 docs、tests", "建议委派", "主会话负责", "分工预览仅供查看"):
+            self.assertIn(expected, rendered)
+        self.assertFalse(console._drafts)
+        console.subworkers.start.assert_not_called()
+        console._start_chat_turn.assert_not_called()
+
     def test_background_notice_is_visible_without_enqueuing_model_input(self):
         from unittest.mock import Mock
         from trina.events import RuntimeEvent
