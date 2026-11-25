@@ -271,7 +271,10 @@ def _compact_value(value: Any, *, max_chars: int, depth: int = 0) -> tuple[Any, 
             # 文件读取和终端工具把主要证据放在单个文本字段中。平均分配
             # 预算会把短源码截成约 250 字符，迫使模型用 sed/cat 重复读取。
             # 给稳定的正文键保留更大的连续窗口，其他字段继续按原策略收缩。
-            if str(key).lower() in {"text", "stdout", "stderr", "content", "source"}:
+            field_name = str(key).lower()
+            if depth == 0 and field_name == "text":
+                child_limit = max(child_limit, max_chars - 160)
+            elif field_name in {"text", "stdout", "stderr", "content", "source"}:
                 child_limit = max(child_limit, min(1800, max_chars - 160))
             compact, cut = _compact_value(item, max_chars=child_limit, depth=depth + 1)
             output[str(key)] = compact

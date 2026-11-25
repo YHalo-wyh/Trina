@@ -50,8 +50,15 @@ def status_snapshot(ctx: Any, *, step: int = 0, max_steps: int = 0, turn: int = 
     return snapshot
 
 
-def render_agent_status(ctx: Any, *, compact: bool = False, **kwargs: Any) -> str:
+def render_agent_status(ctx: Any, *, compact: bool = False, omit_idle: bool = False, **kwargs: Any) -> str:
+    previous = ctx.state.runtime_status
     snapshot = status_snapshot(ctx, **kwargs)
+    if omit_idle:
+        session_keys = ("background_jobs", "binary_sessions", "browser_sessions", "subworkers")
+        progress = snapshot["progress"]
+        if (not progress["max_steps"] and progress["remaining_seconds"] is None
+                and not any(status.get(key) for status in (previous, snapshot) for key in session_keys)):
+            return ""
     visible = snapshot
     if compact:
         visible = {key: snapshot[key] for key in (

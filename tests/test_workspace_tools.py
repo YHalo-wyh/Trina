@@ -165,6 +165,20 @@ class WorkspaceToolTests(unittest.TestCase):
         self.assertIn("candidate", result.data["text"])
         self.assertIn("verifier.py", result.data["text"])
 
+    def test_read_many_reports_missing_without_discarding_other_files(self):
+        (self.ctx.workspace / "notes.txt").write_text("notes", encoding="utf-8")
+        result = self.registry.execute("workspace_read_many", {
+            "paths": ["missing.txt", "notes.txt", "missing_again.txt"], "root": "run",
+        }, self.ctx)
+        self.assertFalse(result.ok)
+        self.assertEqual(result.data["count"], 1)
+        self.assertEqual(result.data["files"][0]["path"], "notes.txt")
+        self.assertIn("notes", result.data["text"])
+        self.assertEqual(result.errors, [
+            "文件不存在或不是普通文件: missing.txt",
+            "文件不存在或不是普通文件: missing_again.txt",
+        ])
+
     def test_unbounded_find_is_rejected_before_process_start(self):
         self.assertTrue(_is_unbounded_find(["find", "/", "-name", "healthcheckd"]))
         self.assertFalse(_is_unbounded_find(["find", "/workspace", "-name", "healthcheckd"]))

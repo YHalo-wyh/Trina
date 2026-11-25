@@ -255,6 +255,84 @@ class ChatResumeTests(unittest.TestCase):
                 finally:
                     chat.close()
 
+    def test_batch_read_delivers_all_short_files_in_one_model_reply(self):
+        from trina.llm.base import ToolCall
+        from trina.tools import build_registry
+
+        backend = self.backend()
+        names = ["source.py", "missing.md", "report.py", "test_report.py"]
+        params = json.dumps({"paths": names, "root": "run"})
+        replies = iter([
+            LLMResponse(tool_calls=[ToolCall("batch-1", "workspace_read_many", params)]),
+            LLMResponse(text="读取完成"),
+        ])
+        def respond(messages, **kwargs):
+            backend.inputs.append(copy.deepcopy(messages))
+            return next(replies)
+
+        backend.complete_messages = respond
+        config = self.config.with_overrides(llm__tool_protocol="native")
+        chat = ChatAgent(config, registry=build_registry(["workspace"]), backend=backend)
+        self.addCleanup(chat.close)
+        project = self.root / "fixture"
+        project.mkdir()
+        (project / "test_report.py").touch()
+        (project / ".env").touch()
+        chat.store = ChatStore(config.workspace_dir, project=project)
+        for name in ("source.py", "report.py", "test_report.py"):
+            (chat.workspace / name).write_text("# data\n" * 40 + f"# EOF {name}\n", encoding="utf-8")
+
+        self.assertEqual(chat.ask("读取代码和测试文件"), "读取完成")
+        first_request, request = backend.inputs
+        observation, = [row["content"] for row in request if row.get("tool_call_id") == "batch-1"]
+        self.assertIn("文件不存在或不是普通文件: missing.md", observation)
+        for name in ("source.py", "report.py", "test_report.py"):
+            self.assertIn(f"EOF {name}", observation)
+        self.assertIn("Agent 状态栏", first_request[-1]["content"])
+        project_index = first_request[-1]["content"].split("## 项目根目录")[1]
+        self.assertIn('"test_report.py"', project_index)
+        self.assertNotIn(".env", project_index)
+        self.assertNotIn("Agent 状态栏", request[-1]["content"])
+        self.assertNotIn("## 项目根目录", request[-1]["content"])
+
+    def test_code_chat_sends_only_new_evidence_while_retaining_raw_command_results(self):
+        import sys
+
+        from trina.llm.base import ToolCall
+        from trina.tools import build_registry
+
+        backend = self.backend()
+        labels = ("first", "second")
+        replies = iter([
+            LLMResponse(tool_calls=[ToolCall(label, "shell", json.dumps({
+                "argv": [sys.executable, "-c", f"print({label!r})"], "cwd": "run",
+            }))]) for label in labels
+        ] + [LLMResponse(text="检查完毕")])
+
+        def respond(messages, **kwargs):
+            backend.inputs.append(copy.deepcopy(messages))
+            return next(replies)
+
+        backend.complete_messages = respond
+        config = self.config.with_overrides(llm__tool_protocol="native")
+        chat = ChatAgent(config, registry=build_registry(["workspace"]), backend=backend)
+        self.addCleanup(chat.close)
+        self.assertEqual(chat.ask("检查项目代码并运行本地测试"), "检查完毕")
+
+        first, second = [json.loads(request[-1]["content"].splitlines()[-1]) for request in backend.inputs[1:]]
+        first_key, = first["set"]
+        second_key, = second["set"]
+        self.assertTrue(first_key.startswith("/evidence/"))
+        self.assertTrue(second_key.startswith("/evidence/"))
+        self.assertNotEqual(first_key, second_key)
+        self.assertEqual(second["base"], first["revision"])
+        saved = self.store.load(chat.run_id)
+        actual_outputs = [
+            json.loads(Path(item["path"]).read_text(encoding="utf-8"))["stdout"].strip()
+            for item in saved["state"]["evidence"]
+        ]
+        self.assertEqual(actual_outputs, list(labels))
+
     def test_commander_resume_keeps_an_advertised_worker_tool_optional(self):
         from trina.tools import build_registry
 

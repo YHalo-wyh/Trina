@@ -4,7 +4,7 @@
 
 Trina 是面向 CTF 与授权攻防环境的自动化 Agent，提供真实浏览器、原生二进制分析、任务级并行 Worker、证据链和可恢复运行状态。
 
-**v0.6.1** 支持启动时提示新版和后台重连。输入 `trina update` 安装更新，进入 `/setup retries` 可配置模型断连重试次数。任务运行时，`/subworker` 位于斜杠菜单首屏。[模型操作说明](docs/MODELS.md) · [界面说明](docs/CLI_UI.md) · [版本记录](docs/CHANGELOG/CHANGELOG.md)
+**v0.6.2** 改进普通代码会话的文件读取和上下文。小项目首轮显示根目录摘要，批量读取保留已成功读取的文件，命令证据按条目增量传递。输入 `trina update` 安装更新。 [模型操作说明](docs/MODELS.md) · [界面说明](docs/CLI_UI.md) · [版本记录](docs/CHANGELOG/CHANGELOG.md)
 
 ## 文档导航
 

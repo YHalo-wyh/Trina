@@ -35,8 +35,17 @@ def _common_prefix_bytes(previous: bytes, current: bytes) -> int:
     return matched
 
 
-def state_projection(state, *, hypotheses=(), registered: str = "", **extra: Any) -> dict[str, Any]:
+def state_projection(state, *, hypotheses=(), registered: str = "", evidence_by_digest: bool = False,
+                     **extra: Any) -> dict[str, Any]:
     """保留事实及证据索引，原始响应和完整事件仍保存在运行工件。"""
+    evidence = [{"index": index, "sha256": hashlib.sha256(encoded(item)).hexdigest(),
+                 "kind": str(item.get("type", item.get("kind", "")))} for index, item in enumerate(state.evidence)]
+    evidence_index: dict[str, dict[str, Any]] = {}
+    if evidence_by_digest:
+        # 摘要键在旧证据移出保留窗口时仍稳定，每轮只发送变更的条目。
+        for item in evidence:
+            entry = evidence_index.setdefault(item["sha256"], {"kind": item["kind"], "count": 0})
+            entry["count"] += 1
     return {
         "task": {"target": state.target, "goal": state.goal, "phase": state.phase, "status": state.status},
         "hosts": {key: item.to_dict() for key, item in sorted(state.hosts.items())},
@@ -46,8 +55,7 @@ def state_projection(state, *, hypotheses=(), registered: str = "", **extra: Any
         "credentials": [{"target": item.target, "service": item.service, "username": item.username,
                          "verified": item.verified, "source": item.source} for item in state.credentials],
         "flags": copy.deepcopy(state.flags),
-        "evidence": [{"index": index, "sha256": hashlib.sha256(encoded(item)).hexdigest(),
-                      "kind": str(item.get("type", item.get("kind", "")))} for index, item in enumerate(state.evidence)],
+        "evidence": evidence_index if evidence_by_digest else evidence,
         **({"hypotheses": {str(item.get("id", index)): {key: value for key, value in item.items()
                        if key not in {"created_at", "updated_at", "history"}} for index, item in enumerate(hypotheses)}}
            if hypotheses is not None else {}),

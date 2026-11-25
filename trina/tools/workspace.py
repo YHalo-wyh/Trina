@@ -283,11 +283,11 @@ class WorkspaceReadMany(Tool):
 
     spec = ToolSpec(
         name="workspace_read_many",
-        summary="一次批量读取多个项目或任务目录文本文件；适合 CTF 题面、源码和验证器的首轮检查",
+        summary="批量读取多个已确认路径的文本文件；缺失文件单独报错，已读取内容仍返回",
         category="workspace",
         action_level="detect",
         params={
-            "paths": ParamSpec("list", "相对路径或允许范围内的绝对路径，最多 12 个", required=False, default=[]),
+            "paths": ParamSpec("list", "明确的文件路径列表，最多 12 个", required=False, default=[]),
             "path": ParamSpec("str", "兼容单文件读取的相对路径；批量场景优先使用 paths", required=False, default=""),
             "line_count": ParamSpec("int", "每个文件最多返回行数", required=False, default=240),
             "root": ParamSpec("str", "相对路径基准", required=False, default="project", enum=["project", "run"]),
@@ -303,11 +303,14 @@ class WorkspaceReadMany(Tool):
             return ToolResult(ok=False, error="line_count 必须在 [1,1000]")
         chunks: list[str] = []
         files: list[dict[str, Any]] = []
+        errors: list[str] = []
         try:
-            for raw_path in paths:
-                resolved = _path(ctx, str(raw_path), root)
+            # 先完成整批路径检查，拒绝时不返回任何已读内容。
+            resolved_paths = [_path(ctx, str(raw_path), root) for raw_path in paths]
+            for raw_path, resolved in zip(paths, resolved_paths):
                 if not resolved.is_file():
-                    return ToolResult(ok=False, error=f"文件不存在或不是普通文件: {raw_path}")
+                    errors.append(f"文件不存在或不是普通文件: {raw_path}")
+                    continue
                 if resolved.stat().st_size > _TEXT_LIMIT:
                     return ToolResult(ok=False, error=f"文件超过 1MiB: {raw_path}")
                 native = native_read(ctx, resolved, 1, int(line_count))
@@ -325,7 +328,10 @@ class WorkspaceReadMany(Tool):
         except (OSError, UnicodeError, ValueError) as exc:
             return ToolResult(ok=False, error=str(exc))
         return ToolResult(
+            ok=not errors,
             summary=f"批量读取 {len(files)} 个文件",
+            error=errors[0] if errors else "",
+            errors=errors,
             data={"text": "\n\n".join(chunks), "files": files, "count": len(files)},
         )
 

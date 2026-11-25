@@ -83,6 +83,17 @@ class RuntimeStatusTests(unittest.TestCase):
         self.assertIn('"python_executable":', rendered)
         self.assertIn('"delegation_available":true', rendered)
 
+    def test_idle_status_can_be_omitted_without_hiding_worker_transitions(self):
+        from types import SimpleNamespace
+
+        workers = [{"id": "docs", "status": "running", "model": "test"}]
+        self.ctx.extra["subworkers"] = SimpleNamespace(rows=lambda: workers)
+        self.assertIn('"status":"running"', render_agent_status(self.ctx, compact=True, omit_idle=True))
+        workers.clear()
+        self.assertIn('"subworkers":[]', render_agent_status(self.ctx, compact=True, omit_idle=True))
+        self.assertEqual(render_agent_status(self.ctx, compact=True, omit_idle=True), "")
+        self.assertIn('"max_steps":3', render_agent_status(self.ctx, compact=True, omit_idle=True, max_steps=3))
+
     def test_statebar_is_tail_message_data_and_does_not_rewrite_prefix(self):
         backend = ReplayBackend(LLMConfig(backend="replay"))
         messages = []

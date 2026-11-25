@@ -68,6 +68,37 @@ class CacheRuntimeTests(unittest.TestCase):
         self.assertEqual(fourth["state"], state)
         self.assertGreater(context.stats["state_delta_updates"], 0)
 
+    def test_code_evidence_delta_migrates_old_projection_and_round_trips_evictions(self):
+        context = ConversationContext(self.ctx)
+        self.ctx.state.max_evidence = 2
+        for label in ("first", "second"):
+            self.ctx.state.add_evidence({"kind": "command", "label": label})
+        previous = state_projection(self.ctx.state)
+        context.state_update(previous)
+        first, second = (item["sha256"] for item in previous["evidence"])
+
+        def update():
+            projection = state_projection(self.ctx.state, evidence_by_digest=True)
+            delta = json.loads(context.state_update(projection).splitlines()[-1])
+            return projection["evidence"], delta
+
+        indexed, migrated = update()
+        self.assertEqual(migrated["set"], {"/evidence": indexed})
+        self.assertEqual(set(indexed), {first, second})
+
+        last = self.ctx.state.add_evidence({"kind": "command", "label": "third"})
+        current, rolled = update()
+        third, = current.keys() - indexed.keys()
+        self.assertEqual(rolled["remove"], [f"/evidence/{first}"])
+        self.assertEqual(rolled["set"], {f"/evidence/{third}": {"kind": "command", "count": 1}})
+
+        self.ctx.state.add_evidence(dict(last))
+        repeated, changed_count = update()
+        self.assertEqual(changed_count["remove"], [f"/evidence/{second}"])
+        self.assertEqual(changed_count["set"], {f"/evidence/{third}/count": 2})
+        self.assertEqual(repeated, {third: {"kind": "command", "count": 2}})
+        self.assertEqual(len(self.ctx.state.evidence), 2)
+
     def test_compaction_archives_original_and_preserves_constraints_facts_and_tool_pairs(self):
         context = ConversationContext(self.ctx)
         context.remember_user("仅修改测试文件，原规则保持")
