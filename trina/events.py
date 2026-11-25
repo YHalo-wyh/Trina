@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import fnmatch
 import json
+import math
 import sqlite3
 import threading
 import time
@@ -359,6 +360,9 @@ class ModelEventStream:
             self.emit("model." + event.type, request_id=self.request_id, delta=event.delta)
         elif event.type == "start":
             self.emit("model.connected", request_id=self.request_id)
+        elif event.type == "retry":
+            self.emit("model.retry", request_id=self.request_id, attempt=event.attempt,
+                      delay=event.delay, max_attempts=event.max_attempts, failure_kind="run_failure")
         elif event.type == "error":
             self._emit_error(event.delta or getattr(event.response, "error", "模型调用失败"))
         if self.visible is not None:
@@ -373,13 +377,22 @@ class ModelEventStream:
             self._finish(response)
 
     def _finish(self, response: Any) -> None:
-        if not response.ok:
+        if not response.ok and response.finish_reason != "retry_cancelled":
             self._emit_error(response.error)
         for call in response.tool_calls:
             self.emit("model.tool_call", request_id=self.request_id, native_call_id=call.id,
                       tool=call.name, arguments=call.arguments)
+        transport = getattr(response, "transport", None) or {}
+        timing = {}
+        for name in ("connect_seconds", "headers_seconds", "first_event_seconds"):
+            value = transport.get(name)
+            if type(value) in (int, float) and math.isfinite(value) and value >= 0:
+                timing[name] = value
+        if type(transport.get("connection_reused")) is bool:
+            timing["connection_reused"] = transport["connection_reused"]
         self.emit("model.finished", request_id=self.request_id, ok=response.ok, error=response.error,
-                  usage=response.usage.to_dict(), finish_reason=response.finish_reason)
+                  usage=response.usage.to_dict(), finish_reason=response.finish_reason,
+                  **({"transport": timing} if timing else {}))
 
     def _emit_error(self, error: str) -> None:
         if not self._error_emitted:

@@ -213,9 +213,12 @@ class LLMMessage(_RequiredMessage, total=False):
 class LLMStreamEvent:
     """对 UI 暴露的最小流协议，隐藏各供应商 SSE 方言。"""
 
-    type: Literal["start", "text_delta", "thinking_delta", "done", "error"]
+    type: Literal["start", "text_delta", "thinking_delta", "done", "error", "retry"]
     delta: str = ""
     response: LLMResponse | None = None
+    attempt: int = 0
+    delay: float = 0.0
+    max_attempts: int = 0
 
 
 StreamCallback = Callable[[LLMStreamEvent], None]

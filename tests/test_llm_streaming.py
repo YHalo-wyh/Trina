@@ -28,6 +28,102 @@ def sse(*events):
 
 
 class StreamingTests(unittest.TestCase):
+    def test_disconnect_before_response_retries_then_returns_success_or_final_error(self):
+        from trina.events import ModelEventStream
+
+        wire = b'data: {"choices":[{"delta":{"content":"OK"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n'
+        for failures in (2, 3):
+            with self.subTest(failures=failures):
+                requests = []
+
+                class Handler(BaseHTTPRequestHandler):
+                    def log_message(self, *_):
+                        pass
+
+                    def do_POST(self):
+                        requests.append(self.rfile.read(int(self.headers["Content-Length"])))
+                        self.close_connection = True
+                        if len(requests) <= failures:
+                            return
+                        self.send_response(200)
+                        self.send_header("Content-Type", "text/event-stream")
+                        self.send_header("Content-Length", str(len(wire)))
+                        self.end_headers()
+                        self.wfile.write(wire)
+
+                with ThreadingHTTPServer(("127.0.0.1", 0), Handler) as server:
+                    serving = threading.Thread(target=server.serve_forever, daemon=True)
+                    serving.start()
+                    try:
+                        backend = OpenAICompatBackend(
+                            LLMConfig(base_url=f"http://127.0.0.1:{server.server_port}/v1", timeout=3),
+                            key_override="",
+                        )
+                        events = []
+                        stream = ModelEventStream(lambda kind, **payload: events.append((kind, payload)))
+                        with patch.dict("os.environ", {"no_proxy": "127.0.0.1"}):
+                            result = backend.complete_messages([{"role": "user", "content": "hello"}],
+                                                               on_event=stream.on_event)
+                        stream.finish(result)
+                    finally:
+                        server.shutdown()
+                        serving.join()
+                self.assertEqual(len(requests), 3)
+                self.assertEqual(len(set(requests)), 1)
+                self.assertEqual([(data["attempt"], data["delay"]) for kind, data in events if kind == "model.retry"],
+                                 [(1, .25), (2, .75)])
+                self.assertEqual(len({data["request_id"] for _, data in events}), 1)
+                self.assertEqual(events[-1][0], "model.finished")
+                if failures == 2:
+                    self.assertTrue(result.ok, result.error)
+                    self.assertEqual(result.text, "OK")
+                    self.assertNotIn("model.error", [kind for kind, _ in events])
+                else:
+                    self.assertFalse(result.ok)
+                    self.assertIn("自动重连 2 次后仍未收到响应", result.error)
+                    self.assertEqual([kind for kind, _ in events].count("model.error"), 1)
+
+    def test_disconnect_after_response_headers_does_not_resend_request(self):
+        from http.client import RemoteDisconnected
+
+        class BrokenStream:
+            def __iter__(self):
+                yield b'data: {"choices":[{"delta":{"content":"partial"}}]}\n'
+                yield b"\n"
+                raise RemoteDisconnected("stream closed")
+
+        backend = OpenAICompatBackend(LLMConfig(base_url="http://127.0.0.1:9/v1"), key_override="")
+        events = []
+        with patch.object(backend._stream_transport, "_open_once", return_value=nullcontext(BrokenStream())) as opened:
+            result = backend.complete_messages([{"role": "user", "content": "hello"}], on_event=events.append)
+        self.assertFalse(result.ok)
+        opened.assert_called_once()
+        self.assertEqual([event.type for event in events], ["start", "text_delta", "error"])
+
+    def test_interactive_reconnect_uses_configured_count_and_capped_backoff(self):
+        from http.client import RemoteDisconnected
+        from trina.scope import interactive_model_retries
+
+        for limit in (0, LLMConfig().connection_retries):
+            with self.subTest(limit=limit):
+                stop, events = threading.Event(), []
+                backend = OpenAICompatBackend(LLMConfig(base_url="http://127.0.0.1:9/v1"), key_override="")
+                with interactive_model_retries(limit, stop), \
+                     patch.object(stop, "wait", return_value=False) as wait, \
+                     patch("trina.scope.random.uniform", side_effect=lambda _low, high: high) as jitter, \
+                     patch.object(backend._stream_transport, "_open_once",
+                                  side_effect=RemoteDisconnected("stream closed")) as opened:
+                    result = backend.complete_messages([{"role": "user", "content": "hello"}], on_event=events.append)
+
+                delays = [.5, 1, 2, 4] + [8] * 6 if limit else []
+                self.assertEqual(opened.call_count, limit + 1)
+                self.assertFalse(result.ok)
+                self.assertEqual([call.args[0] for call in wait.call_args_list], delays)
+                self.assertEqual([call.args for call in jitter.call_args_list],
+                                 [(.75 * delay, delay) for delay in delays])
+                self.assertEqual([(event.attempt, event.max_attempts) for event in events if event.type == "retry"],
+                                 [(attempt, limit) for attempt in range(1, limit + 1)])
+
     def _reply_while_connection_is_open(self, status, body, *, api="chat"):
         """模拟网关已回结果但连接保持开启，验证不依赖 EOF。"""
         release, done = threading.Event(), threading.Event()

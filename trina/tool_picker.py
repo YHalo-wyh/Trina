@@ -21,7 +21,7 @@ def select_tool(entries: list[ToolCatalogEntry], *, plain: bool = False) -> Tool
     from prompt_toolkit.mouse_events import MouseEventType
 
     from .console_state import _cells, _fit_cells
-    from .console_ui import _REDRAW_INTERVAL, _panel_app, run_panel
+    from .console_ui import _panel_app, run_panel
     from .scrollbar import ScrollbarControl
     from .terminal import _wrap, clean_text
 
@@ -340,7 +340,7 @@ def select_tool(entries: list[ToolCatalogEntry], *, plain: bool = False) -> Tool
     ])
     app = _panel_app(body, "工具控制中心", keys, field, plain=plain, expanded=True)
     app.before_render += lambda _: scrollbar.begin_frame()
-    app.after_render += lambda current: scrollbar.finish_frame(current, track, _REDRAW_INTERVAL)
+    app.after_render += lambda current: scrollbar.finish_frame(current, track)
     return run_panel(app)
 
 

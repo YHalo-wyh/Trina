@@ -126,6 +126,7 @@ class LLMConfig:
     compaction_threshold: float = 0.8
     context_keep_messages: int = 8
     state_checkpoint_interval: int = 16
+    connection_retries: int = 10
 
     @property
     def effective_context_window(self) -> int:
@@ -149,6 +150,8 @@ class LLMConfig:
             raise ConfigError("llm.reasoning_effort 档位无效")
         if type(self.max_tokens) is not int or self.max_tokens < 0:
             raise ConfigError("llm.max_tokens 必须为非负整数，0 使用供应商默认上限")
+        if type(self.connection_retries) is not int or self.connection_retries < 0:
+            raise ConfigError("llm.connection_retries 必须为非负整数，0 关闭交互对话的断连重试")
         for name in ("max_steps", "max_seconds"):
             if type(getattr(self, name)) is not int or getattr(self, name) < 0:
                 raise ConfigError(f"llm.{name} 必须为非负整数，0 不限制")
@@ -421,8 +424,7 @@ class TrinaConfig:
         cfg = cls._from_mapping(raw)
         if path is None:
             from .ui_preferences import read_preferences
-            for name, value in read_preferences(_user_data_root()).items():
-                setattr(cfg.ui, name, value)
+            cfg = cls._apply_overrides(cfg, read_preferences(_user_data_root()))
         # 仅默认启动载入所选连接；显式配置文件仍控制自己的模型设置。
         from .providers import ProfileStore
 

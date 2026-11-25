@@ -25,6 +25,7 @@
 
 ```text
 model.started → model.connected → model.text_delta / model.thinking_delta → model.tool_call → model.finished
+             ↘ model.retry → model.connected（收到响应头前断连，同一 request_id）
              ↘ model.error → model.finished（ok=false）→ model.retry（仅可恢复故障）
 user.message → assistant.delta（同一 message_id，delta 为新增正文）→ assistant.message（终稿）
 
@@ -43,7 +44,7 @@ coordination.* → runtime.checkpoint / runtime.finished
 
 终端重放时按 `message_id` 累积 `assistant.delta`。带 `final=false` 的 `assistant.message` 可替换尚未确认的正文，并兼容旧版累计快照。带 `final=true` 的事件保留完整终稿，空终稿清除临时正文。
 
-`model.error` 在收到失败时发布，不等待后续重试预算耗尽；不发送流事件的后端在 `model.finished` 前补发错误。终端按 `(stream_id, request_id)` 避免错误与失败终态重复显示。`model.retry` 包含 `attempt/delay/failure_kind`；鉴权和额度错误不产生重试事件。`model.connected` 表示已经收到响应头，不代表开始推理。
+`model.error` 在本次模型请求确定失败时发布。收到响应头前连接关闭时，重连沿用同一 `request_id`。交互对话的重连次数由 `llm.connection_retries` 决定。传输层的 `model.retry` 包含 `attempt/delay/failure_kind` 和 `max_attempts`。取消重连时，`model.finished` 的 `finish_reason` 为 `retry_cancelled`。终端按 `(stream_id, request_id)` 对错误去重。鉴权和额度错误直接返回。`model.connected` 表示已经收到响应头。
 
 模型的网络分片不等于持久事件分片：`ModelEventStream` 将同类增量按约 30Hz 合并，首块立即投递，4096 字符阈值、类型切换、终态和异常均强制刷新，暂停中的尾块也由定时器刷新。重放时拼接增量仍可还原相同文本。`visible_text` 标记正文是否由事件投影直接负责，避免与 Chat 的已过滤正文重复。思考字段单列展示，不能混入正文或事实图。同进程订阅可直接使用已提交的独立事件快照；发现序号缺口或投递失败时仍使用原有持久重放路径。SQLite 的事务、FULL 同步及命名消费者确认规则保持。
 
@@ -74,6 +75,10 @@ python -m trina events runs/<run-id>/events.sqlite3 --consumer inspector --follo
 # 仅查看一个 Worker 任务的工具事件
 python -m trina events runs/<swarm-id>/events.sqlite3 --task main --kind 'tool.*' --json
 ```
+
+用 `python -m trina events runs/<run-id>/events.sqlite3 --latency` 从已有事件库读取延迟分布。加 `--json` 输出以秒为单位的 p50、p95 和样本数。报告区分响应头、首段思考或正文、首段正文，以及同轮最后一个工具终态到下次请求起点。跨用户消息、运行和 Worker 的事件独立配对。现有 `model.started` 在聊天中早于上下文准备，因此到响应头的时间包含本地准备、连接和供应商等待。首段输出使用实际记录的思考或正文增量，缺少对应事件时该指标跳过这一请求。
+
+流式后端返回传输计时时，`model.finished` 同时保存到响应头、到首个模型数据事件及连接复用字段。延迟报告单列 HTTP 阶段，新建连接统计只采纳明确标记为未复用的样本。旧日志继续提供事件级计时。
 
 ## Commander 调度与恢复
 

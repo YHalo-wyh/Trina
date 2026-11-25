@@ -13,6 +13,22 @@ from trina.llm.base import LLMResponse, LLMStreamEvent, LLMUsage
 
 
 class ConsoleSessionTests(unittest.TestCase):
+    def test_subagent_alias_and_parallel_commands_are_discoverable(self):
+        from prompt_toolkit.document import Document
+        from trina.console_ui import SlashCommandCompleter, command_help_sections, find_command
+
+        self.assertEqual(find_command("/subagent").name, "subworker")
+        sections = dict(command_help_sections())
+        self.assertIn("/subworker", sections["并行任务"])
+        self.assertIn("/repo", sections["工作区"])
+        self.assertIn("/setup", sections["设置"])
+        completer = SlashCommandCompleter(running=lambda: True)
+        completer.recent = ["status", "queue", "tasks", "help", "jobs"]
+        for query in ("/", "/sub", "/subagent"):
+            with self.subTest(query=query):
+                first = next(completer.get_completions(Document(query), None))
+                self.assertEqual(first.display_text, "/subworker")
+
     def test_command_icons_are_display_only_and_fit_narrow_terminal(self):
         from prompt_toolkit.application.current import create_app_session
         from prompt_toolkit.data_structures import Size
@@ -32,20 +48,46 @@ class ConsoleSessionTests(unittest.TestCase):
             editor.buffer.cursor_position = 1
             root = "".join(fragment[1] for fragment in editor._menu())
             self.assertIn("✧ /model", root)
-            self.assertIn("◉ /status", root)
+            self.assertIn("⊙ /status", root)
             self.assertIn("▷ /play", root)
             self.assertIn("→ /run", root)
             editor.buffer.text = "/setu"
             editor.buffer.cursor_position = 5
             preview = "".join(fragment[1] for fragment in editor._menu())
-            self.assertIn("⚙ /setup", preview)
+            self.assertIn("⊞ /setup", preview)
             self.assertTrue(all(get_cwidth(line) == 34 for line in preview.splitlines()))
             self.assertEqual(len(preview.splitlines()), editor._menu_height())
             self.assertTrue(preview.splitlines()[-1].endswith("╯"))
             enabled = False
-            self.assertNotIn("⚙", "".join(fragment[1] for fragment in editor._menu()))
+            self.assertNotIn("⊞", "".join(fragment[1] for fragment in editor._menu()))
             editor._accept_menu(add_space=True)
             self.assertEqual(editor.buffer.text, "/setup ")
+
+    def test_command_icon_badges_are_aligned_and_compact_on_narrow_screens(self):
+        from prompt_toolkit.application.current import create_app_session
+        from prompt_toolkit.data_structures import Size
+        from prompt_toolkit.input import create_pipe_input
+        from prompt_toolkit.output.vt100 import Vt100_Output
+        from prompt_toolkit.utils import get_cwidth
+        from trina.console_ui import EnhancedConsoleInput
+
+        with create_pipe_input() as pipe:
+            for columns, active, inactive in (
+                (72, ("class:command.badge.active", " ✧ "), ("class:command.badge.gold", " ⊞ ")),
+                (26, ("class:selected class:command.icon.lilac", "✧ "), (" class:command.icon.gold", "⊞ ")),
+            ):
+                with self.subTest(columns=columns):
+                    output = Vt100_Output(io.StringIO(), lambda: Size(rows=18, columns=columns), enable_cpr=False)
+                    with create_app_session(input=pipe, output=output):
+                        editor = EnhancedConsoleInput(status=lambda: "就绪", running=lambda: False,
+                                                      dynamic_values=lambda *_: ())
+                        editor.buffer.text = "/"
+                        editor.buffer.cursor_position = 1
+                        fragments = [fragment[:2] for fragment in editor._menu()]
+                    self.assertIn(active, fragments)
+                    self.assertIn(inactive, fragments)
+                    menu = "".join(text for _, text in fragments)
+                    self.assertTrue(all(get_cwidth(line) == columns for line in menu.splitlines()))
 
     def test_slash_menu_navigates_before_submitting_and_completes_arguments(self):
         from prompt_toolkit.application.current import create_app_session
@@ -359,6 +401,133 @@ class ConsoleSessionTests(unittest.TestCase):
                 self.assertIn("\x1b[?1049h", stream.getvalue())
                 self.assertIn("\x1b[?1049l", stream.getvalue())
 
+    def test_startup_update_banner_leaves_input_responsive(self):
+        import tempfile
+        from pathlib import Path
+        from prompt_toolkit.application.current import create_app_session
+        from prompt_toolkit.data_structures import Size
+        from prompt_toolkit.input import create_pipe_input
+        from prompt_toolkit.output.vt100 import Vt100_Output
+        from trina.config import TrinaConfig
+        from trina.console_ui import EnhancedConsoleInput
+        from trina.interactive import Console
+
+        release = threading.Event()
+        release_tag = "v9.8.7"
+        stream = io.StringIO()
+        output = Vt100_Output(stream, lambda: Size(rows=18, columns=66), enable_cpr=False)
+
+        def check_release():
+            if release.wait(5):
+                return release_tag, "trina update"
+            return None
+
+        def make_editor(**kwargs):
+            editor = EnhancedConsoleInput(**kwargs)
+
+            async def until(predicate, message):
+                for _ in range(200):
+                    if predicate():
+                        return
+                    await asyncio.sleep(.01)
+                self.fail(message)
+
+            async def exercise():
+                try:
+                    pipe.send_text("draft")
+                    await until(lambda: editor.buffer.text == "draft", "检查期间应能输入")
+                    self.assertIsNone(editor._update_notice)
+                    release.set()
+                    await until(lambda: release_tag in stream.getvalue(), "发现新版后应显示更新提示")
+                    screen = editor.app.renderer.last_rendered_screen
+                    top_line = "".join(screen.data_buffer[0][x].char for x in range(66))
+                    self.assertIn(release_tag, top_line)
+                    self.assertIn("trina update", top_line)
+                    self.assertEqual(editor.buffer.text, "draft")
+                    editor.buffer.reset()
+                    pipe.send_text("/quit\r")
+                except Exception as exc:
+                    editor.app.exit(exception=exc)
+                finally:
+                    release.set()
+
+            editor.app.pre_run_callables.append(lambda: editor.app.create_background_task(exercise()))
+            return editor
+
+        with tempfile.TemporaryDirectory() as directory, create_pipe_input() as pipe, \
+             create_app_session(input=pipe, output=output), \
+             patch.dict("os.environ", {"TRINA_TASKS_FILE": str(Path(directory) / "tasks.json")}), \
+             patch("trina.interactive.enhanced_input_available", return_value=True), \
+             patch("trina.interactive.EnhancedConsoleInput", side_effect=make_editor), \
+             patch("trina.updater.check_release", side_effect=check_release) as check:
+            self.assertEqual(Console(TrinaConfig(), plain=True).run(), 0)
+        check.assert_called_once_with()
+
+    def test_running_console_opens_subworker_and_ctrl_c_stops_before_exit(self):
+        import tempfile
+        from pathlib import Path
+        from prompt_toolkit.application.current import create_app_session
+        from prompt_toolkit.data_structures import Size
+        from prompt_toolkit.input import create_pipe_input
+        from prompt_toolkit.output.vt100 import Vt100_Output
+        from trina.config import TrinaConfig
+        from trina.console_ui import EnhancedConsoleInput
+        from trina.interactive import Console
+
+        stream = io.StringIO()
+        output = Vt100_Output(stream, lambda: Size(rows=12, columns=44), enable_cpr=False)
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+            "os.environ", {"TRINA_TASKS_FILE": str(Path(directory) / "tasks.json")},
+        ), create_pipe_input() as pipe, create_app_session(input=pipe, output=output):
+            console = Console(TrinaConfig.load(), plain=True)
+            # 保持任务在停止后的收尾阶段，验证第二次按键可以直接退出。
+            console.session.thread = SimpleNamespace(is_alive=lambda: True)
+            tasks = {"revision": 1, "counts": {"pending": 8}, "tasks": [
+                {"status": "pending", "text": f"Task {index}"} for index in range(8)
+            ]}
+            editor = EnhancedConsoleInput(
+                status=console._prompt_status, running=lambda: console.session.running,
+                dynamic_values=console._completion_values, plain=True, motion="none",
+                tasks=lambda: tasks,
+            )
+            console.output = editor.write
+            interrupt_frame = 0
+
+            async def until(predicate, description):
+                for _ in range(200):
+                    if predicate():
+                        return
+                    await asyncio.sleep(.01)
+                self.fail(description)
+
+            async def exercise():
+                nonlocal interrupt_frame
+                try:
+                    pipe.send_text("/")
+                    await until(lambda: "/subworker" in stream.getvalue(), "运行中菜单首屏应显示 /subworker")
+                    pipe.send_text("\r\r")
+                    await until(lambda: "SUBWORKERS" in stream.getvalue(), "运行中应能打开 Worker 面板")
+                    pipe.send_text("\x1b")
+                    await until(lambda: not editor.app._running_in_terminal, "应能返回主会话")
+                    editor.buffer.text = "保留草稿"
+                    interrupt_frame = stream.tell()
+                    pipe.send_text("\x03")
+                    await until(console.session.stop_event.is_set, "第一次 Ctrl+C 应向当前任务发送停止信号")
+                    self.assertTrue(editor.app.is_running)
+                    self.assertFalse(editor.app.is_done)
+                    self.assertNotIn("\x1b[?1049l", stream.getvalue()[interrupt_frame:])
+                    self.assertEqual(editor.buffer.text, "保留草稿")
+                    pipe.send_text("\x03")
+                    await until(lambda: editor.app.is_done, "第二次 Ctrl+C 应退出")
+                except Exception as exc:
+                    editor.app.exit(exception=exc)
+
+            editor.app.pre_run_callables.append(lambda: editor.app.create_background_task(exercise()))
+            with patch("trina.interactive.enhanced_input_available", return_value=True):
+                editor.run(console.handle)
+            self.assertTrue(console.session.stop_event.is_set())
+            self.assertIn("\x1b[?1049l", stream.getvalue()[interrupt_frame:])
+
     def test_real_console_keeps_draft_usage_and_footer_when_model_dialog_returns(self):
         import tempfile
         from pathlib import Path
@@ -469,7 +638,7 @@ class ConsoleSessionTests(unittest.TestCase):
                             app.create_background_task(exercise())
                     editor.app.after_render += rendered
                     return editor
-                with patch("trina.llm.openai_backend.OpenAICompatBackend.remote_catalog", side_effect=ValueError("offline")), patch("trina.interactive.enhanced_input_available", return_value=True), patch("trina.interactive.EnhancedConsoleInput", side_effect=editor_factory), patch("trina.console_ui._panel_app", side_effect=panel):
+                with patch("trina.llm.openai_backend.OpenAICompatBackend.remote_catalog", side_effect=ValueError("offline")), patch("trina.interactive.enhanced_input_available", return_value=True), patch("trina.interactive.EnhancedConsoleInput", side_effect=editor_factory), patch("trina.console_ui._panel_app", side_effect=panel), patch("trina.updater.check_release", return_value=None):
                     self.assertEqual(console.run(), 0)
 
     def test_thinking_marker_moves_but_idle_does_not(self):

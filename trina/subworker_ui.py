@@ -280,7 +280,7 @@ def show_subworkers(manager, config, *, notice: str = "", view: str = "grid"):
         Window(FormattedTextControl(lambda: [("class:dim", _fit_cells(" 滚轮/拖动浏览 · Tab 切换 · G 列表/网格 · Z 放大 · PgUp/Dn 对话 · F 补充 · Esc 返回", width()))]), height=1),
     ]), focused_element=body), key_bindings=bindings, full_screen=True, erase_when_done=True,
         refresh_interval=.25, min_redraw_interval=_REDRAW_INTERVAL, max_render_postpone_time=0, before_render=before_render,
-        after_render=lambda app: scrollbar.finish_frame(app, scrollbar_window, _REDRAW_INTERVAL),
+        after_render=lambda app: scrollbar.finish_frame(app, scrollbar_window),
         color_depth=ColorDepth.DEPTH_24_BIT, mouse_support=True,
         style=Style.from_dict({"title": "bold " + THEME["rose"], "chosen": "bold " + THEME["rose"],
                               "name": output_style("text", config.ui.output_palette), "model": THEME["lilac"],

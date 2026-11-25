@@ -23,6 +23,12 @@
    禁止为了让测试通过而放宽护栏；测试断言的是"必须被拒绝"的行为。
 5. **报告与审计是交付物**：`reports/<run_id>_report.{md,html}`、`logs/<run_id>.jsonl`、`runs/<run_id>/state.json`。
 
+## 远端发布
+
+1. 每次向远端发布 `main` 时，核对 GitHub 和 Gitee 的正式标签，从最高版本递增补丁号。例如 `v0.6.0` 的下一次发布为 `v0.6.1`。
+2. 同步更新 `pyproject.toml`、`trina/__init__.py`、README 顶部和更新日志。用 `python -m trina --version` 核对运行版本。
+3. 将 `vX.Y.Z` 标签打在通过验证的发布提交上。同一次发布向 GitHub 和 Gitee 推送同一个 `main` 提交和版本标签，并核对两个远端的标签均指向该提交。pip 安装的 `trina update` 通过正式标签发现新版。
+
 ## 代码风格
 
 - 中文 docstring/注释；`from __future__ import annotations`；dataclass；类型注解。

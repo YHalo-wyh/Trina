@@ -11,16 +11,18 @@ class Preference:
     label: str
     field: str
     choices: tuple[tuple[str, str], ...]
+    section: str = "ui"
+    integer: bool = False
 
-    def encode(self, value: str | bool) -> str:
-        return ("on" if value else "off") if type(value) is bool else value
+    def encode(self, value: str | bool | int) -> str:
+        return ("on" if value else "off") if type(value) is bool else str(value)
 
-    def decode(self, value: str) -> str | bool:
+    def decode(self, value: str) -> str | bool | int:
         if value not in dict(self.choices):
             raise ValueError(f"{self.label}可选值 {' / '.join(key for key, _ in self.choices)}")
         if self.choices == TOGGLE:
             return value == "on"
-        return value
+        return int(value) if self.integer else value
 
 
 TOGGLE = (("on", "开启"), ("off", "关闭"))
@@ -32,10 +34,13 @@ PREFERENCES = {
     "notify": Preference("完成提醒", "completion_notify", TOGGLE),
     "error-notify": Preference("错误提醒", "error_notify", TOGGLE),
     "icons": Preference("命令菜单图标", "command_icons", TOGGLE),
+    "retries": Preference("模型断连重试", "connection_retries",
+                          (("0", "关闭"), *((str(n), f"{n} 次") for n in (1, 2, 3, 5, 10))),
+                          section="llm", integer=True),
 }
 
 
-def read_preferences(root: Path) -> dict[str, str | bool]:
+def read_preferences(root: Path) -> dict[str, str | bool | int]:
     path = root / "ui-preferences.sqlite3"
     if not path.is_file():
         return {}
@@ -46,7 +51,7 @@ def read_preferences(root: Path) -> dict[str, str | bool]:
             data = dict(db.execute("SELECT name, value FROM preferences"))
     except sqlite3.Error:
         return {}
-    return {spec.field: spec.decode(data[name]) for name, spec in PREFERENCES.items()
+    return {f"{spec.section}.{spec.field}": spec.decode(data[name]) for name, spec in PREFERENCES.items()
             if name in data and data[name] in dict(spec.choices)}
 
 

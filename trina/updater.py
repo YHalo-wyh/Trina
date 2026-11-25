@@ -130,17 +130,27 @@ def _latest_release(refs: dict[str, str]) -> tuple[tuple[int, ...], str, str]:
     return max(releases)
 
 
+def _remote_release(mirror: str, work: Path, *, timeout: int = 30) -> tuple[tuple[int, ...], str, str]:
+    refs = _remote_refs(_run(["git", "ls-remote", "--tags", MIRRORS[mirror], "refs/tags/v*"], work,
+                            timeout=timeout))
+    return _latest_release(refs)
+
+
+def _current_version() -> tuple[int, ...]:
+    current = _RELEASE.fullmatch(f"refs/tags/v{__version__}")
+    if not current:
+        raise UpdateError("无法识别当前安装的版本号")
+    return tuple(map(int, current.groups()))
+
+
 def _update_package(mirror: str, check: bool, emit: Callable[[str], None]) -> None:
     url = MIRRORS[mirror]
     with tempfile.TemporaryDirectory(prefix="trina-update-") as tmp:
         work = Path(tmp)
-        refs = _remote_refs(_run(["git", "ls-remote", "--tags", url, "refs/tags/v*"], work))
-        version, tag, sha = _latest_release(refs)
-        current = _RELEASE.fullmatch(f"refs/tags/v{__version__}")
-        if not current:
-            raise UpdateError("无法识别当前安装的版本号")
+        version, tag, sha = _remote_release(mirror, work)
+        current = _current_version()
         emit(f"当前 v{__version__} · {mirror} 正式版 {tag}")
-        if version <= tuple(map(int, current.groups())):
+        if version <= current:
             emit("安装版本已是最新。")
             return
         if check:
@@ -159,16 +169,40 @@ def _update_package(mirror: str, check: bool, emit: Callable[[str], None]) -> No
         emit(f"已安装 {tag}。重新运行 trina 即可使用。")
 
 
-def update(*, check: bool, mirror: str | None, emit: Callable[[str], None] = print) -> None:
+def _installation() -> tuple[Path, bool]:
     package = Path(__file__).resolve().parent
     root = package.parent
     if (root / ".git").exists() and (root / "pyproject.toml").is_file():
-        _update_checkout(root, mirror or _remote_name(root), check, emit)
-        return
+        return root, True
     try:
         dist = metadata.distribution("trina")
     except metadata.PackageNotFoundError:
         dist = None
     if dist is None or Path(dist.locate_file("trina/__init__.py")).resolve() != package / "__init__.py":
         raise UpdateError("当前从源码副本运行。请使用 Git 检出目录或通过 pip 安装。")
-    _update_package(mirror or "github", check, emit)
+    return root, False
+
+
+def check_release() -> tuple[str, str] | None:
+    """查询正式版本标签，返回新版及对应的安装命令。"""
+    root, checkout = _installation()
+    current = _current_version()
+    if checkout and _output(_run(["git", "branch", "--show-current"], root)) != "main":
+        return None
+    mirror = _remote_name(root) if checkout else "github"
+    command = "trina update"
+    try:
+        version, tag, _ = _remote_release(mirror, root, timeout=5)
+    except UpdateError:
+        mirror = "gitee" if mirror == "github" else "github"
+        version, tag, _ = _remote_release(mirror, root, timeout=5)
+        command += f" --mirror {mirror}"
+    return (tag, command) if version > current else None
+
+
+def update(*, check: bool, mirror: str | None, emit: Callable[[str], None] = print) -> None:
+    root, checkout = _installation()
+    if checkout:
+        _update_checkout(root, mirror or _remote_name(root), check, emit)
+    else:
+        _update_package(mirror or "github", check, emit)

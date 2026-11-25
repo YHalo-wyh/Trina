@@ -12,6 +12,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from trina import __version__
 from trina.board import render_board, summarise
 from trina.brain.agent import StepRecord
 from trina.config import TrinaConfig
@@ -39,7 +40,7 @@ class TestTerminalUI(unittest.TestCase):
                         self.assertLessEqual(max(cell_len(line) for line in plain.splitlines()), width)
                         if not color:
                             self.assertNotIn("\x1b", text)
-        self.assertEqual(render_home(width=40).splitlines()[-1].strip(), "v0.6.0")
+        self.assertEqual(render_home(width=40).splitlines()[-1].strip(), f"v{__version__}")
 
     def test_slash_index_filters_commands_and_lists_options(self):
         from prompt_toolkit.document import Document
@@ -217,7 +218,7 @@ class TestTerminalUI(unittest.TestCase):
         text = render_home(width=88, color=True)
         self.assertIn("███████", clean_text(text))
         self.assertIn("▓", clean_text(text))
-        self.assertEqual(clean_text(text).splitlines()[-1].strip(), "v0.6.0")
+        self.assertEqual(clean_text(text).splitlines()[-1].strip(), f"v{__version__}")
         self.assertNotIn("睡莲紫雾", text)
         self.assertNotIn("模型", text)
         self.assertNotIn("/play", text)
@@ -314,7 +315,7 @@ class TestTerminalUI(unittest.TestCase):
             text = render_home(width=40)
             message = render_message("很长的无依赖提示" * 12, width=20, color=True)
         self.assertGreater(len(text.splitlines()), 2)
-        self.assertIn("v0.6.0", text)
+        self.assertIn(f"v{__version__}", text)
         self.assertNotIn("/play", text)
         self.assertNotIn("\x1b", text)
         from rich.cells import cell_len

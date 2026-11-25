@@ -504,17 +504,22 @@ class TestConsole(unittest.TestCase):
             console.handle("/setup notify on")
             console.handle("/setup error-notify on")
             console.handle("/setup theme contrast")
+            console.handle("/setup retries 5")
             console.handle("/setup footer invalid")
             loaded = TrinaConfig.load()
             self.assertFalse(loaded.ui.command_icons)
             self.assertEqual(loaded.ui.status_line_preset, "compact")
             self.assertTrue(loaded.ui.completion_notify and loaded.ui.error_notify)
             self.assertEqual(loaded.ui.output_palette, "contrast")
+            self.assertEqual(loaded.llm.connection_retries, 5)
             self.assertTrue(TrinaConfig.load(overrides={"ui.command_icons": True}).ui.command_icons)
+            self.assertEqual(TrinaConfig.load(overrides={"llm.connection_retries": 0}).llm.connection_retries, 0)
             source = Path(folder) / "explicit.yaml"
             source.write_text("ui:\n  command_icons: true\n", encoding="utf-8")
             self.assertTrue(TrinaConfig.load(source).ui.command_icons)
             self.assertEqual([choice.value for choice in console._completion_values("setup", ["icons"])], ["on", "off"])
+            self.assertEqual([choice.value for choice in console._completion_values("setup", ["retries"])],
+                             ["0", "1", "2", "3", "5", "10"])
             self.assertIn("命令执行失败", "\n".join(output))
 
     def test_finding_rows_show_distinct_titles_and_hide_exact_duplicates(self):
@@ -728,6 +733,52 @@ class TestConsole(unittest.TestCase):
         console, output = self._console(["run", "quit"])
         console.run()
         self.assertTrue(any("用法: run <target>" in line for line in output))
+
+    def test_cancel_console_wait_stops_model_backoff_without_another_request(self):
+        from http.client import RemoteDisconnected
+        from trina.llm.openai_backend import OpenAICompatBackend
+
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        backend = OpenAICompatBackend(LLMConfig(base_url="http://127.0.0.1:9/v1"), key_override="")
+        console, output = self._console([], backend=backend, registry=ToolRegistry([]))
+        console.config = console.config.with_overrides(
+            run__workspace=str(Path(directory.name) / "runs"),
+            audit__dir=str(Path(directory.name) / "logs"),
+            llm__connection_retries=5,
+        )
+        self.addCleanup(console._cleanup)
+        waiting = threading.Event()
+        wait = console.session.stop_event.wait
+
+        def hold_backoff(_delay):
+            waiting.set()
+            return wait(3)
+
+        with patch.object(backend._stream_transport, "_open_once",
+                          side_effect=RemoteDisconnected("stream closed")) as opened, \
+             patch.object(console.session.stop_event, "wait", side_effect=hold_backoff):
+            console.handle("解释一米等于多少厘米")
+            self.assertTrue(waiting.wait(2), "普通对话应进入重连等待")
+            self.assertIn("1/5", console._activity()[1])
+            self.assertTrue(console._cancel_console_wait())
+            console.session.thread.join(2)
+            self.assertFalse(console.session.running)
+            opened.assert_called_once()
+
+        events = console.chat.events.replay(kinds=("model.finished", "model.error"))
+        self.assertEqual([event.kind for event in events], ["model.finished"])
+        self.assertEqual(events[0].payload["finish_reason"], "retry_cancelled")
+        self.assertIn("已按你的要求停止", "\n".join(output))
+
+    def test_plain_console_interrupt_stops_task_before_exiting(self):
+        console, output = self._console([])
+        console.session.thread = SimpleNamespace(is_alive=lambda: not console.session.stop_event.is_set())
+        with patch.object(console, "_read_input", side_effect=[KeyboardInterrupt, KeyboardInterrupt]) as read:
+            self.assertEqual(console.run(), 0)
+        self.assertEqual(read.call_count, 2)
+        self.assertTrue(console.session.stop_event.is_set())
+        self.assertIn("再按 Ctrl+C 退出 Trina", "\n".join(output))
 
     def test_running_state_rejects_unrelated_commands(self):
         console, output = self._console([])

@@ -20,7 +20,7 @@ from urllib.parse import urlsplit
 from .. import __version__
 from ..config import LLMConfig
 from ..models import CatalogModel
-from ..scope import ModelStreamTransport
+from ..scope import ModelRetryCancelled, ModelStreamTransport
 from .base import (
     LLMBackend, LLMMessage, LLMResponse, LLMStreamEvent, LLMUsage, StreamCallback, ToolCall,
 )
@@ -411,8 +411,13 @@ class OpenAICompatBackend(LLMBackend):
         model = self.config.model
         last_event: dict[str, Any] = {}
         timing: dict[str, float | bool] = {}
+
+        def on_retry(attempt: int, delay: float, limit: int) -> None:
+            if on_event is not None:
+                on_event(LLMStreamEvent("retry", attempt=attempt, delay=delay, max_attempts=limit))
+
         try:
-            with self._stream_transport.open(request, self.config.timeout, timing) as response:
+            with self._stream_transport.open(request, self.config.timeout, timing, on_retry=on_retry) as response:
                 timing.setdefault("headers_seconds", round(time.perf_counter() - started, 4))
                 if on_event is not None:
                     on_event(LLMStreamEvent("start"))
@@ -458,6 +463,9 @@ class OpenAICompatBackend(LLMBackend):
                         break
                 if terminal and not terminal_error:
                     response.read_tail()
+        except ModelRetryCancelled as exc:
+            return self._tally(LLMResponse(ok=False, error=str(exc), finish_reason="retry_cancelled",
+                                           duration=round(time.perf_counter() - started, 2)))
         except urllib.error.HTTPError as exc:
             return self._finish_error(self._http_error(exc), on_event=on_event,
                                       duration=round(time.perf_counter() - started, 2), transport=timing)

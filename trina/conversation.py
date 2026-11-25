@@ -21,6 +21,20 @@ def estimate_tokens(value: Any) -> int:
     return (len(encoded(value)) + 1) // 2 + (16 * len(value) if isinstance(value, list) else 16)
 
 
+def _common_prefix_bytes(previous: bytes, current: bytes) -> int:
+    """用字节串比较定位首个差异，返回精确的公共前缀长度。"""
+    if current.startswith(previous):
+        return len(previous)
+    matched, upper = 0, min(len(previous), len(current)) + 1
+    while matched + 1 < upper:
+        end = (matched + upper) // 2
+        if current.startswith(previous[matched:end], matched):
+            matched = end
+        else:
+            upper = end
+    return matched
+
+
 def state_projection(state, *, hypotheses=(), registered: str = "", **extra: Any) -> dict[str, Any]:
     """保留事实及证据索引，原始响应和完整事件仍保存在运行工件。"""
     return {
@@ -205,14 +219,10 @@ class ConversationContext:
         signature = hashlib.sha256(encoded([getattr(backend, "base_url", llm.base_url), llm.model, llm.api, llm.reasoning_effort,
                                             llm.temperature, llm.max_tokens, llm.cache_mode, llm.cache_ttl,
                                             llm.cache_features, tools])).hexdigest()
-        same = 0
-        for a, b in zip(self.last_request, current):
-            if a != b:
-                break
-            same += 1
+        same = _common_prefix_bytes(self.last_request, current)
         reason = ("cold" if not self.last_request else "compaction" if self.compacted else
                   "request_settings_changed" if signature != self.last_signature else
-                  "append" if current.startswith(self.last_request) else "prefix_changed")
+                  "append" if same == len(self.last_request) else "prefix_changed")
         result = {"reason": reason, "visible_prefix_bytes": same, "visible_input_bytes": len(current),
                   "suffix_visible_bytes": len(current) - same,
                   "appended_visible_bytes": len(current) - same if reason == "append" else None, "epoch": self.epoch,

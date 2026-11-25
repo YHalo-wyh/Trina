@@ -47,7 +47,7 @@ def select_model(choices: list[ModelChoice], *, plain: bool = False, discover=No
     from prompt_toolkit.mouse_events import MouseEventType
 
     from .console_state import _cells, _fit_cells
-    from .console_ui import _REDRAW_INTERVAL, _panel_app, run_panel
+    from .console_ui import _panel_app, run_panel
     from .scrollbar import ScrollbarControl
     from .terminal import clean_text
 
@@ -483,7 +483,7 @@ def select_model(choices: list[ModelChoice], *, plain: bool = False, discover=No
     ])
     app = _panel_app(body, "切换模型", keys, field, plain=plain, expanded=True)
     app.before_render += lambda _: scrollbar.begin_frame()
-    app.after_render += lambda current: scrollbar.finish_frame(current, track, _REDRAW_INTERVAL)
+    app.after_render += lambda current: scrollbar.finish_frame(current, track)
     if discover:
         app.pre_run_callables.append(start_load)
     return run_panel(app)

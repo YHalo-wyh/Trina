@@ -86,7 +86,8 @@ class EventTranscript:
             if self._model_text is not None:
                 from .llm import LLMStreamEvent
                 self._model_text.on_event(LLMStreamEvent("text_delta", delta=str(payload.get("delta", ""))))
-        elif event.kind == "model.finished" and payload.get("ok") is not False:
+        elif event.kind == "model.finished" and (payload.get("ok") is not False
+                                                 or payload.get("finish_reason") == "retry_cancelled"):
             self._finish_thinking(request_id)
             if self._model_text is not None and self._model_text.opened:
                 self._model_final_text = self._model_text.displayed.rstrip()
@@ -121,7 +122,9 @@ class EventTranscript:
                 while len(self._model_errors) > 256:
                     self._model_errors.popitem(last=False)
         elif event.kind == "model.retry":
-            self.output(render_process(f"第 {payload.get('attempt')} 次重试 · {payload.get('delay')}s 后重试",
+            attempt = payload.get("attempt")
+            label = f"重试 {attempt}/{limit}" if (limit := payload.get("max_attempts")) else f"第 {attempt} 次重试"
+            self.output(render_process(f"{label} · {payload.get('delay')}s 后发送请求",
                                        label="模型", color=self.color, palette=self.palette))
         elif event.kind == "chat.turn_finished":
             reason = payload.get("reason")

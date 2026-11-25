@@ -15,7 +15,7 @@ from trina.audit import AuditLog
 from trina.brain.agent import PentestAgent
 from trina.brain.chat import ChatAgent
 from trina.config import LLMConfig, TrinaConfig
-from trina.conversation import ContextBudgetError, ConversationContext, state_projection
+from trina.conversation import ContextBudgetError, ConversationContext, _common_prefix_bytes, state_projection
 from trina.llm import LLMResponse, LLMUsage
 from trina.llm.cache import CachePolicy
 from trina.llm.openai_backend import OpenAICompatBackend, _parse_usage
@@ -162,6 +162,20 @@ class CacheRuntimeTests(unittest.TestCase):
         self.assertEqual(context.before_request(messages)["reason"], "request_settings_changed")
         context.compacted = True
         self.assertEqual(context.before_request(messages)["reason"], "compaction")
+
+    def test_common_prefix_compares_exact_bytes_for_long_and_rewritten_history(self):
+        prefix = ("一段普通对话。" * 30000).encode()
+        for previous, current, expected in (
+            (b"", prefix, 0),
+            (prefix, prefix, len(prefix)),
+            (prefix, prefix + b"new", len(prefix)),
+            (prefix, prefix[:-1], len(prefix) - 1),
+            (prefix + b"a", prefix + b"b", len(prefix)),
+            (b"x" + prefix, b"y" + prefix, 0),
+            ("你好".encode(), "你很".encode(), 4),
+        ):
+            with self.subTest(previous=len(previous), current=len(current), expected=expected):
+                self.assertEqual(_common_prefix_bytes(previous, current), expected)
 
     def test_chat_automatically_compacts_and_keeps_worker_contexts_isolated(self):
         self.config.llm.context_window, self.config.llm.max_tokens = 10000, 1024

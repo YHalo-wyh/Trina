@@ -542,6 +542,28 @@ def cmd_eval(args: argparse.Namespace) -> int:
 
 def cmd_events(args: argparse.Namespace) -> int:
     """重放或续接已有事件流；只投递观察，不执行历史动作。"""
+    if getattr(args, "latency", False):
+        import sqlite3
+
+        from .event_latency import METRIC_LABELS, summarize_latency
+
+        if args.follow or args.consumer or args.kind:
+            print("--latency 支持 --after、--task 和 --json", file=sys.stderr)
+            return 2
+        try:
+            summary = summarize_latency(args.path, after=args.after or 0, task=args.task)
+        except (OSError, sqlite3.Error, ValueError) as exc:
+            print(f"无法读取事件延迟：{exc}", file=sys.stderr)
+            return 2
+        if args.json:
+            print(json.dumps(summary, ensure_ascii=False, indent=2))
+        else:
+            for metric, row in summary.items():
+                count = row["samples"]
+                timing = f'p50 {row["p50_seconds"] * 1000:.1f} ms · p95 {row["p95_seconds"] * 1000:.1f} ms · n={count}' if count else "暂无样本"
+                print(f"{METRIC_LABELS[metric]}  {timing}")
+        return 0
+
     from .events import EventBus
     from .event_view import EventTranscript
     bus = EventBus.open_existing(args.path)
@@ -1193,6 +1215,7 @@ def build_parser() -> argparse.ArgumentParser:
     events.add_argument("--kind", action="append", help="事件类型筛选，支持 tool.*，可重复")
     events.add_argument("--task", help="仅接收指定 Intent 的事件")
     events.add_argument("--json", action="store_true", help="逐行输出完整事件信封")
+    events.add_argument("--latency", action="store_true", help="只读汇总请求首段输出和工具交接时延")
     events.set_defaults(func=cmd_events)
 
     audit = sub.add_parser("audit", help="审计日志")

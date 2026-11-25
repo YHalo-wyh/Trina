@@ -8,7 +8,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from trina.cli import main
-from trina.updater import UpdateError, _latest_release, _run, _update_checkout, _update_package
+from trina.updater import UpdateError, _latest_release, _run, _update_checkout, _update_package, check_release
 
 
 def git(root: Path, *args: str) -> str:
@@ -77,6 +77,15 @@ class CheckoutUpdateTests(unittest.TestCase):
         _update_checkout(self.checkout, "github", True, log.append)
         self.assertIn("已包含远端提交", log[-1])
 
+    def test_startup_check_reports_new_source_release_without_fetching(self):
+        git(self.upstream, "tag", "v9.0.0")
+        with patch("trina.updater._installation", return_value=(self.checkout, True)):
+            self.assertEqual(check_release(), ("v9.0.0", "trina update"))
+            self.assertEqual(git(self.checkout, "rev-parse", "HEAD"), self.old)
+            self.assertNotEqual(_run(["git", "cat-file", "-t", self.new], self.checkout).returncode, 0)
+            git(self.checkout, "switch", "-c", "work")
+            self.assertIsNone(check_release())
+
 
 class PackageUpdateTests(unittest.TestCase):
     def test_release_order_and_annotated_tag(self):
@@ -103,3 +112,24 @@ class PackageUpdateTests(unittest.TestCase):
         with patch("trina.updater.update") as update:
             self.assertEqual(main(["update", "--check", "--mirror", "gitee"]), 0)
         update.assert_called_once_with(check=True, mirror="gitee")
+
+    def test_startup_check_queries_release_tags_and_suggests_fallback_mirror(self):
+        root = Path.cwd()
+        unavailable = SimpleNamespace(returncode=1, stdout="", stderr="offline")
+        newer = SimpleNamespace(returncode=0, stdout=f"{'a' * 40}\trefs/tags/v0.6.1\n", stderr="")
+        with patch("trina.updater._installation", return_value=(root, False)), \
+             patch("trina.updater.__version__", "0.6.0"), \
+             patch("trina.updater._run", side_effect=[unavailable, newer]) as run:
+            self.assertEqual(check_release(), ("v0.6.1", "trina update --mirror gitee"))
+        self.assertEqual(run.call_count, 2)
+        for call, mirror in zip(run.call_args_list, ("github.com", "gitee.com")):
+            argv, cwd = call.args
+            self.assertEqual(cwd, root)
+            self.assertEqual(argv[:3], ["git", "ls-remote", "--tags"])
+            self.assertIn(mirror, argv[3])
+
+    def test_startup_check_ignores_release_already_installed(self):
+        with patch("trina.updater._installation", return_value=(Path.cwd(), False)), \
+             patch("trina.updater.__version__", "0.6.0"), \
+             patch("trina.updater._remote_release", return_value=((0, 6, 0), "v0.6.0", "a" * 40)):
+            self.assertIsNone(check_release())

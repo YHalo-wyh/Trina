@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from time import perf_counter
 from typing import Callable
 
 from prompt_toolkit.data_structures import Point
@@ -72,7 +71,6 @@ class ScrollbarControl(UIControl):
         self._last_y = self._grab = self._thumb_start = 0
         self._last_offset: int | None = None
         self._pending: tuple[int, int] | None = None
-        self._frame_started = 0.0
 
     @property
     def dragging(self) -> bool:
@@ -84,13 +82,10 @@ class ScrollbarControl(UIControl):
         self._pending = None
 
     def begin_frame(self) -> None:
-        self._frame_started = perf_counter()
         self.apply_pending()
 
-    def finish_frame(self, app, window, normal_interval: float) -> None:
-        """交还输入处理时间，重帧后等最新位置进入下一帧。"""
-        elapsed = perf_counter() - self._frame_started
-        app.min_redraw_interval = max(1 / 60, min(1 / 30, elapsed * 2)) if self.dragging else normal_interval
+    def finish_frame(self, app, window) -> None:
+        """用新帧的轨道位置捕获越过滚动条的拖动事件。"""
         top = getattr(window.render_info, "_y_offset", None)
         if top is not None and window in app.layout.visible_windows:
             table = app.renderer.mouse_handlers
@@ -107,7 +102,12 @@ class ScrollbarControl(UIControl):
         if self._drag_track is not None and self._drag_track.height != height:
             self.cancel_drag()
         # 拖动期间固定轨道比例，实时追加的行在释放后再计入滑块大小。
-        thumb = max(1, height * visible // max(1, visible + maximum)) if height > 1 and maximum else 0
+        if height > 1 and maximum:
+            proportional = max(1, height * visible // max(1, visible + maximum))
+            minimum = min(height - 1, max(3, height // 10))
+            thumb = max(proportional, minimum)
+        else:
+            thumb = 0
         track = self._drag_track or _Track(height, thumb, maximum)
         start = track.start(offset)
         self._painted, self._thumb_start = track, start

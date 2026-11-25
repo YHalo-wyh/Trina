@@ -17,7 +17,8 @@
 from __future__ import annotations
 
 import ipaddress
-from contextlib import contextmanager
+import random
+from contextlib import ExitStack, contextmanager
 from contextvars import ContextVar
 import threading
 import re
@@ -95,8 +96,27 @@ class _ModelStreamResponse:
                 sock.settimeout(timeout)
 
 
+_INTERACTIVE_RECONNECT: ContextVar[tuple[int, threading.Event] | None] = ContextVar(
+    "trina_interactive_reconnect", default=None,
+)
+
+
+class ModelRetryCancelled(InterruptedError):
+    """操作者取消模型重连。"""
+
+
+@contextmanager
+def interactive_model_retries(max_attempts: int, stop: threading.Event):
+    """把交互轮次的重连配置与停止信号绑定到当前线程。"""
+    token = _INTERACTIVE_RECONNECT.set((max_attempts, stop))
+    try:
+        yield
+    finally:
+        _INTERACTIVE_RECONNECT.reset(token)
+
+
 class ModelStreamTransport:
-    """模型 SSE 按后端复用连接，保留系统代理和证书，不自动重发 POST。"""
+    """模型 SSE 复用连接，保留系统代理和证书。"""
 
     def __init__(self):
         self._route = None
@@ -142,7 +162,49 @@ class ModelStreamTransport:
         return manager
 
     @contextmanager
-    def open(self, request, timeout: float, timing: dict):
+    def open(self, request, timeout: float, timing: dict, *,
+             on_retry: Callable[[int, float, int], None] | None = None):
+        from http.client import RemoteDisconnected
+        from urllib.error import URLError
+        from urllib3.exceptions import ProtocolError
+
+        interactive = _INTERACTIVE_RECONNECT.get()
+        limit = interactive[0] if interactive is not None else 2
+        stop = interactive[1] if interactive is not None else None
+        for attempt in range(limit + 1):
+            if stop is not None and stop.is_set():
+                raise ModelRetryCancelled("已停止模型请求")
+            with ExitStack() as response_scope:
+                try:
+                    response = response_scope.enter_context(self._open_once(request, timeout, timing))
+                except (OSError, ProtocolError) as exc:
+                    cause = exc.reason if isinstance(exc, URLError) else exc
+                    if isinstance(cause, ProtocolError) and cause.args:
+                        cause = cause.args[-1]
+                    if not isinstance(cause, RemoteDisconnected):
+                        raise
+                    if attempt == limit:
+                        if not attempt:
+                            raise
+                        raise RemoteDisconnected(f"{cause}（自动重连 {attempt} 次后仍未收到响应）") from exc
+                    if stop is not None:
+                        ceiling = .5 * 2 ** min(attempt, 4)
+                        delay = round(random.uniform(.75 * ceiling, ceiling), 3)
+                    else:
+                        delay = (.25, .75)[attempt]
+                    if on_retry is not None:
+                        on_retry(attempt + 1, delay, limit)
+                    if stop is None:
+                        time.sleep(delay)
+                    elif stop.wait(delay):
+                        raise ModelRetryCancelled("已取消模型重连") from exc
+                    continue
+                # 响应头已到达。流读取在重连处理范围之外。
+                yield response
+                return
+
+    @contextmanager
+    def _open_once(self, request, timeout: float, timing: dict):
         import io
         import urllib.error
         import urllib.request
@@ -214,9 +276,9 @@ def execute_streamed(argv: list[str], *, timeout: float, cwd: str | None, env: d
                      input_data: str | None, on_output: Callable[[str, str], None],
                      stop_event: Any = None, allow_detached_children: bool = False) -> Any:
     """受控进程出口；仅显式托管的长期会话可让子进程跨调用存活。"""
-    import codecs
     import os
     import subprocess
+    from .process_output import ProcessOutputDecoder
     from .tools.external import _terminate_background, _windows_background_job
 
     ensure_execution_active()
@@ -228,7 +290,7 @@ def execute_streamed(argv: list[str], *, timeout: float, cwd: str | None, env: d
     errors: list[Exception] = []
 
     def read(stream: Any, name: str) -> None:
-        decoder = codecs.getincrementaldecoder("utf-8")("replace")
+        decoder = ProcessOutputDecoder()
         try:
             while chunk := stream.read1(4096):
                 text = decoder.decode(chunk)

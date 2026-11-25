@@ -206,6 +206,13 @@ class Console:
         self._emit("已退出等待，后台任务继续运行", prefix="后台")
         return True
 
+    def _cancel_console_wait(self) -> bool:
+        if (self.session.running and self.chat is not None and self.session.state is self.chat.state
+                and self.view.activity()[0] == "retry"):
+            self.session.request_stop()
+            return True
+        return self._cancel_job_wait()
+
     def _cmd_jobs(self, args: list[str]) -> None:
         action, *values = args or ["list"]
         if action == "unwait" and not values:
@@ -322,8 +329,15 @@ class Console:
             self.view.set_activity("waiting", "请求模型")
             if self._enhanced_input is not None:
                 self._enhanced_input.app.invalidate()
+        elif event.kind == "model.connected" and self.view.activity()[0] == "retry":
+            self.view.set_activity("waiting", "等待输出")
         elif event.kind == "model.retry":
-            self.view.set_activity("retry", f"等待重试 · 第 {event.payload.get('attempt')} 次")
+            attempt = event.payload.get("attempt")
+            limit = event.payload.get("max_attempts")
+            label = f"第 {attempt} 次"
+            if limit and self.chat is not None and self.session.state is self.chat.state:
+                label = f"{attempt}/{limit} · Esc 取消"
+            self.view.set_activity("retry", f"等待重试 · {label}")
         elif event.kind == "model.error":
             self.view.set_activity("error", "模型请求失败")
         elif event.kind == "chat.title" and self._enhanced_input is not None:
@@ -417,7 +431,7 @@ class Console:
                 dynamic_values=self._completion_values, plain=self._plain or not self.color,
                 usage=self._footer_usage, activity=self._activity, motion=self.config.ui.motion,
                 context=self._footer_context, activity_detail=lambda: self._live_action_hint,
-                output_palette=self._output_palette, cancel_wait=self._cancel_job_wait,
+                output_palette=self._output_palette, cancel_wait=self._cancel_console_wait,
                 command_icons=lambda: self.config.ui.command_icons,
                 tasks=self._todo_view,
                 pending_draft=self._pending_draft_number,
@@ -427,6 +441,7 @@ class Console:
             try:
                 self._start_scheduler()
                 self._enhanced_input.show_home()
+                self._enhanced_input.app.pre_run_callables.append(self._start_update_check)
                 self._enhanced_input.run(self.handle)
             except (EOFError, KeyboardInterrupt):
                 pass
@@ -438,8 +453,19 @@ class Console:
             return 0
         try:
             show_home(output=self._display, color=self.color)
+            interrupt_exit_armed = False
             while not self.exit_requested:
-                raw = self._read_input()
+                try:
+                    raw = self._read_input()
+                except KeyboardInterrupt:
+                    if interrupt_exit_armed:
+                        break
+                    interrupt_exit_armed = True
+                    if self.session.running:
+                        self.handle("/stop")
+                    self._emit("再按 Ctrl+C 退出 Trina")
+                    continue
+                interrupt_exit_armed = False
                 if not self.handle(raw):
                     break
         except (EOFError, KeyboardInterrupt, StopIteration):
@@ -447,6 +473,24 @@ class Console:
         finally:
             self._cleanup()
         return 0
+
+    def _start_update_check(self) -> None:
+        """在界面运行后查询一次正式版本。"""
+        editor = self._enhanced_input
+        if editor is None:
+            return
+
+        def check() -> None:
+            from .updater import UpdateError, check_release
+
+            try:
+                notice = check_release()
+            except UpdateError:
+                return
+            if notice and not self._cleanup_done:
+                editor.show_update_notice(*notice)
+
+        threading.Thread(target=check, name="trina-update-check", daemon=True).start()
 
     def _read_input(self) -> str:
         """测试和重定向使用普通输入；真实终端由持久界面接管。"""
@@ -710,7 +754,8 @@ class Console:
             self._emit(f"命令解析失败，按对话处理: {line[:60]}")
             self._handle_chat_input(line)
             return True
-        command, args = ("model" if argv[0] == "models" else argv[0]), argv[1:]
+        spec = find_command(argv[0])
+        command, args = (spec.name if spec is not None else argv[0]), argv[1:]
 
         if command in {"subworker", "queue", "plan", "jobs", "resume", "tasks", "todo"}:
             try:
@@ -1287,8 +1332,9 @@ class Console:
 
         def current(name: str) -> str:
             preference = PREFERENCES[name]
-            value = preference.encode(getattr(self.config.ui, preference.field))
-            return dict(preference.choices)[value]
+            section = getattr(self.config, preference.section)
+            value = preference.encode(getattr(section, preference.field))
+            return dict(preference.choices).get(value, f"{value} 次")
 
         def edit(section: str, value: str | None = None) -> None:
             if section == "model" and value is None:
@@ -1304,12 +1350,13 @@ class Console:
             if section not in PREFERENCES:
                 raise ValueError("用法 /setup [项目 [值]]")
             preference = PREFERENCES[section]
+            settings = getattr(self.config, preference.section)
             if value is None and not interactive:
                 choices = " / ".join(key for key, _ in preference.choices)
                 self._emit(f"{preference.label} · {current(section)} · /setup {section} {choices}", prefix="设置")
                 return
             if value is None:
-                active = preference.encode(getattr(self.config.ui, preference.field))
+                active = preference.encode(getattr(settings, preference.field))
                 value = select_option(preference.label,
                                       [ChoiceSpec(key, ("● " if key == active else "") + label)
                                        for key, label in preference.choices], plain=self._plain or not self.color)
@@ -1317,7 +1364,7 @@ class Console:
                 return
             setting = preference.decode(value)
             save_preference(_user_data_root(), section, value)
-            setattr(self.config.ui, preference.field, setting)
+            setattr(settings, preference.field, setting)
             if section == "theme":
                 self._refresh_output_palette()
             self._emit(f"{preference.label} · {current(section)} · 已保存", prefix="设置")
@@ -2167,13 +2214,17 @@ class Console:
         self.session.started_at = time.monotonic()
 
         def _worker() -> None:
+            from .scope import interactive_model_retries
+
             try:
-                reply = chat.ask(text)
+                with interactive_model_retries(self.config.llm.connection_retries, self.session.stop_event):
+                    reply = chat.ask(text)
                 self._task_title = chat.title or self._task_title
                 if not chat.last_reply_streamed:
                     self._display(render_answer(reply or "(空回复)", color=self.color, palette=self._output_palette))
                 self._last_state = chat.state
-                self._notify_agent("本轮回复已完成")
+                if not self.session.stop_event.is_set():
+                    self._notify_agent("本轮回复已完成")
             except Exception as exc:  # noqa: BLE001 - 对话异常不能杀掉控制台
                 chat._cancel_stream()
                 self._emit(f"对话出错: {type(exc).__name__}: {exc}", prefix="[错误]")

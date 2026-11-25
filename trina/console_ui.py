@@ -77,27 +77,33 @@ class ChoiceSpec:
 SETUP_SECTIONS = (ChoiceSpec("model", "模型与供应商"),
                   *(ChoiceSpec(name, spec.label) for name, spec in PREFERENCES.items()))
 COMMAND_ICONS = {
-    "设置": ("⚙", "gold"),
-    "任务": ("◎", "cyan"),
+    "设置": ("⊞", "gold"),
+    "任务": ("◇", "cyan"),
     "工具": ("⌘", "blue"),
-    "研究": ("◈", "cyan"),
-    "会话与模型": ("◇", "lilac"),
+    "研究": ("◎", "cyan"),
+    "会话与模型": ("✧", "lilac"),
     "并行任务": ("▦", "pink"),
-    "工作区": ("▣", "blue"),
+    "工作区": ("□", "blue"),
     "运行控制": ("↔", "gold"),
     "交付": ("≡", "mint"),
     "系统": ("·", "neutral"),
 }
 COMMAND_SYMBOLS = {
-    "model": "✧", "status": "◉", "help": "?", "resume": "↶", "new": "+",
-    "tools": "◇",
-    "play": "▷", "run": "→", "plan": "☑", "tasks": "≡", "schedule": "◷", "jobs": "▤",
-    "board": "▦", "queue": "≡", "pause": "Ⅱ", "stop": "□",
-    "history": "≣", "save": "↓", "quit": "↗",
+    "model": "✧", "status": "⊙", "help": "?", "resume": "↶", "new": "+",
+    "tools": "⌘", "tool": "›", "setup": "⊞",
+    "play": "▷", "run": "→", "plan": "⊡", "tasks": "≡", "schedule": "◷", "jobs": "▤",
+    "board": "▦", "queue": "≔", "pause": "Ⅱ", "stop": "□",
+    "branch": "⎇", "repo": "⧉", "worktree": "⊕",
+    "history": "≣", "save": "↓", "quit": "⇥",
 }
-COMMAND_ICON_COLORS = {
-    "gold": "#e8bf83", "cyan": "#88c8d9", "blue": "#9eb7e7", "lilac": "#cfb0e9",
-    "pink": "#e0a7c9", "mint": "#a3d7be", "neutral": "#b9adbf",
+COMMAND_ICON_PALETTE = {
+    "gold": ("#dbc19a", "#342b23"),
+    "cyan": ("#a2cbd1", "#243236"),
+    "blue": ("#aabbdf", "#272f42"),
+    "lilac": ("#d1b8e5", "#32283e"),
+    "pink": ("#daaeca", "#38293a"),
+    "mint": ("#acd0b9", "#263731"),
+    "neutral": ("#bcb1c4", "#302936"),
 }
 
 
@@ -261,13 +267,14 @@ COMMANDS: tuple[CommandSpec, ...] = (
     CommandSpec("usage", "会话与模型", "查看模型调用、Token 和成本", "usage"),
     CommandSpec("worker", "会话与模型", "切换独立 Worker 会话和当前角色", "worker [commander|general|code|web|binary|review]",
                 positional_choices=tuple(ChoiceSpec(key, value[0]) for key, value in WORKER_ROLES.items())),
-    CommandSpec("subworker", "并行任务", "子 Worker 面板、模型与思考强度、并发和任务管理", "subworker [操作] [参数]",
+    CommandSpec("subworker", "并行任务", "子 Agent 面板、模型与思考强度、并发和任务管理", "subworker [操作] [参数]",
                 positional_choices=tuple(ChoiceSpec(k, v) for k, v in (("start", "名称 目标 任务：启动"), ("run", "从 YAML 任务图启动"),
                     ("add", "追加并行任务"), ("grid", "九宫格实时对话"), ("list", "查看任务"), ("message", "立即补充指定任务"),
                     ("queue", "预存给指定任务的补充"), ("cancel", "取消指定任务"), ("inspect", "查看结果与证据"), ("model", "设置子模型 ID"),
                     ("thinking", "设置思考强度"), ("provider", "选择已保存供应商"), ("settings", "并发、步数、超时"),
                     ("pause", "暂停"), ("continue", "继续"), ("stop", "停止与回收"), ("resume", "恢复 Swarm 检查点"))),
-                examples=("/subworker", "/subworker start audit localhost 检查服务", "/subworker thinking high", "/subworker model deepseek-flash", "/subworker run tasks.yaml")),
+                examples=("/subworker", "/subagent", "/subworker start audit localhost 检查服务", "/subworker thinking high", "/subworker model deepseek-flash", "/subworker run tasks.yaml"),
+                aliases=("subagent",), availability="always"),
     CommandSpec("branch", "工作区", "查看、切换或创建本地 Git 分支", "branch [分支名|new <名称>]",
                 positional_choices=(ChoiceSpec("new", "创建并切换分支"), ChoiceSpec("list", "列出分支"),
                                     ChoiceSpec("switch", "切换分支"), ChoiceSpec("delete", "删除已合并分支"))),
@@ -357,7 +364,7 @@ COMMANDS: tuple[CommandSpec, ...] = (
     ),
 )
 
-CATEGORY_ORDER = ("任务", "研究", "工具", "会话与模型", "交付", "运行控制", "系统")
+CATEGORY_ORDER = ("任务", "研究", "工具", "并行任务", "工作区", "会话与模型", "设置", "交付", "运行控制", "系统")
 COMMAND_BY_NAME = {spec.name: spec for spec in COMMANDS}
 for _spec in COMMANDS:
     for _alias in _spec.aliases:
@@ -445,8 +452,10 @@ class SlashCommandCompleter(_Completer):
 
     def _matching_commands(self, query: str) -> list[CommandSpec]:
         ranked = []
-        defaults = ("model", "status", "setup", "help", "resume", "new")
-        priority = tuple(dict.fromkeys((*self.recent, *defaults)))
+        if self.running():
+            priority = ("subworker", *self.recent, "status", "stop", "jobs", "queue", "help")
+        else:
+            priority = (*self.recent, "model", "status", "setup", "help", "resume", "new")
         for spec in self._visible_commands():
             names = (spec.name, *spec.aliases)
             if not query:
@@ -643,6 +652,7 @@ class EnhancedConsoleInput:
         self._handler = None
         self._dispatching = False
         self._queue = None
+        self._interrupt_exit_armed = False
         self._chunks: list[str | StreamingAnswer] = []
         self._stream_index: int | None = None
         self._stream_format_lock = asyncio.Lock()
@@ -653,6 +663,7 @@ class EnhancedConsoleInput:
         self._command_icons = command_icons or (lambda: True)
         self._home_animation = False
         self._home_frame = -1
+        self._update_notice: tuple[str, str] | None = None
         self._toast_message = ""
         self._toast_level = "success"
         self._toast_token = 0
@@ -667,7 +678,6 @@ class EnhancedConsoleInput:
         self._rendered_lines = 1
         self._scrollback = 0
         self._wheel_lines = 0
-        self._wheel_timer: asyncio.TimerHandle | None = None
         # 只有用户主动上翻历史时才暂停尾随；不能用残留选区猜测用户意图。
         self._follow_latest = True
         self.running = running
@@ -712,6 +722,7 @@ class EnhancedConsoleInput:
 
         @bindings.add("enter")
         def submit(event):
+            self._interrupt_exit_armed = False
             if self._complete_before_submit():
                 return
             self._home_animation = False
@@ -732,9 +743,20 @@ class EnhancedConsoleInput:
             event.current_buffer.insert_text(data)
 
         @bindings.add("c-c")
+        @bindings.add(Keys.SIGINT)
         def cancel(event):
-            if not self.transcript_control.copy_selection():
+            if self.transcript_control.copy_selection():
+                return
+            if self._handler is None:
                 event.app.exit(exception=KeyboardInterrupt())
+                return
+            if self._interrupt_exit_armed:
+                event.app.exit()
+                return
+            self._interrupt_exit_armed = True
+            if self.running() or self._dispatching or not self._queue.empty():
+                self._queue.put_nowait("/stop")
+            self.write("再按 Ctrl+C 退出 Trina")
 
         @bindings.add("f2")
         def native_selection(event):
@@ -799,13 +821,16 @@ class EnhancedConsoleInput:
         def follow_latest(event):
             self._scroll_to_latest()
 
-        style = Style.from_dict({"selection": "reverse", "toast": "reverse"} if plain else {
+        style = Style.from_dict({"selection": "reverse", "toast": "reverse", "update.notice": "bold"} if plain else {
             "prompt": "bold " + THEME["rose"], "index": THEME["muted"],
             "selected": "bg:#33283c " + THEME["text"], "hint": THEME["muted"],
             "command.rule": "#675471", "command.key": "bold " + THEME["lilac"],
             "command.match": "bold underline",
             "command.description": THEME["muted"],
-            **{f"command.icon.{tone}": color for tone, color in COMMAND_ICON_COLORS.items()},
+            **{f"command.icon.{tone}": ink for tone, (ink, _) in COMMAND_ICON_PALETTE.items()},
+            **{f"command.badge.{tone}": f"{ink} bg:{surface}"
+               for tone, (ink, surface) in COMMAND_ICON_PALETTE.items()},
+            "command.badge.active": "bold #272032 bg:#d7bee7",
             "status": THEME["lilac"], "title": "bold " + THEME["rose"],
             "thinking": THEME["rose"], "thinking.dim": THEME["violet"],
             "border": THEME["violet"], "rail": THEME["violet"],
@@ -824,6 +849,7 @@ class EnhancedConsoleInput:
             "context.label": THEME["muted"], "context.task": "italic " + THEME["lilac"],
             "toast": "bg:#3b2444 #f4d7ec bold", "toast.success": "bg:#244036 #d9f5e7 bold",
             "toast.error": "bg:#542c38 #ffdce3 bold",
+            "update.notice": "bg:#32283e #d1b8e5 bold",
             "selection": "bg:" + THEME["selected"] + " " + THEME["text"],
             "scrollbar.thumb": THEME["rose"], "scrollbar.track": THEME["muted"],
             "todo.header": "bold " + THEME["text"], "todo.active": THEME["rose"],
@@ -863,6 +889,10 @@ class EnhancedConsoleInput:
             height=lambda: self._usage_height(),
         )
         content = HSplit([
+                ConditionalContainer(
+                    Window(FormattedTextControl(self._update_banner), height=1, wrap_lines=False),
+                    Condition(lambda: self._update_notice is not None),
+                ),
                 VSplit([self.output_window, self.scrollbar_window]),
                 ConditionalContainer(self.tasks_window, Condition(lambda: self._tasks_height() > 0)),
                 self.activity_window,
@@ -898,6 +928,8 @@ class EnhancedConsoleInput:
         self.app.after_render += self._after_render
 
     def _before_render(self, _app) -> None:
+        if self._wheel_lines:
+            self._scroll_by(0, invalidate=False)
         self.scrollbar_control.begin_frame()
         self._animate_home()
         if self.context is not None:
@@ -906,13 +938,41 @@ class EnhancedConsoleInput:
 
     def _after_render(self, _app) -> None:
         self.transcript_control.remember_viewport()
-        self.scrollbar_control.finish_frame(_app, self.scrollbar_window, _REDRAW_INTERVAL)
+        self.scrollbar_control.finish_frame(_app, self.scrollbar_window)
         self._frame_context = None
         self._frame_tasks = None
 
     def _context_view(self):
         """一帧内共享底栏快照，避免重复读取用量和 Worker 状态。"""
         return self._frame_context if self._frame_context is not None else self.context()
+
+    def show_update_notice(self, tag: str, command: str) -> None:
+        """把后台检查结果交给界面线程绘制。"""
+        def apply() -> None:
+            if self.app.is_running and not self.app.is_done:
+                self._update_notice = (tag, command)
+                self.app.invalidate()
+
+        loop = self.app.loop
+        if loop is not None and loop.is_running():
+            try:
+                loop.call_soon_threadsafe(apply)
+            except RuntimeError:
+                return  # 检查结果可能恰好赶上界面关闭。
+
+    def _update_banner(self) -> list[tuple[str, str]]:
+        from .console_state import _cells, _fit_cells
+
+        if self._update_notice is None:
+            return []
+        tag, command = self._update_notice
+        width = self.app.output.get_size().columns
+        text = f" 新版本 {tag} · {command}"
+        if _cells(text) > width:
+            text = f"{tag} {command}"
+        if _cells(text) > width:
+            text = f"更新 {tag}"
+        return [("class:update.notice", _fit_cells(text, width))]
 
     def _toast(self):
         from .console_state import _fit_cells
@@ -980,7 +1040,7 @@ class EnhancedConsoleInput:
         return max(1, self.app.output.get_size().rows // 2)
 
     def _wheel_scroll(self, lines: int) -> None:
-        """把同一重绘间隔内的鼠标刻度合并，保留逐刻度钳制到边界的顺序。"""
+        """把下一帧前到达的鼠标刻度合并，视口只提交最新位置。"""
         self.scrollbar_control.cancel_drag()
         loop = getattr(self.app, "loop", None)
         if loop is None or not loop.is_running():
@@ -988,22 +1048,19 @@ class EnhancedConsoleInput:
             return
         maximum = self.transcript_control.max_scrollback()
         target = min(maximum, max(0, self._scrollback + self._wheel_lines + lines))
+        first = self._wheel_lines == 0
         self._wheel_lines = target - self._scrollback
-        if self._wheel_timer is None:
-            if self._wheel_lines:
-                self._wheel_timer = loop.call_later(_REDRAW_INTERVAL, self._scroll_by, 0)
-            elif lines < 0:
-                self._scroll_by(lines)
+        if first and self._wheel_lines:
+            self.app.invalidate()
+        elif not self._wheel_lines and lines < 0:
+            self._scroll_by(lines)
 
     def _cancel_wheel_scroll(self) -> int:
-        if self._wheel_timer is not None:
-            self._wheel_timer.cancel()
-            self._wheel_timer = None
         lines = self._wheel_lines
         self._wheel_lines = 0
         return lines
 
-    def _scroll_by(self, lines: int) -> None:
+    def _scroll_by(self, lines: int, *, invalidate: bool = True) -> None:
         """正数向历史滚动，负数向最新输出滚动。"""
         old_start = self.transcript_control.viewport_start()
         maximum = self.transcript_control.max_scrollback()
@@ -1018,8 +1075,10 @@ class EnhancedConsoleInput:
         self._follow_latest = updated == 0
         if self._follow_latest:
             self.transcript_control.clear_selection()
-        self.transcript_control.precondition_scroll(old_start, self.transcript_control.viewport_start())
-        self.app.invalidate()
+        if old_start != self.transcript_control.viewport_start():
+            self.transcript_control.mark_drag_seek()
+        if invalidate:
+            self.app.invalidate()
 
     def _scroll_to_oldest(self) -> None:
         self.scrollbar_control.cancel_drag()
@@ -1030,7 +1089,8 @@ class EnhancedConsoleInput:
             return
         self._scrollback = updated
         self._follow_latest = False
-        self.transcript_control.precondition_scroll(old_start, self.transcript_control.viewport_start())
+        if old_start != self.transcript_control.viewport_start():
+            self.transcript_control.mark_drag_seek()
         self.app.invalidate()
 
     def _scroll_to_latest(self) -> None:
@@ -1043,7 +1103,8 @@ class EnhancedConsoleInput:
         self._scrollback = 0
         self._follow_latest = True
         self.transcript_control.clear_selection()
-        self.transcript_control.precondition_scroll(old_start, self.transcript_control.viewport_start())
+        if old_start != self.transcript_control.viewport_start():
+            self.transcript_control.mark_drag_seek()
         self.app.invalidate()
 
     def _scroll_viewport(self) -> tuple[int, int, int]:
@@ -1116,12 +1177,18 @@ class EnhancedConsoleInput:
         from .console_state import _fit_cells
         width = max(1, self.app.output.get_size().columns)
         fragments = []
-        for index, (style, value) in enumerate(self._task_rows()):
+        for index, (style, value) in enumerate(self._task_rows()[:self._tasks_height()]):
             fragments.append((style, ("\n" if index else "") + _fit_cells(value, width)))
         return fragments
 
     def _tasks_height(self) -> int:
-        return len(self._task_rows())
+        count = len(self._task_rows())
+        menu_height = self._menu_height() if count else 0
+        if not menu_height:
+            return count
+        # 为正文、活动栏、横线和最多三行输入留出空间。
+        reserved = menu_height + self._status_height() + self._usage_height() + 6 + int(self._update_notice is not None)
+        return max(0, min(count, self.app.output.get_size().rows - reserved))
 
     def _status(self):
         from .terminal import clean_text
@@ -1405,6 +1472,8 @@ class EnhancedConsoleInput:
                 call = lambda: self._handler(text)
                 words = text.strip().lstrip("/").split(maxsplit=2)
                 command = words[0] if words else ""
+                spec = find_command(command)
+                command = spec.name if spec is not None else command
                 # 模型表单暂时接管终端，结束后恢复同一内容区和未提交输入。
                 modal = command in {"model", "models", "tools", "setup", "worker", "subworker", "branch", "repo", "worktree", "wt", "theme", "colors", "footer"} and (not self.running() or command == "subworker")
                 modal = modal or (words == ["plan", "choose"] and not self.running())
@@ -1433,9 +1502,11 @@ class EnhancedConsoleInput:
             self.scrollbar_control.cancel_drag()
             self._cancel_wheel_scroll()
             self._handler = None
+            self._interrupt_exit_armed = False
 
 
     def _reopen(self) -> None:
+        self._interrupt_exit_armed = False
         self.dismissed = False
         self._menu_selected = self._menu_start = 0
         self._menu_navigated = False
@@ -1536,7 +1607,8 @@ class EnhancedConsoleInput:
         typed = self.buffer.document.text_before_cursor
         arguments = any(ch.isspace() for ch in typed)
         icons = not arguments and width >= 20 and self._command_icons()
-        icon_width = 2 if icons else 0
+        badges = icons and not self._plain and width >= 32
+        icon_width = 4 if badges else 2 if icons else 0
         name_room = max(0, width - 6 - icon_width)
         name_width = min(max(_cells(item.display_text) for item in items),
                          min(name_room, width * 2 // 5) if width >= 42 else name_room)
@@ -1586,8 +1658,12 @@ class EnhancedConsoleInput:
                 glyph, tone = COMMAND_ICONS.get(command.category, ("·", "neutral")) if command else ("·", "neutral")
                 if command:
                     glyph = COMMAND_SYMBOLS.get(command.name, glyph)
-                icon_style = style if self._plain else f"{style} class:command.icon.{tone}"
-                result.append((icon_style, padded(glyph, icon_width), handle))
+                if badges:
+                    badge_style = "class:command.badge.active" if focus else f"class:command.badge.{tone}"
+                    result.extend([(badge_style, f" {glyph} ", handle), (style, " ", handle)])
+                else:
+                    icon_style = style if self._plain else f"{style} class:command.icon.{tone}"
+                    result.append((icon_style, glyph + " ", handle))
             result.extend((tone, value, handle) for tone, value in marked_text(
                 name, pattern, style, "underline" if self._plain else "class:command.match",
             ) if value)

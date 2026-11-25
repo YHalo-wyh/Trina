@@ -50,6 +50,8 @@ llm:
   backend: openai
   model: deepseek-v4.1-flash
   timeout: 180
+  # 交互对话在收到响应头前断连时的重连次数，0 关闭。
+  connection_retries: 10
   temperature: 0.2
   # 0 不发送客户端输出 Token 上限；实际容量仍由供应商决定。
   max_tokens: 0

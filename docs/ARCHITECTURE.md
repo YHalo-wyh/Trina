@@ -142,7 +142,7 @@ ScopeSentry由外置Capability通过 `mcp_http` 复用 `ctx.http`；浏览器采
 | `trina.runtime_status` | `status_snapshot/render_agent_status` | 模型请求末尾的动态运行快照，独立于屏幕底栏；保持消息前缀，任务、工具和作业数据只取当前上下文 |
 | `trina.tools.terminal` / `BackgroundJobs` | `terminal_start/status/stop`、`run_external(background=True)` | 当前任务专属的有界后台作业；真实退出码、超时和进程树回收；监视线程不写漏洞事实 |
 | `trina.interactive` | `Console(config, input_fn=, output=).run()/handle(line)` | 行式交互控制台；空闲命令复用 CLI，运行中支持介入、状态和只读工作台；2026-10-28 展示更新见 [CLI 说明](CLI_UI.md) |
-| `trina.updater` | `trina update [--check] [--mirror github\|gitee]` | 操作者从命令行显式更新。源码走 Git 快进，已安装包走正式版本标签和当前 Python 的 pip，进程通过 `trina.scope` 启动。 |
+| `trina.updater` | `trina update [--check] [--mirror github\|gitee]` | 交互启动后异步读取正式标签并提示新版。操作者显式更新时，源码走 Git 快进，已安装包走正式版本标签和当前 Python 的 pip。命令经 `trina.scope` 执行。 |
 | `trina.review` | `review_state(state, audit_path=, registry=) -> ReviewNote`、`ReviewNote.to_markdown()` | 评价 Agent（只读）：核对声明/证据、结论一致性、覆盖缺口、边界事件、审计链 |
 | `trina.eval` | `EvalHarness(config, runner=).run(suite)`、`compute_metrics`、`AdversarialProxy` | `runner` 可注入，便于离线/回放评测 |
 | `trina.report` | `build_report(state, cfg, meta=, audit_summary=) -> Report`、`Report.save()` | HTML 自包含（内联 CSS/SVG，无外部资源）；章节含"六、证据链与假设台账"（Markdown 带 mermaid，HTML 用起点-关系-终点表） |

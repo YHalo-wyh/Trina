@@ -83,6 +83,8 @@ class StreamLatencyTests(unittest.TestCase):
                 server.server_close()
                 server_thread.join(2)
             self.assertTrue(results[0].ok)
+            timing = bus.replay(kinds=("model.finished",))[0].payload["transport"]
+            self.assertGreaterEqual(timing["first_event_seconds"], timing["headers_seconds"])
 
     def test_burst_is_coalesced_without_losing_bytes_or_phase_order(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -212,6 +212,38 @@ class EventTests(unittest.TestCase):
         outputs = [event for event in self.bus.replay() if event.kind == "tool.output"]
         self.assertTrue(any(event.payload.get("stream") == "stderr" for event in outputs))
 
+    def test_foreground_and_background_tool_outputs_decode_windows_code_page(self):
+        from unittest.mock import patch
+        from trina.tools.terminal import TerminalStart, TerminalStatus
+        from trina.tools.workspace import TerminalExec
+
+        ctx = self.context()
+        jobs = ctx.extra["background_jobs"]
+        self.addCleanup(jobs.close)
+        registry = ToolRegistry([TerminalExec(), TerminalStart(), TerminalStatus()])
+        stdout, stderr = "编译完成 ✓", "请按任意键继续. . ."
+        argv = [sys.executable, "-c", "import sys; "
+                f"sys.stdout.buffer.write({stdout.encode('utf-8')!r}); "
+                f"sys.stderr.buffer.write({stderr.encode('cp936')!r})"]
+
+        with patch("trina.process_output._windows_legacy_encoding", return_value="cp936"):
+            result = registry.execute("terminal_exec", {"argv": argv, "cwd": "run"}, ctx)
+            self.assertTrue(result.ok, result.error)
+            self.assertEqual((result.data["stdout"], result.data["stderr"]), (stdout, stderr))
+            started = registry.execute("terminal_start", {"argv": argv}, ctx)
+            self.assertTrue(started.ok, started.error)
+            job_id = started.data["job_id"]
+            jobs.wait(job_id, 5)
+            snapshot = registry.execute("terminal_status", {"job_id": job_id}, ctx)
+
+        job = snapshot.data["jobs"][0]
+        self.assertEqual((job["stdout_tail"], job["stderr_tail"]), (stdout, stderr))
+        for kind in ("tool.output", "job.output"):
+            events = self.bus.replay(kinds=(kind,))
+            for stream, expected in (("stdout", stdout), ("stderr", stderr)):
+                visible = "".join(event.payload["delta"] for event in events if event.payload["stream"] == stream)
+                self.assertEqual(visible, expected)
+
     def test_recovery_marks_open_call_interrupted_without_reexecuting(self):
         self.bus.publish("tool.requested", call_id="lost", tool="terminal_exec", params={"argv": ["never-run"]})
         self.bus.publish("job.started", call_id="lost-job", tool="terminal_start", params={"argv": ["never-run"]})

@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 from typing import Any, Sequence
 
 from .. import __version__
+from ..process_output import ProcessOutputDecoder
 from ..scope import ScopeViolation
 
 
@@ -148,8 +149,7 @@ class BackgroundJobs:
             raise
 
         def read(stream, key):
-            import codecs
-            decoder = codecs.getincrementaldecoder("utf-8")("replace")
+            decoder = ProcessOutputDecoder()
             def append(text):
                 if not text:
                     return

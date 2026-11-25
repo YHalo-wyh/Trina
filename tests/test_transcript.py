@@ -138,15 +138,17 @@ class TranscriptTests(unittest.TestCase):
 
     def test_terminal_scroll_region_reuses_unchanged_rows(self):
         control = self.editor.transcript_control
-        control.viewport_height = 4
-        self.editor._rendered_lines = 10
+        self.editor.write("\n".join(f"line {index}" for index in range(10)))
+        control.create_content(80, 4)
         screen = Screen(initial_width=20, initial_height=8)
         for row, value in enumerate("ABCD"):
             screen.data_buffer[row][0] = Char(value, "")
         self.editor.app.renderer._last_screen = screen
         self.editor.output_window.render_info = SimpleNamespace(window_height=4, y_offset=0)
+        control.remember_viewport()
         with patch.object(self.editor.app.output, "write_raw") as raw:
             self.editor._scroll_by(2)
+            control.create_content(80, 4)
         sequence = raw.call_args.args[0]
         self.assertIn("\x1b[1;4r", sequence)
         self.assertIn("\x1b[2T", sequence)
@@ -241,6 +243,15 @@ class TranscriptTests(unittest.TestCase):
         control.create_content(80, 10)
         self.assertEqual(control.viewport_start(), control.max_scrollback())
         self.assertGreater(thumb(), 0, "拖动到底部后滑块仍在下方")
+
+    def test_long_history_keeps_a_grabbable_scrollbar_thumb(self):
+        self.editor.write("\n".join(f"line {index}" for index in range(5000)))
+        control = self.editor.transcript_control
+        control.create_content(80, 30)
+        content = self.editor.scrollbar_control.create_content(1, 30)
+        rows = [row for row in range(30) if content.get_line(row)[0][1] == "█"]
+        self.assertGreaterEqual(len(rows), 3)
+        self.assertLess(len(rows), 30)
 
     def test_history_append_only_reflows_new_blocks_while_dragging(self):
         old_renders = []
@@ -388,7 +399,7 @@ class TranscriptTests(unittest.TestCase):
             editor.app.after_render += rendered
             editor.app.run()
 
-    def test_real_vt_wheel_uses_scroll_region_and_keeps_bottom_chrome(self):
+    def test_real_vt_wheel_keeps_update_banner_and_bottom_chrome(self):
         import asyncio
         import io
         from prompt_toolkit.data_structures import Size
@@ -401,16 +412,23 @@ class TranscriptTests(unittest.TestCase):
             scheduled = False
             async def exercise():
                 try:
+                    editor.show_update_notice("v0.6.1", "trina update")
+                    for _ in range(100):
+                        if editor.output_window.render_info._y_offset == 1:
+                            break
+                        await asyncio.sleep(.01)
+                    self.assertEqual(editor.output_window.render_info._y_offset, 1)
                     before = len(stream.getvalue())
-                    self.input.send_text("\x1b[<64;1;1M")
+                    self.input.send_text("\x1b[<64;1;2M")
                     await asyncio.sleep(.15)
                     delta = stream.getvalue()[before:]
                     self.assertEqual(editor._scrollback, 3)
+                    self.assertIn(f"\x1b[2;{editor.transcript_control.viewport_height + 1}r", delta)
                     self.assertIn("\x1b[3T", delta)
                     self.assertIn("\x1b[r", delta)
                     editor.buffer.text = "保留输入"
                     before = len(stream.getvalue())
-                    self.input.send_text("\x1b[<64;1;1M" * 5)
+                    self.input.send_text("\x1b[<64;1;2M" * 5)
                     await asyncio.sleep(.15)
                     delta = stream.getvalue()[before:]
                     self.assertEqual(editor._scrollback, 18)
@@ -445,6 +463,7 @@ class TranscriptTests(unittest.TestCase):
             editor.write("\n".join(f"history {i}" for i in range(100)))
             editor.buffer.text = "保留输入"
             control, bar = editor.transcript_control, editor.scrollbar_control
+            normal_interval = editor.app.min_redraw_interval
 
             async def exercise():
                 try:
@@ -453,6 +472,7 @@ class TranscriptTests(unittest.TestCase):
                     self.input.send_text(f"\x1b[<0;80;{height}M")
                     await asyncio.sleep(.05)
                     self.assertTrue(bar.dragging)
+                    self.assertEqual(editor.app.min_redraw_interval, normal_interval)
                     self.assertEqual(control.viewport_start(), before)
 
                     offset, frame = stream.tell(), editor.app.render_counter
@@ -462,6 +482,7 @@ class TranscriptTests(unittest.TestCase):
                         await asyncio.sleep(.1)
                         self.assertEqual(seek.call_count, 1)
                         self.assertEqual(editor.app.render_counter - frame, 1)
+                        self.assertEqual(editor.app.min_redraw_interval, normal_interval)
                     self.assertEqual(control.viewport_start(), 0)
                     self.assertNotRegex(stream.getvalue()[offset:], re.compile(r"\x1b\[\d+;\d+r"))
 

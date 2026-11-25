@@ -91,7 +91,7 @@ class TranscriptControl(UIControl):
                     and self.anchor is None and 0 < delta < self.viewport_height
                     and len(old_visible) == self.viewport_height
                     and old_visible[delta:] == self.rows[new_start:new_start + self.viewport_height - delta]):
-                self.precondition_scroll(old_start, new_start)
+                self.precondition_scroll(old_start, new_start, in_frame=True)
 
     def create_content(self, width: int, height: int) -> UIContent:
         self.viewport_height = max(1, height)
@@ -151,7 +151,7 @@ class TranscriptControl(UIControl):
         if not delta or info is None or screen is None or output is None or not hasattr(output, "write_raw"):
             return False
         height = int(getattr(info, "window_height", 0) or 0)
-        top = int(getattr(info, "y_offset", 0) or 0)
+        top = int(getattr(info, "_y_offset", 0) or 0)
         count = abs(delta)
         if height <= 1 or count >= height or top < 0 or type(output).__module__.endswith(".win32"):
             return False
@@ -383,16 +383,17 @@ def _wrap_physical_line(line, width: int):
 def _shift_screen_rows(buffer, top: int, bottom: int, delta: int) -> None:
     """让渲染器旧屏与已发送的 SU/SD 指令保持同一行布局。"""
     count = abs(delta)
+    # 按移动方向覆盖行，空出的键由 Screen 按需重新创建。
     if delta > 0:
         for row in range(top, bottom - count + 1):
-            buffer[row] = buffer[row + count].copy()
+            buffer[row] = buffer[row + count]
         for row in range(bottom - count + 1, bottom + 1):
-            buffer[row].clear()
+            buffer.pop(row, None)
     else:
         for row in range(bottom, top + count - 1, -1):
-            buffer[row] = buffer[row - count].copy()
+            buffer[row] = buffer[row - count]
         for row in range(top, top + count):
-            buffer[row].clear()
+            buffer.pop(row, None)
 
 
 def copy_to_terminal(text: str, output: Any) -> None:
