@@ -52,6 +52,8 @@ llm:
   timeout: 180
   # 交互对话在收到响应头前断连时的重连次数，0 关闭。
   connection_retries: 10
+  # 一轮模型响应中的独立本地读取并发上限；有依赖、写入、终端和网络操作继续串行。
+  tool_parallelism: 4
   temperature: 0.2
   # 0 不发送客户端输出 Token 上限；实际容量仍由供应商决定。
   max_tokens: 0

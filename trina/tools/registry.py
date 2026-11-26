@@ -34,7 +34,7 @@ from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Iterable
+from typing import Any, Callable, Generator, Iterable
 
 from ..audit import AuditLog, sha256_text
 from ..config import ACTION_LEVELS, TrinaConfig
@@ -328,6 +328,33 @@ class _LeaseProxy:
 _TOOL_EXECUTOR = ThreadPoolExecutor(max_workers=16, thread_name_prefix="trina-tool")
 
 
+class _PendingToolExecution:
+    """已通过注册表校验并提交到共用执行器的单次工具调用。"""
+
+    def __init__(self, operation: Generator[None, None, ToolResult]):
+        self._operation = operation
+        self._done = False
+        self._result: ToolResult | None = None
+        try:
+            next(operation)
+        except StopIteration as finished:
+            self._done = True
+            self._result = finished.value
+
+    def result(self) -> ToolResult:
+        """按原调用线程完成超时、状态差量、审计与结束事件归并。"""
+        if self._done:
+            assert self._result is not None
+            return self._result
+        try:
+            next(self._operation)
+        except StopIteration as finished:
+            self._done = True
+            self._result = finished.value
+            return finished.value
+        raise RuntimeError("工具执行器在一次调用中产生了多个挂起点")
+
+
 class ToolContext:
     """工具执行上下文：护栏、审计、状态、HTTP 客户端、工作区。"""
 
@@ -557,6 +584,36 @@ class ToolRegistry:
         request_emitted: bool = False,
     ) -> ToolResult:
         """所有结果分支都有 requested 和唯一 finished，未开始执行也可复盘。"""
+        return self._begin_execute(
+            name, params, ctx, timeout=timeout, call_id=call_id, request_emitted=request_emitted,
+        ).result()
+
+    def _begin_execute(
+        self,
+        name: str,
+        params: dict[str, Any] | None = None,
+        ctx: ToolContext | None = None,
+        *,
+        timeout: float | None = None,
+        call_id: str | None = None,
+        request_emitted: bool = False,
+    ) -> _PendingToolExecution:
+        """提交调用但不等待结果；仅供运行时对已确认独立的内置读取动作使用。"""
+        return _PendingToolExecution(self._execute_invocation(
+            name, params, ctx, timeout=timeout, call_id=call_id, request_emitted=request_emitted,
+        ))
+
+    def _execute_invocation(
+        self,
+        name: str,
+        params: dict[str, Any] | None,
+        ctx: ToolContext | None,
+        *,
+        timeout: float | None,
+        call_id: str | None,
+        request_emitted: bool,
+    ) -> Generator[None, None, ToolResult]:
+        """保持原执行合同，只把已有执行器的等待点交还给 AgentRuntime。"""
         if ctx is None:
             raise ValueError("execute 需要 ToolContext（护栏与审计的载体）")
         name = self.resolve_name(name)
@@ -571,7 +628,7 @@ class ToolRegistry:
             invocation.emit("tool.requested", tool=name, params=params or {})
         started = time.monotonic()
         try:
-            result = self._execute(name, params, invocation, timeout=timeout)
+            result = yield from self._execute(name, params, invocation, timeout=timeout)
         except Exception as exc:
             with gate["lock"]:
                 gate["open"] = False
@@ -595,7 +652,7 @@ class ToolRegistry:
 
     def _execute(
         self, name: str, params: dict[str, Any] | None, ctx: ToolContext, *, timeout: float | None,
-    ) -> ToolResult:
+    ) -> Generator[None, None, ToolResult]:
         if ctx is None:
             raise ValueError("execute 需要 ToolContext（护栏与审计的载体）")
         started = time.monotonic()
@@ -702,7 +759,7 @@ class ToolRegistry:
         budget = timeout if timeout is not None else ctx.config.run.tool_timeout
         if ctx.remaining() is not None:
             budget = min(budget, max(.001, ctx.remaining()))
-        result = self._run_with_timeout(tool, validated, ctx, budget, started)
+        result = yield from self._run_with_timeout(tool, validated, ctx, budget, started)
 
         # 6) 吸收事实 + 审计
         self._attach_raw_artifact(ctx, name, result)
@@ -788,7 +845,9 @@ class ToolRegistry:
         return validated, ""
 
     @staticmethod
-    def _run_with_timeout(tool: Tool, params: dict[str, Any], ctx: ToolContext, timeout: float, started: float) -> ToolResult:
+    def _run_with_timeout(
+        tool: Tool, params: dict[str, Any], ctx: ToolContext, timeout: float, started: float,
+    ) -> Generator[None, None, ToolResult]:
         signature = inspect.signature(tool.run)
         # 兼容两种写法：显式具名参数，或 `run(self, ctx, **params)`
         accepts_var_keyword = any(
@@ -814,8 +873,11 @@ class ToolRegistry:
             with execution_window(lease), traffic_window(ctx.extra["traffic"], str(ctx.extra.get("_tool_call_id", ""))):
                 return tool.run(working, **kwargs)
         future = _TOOL_EXECUTOR.submit(run)
+        # 普通 execute 会立刻恢复；批量读取路径会先提交同批独立调用，再按原顺序恢复。
+        yield None
         try:
-            result = future.result(timeout=timeout)
+            remaining = max(.001, lease.deadline - time.monotonic())
+            result = future.result(timeout=remaining)
         except FutureTimeout:
             lease.cancelled.set()
             future.cancel()

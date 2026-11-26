@@ -68,13 +68,19 @@ class AgentRuntime:
     def __init__(self, *, max_steps: int, messages: list, request: Callable,
                  execute: Callable, decode_text: Callable, native: Callable[[], bool],
                  record_response: Callable | None = None, observe: Callable | None = None,
-                 say: Callable | None = None, interrupted: Callable | None = None):
+                 say: Callable | None = None, interrupted: Callable | None = None,
+                 start_execute: Callable | None = None, can_parallel: Callable | None = None,
+                 parallel_limit: int = 1):
         if type(max_steps) is not int or max_steps < 0:
             raise ValueError("max_steps 必须为非负整数，0 不限制")
+        if type(parallel_limit) is not int or not 1 <= parallel_limit <= 16:
+            raise ValueError("parallel_limit 必须为 [1,16] 内的整数")
         self.max_steps, self.messages = max_steps, messages
         self.request, self.execute, self.decode_text, self.native = request, execute, decode_text, native
         self.record_response, self.observe, self.say = record_response, observe, say
         self.interrupted = interrupted or (lambda: "")
+        self.start_execute, self.can_parallel = start_execute, can_parallel
+        self.parallel_limit = parallel_limit
         self.steps = self.rounds = 0
 
     def run(self) -> ActionOutcome:
@@ -107,22 +113,17 @@ class AgentRuntime:
             outcomes: dict[int, ActionOutcome] = {}
             stopping = False
             cancellation = ""
-            for item in actions:
-                cancellation = cancellation or self.interrupted()
-                reason = cancellation
-                if stopping or reason or (self.max_steps and self.steps >= self.max_steps):
-                    outcome = ActionOutcome(observation=reason or "未执行：本轮已停止或达到执行上限", ok=False)
-                elif any(not outcomes[index].ok for index in item.dependencies):
-                    outcome = ActionOutcome(observation="未执行：依赖调用失败或未执行", ok=False)
-                else:
-                    self.steps += 1
-                    outcome = self.execute(item.action, self.steps, response,
-                                           llm_seconds=response.duration if item.position == 1 else 0.0)
-                    stopping = outcome.stop
-                    last = outcome
+            def record(item: RuntimeAction, outcome: ActionOutcome) -> None:
+                nonlocal last, stopping
                 outcomes[item.position] = outcome
+                if outcome.stop or not stopping:
+                    last = outcome
+                stopping = stopping or outcome.stop
                 if item.call_id:
-                    tool_message = {"role": "tool", "tool_call_id": item.call_id, "content": outcome.observation[:4000]}
+                    tool_message = {
+                        "role": "tool", "tool_call_id": item.call_id,
+                        "content": outcome.observation[:4000],
+                    }
                     self.messages.append(tool_message)
                 else:
                     tool_message = {"role": "user", "content": "[工具结果] " + outcome.observation}
@@ -130,6 +131,64 @@ class AgentRuntime:
                         self.messages.append(tool_message)
                 if self.observe:
                     self.observe(item, outcome, tool_message)
+
+            cursor = 0
+            while cursor < len(actions):
+                item = actions[cursor]
+                cancellation = cancellation or self.interrupted()
+                reason = cancellation
+                if stopping or reason or (self.max_steps and self.steps >= self.max_steps):
+                    outcome = ActionOutcome(observation=reason or "未执行：本轮已停止或达到执行上限", ok=False)
+                elif any(not outcomes[index].ok for index in item.dependencies):
+                    outcome = ActionOutcome(observation="未执行：依赖调用失败或未执行", ok=False)
+                elif self._parallel_candidate(item, outcomes):
+                    pending: list[tuple[RuntimeAction, Callable[[], ActionOutcome]]] = []
+                    while cursor < len(actions) and len(pending) < self.parallel_limit:
+                        candidate = actions[cursor]
+                        if not self._parallel_candidate(candidate, outcomes):
+                            break
+                        if self.max_steps and self.steps >= self.max_steps:
+                            break
+                        self.steps += 1
+                        try:
+                            completion = self.start_execute(
+                                candidate.action, self.steps, response,
+                                llm_seconds=response.duration if candidate.position == 1 else 0.0,
+                                call_id=candidate.call_id,
+                            )
+                        except Exception as exc:  # noqa: BLE001 - 单个提交失败不能阻塞同批独立动作
+                            failure = ActionOutcome(
+                                observation=f"工具提交失败：{type(exc).__name__}: {exc}", ok=False,
+                            )
+                            completion = lambda failure=failure: failure
+                        pending.append((candidate, completion))
+                        cursor += 1
+                    for candidate, completion in pending:
+                        try:
+                            outcome = completion()
+                        except Exception as exc:  # noqa: BLE001 - 单个结果失败不能吞掉其余回执
+                            outcome = ActionOutcome(
+                                observation=f"工具结果归并失败：{type(exc).__name__}: {exc}", ok=False,
+                            )
+                        record(candidate, outcome)
+                    continue
+                else:
+                    self.steps += 1
+                    outcome = self.execute(item.action, self.steps, response,
+                                           llm_seconds=response.duration if item.position == 1 else 0.0,
+                                           call_id=item.call_id)
+                record(item, outcome)
+                cursor += 1
             if stopping:
                 return last
         return last
+
+    def _parallel_candidate(self, item: RuntimeAction, outcomes: dict[int, ActionOutcome]) -> bool:
+        """只并发适配器明确标记且所有声明依赖已经成功完成的动作。"""
+        return bool(
+            self.parallel_limit > 1
+            and self.start_execute is not None
+            and self.can_parallel is not None
+            and all(index in outcomes and outcomes[index].ok for index in item.dependencies)
+            and self.can_parallel(item.action)
+        )

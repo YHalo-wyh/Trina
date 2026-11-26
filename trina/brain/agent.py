@@ -854,7 +854,7 @@ class PentestAgent:
 
             return response
 
-        def execute(action, index, response, *, llm_seconds):
+        def execute_operation(action, index, response, *, llm_seconds, call_id=""):
             nonlocal steps, observation, new_facts, final, final_rejects, stall, last_action_key, hints, binary_script_attempted
             steps = index
             history_index = previous_steps + index
@@ -906,7 +906,7 @@ class PentestAgent:
             level = self._effective_level(tool_name, params)
             hypothesis = ledger.from_action(action) if use_ledger else None
             import uuid
-            call_id = uuid.uuid4().hex
+            call_id = call_id or uuid.uuid4().hex
             ctx.emit("tool.requested", call_id=call_id, tool=tool_name, params=params, step=index)
             if use_ledger and action.get("hypothesis_id") and hypothesis is None:
                 hints.append("hypothesis_id 不存在：请引用台账中的编号或提出新假设")
@@ -1000,7 +1000,11 @@ class PentestAgent:
             )
             before_knowledge = state.knowledge_digest()
 
-            result = self.registry.execute(tool_name, params, ctx, call_id=call_id, request_emitted=True)
+            pending = self.registry._begin_execute(  # noqa: SLF001 - AgentRuntime 与注册表的内部提交合同
+                tool_name, params, ctx, call_id=call_id, request_emitted=True,
+            )
+            yield None
+            result = pending.result()
             if task_route_key == "binary" and binary_script_paths and not binary_script_attempted:
                 command_text = " ".join(str(value) for value in (params.get("argv") or []))
                 lowered_command = command_text.casefold()
@@ -1160,6 +1164,42 @@ class PentestAgent:
 
             return ActionOutcome(observation=observation, ok=result.ok, data=result.data)
 
+        def start_execute(action, index, response, *, llm_seconds, call_id=""):
+            """推进到注册表提交点，等待与状态归并由 AgentRuntime 按原顺序完成。"""
+            operation = execute_operation(
+                action, index, response, llm_seconds=llm_seconds, call_id=call_id,
+            )
+            try:
+                next(operation)
+            except StopIteration as finished:
+                outcome = finished.value
+                return lambda outcome=outcome: outcome
+
+            def finish():
+                try:
+                    next(operation)
+                except StopIteration as finished:
+                    return finished.value
+                raise RuntimeError("Agent 动作产生了多个挂起点")
+
+            return finish
+
+        def execute(action, index, response, *, llm_seconds, call_id=""):
+            return start_execute(
+                action, index, response, llm_seconds=llm_seconds, call_id=call_id,
+            )()
+
+        def can_parallel(action):
+            if self.approval is not None or task_route_key != "code":
+                return False
+            if "error" in action or "final" in action:
+                return False
+            tool_name = self.registry.resolve_name(str(action.get("action", "")))
+            tool = self.registry.get(tool_name)
+            from ..tools.workspace import WorkspaceRead
+            from ..tools.search import WorkspaceSearch
+            return type(tool) in {WorkspaceRead, WorkspaceSearch}
+
         def recorded(response):
             record_response(response.text, response.tool_calls, response.reasoning)
             state.counters["native_calls"] = state.counters.get("native_calls", 0) + len(response.tool_calls)
@@ -1179,7 +1219,9 @@ class PentestAgent:
 
         runtime = AgentRuntime(max_steps=max_steps, messages=messages, request=request, execute=execute,
                                decode_text=parse_action, native=lambda: native_mode,
-                               record_response=recorded, say=say, interrupted=interrupted)
+                               record_response=recorded, say=say, interrupted=interrupted,
+                               start_execute=start_execute, can_parallel=can_parallel,
+                               parallel_limit=self.config.llm.tool_parallelism)
         try:
             runtime.run()
             steps = runtime.steps

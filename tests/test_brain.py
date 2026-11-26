@@ -53,7 +53,7 @@ class TestParseAction(unittest.TestCase):
         self.assertIn("两个及以上互不依赖的分支", task_prompt)
         self.assertIn("主动分别派发", task_prompt)
         self.assertIn("统一结果契约", task_prompt)
-        self.assertIn("同批调用由执行器按顺序处理", task_prompt)
+        self.assertIn("同批独立的本地读取可由执行器并发完成", task_prompt)
         for section in ("Engineering", "Tool Policy", "Exploration", "Delegation", "Workflow", "Delivery", "Completeness"):
             self.assertIn(f"# {section}", task_prompt)
 

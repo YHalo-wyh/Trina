@@ -127,6 +127,8 @@ class LLMConfig:
     context_keep_messages: int = 8
     state_checkpoint_interval: int = 16
     connection_retries: int = 10
+    #: 同一模型响应中可同时执行的独立内置读取数；写入、终端和网络工具保持串行。
+    tool_parallelism: int = 4
 
     @property
     def effective_context_window(self) -> int:
@@ -152,6 +154,8 @@ class LLMConfig:
             raise ConfigError("llm.max_tokens 必须为非负整数，0 使用供应商默认上限")
         if type(self.connection_retries) is not int or self.connection_retries < 0:
             raise ConfigError("llm.connection_retries 必须为非负整数，0 关闭交互对话的断连重试")
+        if type(self.tool_parallelism) is not int or not 1 <= self.tool_parallelism <= 16:
+            raise ConfigError("llm.tool_parallelism 必须为 [1,16] 内的整数")
         for name in ("max_steps", "max_seconds"):
             if type(getattr(self, name)) is not int or getattr(self, name) < 0:
                 raise ConfigError(f"llm.{name} 必须为非负整数，0 不限制")

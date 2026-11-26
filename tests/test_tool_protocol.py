@@ -340,7 +340,7 @@ class PromptLayerTest(unittest.TestCase):
     def test_native_contract_defines_ordered_batch_and_worker_result(self) -> None:
         layers = build_prompt_layers(protocol="native", task_route="[General]\n先建立最小地图")
         contract = layers.first_user()
-        self.assertIn("同批调用由执行器按顺序处理", contract)
+        self.assertIn("同批独立的本地读取可并发完成", contract)
         self.assertIn("统一结果契约", layers.system())
         self.assertIn("[General]", contract)
 

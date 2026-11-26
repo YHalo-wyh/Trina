@@ -283,7 +283,7 @@ class ChatAgent:
             self._finish_stream(reply)
             return ActionOutcome(answer=reply, stop=True)
 
-        def execute(action, step, response, *, llm_seconds):
+        def execute(action, step, response, *, llm_seconds, call_id=""):
             nonlocal completion_reply
             if "error" in action:
                 error = str(action["error"])
@@ -304,10 +304,44 @@ class ChatAgent:
                 return ActionOutcome(observation=reply, answer=reply, stop=True)
             self.history.append({"role": "assistant", "content": json.dumps(action, ensure_ascii=False)})
             self.save()
-            observation = self._run_action(action, step)
+            observation = self._run_action(action, step, provider_call_id=call_id)
             completion_reply = str(self.ctx.extra.pop("_turn_completion", "") or "")
             return ActionOutcome(observation=observation, ok=self._action_ok, data=self._action_data,
                                  answer=completion_reply or None, stop=bool(completion_reply))
+
+        def start_execute(action, step, response, *, llm_seconds, call_id=""):
+            """先提交独立读取，结果仍在主线程按原 Tool Call 顺序归并。"""
+            nonlocal completion_reply
+            del response, llm_seconds
+            self.history.append({"role": "assistant", "content": json.dumps(action, ensure_ascii=False)})
+            pending = self._run_action(action, step, defer=True, provider_call_id=call_id)
+            if not callable(pending):
+                ok, data = self._action_ok, dict(self._action_data)
+                return lambda pending=pending, ok=ok, data=data: ActionOutcome(
+                    observation=str(pending), ok=ok, data=data,
+                )
+
+            def finish():
+                nonlocal completion_reply
+                observation = pending()
+                completion_reply = str(self.ctx.extra.pop("_turn_completion", "") or "")
+                return ActionOutcome(
+                    observation=observation, ok=self._action_ok, data=self._action_data,
+                    answer=completion_reply or None, stop=bool(completion_reply),
+                )
+
+            return finish
+
+        def can_parallel(action):
+            if self.approval is not None or self.ctx.extra.get("tool_route") != "code":
+                return False
+            if "error" in action or "final" in action:
+                return False
+            tool_name = self.registry.resolve_name(str(action.get("action", "")))
+            tool = self.registry.get(tool_name)
+            from ..tools.workspace import WorkspaceRead
+            from ..tools.search import WorkspaceSearch
+            return type(tool) in {WorkspaceRead, WorkspaceSearch}
 
         def observe(item, outcome, tool_message):
             if not outcome.stop or item.call_id:
@@ -323,7 +357,9 @@ class ChatAgent:
 
         runtime = AgentRuntime(max_steps=self.MAX_TOOL_STEPS, messages=self._messages,
                                request=request, execute=execute, decode_text=_parse_action_lenient,
-                               native=self._native_tools_enabled, say=say, observe=observe, interrupted=interrupted)
+                               native=self._native_tools_enabled, say=say, observe=observe, interrupted=interrupted,
+                               start_execute=start_execute, can_parallel=can_parallel,
+                               parallel_limit=self.config.llm.tool_parallelism)
         outcome = runtime.run()
         self.state.counters["decision_rounds"] = self.state.counters.get("decision_rounds", 0) + runtime.rounds
         if completion_reply:
@@ -758,12 +794,13 @@ class ChatAgent:
         self.logger(f"[补充] 已接收：{steer}")
         return True
 
-    def _run_action(self, action: dict[str, Any], step: int) -> str:
+    def _run_action(self, action: dict[str, Any], step: int, *, defer: bool = False,
+                    provider_call_id: str = ""):
         self._action_ok, self._action_data = False, {}
         tool_name = self.registry.resolve_name(str(action.get("action", "")))
         params = action.get("params") if isinstance(action.get("params"), dict) else {}
         params = dict(params)
-        call_id = uuid.uuid4().hex
+        call_id = provider_call_id or uuid.uuid4().hex
         inline_test_id = params.pop("test_id", "") if isinstance(params.get("test_id"), str) else ""
         test_id = str(action.get("test_id", "") or inline_test_id or "")
         thought = str(action.get("thought", ""))
@@ -816,7 +853,23 @@ class ChatAgent:
             return f"操作者拒绝了 {tool_name}（未执行）。换更保守的做法，或先说明为什么需要它。"
 
         before_knowledge = self.state.knowledge_digest()
-        result = self.registry.execute(tool_name, params, self.ctx, call_id=call_id, request_emitted=True)
+        pending = self.registry._begin_execute(  # noqa: SLF001 - AgentRuntime 与注册表的内部提交合同
+            tool_name, params, self.ctx, call_id=call_id, request_emitted=True,
+        )
+        if defer:
+            return lambda: self._finish_action(
+                pending.result(), tool_name=tool_name, params=params, step=step,
+                hypothesis=hypothesis, before_knowledge=before_knowledge,
+            )
+        result = pending.result()
+        return self._finish_action(
+            result, tool_name=tool_name, params=params, step=step,
+            hypothesis=hypothesis, before_knowledge=before_knowledge,
+        )
+
+    def _finish_action(self, result, *, tool_name: str, params: dict[str, Any], step: int,
+                       hypothesis, before_knowledge: str) -> str:
+        """在主运行线程按模型调用顺序归并状态、回调与观察结果。"""
         self._action_ok, self._action_data = result.ok, result.data
         if self.on_tool is not None:
             self.on_tool(result)
