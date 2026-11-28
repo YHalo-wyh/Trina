@@ -117,7 +117,8 @@ class WorkerDashboardTests(unittest.TestCase):
         send("model.finished", 5, request_id="request", ok=True)
         send("assistant.message", 6, message_id="final", text="开始执行测试", final=True)
         dialog = list(manager._dialogs["worker-1"].values())
-        self.assertEqual(dialog, [("思考", "分析依赖"), ("回复", "开始执行测试")])
+        self.assertEqual(dialog, [("回复", "开始执行测试")])
+        self.assertNotIn("分析依赖", "\n".join(text for _, text in manager.dialog_lines("worker-1", 60)))
         json.dumps(manager.rows())
 
     def test_registered_delegation_executes_real_child_terminal_and_reads_result(self):

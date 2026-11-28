@@ -5,9 +5,12 @@ import hashlib
 import os
 import re
 import threading
+from concurrent.futures import ThreadPoolExecutor
+from contextvars import copy_context
 from pathlib import Path
 from typing import Any
 
+from ..scope import ensure_execution_active
 from .external import run_external
 from .registry import ParamSpec, Tool, ToolResult, ToolSpec
 from ..native_tools import native_edit, native_read, native_write
@@ -125,6 +128,28 @@ def _path(ctx, raw: str, root: str = "project", *, for_write: bool = False) -> P
 
 def _digest(data: str) -> str:
     return hashlib.sha256(data.encode("utf-8")).hexdigest()
+
+
+def _read_source_lines(path: Path, start_line: int, line_count: int) -> tuple[str, int, int]:
+    """读取已通过范围检查的路径，保留原有行号和 UTF-8 替换规则。"""
+    ensure_execution_active()
+    lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    ensure_execution_active()
+    start = start_line - 1
+    selected = lines[start:start + line_count]
+    numbered = "\n".join(f"{index:>6}  {line}" for index, line in enumerate(selected, start_line))
+    return numbered, len(lines), len(selected)
+
+
+def _is_wsl_windows_path(path: Path) -> bool:
+    """识别 WSL 默认挂载位置的 Windows 盘符。"""
+    parts = path.parts
+    return (
+        bool(os.environ.get("WSL_DISTRO_NAME"))
+        and len(parts) > 2
+        and parts[:2] == ("/", "mnt")
+        and re.fullmatch(r"[a-zA-Z]", parts[2]) is not None
+    )
 
 
 def _atomic_write(path: Path, text: str) -> None:
@@ -257,7 +282,8 @@ class WorkspaceRead(Tool):
                 return ToolResult(ok=False, error="文件超过 1MiB，请使用命令行工具做分段检查")
             if int(start_line) < 1 or not 1 <= int(line_count) <= 1000:
                 return ToolResult(ok=False, error="start_line 必须大于 0，line_count 必须在 [1,1000]")
-            native = native_read(ctx, resolved, int(start_line), int(line_count))
+            code_route = ctx.extra.get("tool_route") == "code"
+            native = None if code_route else native_read(ctx, resolved, int(start_line), int(line_count))
             if native is not None:
                 numbered, total_lines = native
                 end = min(total_lines, int(start_line) - 1 + int(line_count))
@@ -266,13 +292,10 @@ class WorkspaceRead(Tool):
                     data={"path": str(resolved), "text": numbered, "total_lines": total_lines},
                     metadata={"engine": "rust"},
                 )
-            lines = resolved.read_text(encoding="utf-8", errors="replace").splitlines()
-            start = int(start_line) - 1
-            selected = lines[start:start + int(line_count)]
-            numbered = "\n".join(f"{start + index + 1:>6}  {line}" for index, line in enumerate(selected))
+            numbered, total_lines, count = _read_source_lines(resolved, int(start_line), int(line_count))
             return ToolResult(
-                summary=f"读取 {resolved.name} 第 {start + 1}-{start + len(selected)} 行",
-                data={"path": str(resolved), "text": numbered, "total_lines": len(lines)},
+                summary=f"读取 {resolved.name} 第 {start_line}-{int(start_line) + count - 1} 行",
+                data={"path": str(resolved), "text": numbered, "total_lines": total_lines},
             )
         except (OSError, ValueError) as exc:
             return ToolResult(ok=False, error=str(exc))
@@ -301,8 +324,8 @@ class WorkspaceReadMany(Tool):
             return ToolResult(ok=False, error="paths 需要1..12个文件路径")
         if not 1 <= int(line_count) <= 1000:
             return ToolResult(ok=False, error="line_count 必须在 [1,1000]")
-        chunks: list[str] = []
-        files: list[dict[str, Any]] = []
+        code_route = ctx.extra.get("tool_route") == "code"
+        readable: list[tuple[str, Path]] = []
         errors: list[str] = []
         try:
             # 先完成整批路径检查，拒绝时不返回任何已读内容。
@@ -313,20 +336,28 @@ class WorkspaceReadMany(Tool):
                     continue
                 if resolved.stat().st_size > _TEXT_LIMIT:
                     return ToolResult(ok=False, error=f"文件超过 1MiB: {raw_path}")
-                native = native_read(ctx, resolved, 1, int(line_count))
-                if native is not None:
-                    numbered, total_lines = native
-                    chunks.append(f"## {raw_path}\n{numbered}")
-                    files.append({"path": str(raw_path), "total_lines": total_lines,
-                                  "returned_lines": len(numbered.splitlines())})
-                    continue
-                lines = resolved.read_text(encoding="utf-8", errors="replace").splitlines()
-                selected = lines[:int(line_count)]
-                numbered = "\n".join(f"{index + 1:>6}  {line}" for index, line in enumerate(selected))
-                chunks.append(f"## {raw_path}\n{numbered}")
-                files.append({"path": str(raw_path), "total_lines": len(lines), "returned_lines": len(selected)})
+                readable.append((str(raw_path), resolved))
+            count = int(line_count)
+            if code_route and len(readable) > 1 and any(_is_wsl_windows_path(item) for _, item in readable):
+                # 每项只读取已验证文件，继承执行租约。汇总在原线程按请求顺序完成。
+                with ThreadPoolExecutor(max_workers=min(4, len(readable))) as pool:
+                    pending = [pool.submit(copy_context().run, _read_source_lines, item, 1, count)
+                               for _, item in readable]
+                    results = [future.result() for future in pending]
+            else:
+                results = []
+                for _, item in readable:
+                    native = None if code_route else native_read(ctx, item, 1, count)
+                    if native is None:
+                        results.append(_read_source_lines(item, 1, count))
+                    else:
+                        numbered, total_lines = native
+                        results.append((numbered, total_lines, len(numbered.splitlines())))
         except (OSError, UnicodeError, ValueError) as exc:
             return ToolResult(ok=False, error=str(exc))
+        chunks = [f"## {path}\n{text}" for (path, _), (text, _, _) in zip(readable, results)]
+        files = [{"path": path, "total_lines": total, "returned_lines": returned}
+                 for (path, _), (_, total, returned) in zip(readable, results)]
         return ToolResult(
             ok=not errors,
             summary=f"批量读取 {len(files)} 个文件",

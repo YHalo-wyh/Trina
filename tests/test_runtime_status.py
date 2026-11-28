@@ -71,6 +71,20 @@ class RuntimeStatusTests(unittest.TestCase):
         self.assertEqual(self.jobs.snapshot(running)[0]["status"], "cancelled")
         self.assertIsNotNone(self.jobs.snapshot(running)[0]["exit_code"])
 
+    def test_background_completion_preserves_dispatch_owner(self):
+        from trina.tools.external import run_external
+
+        self.ctx.extra.update(intent_id="original-task", worker_id="original-worker", _tool_call_id="original-call")
+        result = run_external([sys.executable, "-c", "import time; time.sleep(.2)"], self.ctx,
+                              background=True, timeout=5, tool="terminal_start")
+        self.ctx.extra.update(intent_id="next-task", worker_id="next-worker", _tool_call_id="next-call")
+        self.jobs.wait(result.job_id, 3)
+        events = self.ctx.events.replay(kinds=("job.finished",))
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0].task_id, "original-task")
+        self.assertEqual(events[0].worker_id, "original-worker")
+        self.assertEqual(events[0].payload["parent_call_id"], "original-call")
+
     def test_compact_status_includes_real_host_and_available_empty_worker_pool(self):
         from types import SimpleNamespace
         self.ctx.extra["subworkers"] = SimpleNamespace(rows=lambda: [])
@@ -187,17 +201,26 @@ class RuntimeStatusTests(unittest.TestCase):
     def test_chat_reads_running_job_at_request_tail_then_observes_completion(self):
         backend = ReplayBackend(LLMConfig(backend="replay"))
         snapshots = []
+        release = self.root / "release-background"
+        program = ("import time,pathlib; print('work started', flush=True); "
+                   "p=pathlib.Path(" + repr(str(release)) + "); deadline=time.monotonic()+5\n"
+                   "while not p.exists() and time.monotonic()<deadline: time.sleep(.01)\n"
+                   "assert p.exists(), 'test did not release background job'\nprint('done')")
         def complete(history, **kwargs):
             snapshots.append(json.loads(history[-1]["content"].splitlines()[-1]))
             if len(snapshots) == 1:
                 return LLMResponse(text=json.dumps({"action": "terminal_start", "params": {
-                    "argv": [sys.executable, "-u", "-c", "import time; print('work started', flush=True); time.sleep(.8); print('done')"]}}))
-            return LLMResponse(text="后台执行中")
+                    "argv": [sys.executable, "-u", "-c", program]}}))
+            if len(snapshots) == 2:
+                release.write_text("ready", encoding="utf-8")
+                return LLMResponse(text="后台执行中")
+            return LLMResponse(text="后台已完成")
         backend.complete_messages = complete
         chat = ChatAgent(self.config, registry=self.registry, backend=backend)
         self.addCleanup(chat.close)
-        self.assertEqual(chat.ask("启动测试程序"), "后台执行中")
-        running = snapshots[-1]["background_jobs"]
+        self.assertEqual(chat.ask("启动测试程序"), "后台已完成")
+        self.assertEqual(len(snapshots), 3, "完成通知自动接续一次，无需人工查询")
+        running = snapshots[1]["background_jobs"]
         self.assertEqual(running[0]["status"], "running")
         self.assertEqual(snapshots[-1]["tools"]["calls"], 1)
         chat.ctx.extra["background_jobs"].wait(running[0]["id"], 2)

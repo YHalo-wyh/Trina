@@ -1,0 +1,246 @@
+{
+  "basis": "session-start dirty working tree, not Git HEAD",
+  "head": "595a01ccb00b037e714707a720f64147f54cdd2a",
+  "files": [
+    {
+      "path": "trina/brain/agent.py",
+      "status": "modified",
+      "before_sha256": "6f8b6db159f3693d4faeef20ffd3de84371b8555a65910da0ac03bef3e1c9b76",
+      "after_sha256": "b638321b31b02305ad02307830082363475bc98e4e706f278cc9d8e7cb32c982"
+    },
+    {
+      "path": "trina/brain/chat.py",
+      "status": "modified",
+      "before_sha256": "c0159bf4c5821a6e3e9e5172a83f7662b5b02639c5da9a2cca0813b709269f29",
+      "after_sha256": "4114f4175d44fe5d5fdbc3bd8974e069b7a08f1a4ab3d2afd3364232231b6493"
+    },
+    {
+      "path": "trina/completion_inbox.py",
+      "status": "modified",
+      "before_sha256": "fc1e96a1be27225dc307c396d2f9256b8efab49c0aafb5f78ebd5c5ccef0781b",
+      "after_sha256": "f2515a9841a092599da6c56315d9f7dd9d850a953971ea30a3d98b14407350e5"
+    },
+    {
+      "path": "trina/config.py",
+      "status": "modified",
+      "before_sha256": "1c797a1723d091d54b5b590b07008fd0053ef8fa7272220022328a3df125cb87",
+      "after_sha256": "7b82cd7f60e9347ce8efdd678e7f63e33b47a4b7848cce0a21add5b7751f8fba"
+    },
+    {
+      "path": "trina/console_ui.py",
+      "status": "modified",
+      "before_sha256": "f08393815a3e4e9a0734e30d517e3f522b1f6a8f27b36bc2d8fc0004bd28ef1f",
+      "after_sha256": "029c49ec7ade7d063d9656b66d1b5a9bf4a6ada6e813a4d610dfb9a9b7293a6c"
+    },
+    {
+      "path": "trina/coordination.py",
+      "status": "modified",
+      "before_sha256": "edc3c7d46d6db6bcb76c5d23214fa15059ce30d722b69cea33615a4e8f86a34f",
+      "after_sha256": "42766e40bebb6d3f2c3e18a4e45d28d1c3c0eb3eb1bf94fe20786a5562846daa"
+    },
+    {
+      "path": "trina/event_latency.py",
+      "status": "modified",
+      "before_sha256": "743682fff5dbdb9f0296392a64d3d3b0c1f013d2c74d24242ea8290df373ca01",
+      "after_sha256": "e47d70f8173f21e51265d6993d65974cc9cec8164278f684983006a7bd1835f6"
+    },
+    {
+      "path": "trina/event_view.py",
+      "status": "modified",
+      "before_sha256": "8adb9c313f72bc8474b51904710c62ce936d8dcf5c6ab91054d5f093a9f1a0cc",
+      "after_sha256": "c79c3199a324fdc7e2b91f103b8b5a5070b74cfba9d5288f5937d6faa7eb3736"
+    },
+    {
+      "path": "trina/events.py",
+      "status": "modified",
+      "before_sha256": "0dfbd394c4a653ebe9d64dfd1fbdea17ec2e5f832785e7e3acb5e286475ab940",
+      "after_sha256": "62a9cc595fc0ecd75df20f823d165e92961c36d7ad2b4f560f37abb264ee2a1c"
+    },
+    {
+      "path": "trina/strategy_memory.py",
+      "status": "new",
+      "before_sha256": null,
+      "after_sha256": "e679b95e2f4e07a85ff4c70025e6a0125f2e1a757e74b6b1ab1458f2640ee827"
+    },
+    {
+      "path": "trina/subworkers.py",
+      "status": "modified",
+      "before_sha256": "b9e0664f692f55d3683fc7b9de6af799b59ad0f5ac91ece39c4a7002a1e22e2c",
+      "after_sha256": "c287292f2dbf19f23f22db993c11d60a7b68f02be85ff0bc7b140c212884a7ee"
+    },
+    {
+      "path": "trina/swarm.py",
+      "status": "modified",
+      "before_sha256": "370770847644dc921a4100219ca6fecdff9a3e6663e2c597f813dd5ac4b5f26f",
+      "after_sha256": "56ed8a40e1ff52adaa2dff57d5ff5dfef80db35478433c6b3c4c705945e85057"
+    },
+    {
+      "path": "trina/terminal.py",
+      "status": "modified",
+      "before_sha256": "f0f0d01461cf5fb7ef988db8611baf8d8c4f49ac385cc5eb50755dcc288d6d2d",
+      "after_sha256": "23f5c3bec1918273ec41c7b2e8816b0789bd4727e4230d2a13a5a20fc83b05a9"
+    },
+    {
+      "path": "trina/tools/coordination.py",
+      "status": "modified",
+      "before_sha256": "dfaf212e94b607ad14f51319f9e3614a4dd87df1c8cff7868f3b010396e3f7ac",
+      "after_sha256": "e602a69edfa7df3cf545d679095a91984ff0042c0f4b0cd0774d2e6043bc9d7b"
+    },
+    {
+      "path": "trina/tools/external.py",
+      "status": "modified",
+      "before_sha256": "72bd224bb1060f4143d6a24f28fd375e7ff38b5321b19c297ef80483d14d5940",
+      "after_sha256": "41e741c11b5c3c7f8c5f48086a87a6ee219fbd3b209efbed9fce1ac8ed1d1c20"
+    },
+    {
+      "path": "trina/tools/terminal.py",
+      "status": "modified",
+      "before_sha256": "d1b6b1f856c33db352e354f797e86c4388e45639ffce6d342213f1d0aedc9173",
+      "after_sha256": "8b1e8c8132e094d2b4913312c6a1428322a9eb08ed5b85b1a89702740bab99c1"
+    },
+    {
+      "path": "tests/benchmark_commander.py",
+      "status": "modified",
+      "before_sha256": "8ee37cf69c279b493f893ede8e1c4c530b172ef8da845faa066934bee684b2ef",
+      "after_sha256": "a9f2f6ca28eed92eae13a6feff4e08a5dc70a8bb7062e070f9b1f2cf776a56f8"
+    },
+    {
+      "path": "tests/benchmark_competition.py",
+      "status": "new",
+      "before_sha256": null,
+      "after_sha256": "620ea7af7bd07c288ad0cd3f6fc3cf4591314dbce45b20d3236f054990d6b53e"
+    },
+    {
+      "path": "tests/test_chat_resume.py",
+      "status": "modified",
+      "before_sha256": "e9a4d4611be0d39aa676d71891c4686713770e3c8fc93f7ea901fdbead13e4c3",
+      "after_sha256": "f6ec956b032c846cacc53dbc8319d4744aeac2cb47164738a34dc09f7b5a0244",
+      "added_tests": [
+        "ChatResumeTests.test_background_completion_snapshot_resumes_without_replaying_work"
+      ],
+      "removed_test_names": []
+    },
+    {
+      "path": "tests/test_commander_intelligence.py",
+      "status": "modified",
+      "before_sha256": "4e6b725af4dd8bf113243ec45956d99c2fdd62befdfe900106b94a3233631a65",
+      "after_sha256": "7a373a1cca508cccbc53ef7ba69fc187d895a7e28951e9a473f72726fede018c",
+      "added_tests": [
+        "IntelligenceQueueTests.test_fact_timestamps_do_not_manufacture_progress_or_replanning",
+        "IntelligenceQueueTests.test_verifier_receipt_counts_progress_without_spawned_followup",
+        "IntelligenceRuntimeTests.test_cancelled_executor_exception_is_not_failed_or_retried",
+        "IntelligenceRuntimeTests.test_cancelled_group_notifies_only_after_branches_are_readable",
+        "IntelligenceRuntimeTests.test_completion_notification_observes_committed_result_snapshot",
+        "IntelligenceRuntimeTests.test_global_stop_preserves_cancelled_group_results_and_checkpoint",
+        "IntelligenceRuntimeTests.test_repeated_state_events_only_project_changed_facts"
+      ],
+      "removed_test_names": []
+    },
+    {
+      "path": "tests/test_competition_benchmark.py",
+      "status": "new",
+      "before_sha256": null,
+      "after_sha256": "c12272911559bc6a2f0af662488cfb63ef72048713b77a939146399a1020acfc",
+      "added_tests": [
+        "CompetitionBenchmarkTests.test_checker_rejects_wrong_solution_despite_success_claim",
+        "CompetitionBenchmarkTests.test_real_checker_passes_and_modified_or_stale_receipt_is_rejected",
+        "CompetitionBenchmarkTests.test_replay_matrix_runs_real_agents_with_frozen_memory"
+      ],
+      "removed_test_names": []
+    },
+    {
+      "path": "tests/test_completion_inbox.py",
+      "status": "modified",
+      "before_sha256": "9a26769534fefb61f89535952fe5744b5c540100804cb179ffbd795fe76982d9",
+      "after_sha256": "bcc4570c857e77103f737ef8ecce15a8f030c2beae10becfee5b9377ef627ffe",
+      "added_tests": [
+        "CompletionInboxTests.test_acknowledged_result_does_not_request_followup",
+        "CompletionInboxTests.test_cancellation_releases_waiter_without_model_followup",
+        "CompletionInboxTests.test_foreign_worker_events_do_not_enter_context_and_parent_call_is_preserved",
+        "CompletionInboxTests.test_manual_historical_worker_result_acknowledges_original_stream",
+        "CompletionInboxTests.test_old_worker_notification_cannot_read_new_group_with_same_task_id",
+        "CompletionInboxTests.test_recovered_job_preserves_original_tool_call",
+        "CompletionInboxTests.test_restore_reads_completed_worker_checkpoint_without_redispatch",
+        "CompletionInboxTests.test_service_without_followup_does_not_wait_or_resume_model",
+        "CompletionInboxTests.test_snapshot_restores_pending_once_and_replays_new_completion",
+        "CompletionInboxTests.test_worker_result_ready_wakes_before_whole_swarm_finishes"
+      ],
+      "removed_test_names": []
+    },
+    {
+      "path": "tests/test_event_latency.py",
+      "status": "modified",
+      "before_sha256": "012664003e93b85ee6ba7515bc9806cfd8e7ff76b0e47a4e28ed534c7f068352",
+      "after_sha256": "1214469c2d40380229c084e1fd6021ee75bf850caa3548341bc0654faa763fff",
+      "added_tests": [
+        "EventLatencyTests.test_worker_timeline_uses_actual_start_and_committed_result"
+      ],
+      "removed_test_names": []
+    },
+    {
+      "path": "tests/test_events.py",
+      "status": "modified",
+      "before_sha256": "91b60d066f28403f46312548ee7d2b4f6f701de3e1cfd215d51bd510f9346b63",
+      "after_sha256": "210e66c05944e95b07e6533d0ee88057e3b3e1bd35fd8eb87b31579fccc057bd",
+      "added_tests": [
+        "EventTests.test_failed_event_transaction_does_not_poison_reused_connection",
+        "EventTests.test_scoped_connection_is_reused_nested_and_closed_after_failure",
+        "EventTests.test_scoped_connections_are_thread_local_and_committed_cross_thread"
+      ],
+      "removed_test_names": []
+    },
+    {
+      "path": "tests/test_interactive.py",
+      "status": "modified",
+      "before_sha256": "3256dc517495b381d7c8c823af0f904c123f43b4a898d3791c983f5a3b47db4d",
+      "after_sha256": "b1919daddf3bfd1fd5cbc01812ad1cf33e8bd7d0a82c53d657cf8eabd8cfe856",
+      "added_tests": [],
+      "removed_test_names": []
+    },
+    {
+      "path": "tests/test_runtime_status.py",
+      "status": "modified",
+      "before_sha256": "d51cb5de6f559d8d898265d8d61e1209eb64bf2aed3706097cb7666a5e5c231e",
+      "after_sha256": "8161908b5a33406ab0450c2d5bb82ad16666f2171def0d0e5786abee4fb7311c",
+      "added_tests": [
+        "RuntimeStatusTests.test_background_completion_preserves_dispatch_owner"
+      ],
+      "removed_test_names": []
+    },
+    {
+      "path": "tests/test_strategy_memory.py",
+      "status": "new",
+      "before_sha256": null,
+      "after_sha256": "15028e352c3aadf275c21d78eccc36b9fea5a2adc22f81f68eff6e67878a7243",
+      "added_tests": [
+        "StrategyMemoryTests.test_commander_records_verified_completion_and_disabled_mode_is_empty",
+        "StrategyMemoryTests.test_commander_uses_existing_briefs_and_caches_lookup_without_models",
+        "StrategyMemoryTests.test_conflicting_conditions_excluded_and_missing_marked",
+        "StrategyMemoryTests.test_duplicate_proof_is_idempotent_but_new_conditions_preserved",
+        "StrategyMemoryTests.test_memory_failure_does_not_fail_worker",
+        "StrategyMemoryTests.test_modified_missing_synthetic_or_outside_proof_rejected",
+        "StrategyMemoryTests.test_readonly_snapshot_and_context_size_limits",
+        "StrategyMemoryTests.test_retrieval_bounds_proof_io_and_checks_shared_proof_once_per_query",
+        "StrategyMemoryTests.test_round_trip_has_conditions_cost_failures_and_no_fact_injection",
+        "StrategyMemoryTests.test_unrelated_category_or_features_do_not_match",
+        "StrategyMemoryTests.test_unverified_success_flag_or_forged_receipt_is_not_stored"
+      ],
+      "removed_test_names": []
+    },
+    {
+      "path": "tests/test_ui_v07.py",
+      "status": "modified",
+      "before_sha256": "9d13ed8de45aadb28df660b4f25d0abc48c1c4caebee71d64e8bc87923e14a43",
+      "after_sha256": "227f64a9ebfe56b6b1a92a3524c540e5deb69e053b6c1e2eaeeb2c24c159c60f",
+      "added_tests": [
+        "WorkspaceV07Tests.test_tool_actions_target_visible_history_and_ignore_pruned_cards",
+        "WorkspaceV07Tests.test_tool_cards_follow_ascii_theme_without_rewriting_tool_data",
+        "WorkspaceV07Tests.test_tool_expand_copy_stream_update_and_focus_at_all_terminal_sizes"
+      ],
+      "removed_test_names": []
+    }
+  ],
+  "source_files_changed": 28,
+  "tests_added_names": 40,
+  "tests_removed_names": 0
+}

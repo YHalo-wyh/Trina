@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from dataclasses import dataclass
 from typing import Any, Iterable
 
@@ -23,6 +24,44 @@ class IntentProposal:
 
 class FactIntentPlanner:
     """确定性、可审计的最小事实规划器，不额外消耗一次模型调用。"""
+
+    def decompose(self, source: Any) -> list[dict[str, Any]]:
+        """只拆显式独立工作列表；含共享顺序但无结构化依赖时保持单任务。"""
+        match = re.fullmatch(r"\s*(独立任务|并行任务|independent tasks|任务计划|task plan)\s*[:：]\s*(.+)", source.goal,
+                             flags=re.IGNORECASE | re.DOTALL)
+        if not match:
+            return []
+        parts = [part.strip() for part in re.split(r"[；;\n]+", match.group(2)) if part.strip()]
+        if not 2 <= len(parts) <= 12:
+            return []
+        proposals, labels = [], {}
+        for index, part in enumerate(parts, 1):
+            label = re.match(r"^(\d+)[.、)]\s*(.+)$", part)
+            if match.group(1).casefold() in {"任务计划", "task plan"} and not label:
+                return []
+            number, body = (label.group(1), label.group(2)) if label else (str(index), part)
+            if number in labels:
+                return []
+            prefix = source.id if len(source.id) <= 48 else source.id[:39] + "-" + hashlib.sha256(source.id.encode()).hexdigest()[:8]
+            labels[number] = f"{prefix}-part-{index}"
+            dependencies = re.search(r"\s*\[(?:依赖|depends on)\s*[:：]\s*([\d,， ]+)\]\s*$", body, re.I)
+            refs = re.split(r"[,， ]+", dependencies.group(1).strip()) if dependencies else []
+            if match.group(1).casefold() in {"任务计划", "task plan"} and index > 1 and not dependencies:
+                return []
+            body = body[:dependencies.start()].strip() if dependencies else body
+            # 无显式依赖编号时，不能凭连接词猜测能够并行。
+            if not body or re.search(r"然后|之后|依赖|after |depends on", body, re.I):
+                return []
+            goal, _, deliverable = body.partition("=>")
+            proposals.append({"id": labels[number], "target": source.target, "goal": goal.strip(),
+                              "deliverable": deliverable.strip() or goal.strip(), "depends_on": refs})
+        if len({" ".join(item["goal"].split()).casefold() for item in proposals}) != len(parts):
+            return []
+        for item in proposals:
+            if any(ref not in labels for ref in item["depends_on"]):
+                return []
+            item["depends_on"] = tuple(dict.fromkeys((*source.depends_on, *(labels[ref] for ref in item["depends_on"]))))
+        return proposals
 
     def propose(self, source: Any, facts: Iterable[dict[str, Any]], *, planning_scope: str = "") -> list[IntentProposal]:
         proposals: list[IntentProposal] = []

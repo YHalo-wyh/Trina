@@ -204,10 +204,13 @@ class ModelManager:
             if not active:
                 candidate.backend, candidate.api = "openai", profile.api
                 candidate.base_url, candidate.context_window = profile.base_url, profile.context_window
+                candidate.reasoning_effort = profile.reasoning_effort
             candidate.model = model
             levels = reasoning_support(candidate).levels
+            effort = candidate.reasoning_effort if candidate.reasoning_effort in levels else "default"
             return ModelChoice(profile_id, name, model, active, candidate.api, candidate.effective_context_window,
-                               bool(candidate.context_window), levels if meta.kind == "chat" else (), source, meta)
+                               bool(candidate.context_window), levels if meta.kind == "chat" else (), source, meta,
+                               effort)
 
         choices: list[ModelChoice] = []
         if llm.model:
@@ -232,7 +235,8 @@ class ModelManager:
             configured = {item.provider for _, item in self._connections()}
             presets = tuple(sorted((item for item in PRESETS if item.id not in configured), key=lambda item: item.id))
             selected = select_model(self.model_choices(), plain=plain, discover=self.discover,
-                                    recent=self.recent_models, presets=presets)
+                                    recent=self.recent_models, presets=presets,
+                                    theme=self.config.ui.output_palette)
             if not isinstance(selected, ProviderPreset):
                 return selected
             self.add(selected.id, activate=False)
@@ -242,17 +246,19 @@ class ModelManager:
             raise ValueError("此模型仅供浏览，请选择聊天模型")
         llm = self.config.llm
         previous = (llm.profile, llm.model)
-        if (choice.connection_id, choice.model) == previous:
+        if (choice.connection_id, choice.model, choice.reasoning_effort) == (*previous, llm.reasoning_effort):
             return False
         if choice.connection_id:
             item = copy.deepcopy(self.store.profiles[choice.connection_id])
             item.model = choice.model
+            item.reasoning_effort = choice.reasoning_effort
             self._commit(item, previous_id=item.id)
         else:
             from .llm.reasoning import reasoning_support
 
             candidate = copy.copy(llm)
             candidate.model = choice.model
+            candidate.reasoning_effort = choice.reasoning_effort
             if candidate.reasoning_effort not in reasoning_support(candidate).levels:
                 candidate.reasoning_effort = "default"
             candidate.validate()

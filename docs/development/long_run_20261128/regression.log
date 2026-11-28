@@ -1,0 +1,29 @@
+.........................................................................ssssssssss....................................................................................................................................................................................................................................s..........F.........................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................
+[eval] 已自动拉起 lab 靶机 127.0.0.1:58554
+报告: C:\Users\WYH\AppData\Local\Temp\tmpm_y02ch5\saved_report.md
+报告: C:\Users\WYH\AppData\Local\Temp\tmpm_y02ch5\saved_report.html
+报告: C:\Users\WYH\AppData\Local\Temp\tmpfw496sje\sample-swarm_report.md
+报告: C:\Users\WYH\AppData\Local\Temp\tmpfw496sje\sample-swarm_report.html
+报告: C:\Users\WYH\AppData\Local\Temp\tmpfw496sje\sample-swarm_report.json
+报告: C:\Users\WYH\AppData\Local\Temp\tmpfw496sje\sample-swarm_report.md
+报告: C:\Users\WYH\AppData\Local\Temp\tmpfw496sje\sample-swarm_report.html
+报告: C:\Users\WYH\AppData\Local\Temp\tmpfw496sje\sample-swarm_report.json
+======================================================================
+FAIL: test_current_contract_is_machine_verifiable (test_contract.MachineContractTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\WYH\Desktop\网安实训中级\tests\test_contract.py", line 18, in test_current_contract_is_machine_verifiable
+    self.assertTrue(report.ok, "\n".join(report.errors))
+AssertionError: False is not true : 规约版本与程序版本不一致: 0.6.0 != 0.6.4
+规约版本与 pyproject 版本不一致: 0.6.0 != 0.6.4
+路径不存在: evidence/README.md
+路径不存在: evidence/20261113-native-binary/README.md
+路径不存在: evidence/20261113-native-binary/native-e2e.json
+路径不存在: evidence/20261113-native-binary/contract-execute.json
+D-EVIDENCE 的 evidence/**/*.json 仅 0 项，要求至少 8 项
+TR-03-R04 引用不存在的测试: tests.test_transcript.TranscriptTests.test_real_vt_wheel_uses_scroll_region_and_keeps_bottom_chrome
+
+----------------------------------------------------------------------
+Ran 972 tests in 256.242s
+
+FAILED (failures=1, skipped=11)

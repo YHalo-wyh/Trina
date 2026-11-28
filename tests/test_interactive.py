@@ -570,6 +570,10 @@ class TestConsole(unittest.TestCase):
                 self.assertEqual(console.view.activity()[0], "idle")
                 self.assertIn("当前上下文输入上限", "\n".join(output))
                 self.assertEqual(backend.calls, 0)
+                errors = console.chat.events.replay(kinds=("model.error",))
+                self.assertEqual(len(errors), 1)
+                self.assertFalse(errors[0].payload["dispatched"])
+                self.assertEqual(console.chat.events.replay(kinds=("model.started",)), [])
             finally:
                 console._cleanup()
 

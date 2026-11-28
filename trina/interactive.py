@@ -91,6 +91,7 @@ class Console:
         self._plan_review: PlanReview | None = None
         self._planning = False
         self._drafts: dict[int, tuple[str, str, str]] = {}
+        self._queue_events: dict[int, tuple[str, str, str]] = {}
         self._draft_number = 0
         self._enter_draft: tuple[int, threading.Thread | None] | None = None
         self._job_notices: deque[tuple[str, str]] = deque(maxlen=128)
@@ -431,7 +432,7 @@ class Console:
                 dynamic_values=self._completion_values, plain=self._plain or not self.color,
                 usage=self._footer_usage, activity=self._activity, motion=self.config.ui.motion,
                 context=self._footer_context, activity_detail=lambda: self._live_action_hint,
-                output_palette=self._output_palette, cancel_wait=self._cancel_console_wait,
+                output_palette=getattr(self.config.ui, "output_palette", "trina"), cancel_wait=self._cancel_console_wait,
                 command_icons=lambda: self.config.ui.command_icons,
                 tasks=self._todo_view,
                 pending_draft=self._pending_draft_number,
@@ -556,6 +557,7 @@ class Console:
             if self._task_max_steps:
                 progress = f"步骤 {step}/{self._task_max_steps}"
         from .worker_roles import WORKER_ROLES
+        from .ui_theme import ascii_mode
         ui = self.config.ui
         role = WORKER_ROLES[self._active_worker][0] if is_chat or not self.session.running else "Task Agent"
         duration_seconds = None
@@ -573,13 +575,24 @@ class Console:
         elif self.session.running:
             duration_seconds = max(0.0, time.monotonic() - self.session.started_at)
         title = self.chat.title if is_chat and self.chat.title != "新对话" else self._task_title
-        return ConsoleContext(status=status + queued, model=_display_model(llm.model, llm.reasoning_effort),
+        session = title or self._task_title or "新对话"
+        background = ""
+        if self.chat is not None:
+            jobs = self.chat.ctx.extra.get("background_jobs")
+            if jobs is not None:
+                count, _ = jobs.running_activity()
+                background = f"后台 {count}" if count else ""
+        return ConsoleContext(status=status + queued, model=_display_model(llm.model),
                               directory=str(Path.cwd()), task=title or self._task_title or "新对话",
                               progress=progress, context_tokens=context_tokens,
                               context_window=llm.effective_context_window, duration_seconds=duration_seconds,
                               role=role, branch=self._branch,
                               preset=ui.status_line_preset, separator=ui.status_line_separator, context_bar=ui.context_bar,
-                              metrics=self.view.metrics(), workers=self.subworkers.badge)
+                              metrics=self.view.metrics(), workers=self.subworkers.badge, background=background,
+                              provider=llm.profile or llm.backend, thinking=llm.reasoning_effort, session=session,
+                              custom_fields=ui.status_line_custom,
+                              model_in_footer=ui.status_line_preset == "custom" and "model" in ui.status_line_custom.split(","),
+                              ascii_mode=ascii_mode(ui.output_palette))
 
     def _footer_usage(self, width: int, compact: bool = False) -> str:
         return self.view.footer(width, compact, preset=self.config.ui.status_line_preset,
@@ -921,6 +934,9 @@ class Console:
         runtime = self.subworkers.runtime if task_id else None
         self._draft_number += 1
         self._drafts[self._draft_number] = (text, task_id, runtime.run_id if runtime else "")
+        self._queue_events[self._draft_number] = ("QUEUED", text, task_id)
+        while len(self._queue_events) > 20:
+            del self._queue_events[next(iter(self._queue_events))]
         if on_enter:
             self._enter_draft = self._draft_number, self.session.thread
         hint = "再按一次 Enter 立即发送" if on_enter else f"/queue send {self._draft_number} 发送"
@@ -939,8 +955,9 @@ class Console:
     def _cmd_queue(self, args: list[str], *, running_only: bool = False) -> None:
         action = args[0] if args else "list"
         if action == "list":
-            rows = [(f"#{number} · {task or '主会话'}", text) for number, (text, task, _) in self._drafts.items()]
-            self._display(render_panel("补充队列", rows=rows or [("队列", "暂无草稿")],
+            rows = [(f"{status:<9} #{number} · {task or '主会话'}", text)
+                    for number, (status, text, task) in self._queue_events.items()]
+            self._display(render_panel("消息队列", rows=rows or [("队列", "暂无消息")],
                                        footer="/queue add <文本> · /queue send [编号] · /queue drop <编号>", color=self.color))
             return
         if action not in {"send", "drop"} or len(args) > 2 or (action == "drop" and len(args) != 2):
@@ -964,7 +981,9 @@ class Console:
                 with self._launch_lock:
                     if not self._start_chat_turn(text):
                         return
+        text, task_id, _ = self._drafts[number]
         del self._drafts[number]
+        self._queue_events[number] = ("DELIVERED" if action == "send" else "CANCELLED", text, task_id)
         self._emit(f"草稿 #{number} 已{'发送' if action == 'send' else '移除'}", prefix="队列")
 
     def _show_plan_review(self) -> None:
@@ -977,17 +996,46 @@ class Console:
             ))], footer="/plan choose [编号] · /plan reply <其他答案> · /plan cancel", color=self.color))
         elif review and review.layers:
             self._display(render_panel("分工预览", sections=review.split_sections(),
-                                       footer="/plan show 查看 · /plan cancel 关闭", color=self.color))
+                                       footer="/plan show 打开计划工作台 · /plan cancel 关闭", color=self.color))
         elif review and review.criteria:
             self._display(render_panel("计划核对", sections=[("", review.draft())],
-                                       footer="/plan queue 加入待发草稿 · /plan cancel 关闭", color=self.color))
+                                       footer="/plan show 打开计划工作台 · /plan queue 加入待发草稿", color=self.color))
         else:
             self._emit("/plan <任务> 澄清 · /plan split <任务> 预览工程分工", prefix="计划")
 
     def _cmd_plan(self, args: list[str]) -> None:
         action = args[0] if args else "show"
         if action == "show":
-            self._show_plan_review()
+            review = self._plan_review
+            interactive = self._enhanced_input is not None and review is not None and not self._planning
+            if not interactive:
+                self._show_plan_review()
+                return
+            from .console_ui import edit_field
+            from .plan_review import show_plan_review
+            selected = show_plan_review(review, plain=self._plain or not self.color,
+                                        theme=self.config.ui.output_palette)
+            if selected is None:
+                return
+            if selected.startswith("choose:"):
+                self._cmd_plan(["choose", selected.split(":", 1)[1]])
+            elif selected == "edit":
+                value = edit_field("编辑任务目标", review.task)
+                if value:
+                    self._plan_review = review.edit_task(value)
+                    self._emit("任务目标已更新；未发起额外模型请求", prefix="计划")
+            elif selected == "feedback":
+                value = edit_field("添加审阅意见")
+                if value:
+                    self._plan_review = review.add_note(value)
+                    self._emit("审阅意见已加入计划草稿", prefix="计划")
+            elif selected == "save":
+                if review.split_preview:
+                    raise ValueError("分工预览仅供查看")
+                self._enqueue_draft(review.draft())
+                self._emit("计划草稿已保存到消息队列，审阅面板保持可编辑", prefix="计划")
+            elif selected == "confirm":
+                self._cmd_plan(["queue"])
             return
         if action == "cancel":
             self._plan_review = None
@@ -1388,10 +1436,16 @@ class Console:
 
     def _cmd_footer(self, args: list[str]) -> None:
         if args:
-            if len(args) != 1 or args[0] not in {"default", "compact", "full"}:
-                raise ValueError("用法：/footer default|compact|full")
-            self.config.ui.status_line_preset = args[0]
-        self._emit(f"底栏 {self.config.ui.status_line_preset} · 持久配置：configs/trina.yaml 的 ui 段")
+            if len(args) > 2 or args[0] not in {"default", "compact", "full", "custom"}:
+                raise ValueError("用法：/footer default|compact|full|custom [字段,...]")
+            overrides: dict[str, Any] = {"ui__status_line_preset": args[0]}
+            if len(args) == 2:
+                overrides["ui__status_line_custom"] = args[1]
+            candidate = self.config.with_overrides(**overrides)
+            self.config.ui.status_line_preset = candidate.ui.status_line_preset
+            self.config.ui.status_line_custom = candidate.ui.status_line_custom
+        custom = f" · {self.config.ui.status_line_custom}" if self.config.ui.status_line_preset == "custom" else ""
+        self._emit(f"底栏 {self.config.ui.status_line_preset}{custom} · 持久配置：configs/trina.yaml 的 ui 段")
 
     def _cmd_worker(self, args: list[str]) -> None:
         from .worker_roles import WORKER_ROLES
@@ -1666,6 +1720,7 @@ class Console:
 
     def _refresh_output_palette(self) -> None:
         if self._enhanced_input is not None:
+            self._enhanced_input.set_theme(self.config.ui.output_palette)
             control = self._enhanced_input.transcript_control
             control._blocks.clear()
             control.invalidate_from(0)
@@ -1674,15 +1729,16 @@ class Console:
     def _cmd_theme(self, args: list[str]) -> None:
         from .console_ui import select_option
         from .output_styles import PALETTES
+        from .ui_theme import THEME_LABELS
         value = args[0] if len(args) == 1 else None
         if len(args) > 1:
-            raise ValueError("/theme trina|contrast|mono")
+            raise ValueError("/theme dark|light|high_contrast|ascii")
         if not args and self._input is None and not self._custom_output and enhanced_input_available():
-            value = select_option("输出配色", [ChoiceSpec(name, {"trina": "粉紫 · 语义配色", "contrast": "高对比", "mono": "单色"}[name]) for name in PALETTES],
+            value = select_option("工作台主题", [ChoiceSpec(name, label) for name, label in THEME_LABELS.items()],
                                   subtitle="当前 " + self.config.ui.output_palette)
         if value is not None:
             if value not in PALETTES:
-                raise ValueError("/theme trina|contrast|mono")
+                raise ValueError("/theme dark|light|high_contrast|ascii")
             self.config.ui.output_palette = value
             self._refresh_output_palette()
         self._display(render_answer("## 输出配色 · " + self.config.ui.output_palette + "\n\n"

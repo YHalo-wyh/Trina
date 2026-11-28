@@ -53,7 +53,7 @@ def _join_segments(groups: list[list[tuple[str, str]]], separator: str = "dot") 
 
 @dataclass(frozen=True)
 class ConsoleContext:
-    """底栏只读上下文：当前模型、任务、进度与窗口占用。"""
+    """工作台只读上下文：顶部会话信息与底栏运行指标共用。"""
 
     status: str
     model: str
@@ -70,28 +70,84 @@ class ConsoleContext:
     context_bar: bool = True
     metrics: tuple[tuple[str, str], ...] = ()
     workers: str = ""
+    background: str = ""
+    provider: str = ""
+    thinking: str = ""
+    session: str = ""
+    custom_fields: str = "tokens,cache,context,git,workers,background"
+    model_in_footer: bool = True
+    ascii_mode: bool = False
+
+    def header(self, width: int) -> list[tuple[str, str]]:
+        """响应式工作区标题；80 列以上分两行，窄屏只保留会话与状态。"""
+        from . import __version__
+
+        width = max(1, width)
+        mark = "*" if self.ascii_mode else "◆"
+        state_mark = ">" if self.ascii_mode else "●"
+        brand = f" {mark} TRINA v{__version__} "
+        state = f"{state_mark} {self.status} "
+        session = self.session or self.task or "新对话"
+        room = max(1, width - _cells(brand) - _cells(state) - 3)
+        line = [("class:workspace.brand", brand), ("class:context.label", "│ " if not self.ascii_mode else "| "),
+                ("class:workspace.session", _fit_cells(session, room))]
+        used = sum(_cells(text) for _, text in line)
+        line.extend([("", " " * max(1, width - used - _cells(state))), ("class:workspace.state", state)])
+        if width < 58:
+            return line
+
+        path_mark = ">" if self.ascii_mode else "▣"
+        model_mark = "@" if self.ascii_mode else "◈"
+        path_budget = max(12, min(width // 2, 54))
+        path = f" {path_mark} " + _fit_cells(self.directory, path_budget - 3, tail=True)
+        model_parts = [value for value in (self.provider, self.model) if value]
+        model = f"{model_mark} " + " / ".join(model_parts)
+        if self.thinking:
+            model += f" · Thinking {self.thinking}"
+        model = _fit_cells(model, max(1, width - _cells(path) - 3))
+        gap = max(1, width - _cells(path) - _cells(model))
+        line.extend([("", "\n"), ("class:workspace.meta", path), ("", " " * gap),
+                     ("class:workspace.model", model)])
+        return line
+
+    def header_height(self, width: int) -> int:
+        return 2 if width >= 58 else 1
+
+    def _custom(self, name: str) -> bool:
+        return self.preset != "custom" or name in {item.strip() for item in self.custom_fields.split(",")}
 
     def footer(self, width: int) -> list[tuple[str, str]]:
         """左侧角色/模型，右侧真实用量；按列预算收起低优先级字段。"""
         width = max(1, width)
-        icon = "◌"
+        icon = "o" if self.ascii_mode else "◌"
         if "运行" in self.status:
-            icon = "●"
+            icon = ">" if self.ascii_mode else "●"
         elif "暂停" in self.status:
-            icon = "Ⅱ"
+            icon = "||" if self.ascii_mode else "Ⅱ"
         elif "审批" in self.status:
             icon = "?"
         elif "停止" in self.status:
-            icon = "■"
+            icon = "#" if self.ascii_mode else "■"
         role = _fit_cells(self.role, min(18, max(4, width // 3)))
         groups = [[("class:context.role", role)]]
+        if self.preset == "custom" and self._custom("session"):
+            groups.append([("class:context.task", _fit_cells(self.session or self.task, max(4, width // 5)))])
+        if self.preset == "custom" and self._custom("provider") and self.provider:
+            groups.append([("class:context.label", _fit_cells(self.provider, max(4, width // 6)))])
+        if self.preset == "custom" and self._custom("background") and self.background:
+            groups.append([("class:context.state", _fit_cells(self.background, max(4, width // 7)))])
         remaining = width - _cells(role)
         progress = self.progress.split(" · 工具", 1)[0]
         progress_width = _cells(progress) + 3 if progress and width >= 56 else 0
         right: list[tuple[str, str]] = []
         # 给模型保留可读宽度，统计占右侧，缓存优先于累计 Token / I/O。
         right_budget = max(0, remaining - 24 - progress_width)
-        for style, value in self.metrics:
+        def metric_enabled(style: str) -> bool:
+            if self.preset != "custom":
+                return True
+            return self._custom("cache" if "cache" in style else "tokens")
+
+        for style, value in (item for item in self.metrics if metric_enabled(item[0])):
             candidate = right + ([("class:context.label", "  ")] if right else []) + [(style, value)]
             if sum(_cells(text) for _, text in candidate) <= right_budget:
                 right = candidate
@@ -99,15 +155,20 @@ class ConsoleContext:
                 break
         right_width = sum(_cells(text) for _, text in right)
         remaining -= right_width + (3 if right else 0)
-        if remaining >= 8:
+        extras = []
+        if width >= 160 and self.preset == "full":
+            extras.append([("class:context.state", icon + " "), ("class:status", self.status)])
+        if progress_width:
+            extras.append([("class:context.progress", progress)])
+        if remaining >= 8 and self.model_in_footer and self._custom("model"):
             model_budget = remaining - 3
-            extras = []
-            if width >= 160 and self.preset == "full":
-                extras.append([("class:context.state", icon + " "), ("class:status", self.status)])
-            if progress_width:
-                extras.append([("class:context.progress", progress)])
             model_budget -= sum(sum(_cells(text) for _, text in group) + 3 for group in extras)
-            groups.append([("class:context.model", _fit_cells("◈ " + self.model, max(4, model_budget)))])
+            marker = "@ " if self.ascii_mode else "◈ "
+            groups.append([("class:context.model", _fit_cells(marker + self.model, max(4, model_budget)))])
+            groups.extend(extras)
+        elif self.preset == "custom" and self._custom("background") and self.status != "就绪" and remaining >= 8:
+            groups.append([("class:context.state", _fit_cells(icon + " " + self.status, max(4, remaining - 2)))])
+        elif extras:
             groups.extend(extras)
         result = _join_segments(groups, self.separator)
         if right:
@@ -120,30 +181,30 @@ class ConsoleContext:
     def rail(self, width: int) -> list[tuple[str, str]]:
         """上下文仪表贴最左，工作目录锚定到最右，中间用横线填满。"""
         width = max(1, width)
-        path_prefix = " 📁 " if width >= 16 else " "
+        path_prefix = " > " if self.ascii_mode else " 📁 " if width >= 16 else " "
         path_limit = width if width < 28 else max(12, min(width // 2, 54))
         path_text = path_prefix + _fit_cells(self.directory, path_limit - _cells(path_prefix), tail=True)
         context_text = ""
-        if width >= 28 and self.context_window > 0:
+        if self._custom("context") and width >= 28 and self.context_window > 0:
             if self.context_tokens is None:
-                context_text = f"◔ {_number(self.context_window)} "
+                context_text = f"CTX {_number(self.context_window)} " if self.ascii_mode else f"◔ {_number(self.context_window)} "
             else:
                 ratio = max(0.0, self.context_tokens / self.context_window)
                 percent = min(999, round(ratio * 100))
                 if width < 64 or not self.context_bar or self.preset == "compact":
-                    context_text = f"◔ {percent}% "
+                    context_text = f"CTX {percent}% " if self.ascii_mode else f"◔ {percent}% "
                 else:
                     filled = min(8, max(0, round(min(1.0, ratio) * 8)))
-                    gauge = "▰" * filled + "▱" * (8 - filled)
-                    context_text = f"◔ {percent}% {gauge} "
+                    gauge = ("#" * filled + "-" * (8 - filled)) if self.ascii_mode else ("▰" * filled + "▱" * (8 - filled))
+                    context_text = f"{'CTX' if self.ascii_mode else '◔'} {percent}% {gauge} "
         duration_text = ""
         if self.duration_seconds is not None and width >= 64:
             from .board import _seconds
             duration_text = f" ⏱ {_seconds(self.duration_seconds)} "
         branch = ""
-        if self.branch and width >= 80:
-            branch = " ⎇ " + _fit_cells(self.branch, min(20, width // 6)) + " "
-        workers = f" ⠿ {self.workers} " if self.workers and width >= 96 else ""
+        if self._custom("git") and self.branch and width >= 80:
+            branch = (" GIT " if self.ascii_mode else " ⎇ ") + _fit_cells(self.branch, min(20, width // 6)) + " "
+        workers = ((" W " if self.ascii_mode else " ⠿ ") + self.workers + " ") if self._custom("workers") and self.workers and width >= 96 else ""
         remaining = max(0, width - _cells(path_text) - _cells(context_text) - _cells(duration_text) - _cells(branch) - _cells(workers))
         fragments: list[tuple[str, str]] = []
         if context_text:
@@ -156,7 +217,7 @@ class ConsoleContext:
             fragments.append(("class:context.branch", branch))
         if workers:
             fragments.append(("class:context.workers", workers))
-        fragments.append(("class:rail", "─" * remaining))
+        fragments.append(("class:rail", ("-" if self.ascii_mode else "─") * remaining))
         fragments.append(("class:context.path", path_text))
         return fragments
 

@@ -1,0 +1,19 @@
+{
+  "started_at": "2026-11-27T18:17:17+00:00",
+  "finished_at": "2026-11-27T21:22:40+00:00",
+  "elapsed_seconds": 11123,
+  "tests": {
+    "total": 972,
+    "passed": 960,
+    "skipped": 11,
+    "failed": 1,
+    "errors": 0,
+    "seconds": 256.242,
+    "new_test_methods": 40,
+    "known_failure": "test_current_contract_is_machine_verifiable"
+  },
+  "scope": "Local replay/controlled workers; real-provider competition gains unverified",
+  "git_head": "595a01ccb00b037e714707a720f64147f54cdd2a",
+  "committed": false,
+  "pushed": false
+}

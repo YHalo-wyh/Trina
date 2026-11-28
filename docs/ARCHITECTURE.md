@@ -98,7 +98,7 @@ ScopeSentry由外置Capability通过 `mcp_http` 复用 `ctx.http`；浏览器采
 | `trina.tools.registry` | `ToolSpec`/`ParamSpec`/`ToolResult`/`ToolContext`/`Tool`/`ToolRegistry.execute` | 执行链是**唯一**入口；工具实现 `run(ctx, **params)`，返回 `ToolResult`；按题型和能力租约导出最小 Schema 与执行白名单；超时结果给出当前工作目录和缩小范围提示 |
 | `trina.tool_catalog` / `trina.tool_picker` | `build_tool_catalog/filter_tool_catalog`、`select_tool` | 从真实注册表、当前白名单、路由和运行步骤生成只读工具目录；解释可见性并按视口绘制，不保存第二份绑定或执行工具 |
 | `trina.todo` / `trina.tools.todo` | `TodoList`、`todo` | 会话级任务清单的唯一状态源；工具更新发布 `todo.updated`，Chat 快照保存并恢复，状态不代替执行证据 |
-| `trina.tools.workspace` | `terminal_exec`、`workspace_read/write/edit` | 前台 argv 命令和项目文件编码工具；命令经 `run_external`，路径经 `ScopeGuard.check_workspace_path`，写入原子替换，编辑要求精确匹配数 |
+| `trina.tools.workspace` | `terminal_exec`、`workspace_read/read_many/write/edit` | 前台 argv 命令和项目文件工具。命令经 `run_external`，路径经 `ScopeGuard.check_workspace_path`。代码路由在进程内读取，在 WSL 的 Windows 盘符挂载点并行读取已校验的文件，按请求顺序回收。写入原子替换，编辑要求精确匹配数 |
 | `trina.tools.web_search` | `web_search` | Google/Bing 免费搜索与 DeepSeek Search 适配；查询过滤、结构化结果、统一 `[n]` 引用和原始交通证据 |
 | `trina.coordination` / `trina.tools.coordination` | `CoordinationRuntime.plan/claim/settle/publish_state/worker_view/search_traces`、`shared_context/shared_trace_*` | Intent 是唯一任务状态；事件驱动规划、共享 Todo 派生视图、租约/去重/恢复、事实索引与探索视图、跨 Worker 可追踪观察和失败；共享事实只通过按需索引读取，不共享完整对话或直接合并当前题事实 |
 | `trina.binary` / `trina.tools.binary` | `BinarySessions`、`R2Backend`、`GDBBackend`、`AddressRef`、10 个语义化工具 | r2 stdio JSON 与 GDB/MI3 持久会话；按任务和能力租约隔离，地址空间显式，完整协议写证据；见 [二进制工具链](BINARY_TOOLS.md) |

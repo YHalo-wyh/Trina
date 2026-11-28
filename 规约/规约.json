@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "contract_id": "trina-product-contract",
-  "product_version": "0.6.0",
-  "updated_at": "2026-11-24",
+  "product_version": "0.6.5",
+  "updated_at": "2026-11-28",
   "normative_document": "规约/规约.md",
   "requirements_document": "需求/需求.md",
   "verification_commands": {
@@ -164,7 +164,7 @@
           "id": "TR-03-R04",
           "level": "MUST",
           "statement": "滚动不得重新解析稳定历史或二次折行；流式更新只渲染变化块。支持 VT 滚动区域时复用未变化行，不支持时安全回退；最早位置不得存在无效滚动范围。正常输出自动尾随最新一行，主动上翻时冻结，回到底部或提交输入后恢复。鼠标拖选必须可复制 Unicode 文本且保留输入草稿，并可释放鼠标接管使用原生终端选取。",
-          "tests": ["tests.test_transcript.TranscriptTests.test_scrolling_does_not_reparse_or_rerender_stable_history", "tests.test_transcript.TranscriptTests.test_plain_long_lines_are_wrapped_once_and_window_does_not_wrap_again", "tests.test_transcript.TranscriptTests.test_oldest_position_has_no_dead_scroll_range", "tests.test_transcript.TranscriptTests.test_terminal_scroll_region_reuses_unchanged_rows", "tests.test_transcript.TranscriptTests.test_real_vt_wheel_uses_scroll_region_and_keeps_bottom_chrome", "tests.test_transcript.TranscriptTests.test_drag_selection_copies_chinese_lines_and_keeps_input_draft", "tests.test_transcript.TranscriptTests.test_native_selection_mode_can_release_mouse_tracking", "tests.test_transcript.TranscriptTests.test_latest_output_auto_follows_until_user_scrolls_history"]
+          "tests": ["tests.test_transcript.TranscriptTests.test_scrolling_does_not_reparse_or_rerender_stable_history", "tests.test_transcript.TranscriptTests.test_plain_long_lines_are_wrapped_once_and_window_does_not_wrap_again", "tests.test_transcript.TranscriptTests.test_oldest_position_has_no_dead_scroll_range", "tests.test_transcript.TranscriptTests.test_terminal_scroll_region_reuses_unchanged_rows", "tests.test_transcript.TranscriptTests.test_real_vt_wheel_keeps_update_banner_and_bottom_chrome", "tests.test_transcript.TranscriptTests.test_drag_selection_copies_chinese_lines_and_keeps_input_draft", "tests.test_transcript.TranscriptTests.test_native_selection_mode_can_release_mouse_tracking", "tests.test_transcript.TranscriptTests.test_latest_output_auto_follows_until_user_scrolls_history"]
         },
         {
           "id": "TR-03-R05",

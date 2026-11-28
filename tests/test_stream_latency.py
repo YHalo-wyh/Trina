@@ -69,11 +69,11 @@ class StreamLatencyTests(unittest.TestCase):
             worker.start()
             try:
                 self.assertTrue(thought_seen.wait(2))
-                self.assertIn("先检查编译器", editor._chunk_text(editor._chunks[0], 80))
+                self.assertFalse(editor._chunks, "供应商 reasoning_content 不得进入正式转录")
                 self.assertTrue(worker.is_alive())
                 allow_reply.set()
                 self.assertTrue(reply_seen.wait(2))
-                self.assertIn("开始编译", editor._chunk_text(editor._chunks[1], 80))
+                self.assertIn("开始编译", editor._chunk_text(editor._chunks[0], 80))
                 self.assertTrue(worker.is_alive(), "正文必须在 DONE 前显示")
             finally:
                 allow_reply.set()
@@ -189,12 +189,12 @@ class StreamLatencyTests(unittest.TestCase):
             bus.subscribe(EventTranscript(editor.write, editor=editor).consume)
             stream = ModelEventStream(bus.publish)
             stream.on_event(LLMStreamEvent("thinking_delta", delta="检查编译条件"))
-            self.assertIn("检查编译条件", editor._chunk_text(editor._chunks[0], 90))
+            self.assertFalse(editor._chunks, "隐式推理不得进入正式转录")
             stream.on_event(LLMStreamEvent("text_delta", delta="开始验证。"))
-            self.assertIn("开始验证", editor._chunk_text(editor._chunks[1], 90))
+            self.assertIn("开始验证", editor._chunk_text(editor._chunks[0], 90))
             stream.finish(LLMResponse(ok=True, text="开始验证。"))
             bus.publish("assistant.message", text="开始验证。", final=True)
-            self.assertEqual(len(editor._chunks), 2, "最终正文不能再复制一份流式输出")
+            self.assertEqual(len(editor._chunks), 1, "最终正文不能再复制一份流式输出")
             bus.publish("tool.started", call_id="call", tool="terminal_exec", params={"argv": ["python", "-V"]})
             from trina.terminal import render_tool_call_fragments
             with patch("trina.terminal.render_tool_call_fragments", wraps=render_tool_call_fragments) as render:
@@ -206,7 +206,7 @@ class StreamLatencyTests(unittest.TestCase):
                 self.assertEqual(render.call_count, 1, "显示帧只排版最新快照")
                 editor.transcript_control.sync(90)
                 self.assertEqual(render.call_count, 1)
-            self.assertEqual(len(editor._chunks), 3)
+            self.assertEqual(len(editor._chunks), 2)
             self.assertEqual(editor.buffer.text, "补充尚未发送")
             editor.clear_transcript()
             self.assertFalse(editor._thinking_indices)

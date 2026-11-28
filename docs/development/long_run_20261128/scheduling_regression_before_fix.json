@@ -1,0 +1,1361 @@
+{
+  "method": "真实 Swarm/EventBus/SQLite/检查点；受控 Worker；交替顺序、取中位数；不代表真实解题性能",
+  "repeats": 5,
+  "baseline": "C:\\Users\\WYH\\AppData\\Local\\Temp\\trina-longrun-baseline-20261128-yvv6y1et",
+  "source_sha256": {
+    "before": {
+      "swarm.py": "370770847644dc921a4100219ca6fecdff9a3e6663e2c597f813dd5ac4b5f26f",
+      "coordination.py": "edc3c7d46d6db6bcb76c5d23214fa15059ce30d722b69cea33615a4e8f86a34f",
+      "intent_planner.py": "5d0d71a09ecb3c7d36fda7c77c0e51ee4e09f447493f77de70d4ffc212caa27a"
+    },
+    "after": {
+      "swarm.py": "03d7a2fc03edd6e4d66aab2b2af9e22ee2f560588f58a811df9b0a8ce4584495",
+      "coordination.py": "42766e40bebb6d3f2c3e18a4e45d28d1c3c0eb3eb1bf94fe20786a5562846daa",
+      "intent_planner.py": "5d0d71a09ecb3c7d36fda7c77c0e51ee4e09f447493f77de70d4ffc212caa27a"
+    }
+  },
+  "scenarios": {
+    "single": {
+      "before": {
+        "median": {
+          "total_ms": 245.47600000005332,
+          "mean_ready_queue_ms": 72.72480000028736,
+          "worker_idle_ms": 134.90359999923385,
+          "peak_concurrency": 1,
+          "duplicate_executions": 0,
+          "model_requests": 0,
+          "tokens": 0,
+          "scheduler_observed_ms": 80.93730000473442,
+          "priority_ms": 0.17889999799081124,
+          "planner_rounds": 2,
+          "checkpoints": 3
+        },
+        "samples": [
+          {
+            "total_ms": 276.8298999981198,
+            "mean_ready_queue_ms": 85.02089999819873,
+            "worker_idle_ms": 142.91790000061155,
+            "peak_concurrency": 1,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 96.98139999818522,
+            "priority_ms": 0.22400000307243317,
+            "planner_rounds": 2,
+            "checkpoints": 3
+          },
+          {
+            "total_ms": 242.16829999932088,
+            "mean_ready_queue_ms": 72.72480000028736,
+            "worker_idle_ms": 127.37009999909787,
+            "peak_concurrency": 1,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 80.93730000473442,
+            "priority_ms": 0.17920000027515925,
+            "planner_rounds": 2,
+            "checkpoints": 3
+          },
+          {
+            "total_ms": 245.47600000005332,
+            "mean_ready_queue_ms": 67.27240000327583,
+            "worker_idle_ms": 135.78810000035446,
+            "peak_concurrency": 1,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 74.42259999879752,
+            "priority_ms": 0.15390000044135377,
+            "planner_rounds": 2,
+            "checkpoints": 3
+          },
+          {
+            "total_ms": 258.54149999941,
+            "mean_ready_queue_ms": 73.21710000178427,
+            "worker_idle_ms": 134.90359999923385,
+            "peak_concurrency": 1,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 81.95530000011786,
+            "priority_ms": 0.17889999799081124,
+            "planner_rounds": 2,
+            "checkpoints": 3
+          },
+          {
+            "total_ms": 237.95430000245688,
+            "mean_ready_queue_ms": 67.100100000971,
+            "worker_idle_ms": 125.04570000237436,
+            "peak_concurrency": 1,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 71.28240000020014,
+            "priority_ms": 0.15780000103404745,
+            "planner_rounds": 2,
+            "checkpoints": 3
+          }
+        ]
+      },
+      "after": {
+        "median": {
+          "total_ms": 261.4185999991605,
+          "mean_ready_queue_ms": 75.16159999795491,
+          "worker_idle_ms": 144.80059999914374,
+          "peak_concurrency": 1,
+          "duplicate_executions": 0,
+          "model_requests": 0,
+          "tokens": 0,
+          "scheduler_observed_ms": 89.60630001092795,
+          "priority_ms": 0.17500000103609636,
+          "planner_rounds": 2,
+          "checkpoints": 3
+        },
+        "samples": [
+          {
+            "total_ms": 268.6933000004501,
+            "mean_ready_queue_ms": 75.92040000236011,
+            "worker_idle_ms": 151.46769999773824,
+            "peak_concurrency": 1,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 100.50470000714995,
+            "priority_ms": 0.1889000013761688,
+            "planner_rounds": 2,
+            "checkpoints": 3
+          },
+          {
+            "total_ms": 272.8979999992589,
+            "mean_ready_queue_ms": 75.16159999795491,
+            "worker_idle_ms": 144.80059999914374,
+            "peak_concurrency": 1,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 89.60630001092795,
+            "priority_ms": 0.2201000024797395,
+            "planner_rounds": 2,
+            "checkpoints": 3
+          },
+          {
+            "total_ms": 261.4185999991605,
+            "mean_ready_queue_ms": 63.9895999993314,
+            "worker_idle_ms": 149.95749999798136,
+            "peak_concurrency": 1,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 87.12829999785754,
+            "priority_ms": 0.15150000035646372,
+            "planner_rounds": 2,
+            "checkpoints": 3
+          },
+          {
+            "total_ms": 259.8743000016839,
+            "mean_ready_queue_ms": 82.67400000113412,
+            "worker_idle_ms": 136.45330000144895,
+            "peak_concurrency": 1,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 95.52089999488089,
+            "priority_ms": 0.17070000103558414,
+            "planner_rounds": 2,
+            "checkpoints": 3
+          },
+          {
+            "total_ms": 248.44719999964582,
+            "mean_ready_queue_ms": 69.23489999826415,
+            "worker_idle_ms": 129.90200000058394,
+            "peak_concurrency": 1,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 84.28439999988768,
+            "priority_ms": 0.17500000103609636,
+            "planner_rounds": 2,
+            "checkpoints": 3
+          }
+        ]
+      }
+    },
+    "two_independent": {
+      "before": {
+        "median": {
+          "total_ms": 382.8276000022015,
+          "mean_ready_queue_ms": 113.78080000031332,
+          "worker_idle_ms": 430.9102000006533,
+          "peak_concurrency": 2,
+          "duplicate_executions": 0,
+          "model_requests": 0,
+          "tokens": 0,
+          "scheduler_observed_ms": 94.31499999845983,
+          "priority_ms": 0.229199999012053,
+          "planner_rounds": 2,
+          "checkpoints": 3
+        },
+        "samples": [
+          {
+            "total_ms": 366.33920000167564,
+            "mean_ready_queue_ms": 113.78080000031332,
+            "worker_idle_ms": 414.9918000002799,
+            "peak_concurrency": 2,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 93.95020000010845,
+            "priority_ms": 0.20450000010896474,
+            "planner_rounds": 2,
+            "checkpoints": 3
+          },
+          {
+            "total_ms": 364.0172999985225,
+            "mean_ready_queue_ms": 103.20684999715013,
+            "worker_idle_ms": 411.66490000250633,
+            "peak_concurrency": 2,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 84.42280000235769,
+            "priority_ms": 0.23850000070524402,
+            "planner_rounds": 2,
+            "checkpoints": 3
+          },
+          {
+            "total_ms": 382.8276000022015,
+            "mean_ready_queue_ms": 113.04250000102911,
+            "worker_idle_ms": 430.9102000006533,
+            "peak_concurrency": 2,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 94.31499999845983,
+            "priority_ms": 0.21879999985685572,
+            "planner_rounds": 2,
+            "checkpoints": 3
+          },
+          {
+            "total_ms": 397.6342999994813,
+            "mean_ready_queue_ms": 119.94944999969448,
+            "worker_idle_ms": 473.4573999994609,
+            "peak_concurrency": 2,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 104.40199999356992,
+            "priority_ms": 0.23839999994379468,
+            "planner_rounds": 2,
+            "checkpoints": 3
+          },
+          {
+            "total_ms": 410.01500000129454,
+            "mean_ready_queue_ms": 125.83115000234102,
+            "worker_idle_ms": 483.2131000039226,
+            "peak_concurrency": 2,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 109.54240000137361,
+            "priority_ms": 0.229199999012053,
+            "planner_rounds": 2,
+            "checkpoints": 3
+          }
+        ]
+      },
+      "after": {
+        "median": {
+          "total_ms": 396.4538000000175,
+          "mean_ready_queue_ms": 115.1464999984455,
+          "worker_idle_ms": 468.561800003954,
+          "peak_concurrency": 2,
+          "duplicate_executions": 0,
+          "model_requests": 0,
+          "tokens": 0,
+          "scheduler_observed_ms": 120.87540000356967,
+          "priority_ms": 0.334700001985766,
+          "planner_rounds": 2,
+          "checkpoints": 3
+        },
+        "samples": [
+          {
+            "total_ms": 237.9201000003377,
+            "mean_ready_queue_ms": 66.08659999801603,
+            "worker_idle_ms": 239.09099999946193,
+            "peak_concurrency": 2,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 59.60350000532344,
+            "priority_ms": 0.18260000069858506,
+            "planner_rounds": 2,
+            "checkpoints": 3
+          },
+          {
+            "total_ms": 324.3369999981951,
+            "mean_ready_queue_ms": 65.72419999974954,
+            "worker_idle_ms": 420.14479999488685,
+            "peak_concurrency": 2,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 96.41740000370191,
+            "priority_ms": 0.23470000087399967,
+            "planner_rounds": 2,
+            "checkpoints": 3
+          },
+          {
+            "total_ms": 396.4538000000175,
+            "mean_ready_queue_ms": 115.1464999984455,
+            "worker_idle_ms": 468.561800003954,
+            "peak_concurrency": 2,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 120.87540000356967,
+            "priority_ms": 0.334700001985766,
+            "planner_rounds": 2,
+            "checkpoints": 3
+          },
+          {
+            "total_ms": 461.7417999979807,
+            "mean_ready_queue_ms": 120.7537999998749,
+            "worker_idle_ms": 593.5397999965062,
+            "peak_concurrency": 2,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 187.4595999979647,
+            "priority_ms": 0.4510000035224948,
+            "planner_rounds": 3,
+            "checkpoints": 4
+          },
+          {
+            "total_ms": 469.02419999969425,
+            "mean_ready_queue_ms": 137.62075000158802,
+            "worker_idle_ms": 575.9337999988929,
+            "peak_concurrency": 2,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 190.20440000167582,
+            "priority_ms": 0.45959999988554046,
+            "planner_rounds": 3,
+            "checkpoints": 4
+          }
+        ]
+      }
+    },
+    "four_independent": {
+      "before": {
+        "median": {
+          "total_ms": 588.4910000022501,
+          "mean_ready_queue_ms": 195.7639250003922,
+          "worker_idle_ms": 1391.7418999917572,
+          "peak_concurrency": 4,
+          "duplicate_executions": 0,
+          "model_requests": 0,
+          "tokens": 0,
+          "scheduler_observed_ms": 106.21299999547773,
+          "priority_ms": 0.22649999664281495,
+          "planner_rounds": 2,
+          "checkpoints": 3
+        },
+        "samples": [
+          {
+            "total_ms": 561.6085000001476,
+            "mean_ready_queue_ms": 181.69155000214232,
+            "worker_idle_ms": 1303.281699994841,
+            "peak_concurrency": 4,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 98.6531999988074,
+            "priority_ms": 0.21950000154902227,
+            "planner_rounds": 2,
+            "checkpoints": 3
+          },
+          {
+            "total_ms": 567.1111000010569,
+            "mean_ready_queue_ms": 181.8673250018037,
+            "worker_idle_ms": 1325.6224999968254,
+            "peak_concurrency": 4,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 98.33879999496276,
+            "priority_ms": 0.22649999664281495,
+            "planner_rounds": 2,
+            "checkpoints": 3
+          },
+          {
+            "total_ms": 597.3098999966169,
+            "mean_ready_queue_ms": 196.82544999886886,
+            "worker_idle_ms": 1391.7418999917572,
+            "peak_concurrency": 4,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 106.21299999547773,
+            "priority_ms": 0.2426999999443069,
+            "planner_rounds": 2,
+            "checkpoints": 3
+          },
+          {
+            "total_ms": 588.4910000022501,
+            "mean_ready_queue_ms": 195.7639250003922,
+            "worker_idle_ms": 1392.9140000072948,
+            "peak_concurrency": 4,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 111.14290000114124,
+            "priority_ms": 0.3578999967430718,
+            "planner_rounds": 2,
+            "checkpoints": 3
+          },
+          {
+            "total_ms": 611.4328000003297,
+            "mean_ready_queue_ms": 202.65807499981747,
+            "worker_idle_ms": 1437.7018000013777,
+            "peak_concurrency": 4,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 116.99850000150036,
+            "priority_ms": 0.2241000001959037,
+            "planner_rounds": 2,
+            "checkpoints": 3
+          }
+        ]
+      },
+      "after": {
+        "median": {
+          "total_ms": 709.5355999990716,
+          "mean_ready_queue_ms": 194.28247500127327,
+          "worker_idle_ms": 1748.8390999969852,
+          "peak_concurrency": 4,
+          "duplicate_executions": 0,
+          "model_requests": 0,
+          "tokens": 0,
+          "scheduler_observed_ms": 251.30670000362443,
+          "priority_ms": 0.428999999712687,
+          "planner_rounds": 2,
+          "checkpoints": 3
+        },
+        "samples": [
+          {
+            "total_ms": 511.10740000149235,
+            "mean_ready_queue_ms": 153.88834999976098,
+            "worker_idle_ms": 1238.3011000092665,
+            "peak_concurrency": 4,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 165.33219998382265,
+            "priority_ms": 0.410699998610653,
+            "planner_rounds": 3,
+            "checkpoints": 4
+          },
+          {
+            "total_ms": 721.2137999995321,
+            "mean_ready_queue_ms": 194.28247500127327,
+            "worker_idle_ms": 1923.6386999946262,
+            "peak_concurrency": 4,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 286.7525000037858,
+            "priority_ms": 0.4701999969256576,
+            "planner_rounds": 3,
+            "checkpoints": 4
+          },
+          {
+            "total_ms": 709.5355999990716,
+            "mean_ready_queue_ms": 213.47692499875848,
+            "worker_idle_ms": 1786.9061000019428,
+            "peak_concurrency": 4,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 285.3677999883075,
+            "priority_ms": 0.29599999834317714,
+            "planner_rounds": 2,
+            "checkpoints": 3
+          },
+          {
+            "total_ms": 650.6985000014538,
+            "mean_ready_queue_ms": 191.74692500200763,
+            "worker_idle_ms": 1643.9301999962481,
+            "peak_concurrency": 4,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 251.30670000362443,
+            "priority_ms": 0.4912000003969297,
+            "planner_rounds": 2,
+            "checkpoints": 3
+          },
+          {
+            "total_ms": 711.7653999994218,
+            "mean_ready_queue_ms": 229.65875000045344,
+            "worker_idle_ms": 1748.8390999969852,
+            "peak_concurrency": 3,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 242.73260001064045,
+            "priority_ms": 0.428999999712687,
+            "planner_rounds": 2,
+            "checkpoints": 3
+          }
+        ]
+      }
+    },
+    "dependencies": {
+      "before": {
+        "median": {
+          "total_ms": 1107.7206999980262,
+          "mean_ready_queue_ms": 244.52020000050348,
+          "worker_idle_ms": 1657.4414999995497,
+          "peak_concurrency": 2,
+          "duplicate_executions": 0,
+          "model_requests": 0,
+          "tokens": 0,
+          "scheduler_observed_ms": 271.9651000115846,
+          "priority_ms": 0.6253999927139375,
+          "planner_rounds": 4,
+          "checkpoints": 7
+        },
+        "samples": [
+          {
+            "total_ms": 1109.1822000016691,
+            "mean_ready_queue_ms": 244.52020000050348,
+            "worker_idle_ms": 1657.4414999995497,
+            "peak_concurrency": 2,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 271.9651000115846,
+            "priority_ms": 0.6015999970259145,
+            "planner_rounds": 4,
+            "checkpoints": 7
+          },
+          {
+            "total_ms": 1096.3406000009854,
+            "mean_ready_queue_ms": 245.56326666667397,
+            "worker_idle_ms": 1644.200800001272,
+            "peak_concurrency": 2,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 277.72999999433523,
+            "priority_ms": 0.6878000021970365,
+            "planner_rounds": 4,
+            "checkpoints": 7
+          },
+          {
+            "total_ms": 1054.0292999976373,
+            "mean_ready_queue_ms": 231.18071666795004,
+            "worker_idle_ms": 1577.9567000063253,
+            "peak_concurrency": 2,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 259.73489999887533,
+            "priority_ms": 0.5672000006597955,
+            "planner_rounds": 4,
+            "checkpoints": 7
+          },
+          {
+            "total_ms": 1110.7676999999967,
+            "mean_ready_queue_ms": 245.17501666559838,
+            "worker_idle_ms": 1693.665200000396,
+            "peak_concurrency": 2,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 284.6573000024364,
+            "priority_ms": 0.6407000037143007,
+            "planner_rounds": 4,
+            "checkpoints": 7
+          },
+          {
+            "total_ms": 1107.7206999980262,
+            "mean_ready_queue_ms": 239.11126666704754,
+            "worker_idle_ms": 1658.6519000047701,
+            "peak_concurrency": 2,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 267.4480999739899,
+            "priority_ms": 0.6253999927139375,
+            "planner_rounds": 4,
+            "checkpoints": 7
+          }
+        ]
+      },
+      "after": {
+        "median": {
+          "total_ms": 1252.869699997973,
+          "mean_ready_queue_ms": 249.5354666655961,
+          "worker_idle_ms": 1955.4240000034042,
+          "peak_concurrency": 2,
+          "duplicate_executions": 0,
+          "model_requests": 0,
+          "tokens": 0,
+          "scheduler_observed_ms": 649.5183000042744,
+          "priority_ms": 1.3752000086242333,
+          "planner_rounds": 7,
+          "checkpoints": 12
+        },
+        "samples": [
+          {
+            "total_ms": 1309.801299998071,
+            "mean_ready_queue_ms": 291.9396333327313,
+            "worker_idle_ms": 2097.844099997019,
+            "peak_concurrency": 2,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 712.8452999859292,
+            "priority_ms": 1.4952000055927783,
+            "planner_rounds": 7,
+            "checkpoints": 12
+          },
+          {
+            "total_ms": 1102.8814999990573,
+            "mean_ready_queue_ms": 231.52271666610127,
+            "worker_idle_ms": 1669.6362999937264,
+            "peak_concurrency": 2,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 589.8825999938708,
+            "priority_ms": 1.0333000027458183,
+            "planner_rounds": 7,
+            "checkpoints": 12
+          },
+          {
+            "total_ms": 1252.869699997973,
+            "mean_ready_queue_ms": 249.5354666655961,
+            "worker_idle_ms": 1984.7541999988607,
+            "peak_concurrency": 2,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 576.3393999986874,
+            "priority_ms": 1.1782999972638208,
+            "planner_rounds": 6,
+            "checkpoints": 10
+          },
+          {
+            "total_ms": 1223.5117000018363,
+            "mean_ready_queue_ms": 243.6552333341145,
+            "worker_idle_ms": 1920.365000001766,
+            "peak_concurrency": 2,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 649.5183000042744,
+            "priority_ms": 1.4110000010987278,
+            "planner_rounds": 7,
+            "checkpoints": 12
+          },
+          {
+            "total_ms": 1272.8774999995949,
+            "mean_ready_queue_ms": 270.94551666656724,
+            "worker_idle_ms": 1955.4240000034042,
+            "peak_concurrency": 2,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 695.9599000037997,
+            "priority_ms": 1.3752000086242333,
+            "planner_rounds": 7,
+            "checkpoints": 12
+          }
+        ]
+      }
+    },
+    "continuous": {
+      "before": {
+        "median": {
+          "total_ms": 1427.8992999970797,
+          "mean_ready_queue_ms": 638.4104249987104,
+          "worker_idle_ms": 2238.1974999989325,
+          "peak_concurrency": 2,
+          "duplicate_executions": 0,
+          "model_requests": 0,
+          "tokens": 0,
+          "scheduler_observed_ms": 356.9331000071543,
+          "priority_ms": 0.8116999997582752,
+          "planner_rounds": 5,
+          "checkpoints": 9
+        },
+        "samples": [
+          {
+            "total_ms": 1433.7053000017477,
+            "mean_ready_queue_ms": 644.8773625006652,
+            "worker_idle_ms": 2265.4713000010815,
+            "peak_concurrency": 2,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 356.9331000071543,
+            "priority_ms": 0.8312000027217437,
+            "planner_rounds": 5,
+            "checkpoints": 9
+          },
+          {
+            "total_ms": 1408.1759000000602,
+            "mean_ready_queue_ms": 619.4106000007196,
+            "worker_idle_ms": 2209.669900003064,
+            "peak_concurrency": 2,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 358.087999993586,
+            "priority_ms": 0.8296999985759612,
+            "planner_rounds": 5,
+            "checkpoints": 9
+          },
+          {
+            "total_ms": 1407.919799999945,
+            "mean_ready_queue_ms": 619.2941124995741,
+            "worker_idle_ms": 2190.4560000002675,
+            "peak_concurrency": 2,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 347.959600007016,
+            "priority_ms": 0.8116999997582752,
+            "planner_rounds": 5,
+            "checkpoints": 9
+          },
+          {
+            "total_ms": 1427.8992999970797,
+            "mean_ready_queue_ms": 638.4104249987104,
+            "worker_idle_ms": 2238.1974999989325,
+            "peak_concurrency": 2,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 349.35820000828244,
+            "priority_ms": 0.7440000008500647,
+            "planner_rounds": 5,
+            "checkpoints": 9
+          },
+          {
+            "total_ms": 1471.3976999992155,
+            "mean_ready_queue_ms": 665.0056624980607,
+            "worker_idle_ms": 2282.9465000031632,
+            "peak_concurrency": 2,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 377.18780000068364,
+            "priority_ms": 0.7631999978912063,
+            "planner_rounds": 5,
+            "checkpoints": 9
+          }
+        ]
+      },
+      "after": {
+        "median": {
+          "total_ms": 1588.646800002607,
+          "mean_ready_queue_ms": 685.5570750008155,
+          "worker_idle_ms": 2571.677500007354,
+          "peak_concurrency": 2,
+          "duplicate_executions": 0,
+          "model_requests": 0,
+          "tokens": 0,
+          "scheduler_observed_ms": 834.067200008576,
+          "priority_ms": 1.96700000014971,
+          "planner_rounds": 9,
+          "checkpoints": 16
+        },
+        "samples": [
+          {
+            "total_ms": 1612.3011999989103,
+            "mean_ready_queue_ms": 685.5570750008155,
+            "worker_idle_ms": 2594.9267000069085,
+            "peak_concurrency": 2,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 925.6576999905519,
+            "priority_ms": 1.96700000014971,
+            "planner_rounds": 9,
+            "checkpoints": 16
+          },
+          {
+            "total_ms": 1377.5207999970007,
+            "mean_ready_queue_ms": 551.9254624987298,
+            "worker_idle_ms": 2179.7095999972953,
+            "peak_concurrency": 2,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 681.7636999912793,
+            "priority_ms": 1.4085000002523884,
+            "planner_rounds": 8,
+            "checkpoints": 14
+          },
+          {
+            "total_ms": 1588.646800002607,
+            "mean_ready_queue_ms": 690.6055500016919,
+            "worker_idle_ms": 2571.677500007354,
+            "peak_concurrency": 2,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 670.3049999814539,
+            "priority_ms": 1.428999996278435,
+            "planner_rounds": 7,
+            "checkpoints": 12
+          },
+          {
+            "total_ms": 1663.3854000028805,
+            "mean_ready_queue_ms": 700.6230875012989,
+            "worker_idle_ms": 2733.696899998904,
+            "peak_concurrency": 2,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 941.5895999991335,
+            "priority_ms": 1.9909999973606318,
+            "planner_rounds": 9,
+            "checkpoints": 16
+          },
+          {
+            "total_ms": 1534.2414000006102,
+            "mean_ready_queue_ms": 664.3089249987497,
+            "worker_idle_ms": 2428.0002000014065,
+            "peak_concurrency": 2,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 834.067200008576,
+            "priority_ms": 2.063599997200072,
+            "planner_rounds": 9,
+            "checkpoints": 16
+          }
+        ]
+      }
+    },
+    "long_and_short": {
+      "before": {
+        "median": {
+          "total_ms": 1290.0332999997772,
+          "mean_ready_queue_ms": 529.2111142844078,
+          "worker_idle_ms": 1982.5616000052833,
+          "peak_concurrency": 2,
+          "duplicate_executions": 0,
+          "model_requests": 0,
+          "tokens": 0,
+          "scheduler_observed_ms": 492.696099980094,
+          "priority_ms": 1.2337999978626613,
+          "planner_rounds": 8,
+          "checkpoints": 14
+        },
+        "samples": [
+          {
+            "total_ms": 1335.8993000001647,
+            "mean_ready_queue_ms": 561.4728714291622,
+            "worker_idle_ms": 2054.444199999125,
+            "peak_concurrency": 2,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 516.2671999933082,
+            "priority_ms": 1.2752000038744882,
+            "planner_rounds": 8,
+            "checkpoints": 14
+          },
+          {
+            "total_ms": 1247.3859999990964,
+            "mean_ready_queue_ms": 506.4355857139162,
+            "worker_idle_ms": 1926.1351999994076,
+            "peak_concurrency": 2,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 474.8738999951456,
+            "priority_ms": 1.1669999985315371,
+            "planner_rounds": 8,
+            "checkpoints": 14
+          },
+          {
+            "total_ms": 1299.890399997821,
+            "mean_ready_queue_ms": 530.2225714273975,
+            "worker_idle_ms": 1982.5616000052833,
+            "peak_concurrency": 2,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 492.696099980094,
+            "priority_ms": 1.2337999978626613,
+            "planner_rounds": 8,
+            "checkpoints": 14
+          },
+          {
+            "total_ms": 1290.0332999997772,
+            "mean_ready_queue_ms": 529.2111142844078,
+            "worker_idle_ms": 2005.777799997304,
+            "peak_concurrency": 2,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 498.507399999653,
+            "priority_ms": 1.1310000008961651,
+            "planner_rounds": 8,
+            "checkpoints": 14
+          },
+          {
+            "total_ms": 1256.2576999989687,
+            "mean_ready_queue_ms": 510.2151571424786,
+            "worker_idle_ms": 1957.66559999538,
+            "peak_concurrency": 2,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 469.1153999992821,
+            "priority_ms": 1.418599993485259,
+            "planner_rounds": 8,
+            "checkpoints": 14
+          }
+        ]
+      },
+      "after": {
+        "median": {
+          "total_ms": 1346.7315000016242,
+          "mean_ready_queue_ms": 558.1502142870575,
+          "worker_idle_ms": 2081.4122000047064,
+          "peak_concurrency": 2,
+          "duplicate_executions": 0,
+          "model_requests": 0,
+          "tokens": 0,
+          "scheduler_observed_ms": 717.8656000105548,
+          "priority_ms": 1.3503999944077805,
+          "planner_rounds": 8,
+          "checkpoints": 14
+        },
+        "samples": [
+          {
+            "total_ms": 1378.8853000005474,
+            "mean_ready_queue_ms": 592.4379000004722,
+            "worker_idle_ms": 2154.75940000033,
+            "peak_concurrency": 2,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 747.6363999849127,
+            "priority_ms": 1.6671999983373098,
+            "planner_rounds": 8,
+            "checkpoints": 14
+          },
+          {
+            "total_ms": 1229.6758000011323,
+            "mean_ready_queue_ms": 546.1200000016626,
+            "worker_idle_ms": 1861.9812999968417,
+            "peak_concurrency": 2,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 637.8003999998327,
+            "priority_ms": 1.31879999753437,
+            "planner_rounds": 8,
+            "checkpoints": 14
+          },
+          {
+            "total_ms": 1353.824199999508,
+            "mean_ready_queue_ms": 548.3619142838246,
+            "worker_idle_ms": 2125.7670000013604,
+            "peak_concurrency": 2,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 717.8656000105548,
+            "priority_ms": 1.3503999944077805,
+            "planner_rounds": 8,
+            "checkpoints": 14
+          },
+          {
+            "total_ms": 1300.2839000000677,
+            "mean_ready_queue_ms": 558.1502142870575,
+            "worker_idle_ms": 2007.534399996075,
+            "peak_concurrency": 2,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 679.179100006877,
+            "priority_ms": 1.2064000002283137,
+            "planner_rounds": 8,
+            "checkpoints": 14
+          },
+          {
+            "total_ms": 1346.7315000016242,
+            "mean_ready_queue_ms": 571.500142858505,
+            "worker_idle_ms": 2081.4122000047064,
+            "peak_concurrency": 2,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 728.1166000029771,
+            "priority_ms": 1.3958000017737504,
+            "planner_rounds": 8,
+            "checkpoints": 14
+          }
+        ]
+      }
+    },
+    "simultaneous_completion": {
+      "before": {
+        "median": {
+          "total_ms": 633.129400001053,
+          "mean_ready_queue_ms": 216.5084249982101,
+          "worker_idle_ms": 1491.0615000080725,
+          "peak_concurrency": 4,
+          "duplicate_executions": 0,
+          "model_requests": 0,
+          "tokens": 0,
+          "scheduler_observed_ms": 127.37419999757549,
+          "priority_ms": 0.2668999986781273,
+          "planner_rounds": 2,
+          "checkpoints": 3
+        },
+        "samples": [
+          {
+            "total_ms": 628.3536000009917,
+            "mean_ready_queue_ms": 206.22180000100343,
+            "worker_idle_ms": 1509.4114999956219,
+            "peak_concurrency": 4,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 121.46779999602586,
+            "priority_ms": 0.37600000359816477,
+            "planner_rounds": 2,
+            "checkpoints": 3
+          },
+          {
+            "total_ms": 661.6375999983575,
+            "mean_ready_queue_ms": 228.8031249991036,
+            "worker_idle_ms": 1544.578699998965,
+            "peak_concurrency": 4,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 129.20709999889368,
+            "priority_ms": 0.302100001135841,
+            "planner_rounds": 2,
+            "checkpoints": 3
+          },
+          {
+            "total_ms": 633.7488999997731,
+            "mean_ready_queue_ms": 216.5084249982101,
+            "worker_idle_ms": 1491.0615000080725,
+            "peak_concurrency": 4,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 127.37419999757549,
+            "priority_ms": 0.26310000248486176,
+            "planner_rounds": 2,
+            "checkpoints": 3
+          },
+          {
+            "total_ms": 633.129400001053,
+            "mean_ready_queue_ms": 224.48779999922408,
+            "worker_idle_ms": 1453.1187000065984,
+            "peak_concurrency": 4,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 127.4654999942868,
+            "priority_ms": 0.24819999816827476,
+            "planner_rounds": 2,
+            "checkpoints": 3
+          },
+          {
+            "total_ms": 618.908399999782,
+            "mean_ready_queue_ms": 215.574399999241,
+            "worker_idle_ms": 1429.3287000073178,
+            "peak_concurrency": 4,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 123.4258000004047,
+            "priority_ms": 0.2668999986781273,
+            "planner_rounds": 2,
+            "checkpoints": 3
+          }
+        ]
+      },
+      "after": {
+        "median": {
+          "total_ms": 727.7352000019164,
+          "mean_ready_queue_ms": 216.44664999985253,
+          "worker_idle_ms": 1791.305900005682,
+          "peak_concurrency": 4,
+          "duplicate_executions": 0,
+          "model_requests": 0,
+          "tokens": 0,
+          "scheduler_observed_ms": 194.80370001474512,
+          "priority_ms": 0.33350000012433156,
+          "planner_rounds": 2,
+          "checkpoints": 3
+        },
+        "samples": [
+          {
+            "total_ms": 698.5118000011425,
+            "mean_ready_queue_ms": 181.1586999992869,
+            "worker_idle_ms": 1791.305900005682,
+            "peak_concurrency": 4,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 193.47389999165898,
+            "priority_ms": 0.24499999926774763,
+            "planner_rounds": 2,
+            "checkpoints": 3
+          },
+          {
+            "total_ms": 763.6225000023842,
+            "mean_ready_queue_ms": 220.55685000213998,
+            "worker_idle_ms": 1893.6181999997643,
+            "peak_concurrency": 4,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 199.24970001375186,
+            "priority_ms": 0.29010000071139075,
+            "planner_rounds": 2,
+            "checkpoints": 3
+          },
+          {
+            "total_ms": 727.7352000019164,
+            "mean_ready_queue_ms": 216.44664999985253,
+            "worker_idle_ms": 1779.9649000007776,
+            "peak_concurrency": 4,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 189.7249999929045,
+            "priority_ms": 0.33350000012433156,
+            "planner_rounds": 2,
+            "checkpoints": 3
+          },
+          {
+            "total_ms": 778.0423000003793,
+            "mean_ready_queue_ms": 240.6842250011323,
+            "worker_idle_ms": 1841.7917000006128,
+            "peak_concurrency": 4,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 201.12520001202938,
+            "priority_ms": 0.3969000026700087,
+            "planner_rounds": 2,
+            "checkpoints": 3
+          },
+          {
+            "total_ms": 687.9442999997991,
+            "mean_ready_queue_ms": 208.43552499900397,
+            "worker_idle_ms": 1656.159000005573,
+            "peak_concurrency": 4,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 194.80370001474512,
+            "priority_ms": 0.3575000046112109,
+            "planner_rounds": 2,
+            "checkpoints": 3
+          }
+        ]
+      }
+    },
+    "event_burst": {
+      "before": {
+        "median": {
+          "total_ms": 2172.214600002917,
+          "mean_ready_queue_ms": 123.7060500006919,
+          "worker_idle_ms": 456.2774999976682,
+          "peak_concurrency": 2,
+          "duplicate_executions": 0,
+          "model_requests": 0,
+          "tokens": 0,
+          "scheduler_observed_ms": 1490.1794000143127,
+          "priority_ms": 0.21680000281776302,
+          "planner_rounds": 2,
+          "checkpoints": 3
+        },
+        "samples": [
+          {
+            "total_ms": 2213.8010999988182,
+            "mean_ready_queue_ms": 123.7060500006919,
+            "worker_idle_ms": 439.81289999646833,
+            "peak_concurrency": 2,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 1490.1794000143127,
+            "priority_ms": 0.21680000281776302,
+            "planner_rounds": 2,
+            "checkpoints": 3
+          },
+          {
+            "total_ms": 2714.8373999989417,
+            "mean_ready_queue_ms": 111.5305499988608,
+            "worker_idle_ms": 506.4103000004252,
+            "peak_concurrency": 2,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 2109.2336000074283,
+            "priority_ms": 0.30189999961294234,
+            "planner_rounds": 3,
+            "checkpoints": 4
+          },
+          {
+            "total_ms": 2172.214600002917,
+            "mean_ready_queue_ms": 118.51240000214602,
+            "worker_idle_ms": 468.7181000044802,
+            "peak_concurrency": 2,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 1651.602499998262,
+            "priority_ms": 0.20529999892460182,
+            "planner_rounds": 2,
+            "checkpoints": 3
+          },
+          {
+            "total_ms": 1969.0038999979151,
+            "mean_ready_queue_ms": 129.01164999857428,
+            "worker_idle_ms": 456.2774999976682,
+            "peak_concurrency": 2,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 1420.0255000068864,
+            "priority_ms": 0.28790000214939937,
+            "planner_rounds": 3,
+            "checkpoints": 4
+          },
+          {
+            "total_ms": 2158.8264999991225,
+            "mean_ready_queue_ms": 124.1952999989735,
+            "worker_idle_ms": 439.82490000053076,
+            "peak_concurrency": 2,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 1485.9808000037447,
+            "priority_ms": 0.20470000163186342,
+            "planner_rounds": 2,
+            "checkpoints": 3
+          }
+        ]
+      },
+      "after": {
+        "median": {
+          "total_ms": 1589.4523999995727,
+          "mean_ready_queue_ms": 120.99564999880386,
+          "worker_idle_ms": 431.22349999975995,
+          "peak_concurrency": 2,
+          "duplicate_executions": 0,
+          "model_requests": 0,
+          "tokens": 0,
+          "scheduler_observed_ms": 1353.1921000139846,
+          "priority_ms": 0.21919999926467426,
+          "planner_rounds": 2,
+          "checkpoints": 3
+        },
+        "samples": [
+          {
+            "total_ms": 1589.4523999995727,
+            "mean_ready_queue_ms": 107.26545000034093,
+            "worker_idle_ms": 369.9618999962695,
+            "peak_concurrency": 2,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 1351.8831000110367,
+            "priority_ms": 0.2564000023994595,
+            "planner_rounds": 2,
+            "checkpoints": 3
+          },
+          {
+            "total_ms": 1541.0358999979508,
+            "mean_ready_queue_ms": 141.91339999888442,
+            "worker_idle_ms": 428.9857999974629,
+            "peak_concurrency": 2,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 1256.8917000025976,
+            "priority_ms": 0.37829999564564787,
+            "planner_rounds": 3,
+            "checkpoints": 4
+          },
+          {
+            "total_ms": 1638.8517999985197,
+            "mean_ready_queue_ms": 125.74094999945373,
+            "worker_idle_ms": 493.73320000086096,
+            "peak_concurrency": 2,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 1376.9346999979462,
+            "priority_ms": 0.18369999816059135,
+            "planner_rounds": 2,
+            "checkpoints": 3
+          },
+          {
+            "total_ms": 1720.908999999665,
+            "mean_ready_queue_ms": 120.99564999880386,
+            "worker_idle_ms": 431.22349999975995,
+            "peak_concurrency": 2,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 1456.903100010095,
+            "priority_ms": 0.21919999926467426,
+            "planner_rounds": 2,
+            "checkpoints": 3
+          },
+          {
+            "total_ms": 1587.968899999396,
+            "mean_ready_queue_ms": 97.66394999860495,
+            "worker_idle_ms": 450.64519999868935,
+            "peak_concurrency": 2,
+            "duplicate_executions": 0,
+            "model_requests": 0,
+            "tokens": 0,
+            "scheduler_observed_ms": 1353.1921000139846,
+            "priority_ms": 0.1923000017995946,
+            "planner_rounds": 2,
+            "checkpoints": 3
+          }
+        ]
+      }
+    }
+  },
+  "incremental": {
+    "before": {
+      "elapsed_ms": 368.93939999936265,
+      "priority_evaluations": 40,
+      "new_facts": 40,
+      "tasks": 400
+    },
+    "after": {
+      "elapsed_ms": 364.2586999994819,
+      "priority_evaluations": 40,
+      "new_facts": 40,
+      "tasks": 400
+    }
+  }
+}

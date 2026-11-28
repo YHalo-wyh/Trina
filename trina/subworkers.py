@@ -37,10 +37,15 @@ class Subworkers:
 
     def task_result(self, task_id: str) -> dict[str, Any] | None:
         with self._lock:
-            item = self._snapshot["tasks"].get(task_id) or self._completed.get(task_id)
+            item = self._snapshot["tasks"].get(task_id)
+            stream_id = self._snapshot.get("run_id", "")
+            if item is None:
+                item = self._completed.get(task_id)
+                stream_id = (item or {}).get("stream_id", "")
             if item is None:
                 return None
-            return copy.deepcopy({key: item.get(key) for key in ("goal", "target", "status", "model", "reasoning_effort", "error", "result", "evidence_refs")})
+            return copy.deepcopy({"stream_id": stream_id, **{key: item.get(key) for key in (
+                "goal", "target", "status", "model", "reasoning_effort", "error", "result", "evidence_refs")}})
 
     @property
     def running(self) -> bool:
@@ -98,10 +103,7 @@ class Subworkers:
                 if text and text.rstrip() == last:
                     text = ""
             elif event.kind == "model.thinking_delta":
-                kind = "思考"
-                key += ":thinking"
-                old = self._dialogs.get(event.task_id, {}).get(key, ("", ""))[1]
-                text = old + str(payload.get("delta", ""))
+                # Worker 面板只展示阶段，不暴露模型隐式推理文本。
                 row["activity"] = "思考中"
             elif event.kind == "model.text_delta":
                 from .brain.chat import _VisibleStream
@@ -235,7 +237,7 @@ class Subworkers:
             tasks = snapshot["tasks"]
             for task_id, item in tasks.items():
                 if item["status"] not in {"pending", "running"}:
-                    self._completed[task_id] = item
+                    self._completed[task_id] = {**item, "stream_id": snapshot.get("run_id", "")}
                     while len(self._completed) > 128:
                         self._completed.popitem(last=False)
                 row = self._rows.setdefault(task_id, {"id": task_id})

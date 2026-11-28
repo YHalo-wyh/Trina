@@ -5,28 +5,69 @@ import time
 from typing import Any
 
 from .console_state import _cells, _fit_cells, _number
-from .terminal import THEME
-
-
 STATUS = {"pending": ("○", "等待"), "running": ("◉", "运行"), "completed": ("✓", "完成"),
           "failed": ("×", "失败"), "blocked": ("!", "受阻"), "cancelled": ("■", "已取消"),
           "skipped": ("–", "跳过"), "timed_out": ("!", "超时")}
+GROUP_ORDER = {"running": 0, "pending": 1, "completed": 2, "failed": 3, "blocked": 3,
+               "timed_out": 3, "cancelled": 3, "skipped": 3}
+GROUP_LABEL = {0: "RUNNING", 1: "QUEUED", 2: "COMPLETED", 3: "FAILED"}
+
+
+def ordered_workers(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """按运行分组排序，同组保留 Commander 的原始稳定顺序。"""
+    buckets: list[list[dict[str, Any]]] = [[], [], [], []]
+    for row in rows:
+        buckets[GROUP_ORDER.get(row["status"], 3)].append(row)
+    return [row for bucket in buckets for row in bucket]
+
+
+def _progress(row: dict[str, Any]) -> str:
+    if row["status"] == "completed":
+        return "100%"
+    if row["status"] in {"failed", "blocked", "timed_out", "cancelled", "skipped"}:
+        return "结束"
+    if row["status"] == "pending":
+        return "等待依赖"
+    calls, tools = int(row.get("calls", 0)), int(row.get("tools", 0))
+    return f"阶段 {max(1, calls + tools + 1)}"
+
+
+def _updated(row: dict[str, Any], now: float) -> str:
+    stamp = row.get("updated_at") or row.get("ended_at") or row.get("started_at")
+    if not stamp:
+        return "尚未更新"
+    seconds = max(0, int(now - stamp))
+    return "刚刚" if seconds < 2 else f"{seconds}s 前" if seconds < 60 else f"{seconds // 60}m 前"
 
 
 def _grid_size(width: int, height: int, zoom: bool) -> int:
-    return 2 if not zoom and width >= 96 and height >= 16 else 1
+    if zoom:
+        return 1
+    if width >= 152 and height >= 24:
+        return 3
+    return 2 if width >= 96 and height >= 16 else 1
 
 
 def render_workers(rows: list[dict[str, Any]], width: int, selected: int, *, now: float | None = None,
-                   count: int = 8, first: int | None = None) -> list[tuple[str, str]]:
+                   count: int = 8, first: int | None = None, ascii: bool = False) -> list[tuple[str, str]]:
     """每项三行，名称/模型对齐两端；窄屏保留名称、状态和思考档位。"""
     width = max(1, width)
     now = time.time() if now is None else now
+    rows = ordered_workers(rows)
     start = max(0, selected - count + 1) if first is None else first
     out: list[tuple[str, str]] = []
+    previous_group = None
     for index in range(start, min(len(rows), start + count)):
         row = rows[index]
+        group = GROUP_ORDER.get(row["status"], 3)
+        if group != previous_group:
+            rule = "-" if ascii else "─"
+            label = f" {GROUP_LABEL[group]} "
+            out.append(("class:dim", _fit_cells(label + rule * max(0, width - _cells(label)), width) + "\n"))
+            previous_group = group
         icon, status = STATUS.get(row["status"], ("?", row["status"]))
+        if ascii:
+            icon = {"pending": "o", "running": ">", "completed": "+", "failed": "x"}.get(row["status"], "!")
         style = "class:chosen" if index == selected else "class:name"
         right = _fit_cells(f"{row['model']}  ◦ {row['reasoning_effort'] or 'default'}", max(4, width // 2)) if width >= 42 else ""
         left = _fit_cells(f"{'›' if index == selected else ' '} {icon} {row['id']} · {status}", max(1, width - _cells(right) - (2 if right else 0)))
@@ -42,6 +83,8 @@ def render_workers(rows: list[dict[str, Any]], width: int, selected: int, *, now
         for key, label in (("calls", "req"), ("tools", "tools"), ("tokens", "tok")):
             if key in row:
                 stats.append(f"{_number(row[key])} {label}")
+        stage = row.get("activity") or status
+        stats.extend((_progress(row), stage, _updated(row, now)))
         out.append(("class:dim", _fit_cells("    " + " · ".join(stats), width) + "\n"))
     if not rows:
         out.append(("class:dim", _fit_cells("  暂无任务 · N 创建子 Worker", width) + "\n"))
@@ -49,12 +92,12 @@ def render_workers(rows: list[dict[str, Any]], width: int, selected: int, *, now
 
 
 def render_grid(manager, width: int, height: int, selected: int, *, scroll: int = 0, zoom: bool = False,
-                first: int | None = None, rows: list[dict[str, Any]] | None = None):
+                first: int | None = None, rows: list[dict[str, Any]] | None = None, ascii: bool = False):
     """只排版视口内的四张卡片，窄屏和放大视图显示单卡。"""
     width, height = max(1, width), max(1, height)
     if width < 4 or height < 3:
         return [("class:dim", _fit_cells("Worker", width))]
-    rows = manager.rows() if rows is None else rows
+    rows = ordered_workers(manager.rows() if rows is None else rows)
     columns = _grid_size(width, height, zoom)
     per_page = columns ** 2
     selected = min(selected, len(rows) - 1)
@@ -72,7 +115,10 @@ def render_grid(manager, width: int, height: int, selected: int, *, scroll: int 
         row = rows[index] if index < len(rows) else None
         title = (f" {index + 1} {row['id']} · {STATUS.get(row['status'], ('', row['status']))[1]} " if row else " 空闲 ")
         title = _fit_cells(title, inner)
-        lines = [[(border, "┌" + title + "─" * max(0, inner - _cells(title)) + "┐")]]
+        top_left, horizontal, top_right, vertical, bottom_left, bottom_right = (
+            ("+", "-", "+", "|", "+", "+") if ascii else ("┌", "─", "┐", "│", "└", "┘")
+        )
+        lines = [[(border, top_left + title + horizontal * max(0, inner - _cells(title)) + top_right)]]
         if row:
             model = f"{row['model']} ◦ {row['reasoning_effort'] or 'default'}"
             text = manager.dialog_lines(row["id"], inner)
@@ -82,24 +128,26 @@ def render_grid(manager, width: int, height: int, selected: int, *, scroll: int 
             body = text[max(0, end - available):end]
             if not body:
                 body = [("过程", row.get("activity") or ("等待依赖或空闲 Worker" if row["status"] == "pending" else row["goal"]))]
-            body = [("模型", model), *body]
+            body = [("模型", model), ("阶段", f"{row.get('activity') or STATUS.get(row['status'], ('', row['status']))[1]} · {_progress(row)}"), *body]
             stats = []
             if row.get("started_at"):
                 elapsed = max(0, int((row.get("ended_at") or time.time()) - row["started_at"]))
                 stats.append(f"{elapsed // 60}m{elapsed % 60:02d}s")
             stats.extend(f"{_number(row[key])} {label}" for key, label in (("calls", "req"), ("tools", "tools"), ("tokens", "tok")) if key in row)
             if stats:
-                body.append(("状态", " · ".join(stats)))
+                body.append(("状态", " · ".join(stats) + " · 更新 " + _updated(row, time.time())))
+            if row.get("error"):
+                body.append(("错误", str(row["error"])))
         else:
             body = [("过程", "等待 Commander 分配任务")]
         for kind, text in body[:max(0, box_height - 2)]:
             tone = {"模型": "class:model", "回复": "class:name", "输出": "class:name", "思考": "class:thinking",
                     "工具": "class:running", "结果": "class:success", "错误": "class:error"}.get(kind, "class:dim")
-            lines.append([(border, "│"), (tone, pad(text)), (border, "│")])
+            lines.append([(border, vertical), (tone, pad(text)), (border, vertical)])
         while len(lines) < max(1, box_height - 1):
-            lines.append([(border, "│"), ("", " " * inner), (border, "│")])
+            lines.append([(border, vertical), ("", " " * inner), (border, vertical)])
         if box_height >= 2:
-            lines.append([(border, "└" + "─" * inner + "┘")])
+            lines.append([(border, bottom_left + horizontal * inner + bottom_right)])
         return lines
     for band in range(columns):
         panes = [panel(start + band * columns + col) for col in range(columns)]
@@ -124,7 +172,10 @@ def show_subworkers(manager, config, *, notice: str = "", view: str = "grid"):
     from .swarm import task_llm
     from .output_styles import output_style
 
-    rows = manager.rows()
+    from .ui_theme import ascii_mode, ui_style
+
+    compatible = ascii_mode(config.ui.output_palette)
+    rows = ordered_workers(manager.rows())
     selected = [0 if rows else -1]
     mode, zoom, scroll, first_row = [view], [False], [0], [0]
     llm = task_llm(config)
@@ -175,12 +226,18 @@ def show_subworkers(manager, config, *, notice: str = "", view: str = "grid"):
     def before_render(_app):
         nonlocal rows
         scrollbar.begin_frame()
-        rows = manager.rows()
+        active_id = rows[selected[0]]["id"] if 0 <= selected[0] < len(rows) else ""
+        rows = ordered_workers(manager.rows())
+        if active_id:
+            selected[0] = next((index for index, row in enumerate(rows) if row["id"] == active_id), selected[0])
 
     def header():
         metrics = manager.usage.footer(width(), compact=True)
-        return [("class:title", _fit_cells(" ◇ SUBWORKERS  " + (manager.badge or "READY"), width()) + "\n"),
-                ("class:dim", _fit_cells(" " + metrics, width()))]
+        counts = [sum(GROUP_ORDER.get(row["status"], 3) == group for row in rows) for group in range(4)]
+        groups = " · ".join(f"{GROUP_LABEL[group]} {count}" for group, count in enumerate(counts) if count)
+        mark = "*" if compatible else "◇"
+        return [("class:title", _fit_cells(f" {mark} SUBWORKERS  " + (manager.badge or "READY"), width()) + "\n"),
+                ("class:dim", _fit_cells(" " + " · ".join(filter(None, (groups, metrics))), width()))]
     def defaults():
         text = f" {'›' if selected[0] == -1 else ' '} 默认 · {llm.model} ◦ {llm.reasoning_effort} · 并发 {config.subworker.workers}"
         return [("class:chosen" if selected[0] == -1 else "class:dim", _fit_cells(text, width()))]
@@ -189,8 +246,8 @@ def show_subworkers(manager, config, *, notice: str = "", view: str = "grid"):
         first = keep_selection_visible(len(rows))
         if mode[0] == "grid":
             return render_grid(manager, body_width(), height(), selected[0], scroll=scroll[0],
-                               zoom=zoom[0], first=first, rows=rows)
-        return render_workers(rows, body_width(), selected[0], count=window_size()[1], first=first)
+                               zoom=zoom[0], first=first, rows=rows, ascii=compatible)
+        return render_workers(rows, body_width(), selected[0], count=window_size()[1], first=first, ascii=compatible)
 
     bindings = KeyBindings()
     @bindings.add("up")
@@ -218,7 +275,7 @@ def show_subworkers(manager, config, *, notice: str = "", view: str = "grid"):
         select(selected[0])
     @bindings.add("pageup")
     def older(event):
-        rows = manager.rows()
+        rows = ordered_workers(manager.rows())
         if not rows:
             return
         columns = _grid_size(body_width(), height(), zoom[0])
@@ -273,17 +330,17 @@ def show_subworkers(manager, config, *, notice: str = "", view: str = "grid"):
     app = Application(layout=Layout(HSplit([
         Window(FormattedTextControl(header), height=2, wrap_lines=False),
         Window(FormattedTextControl(defaults), height=1, wrap_lines=False),
-        Window(FormattedTextControl(lambda: [("class:rail", "─" * width())]), height=1),
+        Window(FormattedTextControl(lambda: [("class:rail", ("-" if compatible else "─") * width())]), height=1),
         VSplit([Window(body, wrap_lines=False), scrollbar_window],
                width=width),
         Window(FormattedTextControl(lambda: [("class:title", _fit_cells(notice, width()))]), height=1 if notice else 0, wrap_lines=False),
-        Window(FormattedTextControl(lambda: [("class:dim", _fit_cells(" 滚轮/拖动浏览 · Tab 切换 · G 列表/网格 · Z 放大 · PgUp/Dn 对话 · F 补充 · Esc 返回", width()))]), height=1),
+        Window(FormattedTextControl(lambda: [("class:dim", _fit_cells(" Tab 切换 · G 列表/网格 · Z 放大 · PgUp/Dn 对话 · F 补充 · C 取消 · Esc 返回", width()))]), height=1),
     ]), focused_element=body), key_bindings=bindings, full_screen=True, erase_when_done=True,
         refresh_interval=.25, min_redraw_interval=_REDRAW_INTERVAL, max_render_postpone_time=0, before_render=before_render,
         after_render=lambda app: scrollbar.finish_frame(app, scrollbar_window),
         color_depth=ColorDepth.DEPTH_24_BIT, mouse_support=True,
-        style=Style.from_dict({"title": "bold " + THEME["rose"], "chosen": "bold " + THEME["rose"],
-                              "name": output_style("text", config.ui.output_palette), "model": THEME["lilac"],
-                              "dim": output_style("muted", config.ui.output_palette), "rail": THEME["violet"], "focusborder": THEME["rose"],
-                              **{role: output_style(role, config.ui.output_palette) for role in ("thinking", "running", "success", "error")}}))
+        style=Style.from_dict({**ui_style(config.ui.output_palette, plain=compatible),
+                              "name": output_style("text", config.ui.output_palette),
+                              "model": output_style("code", config.ui.output_palette),
+                              "focusborder": output_style("heading", config.ui.output_palette)}))
     return run_panel(_low_latency_keys(app))

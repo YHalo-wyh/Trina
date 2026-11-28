@@ -70,7 +70,7 @@ class AgentRuntime:
                  record_response: Callable | None = None, observe: Callable | None = None,
                  say: Callable | None = None, interrupted: Callable | None = None,
                  start_execute: Callable | None = None, can_parallel: Callable | None = None,
-                 parallel_limit: int = 1):
+                 parallel_limit: int = 1, resume: Callable | None = None, emit: Callable | None = None):
         if type(max_steps) is not int or max_steps < 0:
             raise ValueError("max_steps 必须为非负整数，0 不限制")
         if type(parallel_limit) is not int or not 1 <= parallel_limit <= 16:
@@ -81,11 +81,14 @@ class AgentRuntime:
         self.interrupted = interrupted or (lambda: "")
         self.start_execute, self.can_parallel = start_execute, can_parallel
         self.parallel_limit = parallel_limit
+        self.resume = resume or (lambda **kwargs: False)
+        self.emit = emit or (lambda *args, **kwargs: None)
         self.steps = self.rounds = 0
 
     def run(self) -> ActionOutcome:
         last = ActionOutcome()
         while not self.max_steps or (self.steps < self.max_steps and self.rounds < self.max_steps):
+            self.resume(wait=False)
             self.rounds += 1
             response = self.request(self.steps + 1, self.rounds)
             if response is None:
@@ -106,6 +109,8 @@ class AgentRuntime:
                 # 对话正文与任务协议恢复分别由适配器判断。
                 outcome = self.say(note, response) if self.say else ActionOutcome(answer=note, stop=True)
                 if outcome.stop:
+                    if self.resume(wait=True):
+                        continue
                     return outcome
                 continue
             if note and self.say:
@@ -130,7 +135,9 @@ class AgentRuntime:
                     if not outcome.stop:
                         self.messages.append(tool_message)
                 if self.observe:
-                    self.observe(item, outcome, tool_message)
+                    from ..execution_timeline import phase
+                    with phase(self.emit, "result_delivery", call_id=item.call_id):
+                        self.observe(item, outcome, tool_message)
 
             cursor = 0
             while cursor < len(actions):
@@ -180,6 +187,8 @@ class AgentRuntime:
                 record(item, outcome)
                 cursor += 1
             if stopping:
+                if not cancellation and self.resume(wait=True):
+                    continue
                 return last
         return last
 

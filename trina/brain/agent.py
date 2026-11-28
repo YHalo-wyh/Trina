@@ -309,6 +309,9 @@ class PentestAgent:
         ctx.extra["llm_backend"] = self.backend
         ctx.extra["profiler"] = profiler
         ctx.extra.update(self.shared_context)
+        from ..completion_inbox import CompletionInbox
+        completions = CompletionInbox(ctx)
+        ctx.extra["completion_inbox"] = completions
         state.note("run", f"开始对 {target} 的自动化渗透测试", goal=goal)
 
         # 各题状态保持独立。Commander 只把判断为相关的有效情报作为候选线索转发，
@@ -790,18 +793,27 @@ class PentestAgent:
             messages.append({"role": "user", "content": step_prompt})
             from ..runtime_status import render_agent_status
             messages[-1]["content"] += render_agent_status(ctx, step=index, max_steps=max_steps, compact=True)
-            profiler.record_phase("prompt_build", time.monotonic() - prompt_started)
+            prompt_duration = time.monotonic() - prompt_started
+            profiler.record_phase("prompt_build", prompt_duration)
+            ctx.emit("execution.phase", phase="state_prepare", status="completed",
+                     duration=prompt_duration, step=index)
             native_call_id = ""
+            from ..execution_timeline import phase as execution_phase
+            context_started = time.monotonic()
             try:
-                context.prepare(messages, tool_payload)
+                with execution_phase(ctx.emit, "context_prepare", step=index):
+                    context.prepare(messages, tool_payload)
             except ContextBudgetError as exc:
                 state.note("context", str(exc))
                 state.counters["context_budget_errors"] = state.counters.get("context_budget_errors", 0) + 1
                 state.context_stats = {**context.stats, "budget_error": str(exc)}
                 audit.append("context.budget_error", error=str(exc))
                 return None
+            finally:
+                profiler.record_phase("context_prepare", time.monotonic() - context_started)
             diagnostic_started = time.monotonic()
-            diagnostic = context.before_request(messages, tool_payload)
+            with execution_phase(ctx.emit, "context_diagnostic", step=index):
+                diagnostic = context.before_request(messages, tool_payload)
             profiler.record_phase("context_diagnostic", time.monotonic() - diagnostic_started)
             model_started = time.monotonic()
             try:
@@ -1221,13 +1233,17 @@ class PentestAgent:
                                decode_text=parse_action, native=lambda: native_mode,
                                record_response=recorded, say=say, interrupted=interrupted,
                                start_execute=start_execute, can_parallel=can_parallel,
-                               parallel_limit=self.config.llm.tool_parallelism)
+                               parallel_limit=self.config.llm.tool_parallelism,
+                               resume=lambda **kwargs: completions.deliver(
+                                   messages, stop_event=self.stop_event, deadline=ctx.deadline, **kwargs),
+                               emit=ctx.emit)
         try:
             runtime.run()
             steps = runtime.steps
             state.counters["decision_rounds"] = previous_decision_rounds + runtime.rounds
         finally:
             from ..runtime_status import status_snapshot
+            completions.close()
             ctx.extra["background_jobs"].close()
             ctx.extra["binary_sessions"].close()
             ctx.extra["browser_sessions"].close()

@@ -41,6 +41,57 @@ class _EventTool(Tool):
 
 
 class EventTests(unittest.TestCase):
+    def test_scoped_connection_is_reused_nested_and_closed_after_failure(self):
+        import sqlite3
+        with patch.object(self.bus, "_connect", wraps=self.bus._connect) as connect:
+            with self.assertRaisesRegex(RuntimeError, "scope exit"):
+                with self.bus.keep_open() as connection:
+                    for index in range(4):
+                        with self.bus.keep_open() as nested:
+                            self.assertIs(connection, nested)
+                            self.bus.publish("test", index=index)
+                            self.assertEqual(self.bus.last_seq, index + 1)
+                            self.assertEqual(len(self.bus.replay()), index + 1)
+                    self.assertEqual(connect.call_count, 1)
+                    raise RuntimeError("scope exit")
+            with self.assertRaises(sqlite3.ProgrammingError):
+                connection.execute("SELECT 1")
+        self.assertEqual(self.bus.publish("after").seq, 5)
+
+    def test_scoped_connections_are_thread_local_and_committed_cross_thread(self):
+        connections, errors = [], []
+        def publish():
+            try:
+                with self.bus.keep_open() as connection:
+                    connections.append(connection)
+                    self.bus.publish("worker")
+            except Exception as exc:
+                errors.append(exc)
+        with self.bus.keep_open() as main:
+            threads = [threading.Thread(target=publish) for _ in range(4)]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(5)
+                self.assertFalse(thread.is_alive())
+            self.assertEqual(errors, [])
+            self.assertEqual(len({id(item) for item in [main, *connections]}), 5)
+            self.assertFalse(main.in_transaction)
+            self.assertEqual(self.bus.last_seq, 4)
+            self.assertEqual(EventBus.open_existing(self.bus.path).last_seq, 4)
+
+    def test_failed_event_transaction_does_not_poison_reused_connection(self):
+        import sqlite3
+        with self.bus.keep_open() as connection:
+            connection.execute("CREATE TRIGGER reject_event BEFORE INSERT ON events "
+                               "WHEN json_extract(NEW.body, '$.kind')='reject' "
+                               "BEGIN SELECT RAISE(ABORT, 'controlled rejection'); END")
+            with self.assertRaises(sqlite3.IntegrityError):
+                self.bus.publish("reject")
+            self.assertFalse(connection.in_transaction)
+            self.assertEqual(self.bus.publish("accepted").seq, 1)
+            self.assertEqual(len(self.bus.replay()), 1)
+
     def test_chat_turn_connection_keeps_committed_events_visible(self):
         import sqlite3
         with tempfile.TemporaryDirectory() as tmp:

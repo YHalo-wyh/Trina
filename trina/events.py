@@ -7,7 +7,7 @@ import math
 import sqlite3
 import threading
 import time
-from contextlib import closing
+from contextlib import closing, contextmanager
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Callable, Iterable
@@ -38,7 +38,7 @@ class RuntimeEvent:
 class EventBus:
     """先提交 SQLite 再投递；订阅失败不会回滚已经执行的工具。
 
-    每次数据库操作使用短连接，允许另一个 CLI 进程重放和续流。运行事件与
+    默认使用短连接，运行作用域内按线程复用连接；每次写入仍独立提交，允许其他 CLI 进程重放和续流。运行事件与
     哈希链审计分别保存；事件重放只恢复观察，不重新执行任何工具。
     """
 
@@ -47,13 +47,14 @@ class EventBus:
         self.stream_id = stream_id
         self.redact_keys = tuple(key.lower() for key in redact_keys)
         self._condition = threading.Condition(threading.RLock())
+        self._local = threading.local()
         self._subscribers: list[EventSubscription] = []
         self.errors: list[str] = []
         if not create and not self.path.is_file():
             raise FileNotFoundError(self.path)
         if create:
             self.path.parent.mkdir(parents=True, exist_ok=True)
-        with closing(self._connect()) as db:
+        with self._connection() as db:
             if create:
                 db.execute("PRAGMA journal_mode=WAL")
                 db.executescript("""
@@ -83,9 +84,28 @@ class EventBus:
         db.execute("PRAGMA cache_size=-8192")
         return db
 
+    @contextmanager
+    def _connection(self):
+        """有运行作用域时复用本线程连接，作用域外维持原有短连接行为。"""
+        db = getattr(self._local, "connection", None)
+        if db is not None:
+            yield db
+        else:
+            with closing(self._connect()) as db:
+                yield db
+
+    @contextmanager
     def keep_open(self):
-        """保留无事务的连接，让同一轮对话写入的 WAL 在轮末统一收尾。"""
-        return closing(self._connect())
+        """按运行/线程复用连接，不持有写事务；嵌套作用域由最外层回收。"""
+        if getattr(self._local, "connection", None) is not None:
+            yield self._local.connection
+            return
+        with closing(self._connect()) as db:
+            self._local.connection = db
+            try:
+                yield db
+            finally:
+                del self._local.connection
 
     @classmethod
     def open_existing(cls, path: str | Path) -> EventBus:
@@ -100,7 +120,7 @@ class EventBus:
 
     @property
     def last_seq(self) -> int:
-        with closing(self._connect()) as db:
+        with self._connection() as db:
             return int(db.execute("SELECT COALESCE(MAX(seq), 0) FROM events").fetchone()[0])
 
     def publish(self, kind: str, *, run_id: str = "", source: str = "runtime", task_id: str = "",
@@ -124,7 +144,7 @@ class EventBus:
                     call_id=call_id, payload=snapshot, version=1)
         encoded = json.dumps(body, ensure_ascii=False, separators=(",", ":"), default=str)
         with self._condition:
-            with closing(self._connect()) as db:
+            with self._connection() as db:
                 with db:
                     cursor = db.execute("INSERT INTO events(body) VALUES (?)", (encoded,))
                     seq = int(cursor.lastrowid)
@@ -145,7 +165,7 @@ class EventBus:
             raise ValueError("事件不属于当前流")
         if event.kind not in {"state.updated", "runtime.checkpoint"}:
             return event.payload
-        with closing(self._connect()) as db:
+        with self._connection() as db:
             row = db.execute("SELECT payload FROM runtime_state WHERE seq=?", (event.seq,)).fetchone()
         return json.loads(row[0]) if row else event.payload
 
@@ -156,7 +176,7 @@ class EventBus:
             raise ValueError("after 必须非负，limit 必须为正")
         patterns = tuple(kinds)
         rows: list[RuntimeEvent] = []
-        with closing(self._connect()) as db:
+        with self._connection() as db:
             for seq, body in db.execute("SELECT seq, body FROM events WHERE seq > ? ORDER BY seq", (after,)):
                 event = RuntimeEvent(seq=seq, **json.loads(body))
                 if patterns and not any(fnmatch.fnmatchcase(event.kind, pattern) for pattern in patterns):
@@ -184,7 +204,7 @@ class EventBus:
         """注册与回放共用同一游标；回放到实时切换没有另一个易丢失的队列。"""
         with self._condition:
             if after is None:
-                with closing(self._connect()) as db:
+                with self._connection() as db:
                     row = db.execute("SELECT cursor FROM consumers WHERE name=?", (name,)).fetchone() if name else None
                 after = int(row[0]) if row else 0
             if after < 0 or after > self.last_seq:
@@ -210,7 +230,8 @@ class EventBus:
         for call in pending.values():
             self.publish(call.kind.split(".")[0] + ".finished", run_id=call.run_id, task_id=call.task_id, worker_id=call.worker_id,
                          call_id=call.call_id, source="recovery", tool=call.payload.get("tool", ""),
-                         status="interrupted", ok=False, error="原执行进程已中断，未自动重放", duration=0)
+                         status="interrupted", ok=False, error="原执行进程已中断，未自动重放", duration=0,
+                         parent_call_id=call.payload.get("parent_call_id", ""), follow_up=call.payload.get("follow_up", True))
 
 
 class EventSubscription:
@@ -240,7 +261,7 @@ class EventSubscription:
     def ack(self) -> None:
         if not self.name:
             return
-        with closing(self.bus._connect()) as db:
+        with self.bus._connection() as db:
             with db:
                 db.execute("INSERT INTO consumers VALUES (?, ?) ON CONFLICT(name) DO UPDATE "
                            "SET cursor=MAX(cursor, excluded.cursor)", (self.name, self.cursor))

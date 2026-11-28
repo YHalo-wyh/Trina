@@ -84,7 +84,9 @@ class WorkerTasks(Tool):
             "action": ParamSpec("str", "操作", enum=["spawn", "list", "result", "wait", "message", "cancel"]),
             "task_id": ParamSpec("str", "唯一任务名称", required=False, default=""),
             "target": ParamSpec("str", "目标或附件路径", required=False, default=""),
-            "goal": ParamSpec("str", "完整任务：文件范围、验收与停止条件", required=False, default=""),
+            "goal": ParamSpec("str", "完整任务与停止条件。明确独立方向可写：独立任务：A；B。带依赖可写：任务计划：1. A；2. B [依赖:1]", required=False, default=""),
+            "deliverable": ParamSpec("str", "交付物及验收条件", required=False, default=""),
+            "context_key": ParamSpec("str", "输入版本或研究上下文；同目标不同输入时区分任务", required=False, default=""),
             "depends_on": ParamSpec("list", "依赖的任务名称", required=False, default=[]),
             "model": ParamSpec("str", "空则继承子模型设置", required=False, default=""),
             "reasoning_effort": ParamSpec("str", "空则继承；实际支持档位由模型校验", required=False, default=""),
@@ -98,13 +100,13 @@ class WorkerTasks(Tool):
     def required_level(self, params):
         return "detect" if params.get("action") in {"list", "result", "wait"} else "exploit"
 
-    def run(self, ctx, action, task_id="", target="", goal="", depends_on=None, model="", reasoning_effort="", profile="", max_attempts=1, text="", wait_seconds=1):
+    def run(self, ctx, action, task_id="", target="", goal="", depends_on=None, model="", reasoning_effort="", profile="", max_attempts=1, text="", wait_seconds=1, deliverable="", context_key=""):
         manager = ctx.extra.get("subworkers")
         if manager is None:
             return ToolResult(ok=False, error="此入口没有 Commander 委派宿主；不可递归创建子 Worker")
         try:
             if action == "spawn":
-                from ..swarm import TaskSpec
+                from ..swarm import TaskSpec, task_llm
                 from ..llm import make_backend
                 if not task_id or not target or not goal.strip() or len(goal) > 12000:
                     raise ValueError("spawn 必须提供 task_id、target 和不超过12000字的完整 goal")
@@ -112,11 +114,19 @@ class WorkerTasks(Tool):
                 task = TaskSpec(task_id, target, goal, depends_on=tuple(depends_on or ()),
                                 max_steps=budget.max_steps, max_seconds=budget.max_seconds,
                                 model=model, reasoning_effort=reasoning_effort, profile=profile,
-                                max_attempts=max(1, int(max_attempts)))
+                                max_attempts=max(1, int(max_attempts)), deliverable=deliverable, context_key=context_key)
                 accepted = manager.submit(ctx.config, task, backend_factory=ctx.extra.get("subworker_backend_factory") or make_backend)
+                if accepted and (inbox := ctx.extra.get("completion_inbox")) is not None:
+                    inbox.watch_worker(manager, task_id)
+                requested_llm = None if accepted else task_llm(manager.runtime.config, task)
                 return ToolResult(summary="已接收委派，尚未完成" if accepted else "等价任务已存在，未重复执行",
                                   data={"accepted": accepted, "task_id": task_id if accepted else next(
-                                      (t.id for t in manager.runtime.tasks if t.target == target and t.goal.strip().casefold() == goal.strip().casefold()), task_id),
+                                      (t.id for t in manager.runtime.tasks if t.target == target
+                                       and t.goal.strip().casefold() == goal.strip().casefold()
+                                       and t.context_key == context_key
+                                       and manager.runtime._task_llms[t.id] == requested_llm
+                                       and (t.aggregate or t.depends_on == tuple(depends_on or ()))
+                                       and (not deliverable or t.deliverable == deliverable)), task_id),
                                         "run_id": manager.runtime.run_id})
             if action in {"message", "cancel"}:
                 manager.task_control(task_id, action, text)
@@ -137,6 +147,8 @@ class WorkerTasks(Tool):
                 item = manager.task_result(task_id)
                 if item is None:
                     raise ValueError("未找到任务；先用 list 查看实际名称")
+                if item.get("status") not in {"pending", "running"} and (inbox := ctx.extra.get("completion_inbox")) is not None:
+                    inbox.acknowledge(item.get("stream_id") or manager.runtime.event_bus.stream_id, task_id)
                 return ToolResult(summary=f"{task_id} · {item['status']}", data=item)
             return ToolResult(summary=manager.badge or "暂无任务", data={"tasks": manager.rows(), "running": manager.running})
         except (ValueError, RuntimeError, TimeoutError) as exc:

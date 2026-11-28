@@ -1,0 +1,16 @@
+{
+  "baseline_hashes.json": "03081df61407d1e10ccdf6e3edeb3e30d8e0c255b5ebb8288b01b3c84e8bb448",
+  "baseline_source.zip": "6d64da9aec8ac6830e01afe7c461e193d3572354a5bc689ddb9a189668fd9264",
+  "competition.json": "b7e2a2c495ca4049440c0eab8d97e83b5a808793ed8a16f79e7378588c004969",
+  "competition_artifacts.zip": "45f65f59fa2048752bfc85c73f6cb6393ac7bba76c1498afb55a934d62be5b69",
+  "regression.log": "359a3e152e0033d39dc0e6969739bbf0986433e5ec8cf25f433f003e0e221dac",
+  "regression_found_compatibility_error.log": "687f4a07f9398d0bdec9478b058689f16db5c9eca1736ea6e4301d1020d12ca9",
+  "regression_initial.log": "e845652bff3a840796ee1a121775916ada950660d0c29b6bcd1ad50a407fbcfc",
+  "regression_previous.log": "5240cb10535c041a7e466bfa303a73de21ba9051d30b710513b3c3ff62a10ced",
+  "scheduling.json": "724fec9cde790a10bc4e484a430dd24bed11fcddc52a940eb68b1d083831ab77",
+  "scheduling_regression_before_fix.json": "558c9a7cc26742471177b193687f04d0a7eb59751a600db0150f62a5996d98b4",
+  "session_changes.json": "8a1efed2480d78ecdd32297578edb7ebd60479a0f507117f0e4107dbc8656ef0",
+  "ui_performance.json": "877de358ed3416d981e19ed67b275808ede2fae84b5c8fdf5f39df3c47317da1",
+  "ui_performance.py": "a4c359665a0051314fe6486da3cb89f4640d9154053614f427d5bbf1ba639c54",
+  "verification.json": "0987a189c08b161ec6009fcbf91295bbf45a6464e284f059e4dd424f154f3834"
+}

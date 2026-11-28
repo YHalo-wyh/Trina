@@ -77,10 +77,8 @@ class EventTranscript:
             self._assistant_id = None
             self._assistant_text = ""
         elif event.kind == "model.thinking_delta":
-            text = self._thinking.get(request_id, "") + str(payload.get("delta", ""))
-            self._thinking[request_id] = text
-            if self.editor is not None:
-                self.editor.update_thinking(request_id, text)
+            # 隐式推理只驱动 ConsoleState 的阶段提示，不进入正式转录。
+            self._thinking[request_id] = "active"
         elif event.kind == "model.text_delta":
             self._finish_thinking(request_id)
             if self._model_text is not None:
@@ -200,15 +198,33 @@ class EventTranscript:
         if self.editor is None:
             self.output(render_tool_call(**snapshot, color=self.color, palette=self.palette))
             return
-        from .terminal import ResponsiveText, render_tool_call_fragments
+        from .terminal import ResponsiveText, render_tool_call_fragments, _wrap_tool_line
+        from .text import clean_text
 
         # 历史缓冲按卡片实际保留的可显示内容计量。
         visible_input = tool_card_input(row["tool"], row["params"], row.get("command", ""))
         raw = (f"{public_tool_name(row['tool'])} · {row['status']}\n{visible_input}\n{output}\n{stderr}\n"
                f"{row.get('error', '')}\n{snapshot.get('record', '')}")
+        def display(width: int) -> dict[str, Any]:
+            from .ui_theme import ascii_mode
+            shown = dict(snapshot)
+            if not card.expanded:
+                for field in ("output", "stderr"):
+                    lines = [line for source in clean_text(shown[field]).splitlines()
+                             for line in _wrap_tool_line(source, max(1, width - 4))]
+                    if len(lines) > 5:
+                        shown[field] = "\n".join([*lines[:2], "... 中间输出已折叠 ...", *lines[-2:]])
+            hint = "F3 收起" if card.expanded else "F3 展开"
+            hint += (" | " if ascii_mode(self.palette) else " · ")
+            hint += "已复制保留输出" if card.copied else "F4 复制保留输出"
+            shown["record"] = "\n".join(filter(None, (snapshot.get("record", ""), hint)))
+            return shown
+
         card = ResponsiveText(raw, lambda width: str(render_tool_call(
-            **snapshot, color=self.color, width=width, palette=self.palette)),
-            lambda width: render_tool_call_fragments(**snapshot, color=self.color, width=width, palette=self.palette))
+            **display(width), color=self.color, width=width, palette=self.palette)),
+            lambda width: render_tool_call_fragments(**display(width), color=self.color, width=width, palette=self.palette))
+        card.expanded = False
+        card.copied = False
         self.editor.update_tool(call_id, card)
 
     def _visible_text(self, text: str, final: bool) -> None:
@@ -218,10 +234,4 @@ class EventTranscript:
             self.output(render_answer(text, color=self.color, palette=self.palette))
 
     def _finish_thinking(self, request_id: str) -> None:
-        text = self._thinking.pop(request_id, "")
-        if text:
-            if self.editor is not None:
-                self.editor.update_thinking(request_id, text, final=True)
-            else:
-                from .terminal import render_thinking
-                self.output(render_thinking(text, final=True, color=self.color, palette=self.palette))
+        self._thinking.pop(request_id, None)

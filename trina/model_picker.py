@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 import re
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Literal
 
 from .models import CatalogModel
@@ -25,6 +25,7 @@ class ModelChoice:
     levels: tuple[str, ...] = ("default",)
     source: str = "已配置"
     meta: CatalogModel = CatalogModel()
+    reasoning_effort: str = "default"
 
 
 def _subsequence(term: str, text: str) -> bool:
@@ -34,7 +35,7 @@ def _subsequence(term: str, text: str) -> bool:
 
 def select_model(choices: list[ModelChoice], *, plain: bool = False, discover=None,
                  recent: list[tuple[str, str]] | None = None,
-                 presets: tuple[ProviderPreset, ...] = ()) -> ModelChoice | ProviderPreset | Literal["settings"] | None:
+                 presets: tuple[ProviderPreset, ...] = (), theme: str = "dark") -> ModelChoice | ProviderPreset | Literal["settings"] | None:
     """在搜索框内直接导航，确认时才修改会话。"""
     from prompt_toolkit.application.current import get_app
     from prompt_toolkit.buffer import Buffer
@@ -71,6 +72,12 @@ def select_model(choices: list[ModelChoice], *, plain: bool = False, discover=No
     load_task = None
     notice = ""
     active = next((item for item in choices if item.current), None)
+    efforts = {(item.connection_id, item.model):
+               item.reasoning_effort if item.reasoning_effort in item.levels else (item.levels[0] if item.levels else "default")
+               for item in choices}
+
+    def selected_effort(item: ModelChoice) -> str:
+        return efforts.get((item.connection_id, item.model), item.reasoning_effort)
 
     def filter_names(items):
         kinds = sorted({item.meta.kind for item in items})
@@ -277,6 +284,8 @@ def select_model(choices: list[ModelChoice], *, plain: bool = False, discover=No
         marker = "● 使用中" if item.current else "预览"
         title = _fit_cells(name, width() - _cells(marker) - 2)
         facts = [item.connection_label, item.meta.kind]
+        role = {"chat": "主会话 / Worker", "embedding": "向量检索", "rerank": "结果重排"}.get(item.meta.kind, item.meta.kind)
+        facts.append("适用 " + role)
         if item.meta.context:
             facts.append(f"供应商窗口 {item.meta.context:,}" if wide() else f"窗口 {tokens(item.meta.context)}")
         if item.meta.output:
@@ -286,7 +295,9 @@ def select_model(choices: list[ModelChoice], *, plain: bool = False, discover=No
         if item.meta.kind == "chat":
             settings = [item.source, item.api, f"本地窗口 {tokens(item.context_window)}（{'手动' if item.manual_context else '自动'}）"]
             if len(item.levels) > 1:
-                settings.append("思考 " + "/".join(item.levels))
+                effort = selected_effort(item)
+                slider = " ".join(("●" if level == effort else "─") + level for level in item.levels)
+                settings.append("思考 " + slider)
             detail = "  ·  ".join(filter(None, settings))
         else:
             detail = "仅供浏览 · 当前会话需要聊天模型"
@@ -333,6 +344,28 @@ def select_model(choices: list[ModelChoice], *, plain: bool = False, discover=No
     def next_filter(event):
         pick_kind(kind + 1)
 
+    def change_effort(delta: int) -> None:
+        nonlocal notice
+        if browsing_providers or not visible:
+            return
+        item = visible[selected]
+        if len(item.levels) <= 1:
+            notice = "当前模型没有可调思考档位"
+            return
+        current = selected_effort(item)
+        index = item.levels.index(current) if current in item.levels else 0
+        value = item.levels[max(0, min(len(item.levels) - 1, index + delta))]
+        efforts[(item.connection_id, item.model)] = value
+        notice = f"思考强度 · {value}"
+
+    @keys.add("[")
+    def lower_effort(event):
+        change_effort(-1)
+
+    @keys.add("]")
+    def raise_effort(event):
+        change_effort(1)
+
     @keys.add("enter")
     def confirm(event):
         nonlocal browsing_providers, notice
@@ -342,7 +375,8 @@ def select_model(choices: list[ModelChoice], *, plain: bool = False, discover=No
         elif browsing_providers:
             browsing_providers = False
         elif visible and visible[selected].meta.kind == "chat":
-            event.app.exit(result=visible[selected])
+            item = visible[selected]
+            event.app.exit(result=replace(item, reasoning_effort=selected_effort(item)))
         elif visible:
             notice = f"{visible[selected].meta.kind} · 当前会话需要聊天模型"
 
@@ -374,6 +408,10 @@ def select_model(choices: list[ModelChoice], *, plain: bool = False, discover=No
                 old = visible[selected] if visible else None
                 active_filter = filters[kind]
                 choices = updated
+                for item in updated:
+                    efforts.setdefault((item.connection_id, item.model),
+                                       item.reasoning_effort if item.reasoning_effort in item.levels
+                                       else (item.levels[0] if item.levels else "default"))
                 active = next((item for item in updated if item.current), None)
                 filters = filter_names(choices)
                 kind = filters.index(active_filter) if active_filter in filters else 0
@@ -442,7 +480,7 @@ def select_model(choices: list[ModelChoice], *, plain: bool = False, discover=No
             accept = "打开"
         else:
             accept = "切换" if visible and visible[selected].meta.kind == "chat" else "浏览"
-        pairs = [("Enter", accept), ("Esc", "返回"), ("F1", "按键"), ("↑↓", "浏览"),
+        pairs = [("Enter", accept), ("Esc", "返回"), ("↑↓", "浏览"), ("[ ]", "思考"),
                  ("←→", "分栏"), ("F5", "刷新"), ("F2", "设置")]
         return key_hints(pairs, width())
 
@@ -450,7 +488,7 @@ def select_model(choices: list[ModelChoice], *, plain: bool = False, discover=No
         return [
             ("class:model.key", "Tab / Shift+Tab"), ("", " 轮换连接\n"),
             ("class:model.key", "Alt+←/→"), ("", " 切换筛选    "), ("class:model.key", "PgUp/Dn"), ("", " 翻页\n"),
-            ("class:model.key", "F5"), ("", " 刷新目录    "), ("class:model.key", "F2"), ("", " 连接设置")]
+            ("class:model.key", "[ / ]"), ("", " 调整思考    "), ("class:model.key", "F2"), ("", " 连接设置")]
 
     def counter():
         return [("class:dim", f" {selected + 1 if visible else 0} / {len(visible)} ")]
@@ -481,7 +519,7 @@ def select_model(choices: list[ModelChoice], *, plain: bool = False, discover=No
         ConditionalContainer(line(shortcuts, 3), filter=Condition(lambda: help_open)),
         line(footer), breathing_room(),
     ])
-    app = _panel_app(body, "切换模型", keys, field, plain=plain, expanded=True)
+    app = _panel_app(body, "切换模型", keys, field, plain=plain, expanded=True, theme=theme)
     app.before_render += lambda _: scrollbar.begin_frame()
     app.after_render += lambda current: scrollbar.finish_frame(current, track)
     if discover:

@@ -181,7 +181,7 @@ COMMANDS: tuple[CommandSpec, ...] = (
     CommandSpec("goal", "任务", "保存或修改当前项目的任务目标", "goal [set <目标>|show|clear]",
                 positional_choices=(ChoiceSpec("show", "查看目标"), ChoiceSpec("set", "设置目标"), ChoiceSpec("clear", "清除目标")),
                 examples=('/goal 检查登录流程并记录证据',), availability="always"),
-    CommandSpec("plan", "任务", "澄清目标和验收，预览工程分工", "plan <任务> | split <工程任务> | choose <编号> | reply <答案> | queue | cancel",
+    CommandSpec("plan", "任务", "打开计划审阅、澄清目标和预览工程分工", "plan <任务> | split <工程任务> | show | choose <编号> | reply <答案> | queue | cancel",
                 positional_choices=(ChoiceSpec("split", "预览分支、前置依赖与委派建议"),
                                     ChoiceSpec("show", "查看计划"), ChoiceSpec("choose", "选择编号"),
                                     ChoiceSpec("reply", "补充答案"), ChoiceSpec("queue", "计划加入待发队列"),
@@ -291,14 +291,15 @@ COMMANDS: tuple[CommandSpec, ...] = (
                                                         ChoiceSpec("remove", "移除干净工作树")),
                 options=(OptionSpec(("--base",), "新工作树的提交起点", "<引用>"), OptionSpec(("--repo",), "源仓库", "<目录>"),
                          OptionSpec(("--existing",), "使用已有分支"))),
-    CommandSpec("theme", "会话与模型", "切换输出语义配色", "theme [trina|contrast|mono]", aliases=("colors",),
-                positional_choices=(ChoiceSpec("trina", "粉紫主题，绿成功/红失败/蓝运行"), ChoiceSpec("contrast", "高对比输出"),
-                                    ChoiceSpec("mono", "单色输出"))),
+    CommandSpec("theme", "会话与模型", "切换工作台主题与语义配色", "theme [dark|light|high_contrast|ascii]", aliases=("colors",),
+                positional_choices=(ChoiceSpec("dark", "深色粉紫"), ChoiceSpec("light", "浅色高可读"),
+                                    ChoiceSpec("high_contrast", "高对比"), ChoiceSpec("ascii", "ASCII 无色兼容"))),
     CommandSpec("notify", "会话与模型", "切换或测试 Agent 完成提醒", "notify [on|off|test]",
                 positional_choices=(ChoiceSpec("on", "启用完成提醒"), ChoiceSpec("off", "关闭完成提醒"),
                                     ChoiceSpec("test", "立即显示测试提醒"))),
-    CommandSpec("footer", "会话与模型", "切换底栏信息密度", "footer [default|compact|full]",
-                positional_choices=(ChoiceSpec("default", "均衡"), ChoiceSpec("compact", "精简"), ChoiceSpec("full", "完整"))),
+    CommandSpec("footer", "会话与模型", "切换底栏信息密度", "footer [default|compact|full|custom [字段,...]]",
+                positional_choices=(ChoiceSpec("default", "均衡"), ChoiceSpec("compact", "精简"), ChoiceSpec("full", "完整"),
+                                    ChoiceSpec("custom", "按 model/provider/tokens/cache/context/session/git/workers/background 配置"))),
     CommandSpec("context", "会话与模型", "查看上下文上限、前缀变化和缓存诊断", "context"),
     CommandSpec("compact", "会话与模型", "创建继承检查点并保存完整历史", "compact"),
     CommandSpec(
@@ -382,7 +383,10 @@ def find_command(name: str) -> CommandSpec | None:
 
 def command_help_sections() -> list[tuple[str, str]]:
     """生成分类帮助页，和补全菜单共享同一目录。"""
-    sections: list[tuple[str, str]] = []
+    sections: list[tuple[str, str]] = [("常用工作流",
+        "开始对话：直接输入任务\n切换模型：Alt+P 或 /model\n查看 Worker：/subworker\n"
+        "审阅计划：/plan <任务>，完成后 /plan show\n运行中补充：直接输入后排队，或 !文本 立即发送\n"
+        "中断/继续：/pause · /unpause · /stop\n命令导航：Ctrl+K 或输入 /")]
     for category in CATEGORY_ORDER:
         specs = [item for item in COMMANDS if item.category == category]
         if not specs:
@@ -637,7 +641,7 @@ class EnhancedConsoleInput:
         from prompt_toolkit.styles import Style
         from prompt_toolkit.output import ColorDepth
         from prompt_toolkit.keys import Keys
-        from .terminal import THEME
+        from .ui_theme import ascii_mode, ui_style
 
         self.status = status
         self.context = context
@@ -688,11 +692,12 @@ class EnhancedConsoleInput:
         self._menu_start = 0
         self._menu_navigated = False
         self.buffer = Buffer(history=InMemoryHistory(), completer=self.completer,
-                             complete_while_typing=False, multiline=False)
+                             complete_while_typing=False, multiline=True)
         self.buffer.on_text_changed += lambda _: self._reopen()
         bindings = KeyBindings()
 
         @bindings.add("c-space", filter=Condition(lambda: not self.buffer.text or self.buffer.text.startswith("/")))
+        @bindings.add("c-k", filter=Condition(lambda: not self.buffer.text or self.buffer.text.startswith("/")))
         def open_commands(event):
             if not self.buffer.text:
                 self.buffer.insert_text("/")
@@ -736,6 +741,11 @@ class EnhancedConsoleInput:
                 self._scroll_to_latest()
                 self._queue.put_nowait(value)
 
+        @bindings.add("escape", "enter")
+        def insert_newline(event):
+            """Alt+Enter 插入换行；普通 Enter 始终提交整段输入。"""
+            self.buffer.insert_text("\n")
+
         @bindings.add(Keys.BracketedPaste)
         def bracketed_paste(event):
             """把整段粘贴作为一次输入插入，避免逐字符触发 Enter/补全。"""
@@ -764,6 +774,14 @@ class EnhancedConsoleInput:
             self.scrollbar_control.cancel_drag()
             self.transcript_control.clear_selection()
             self.app.invalidate()
+
+        @bindings.add("f3")
+        def toggle_tool_output(event):
+            self._tool_action(copy=False)
+
+        @bindings.add("f4")
+        def copy_tool_output(event):
+            self._tool_action(copy=True)
 
         ready = Condition(lambda: self._queue is not None and not self._dispatching)
         idle = ready & Condition(lambda: not self.running())
@@ -821,44 +839,17 @@ class EnhancedConsoleInput:
         def follow_latest(event):
             self._scroll_to_latest()
 
-        style = Style.from_dict({"selection": "reverse", "toast": "reverse", "update.notice": "bold"} if plain else {
-            "prompt": "bold " + THEME["rose"], "index": THEME["muted"],
-            "selected": "bg:#33283c " + THEME["text"], "hint": THEME["muted"],
-            "command.rule": "#675471", "command.key": "bold " + THEME["lilac"],
-            "command.match": "bold underline",
-            "command.description": THEME["muted"],
-            **{f"command.icon.{tone}": ink for tone, (ink, _) in COMMAND_ICON_PALETTE.items()},
-            **{f"command.badge.{tone}": f"{ink} bg:{surface}"
-               for tone, (ink, surface) in COMMAND_ICON_PALETTE.items()},
-            "command.badge.active": "bold #272032 bg:#d7bee7",
-            "status": THEME["lilac"], "title": "bold " + THEME["rose"],
-            "thinking": THEME["rose"], "thinking.dim": THEME["violet"],
-            "border": THEME["violet"], "rail": THEME["violet"],
-            "usage": THEME["muted"], "usage.value": THEME["lilac"],
-            "context.model": THEME["rose"], "context.path": THEME["lilac"],
-            "context.role": THEME["lilac"],
-            "context.branch": THEME["muted"],
-            "context.cache": "#a9d9d1", "context.tokens": THEME["lilac"],
-            "context.duration": THEME["lilac"],
-            "context.workers": "bold " + THEME["rose"],
-            "context.model.icon": "bold " + THEME["rose"],
-            "context.state": "bold " + THEME["lilac"],
-            "context.progress": THEME["lilac"], "context.progress.icon": "bold " + THEME["violet"],
-            "context.meter": "bold " + THEME["rose"],
-            "context.warn": "bold #e5bb86", "context.hot": "bold #fa8eae",
-            "context.label": THEME["muted"], "context.task": "italic " + THEME["lilac"],
-            "toast": "bg:#3b2444 #f4d7ec bold", "toast.success": "bg:#244036 #d9f5e7 bold",
-            "toast.error": "bg:#542c38 #ffdce3 bold",
-            "update.notice": "bg:#32283e #d1b8e5 bold",
-            "selection": "bg:" + THEME["selected"] + " " + THEME["text"],
-            "scrollbar.thumb": THEME["rose"], "scrollbar.track": THEME["muted"],
-            "todo.header": "bold " + THEME["text"], "todo.active": THEME["rose"],
-            "todo.pending": THEME["text"], "todo.blocked": "#e5bb86",
-            "todo.closed": THEME["muted"], "todo.more": THEME["muted"],
-        })
+        styles = ui_style(output_palette, plain=plain)
+        if not plain and not ascii_mode(output_palette):
+            styles.update({f"command.icon.{tone}": ink for tone, (ink, _) in COMMAND_ICON_PALETTE.items()})
+            styles.update({f"command.badge.{tone}": f"{ink} bg:{surface}"
+                           for tone, (ink, surface) in COMMAND_ICON_PALETTE.items()})
+            styles["command.badge.active"] = "bold #272032 bg:#d7bee7"
+        style = Style.from_dict(styles)
         control = BufferControl(buffer=self.buffer, input_processors=[
             BeforeInput(self._input_label), AfterInput(self._input_hint),
         ])
+        self.input_control = control
         from .transcript import TranscriptControl
 
         self.transcript_control = TranscriptControl(self)
@@ -883,7 +874,7 @@ class EnhancedConsoleInput:
         self.activity_window = Window(FormattedTextControl(self._activity), height=1, wrap_lines=False)
         self.tasks_window = Window(FormattedTextControl(self._tasks), wrap_lines=False,
                                    dont_extend_height=True, height=self._tasks_height)
-        self.input_window = Window(control, wrap_lines=True, height=Dimension(min=1, max=3), dont_extend_height=True)
+        self.input_window = Window(control, wrap_lines=True, height=Dimension(min=1, max=5), dont_extend_height=True)
         self.usage_window = Window(
             FormattedTextControl(self._usage), wrap_lines=False, dont_extend_height=True,
             height=lambda: self._usage_height(),
@@ -892,6 +883,10 @@ class EnhancedConsoleInput:
                 ConditionalContainer(
                     Window(FormattedTextControl(self._update_banner), height=1, wrap_lines=False),
                     Condition(lambda: self._update_notice is not None),
+                ),
+                ConditionalContainer(
+                    Window(FormattedTextControl(self._header), height=self._header_height, wrap_lines=False),
+                    Condition(lambda: self.context is not None),
                 ),
                 VSplit([self.output_window, self.scrollbar_window]),
                 ConditionalContainer(self.tasks_window, Condition(lambda: self._tasks_height() > 0)),
@@ -1012,6 +1007,21 @@ class EnhancedConsoleInput:
         if token != self._toast_token:
             return
         self._toast_message = ""
+        self.app.invalidate()
+
+    def set_theme(self, value: str) -> None:
+        """原地切换主题，不重建 Application、转录缓存或输入 Buffer。"""
+        from prompt_toolkit.styles import Style
+        from .ui_theme import ascii_mode, ui_style
+
+        self._output_palette = value
+        styles = ui_style(value, plain=self._plain)
+        if not self._plain and not ascii_mode(value):
+            styles.update({f"command.icon.{tone}": ink for tone, (ink, _) in COMMAND_ICON_PALETTE.items()})
+            styles.update({f"command.badge.{tone}": f"{ink} bg:{surface}"
+                           for tone, (ink, surface) in COMMAND_ICON_PALETTE.items()})
+            styles["command.badge.active"] = "bold #272032 bg:#d7bee7"
+        self.app.style = Style.from_dict(styles)
         self.app.invalidate()
 
     def show_home(self) -> None:
@@ -1187,8 +1197,19 @@ class EnhancedConsoleInput:
         if not menu_height:
             return count
         # 为正文、活动栏、横线和最多三行输入留出空间。
-        reserved = menu_height + self._status_height() + self._usage_height() + 6 + int(self._update_notice is not None)
+        reserved = (menu_height + self._status_height() + self._usage_height() + 6
+                    + self._header_height() + int(self._update_notice is not None))
         return max(0, min(count, self.app.output.get_size().rows - reserved))
+
+    def _header(self):
+        if self.context is None:
+            return []
+        return self._context_view().header(self.app.output.get_size().columns)
+
+    def _header_height(self) -> int:
+        if self.context is None:
+            return 0
+        return self._context_view().header_height(self.app.output.get_size().columns)
 
     def _status(self):
         from .terminal import clean_text
@@ -1206,7 +1227,9 @@ class EnhancedConsoleInput:
 
     def _rail(self):
         if self.context is None:
-            return [("class:rail", "─" * max(1, self.app.output.get_size().columns))]
+            from .ui_theme import ascii_mode
+            rule = "-" if ascii_mode(self._output_palette) else "─"
+            return [("class:rail", rule * max(1, self.app.output.get_size().columns))]
         return self._context_view().rail(self.app.output.get_size().columns)
 
     def _activity_height(self) -> int:
@@ -1229,19 +1252,25 @@ class EnhancedConsoleInput:
 
     def _activity(self):
         from .terminal import clean_text
+        from .ui_theme import ascii_mode
         phase, label, seconds = self.activity()
         if phase == "idle" and self._dispatching:
             phase, label = "processing", "准备中"
         if phase == "idle":
             return self._with_task([])
-        if phase == "thinking":
+        compatible = ascii_mode(self._output_palette)
+        if phase == "thinking" and not compatible:
             frame = int(time.monotonic() * 4) % 4
             marker = ("·", "✧", "✦", "✧")[frame]
             style = "class:thinking" if frame == 2 else "class:thinking.dim"
         else:
-            marker = {"waiting": "◌", "background_wait": "◌", "responding": "▸", "tool": "◆", "background": "↻", "retry": "↻",
-                      "processing": "◇", "approval": "?", "paused": "Ⅱ", "stopping": "■",
-                      "error": "!"}.get(phase, "·")
+            symbols = ({"waiting": "o", "background_wait": "o", "responding": ">", "tool": "*", "background": "~",
+                        "retry": "~", "processing": "+", "approval": "?", "paused": "||", "stopping": "#",
+                        "error": "!"} if compatible else
+                       {"waiting": "◌", "background_wait": "◌", "responding": "▸", "tool": "◆", "background": "↻",
+                        "retry": "↻", "processing": "◇", "approval": "?", "paused": "Ⅱ", "stopping": "■",
+                        "error": "!"})
+            marker = symbols.get(phase, "." if compatible else "·")
             style = "class:status" if phase in {"tool", "background", "responding"} else "class:hint"
         if phase == "waiting" and seconds >= 15:
             label = "等待供应商响应"
@@ -1257,7 +1286,9 @@ class EnhancedConsoleInput:
         width = max(1, self.app.output.get_size().columns)
         right = ""
         if self.context is not None and width >= 12:
-            right = _fit_cells("▣ " + self._context_view().task, width * 2 // 5 if fragments else width)
+            from .ui_theme import ascii_mode
+            marker = "> " if ascii_mode(self._output_palette) else "▣ "
+            right = _fit_cells(marker + self._context_view().task, width * 2 // 5 if fragments else width)
         remaining = width - _cells(right) - (2 if right and fragments else 0)
         shown: list[tuple[str, str]] = []
         for style, text in fragments:
@@ -1335,16 +1366,58 @@ class EnhancedConsoleInput:
             if index is None:
                 self.write(card)
                 self._tool_indices[call_id] = len(self._chunks) - 1
+                if isinstance(self._chunks[-1], ResponsiveText):
+                    self._chunks[-1].tool_card = card
                 return
+            previous = getattr(self._chunks[index], "tool_card", None)
+            if hasattr(card, "expanded"):
+                card.expanded = getattr(previous, "expanded", False)
             chunk = ResponsiveText(str(card).rstrip("\n") + "\n\n",
                                    lambda width: card.at_width(width).rstrip("\n") + "\n\n",
                                    lambda width: (fragments + [("", "\n\n")]
                                    if hasattr(card, "fragments_at_width") and
                                    (fragments := card.fragments_at_width(width)) is not None else None))
+            chunk.tool_card = card
             self._char_count += len(chunk) - len(self._chunks[index])
             self._chunks[index] = chunk
             self.transcript_control.invalidate_from(index)
         self.app.invalidate()
+
+    def _tool_action(self, *, copy: bool) -> bool:
+        """操作视口内最后一张工具卡；展开和复制均不改变输入焦点。"""
+        from .text import clean_text
+        from .transcript import copy_to_terminal
+
+        with self._content_lock:
+            control = self.transcript_control
+            start = control.viewport_start()
+            end = start + control.viewport_height
+            visible = []
+            for index in self._tool_indices.values():
+                if index >= len(self._chunks):
+                    continue
+                card = getattr(self._chunks[index], "tool_card", None)
+                if card is None or not hasattr(card, "expanded"):
+                    continue
+                # 首帧尚未排版时允许操作最新卡片；滚动历史时只操作当前可见卡片。
+                first = control.starts[index] if index < len(control.starts) else 0
+                last = control.starts[index + 1] if index + 1 < len(control.starts) else len(control.rows)
+                if not control.rows or first < end and last > start:
+                    visible.append((index, card))
+            if not visible:
+                return False
+            index, card = max(visible, key=lambda item: item[0])
+            if copy:
+                text = clean_text(str(card)).strip()
+                self.app.clipboard.set_text(text)
+                copy_to_terminal(text, self.app.output)
+                card.copied = True
+            else:
+                card.expanded = not card.expanded
+                control.clear_selection()
+            control.invalidate_from(index)
+        self.app.invalidate()
+        return True
 
     def update_thinking(self, request_id: str, text: str, *, final: bool = False) -> None:
         """思考和正文使用独立块，只在显示帧排版当前变化部分。"""
@@ -1476,7 +1549,7 @@ class EnhancedConsoleInput:
                 command = spec.name if spec is not None else command
                 # 模型表单暂时接管终端，结束后恢复同一内容区和未提交输入。
                 modal = command in {"model", "models", "tools", "setup", "worker", "subworker", "branch", "repo", "worktree", "wt", "theme", "colors", "footer"} and (not self.running() or command == "subworker")
-                modal = modal or (words == ["plan", "choose"] and not self.running())
+                modal = modal or (command == "plan" and not self.running())
                 keep = await run_in_terminal(call, in_executor=True) if modal else await run_in_executor_with_context(call)
                 if not keep:
                     self.app.exit()
@@ -1512,10 +1585,12 @@ class EnhancedConsoleInput:
         self._menu_navigated = False
 
     def _input_label(self):
+        from .ui_theme import ascii_mode
         label = "补充" if self.running() else "Trina"
         if self.buffer.text.startswith("/"):
             label = "命令"
-        return [("class:prompt", f" {label} › ")]
+        marker = ">" if ascii_mode(self._output_palette) else "›"
+        return [("class:prompt", f" {label} {marker} ")]
 
     def _input_hint(self):
         from .console_state import _cells
@@ -1530,7 +1605,9 @@ class EnhancedConsoleInput:
                 ("Enter", "提交到队列"), ("!", "立即补充"),
             ]
         else:
-            pairs = [("/", "命令"), ("Alt+P", "模型"), ("Alt+T", "工具"), ("F1", "帮助")]
+            pairs = [("Ctrl+K", "命令"), ("Alt+Enter", "换行"), ("Alt+P", "模型"), ("F1", "帮助")]
+        if self._tool_indices:
+            pairs = [("F3", "工具详情"), ("F4", "复制输出"), *pairs]
         return key_hints(pairs, width, key_style="class:hint", label_style="class:hint")
 
     def _items(self):
@@ -1746,7 +1823,8 @@ def select_option(title: str, choices: list[ChoiceSpec], *, subtitle: str = "", 
     return run_panel(_panel_app(body, title, bindings, control, plain=plain))
 
 
-def _panel_app(body, title: str, bindings, focused, *, completion_menu: bool = False, plain: bool = False, expanded: bool = False):
+def _panel_app(body, title: str, bindings, focused, *, completion_menu: bool = False, plain: bool = False,
+               expanded: bool = False, theme: str = "dark"):
     """目录和配置页共用面板样式，退出后恢复主控制台。"""
     from prompt_toolkit import Application
     from prompt_toolkit.application.current import get_app
@@ -1755,7 +1833,8 @@ def _panel_app(body, title: str, bindings, focused, *, completion_menu: bool = F
     from prompt_toolkit.styles import Style
     from prompt_toolkit.output import ColorDepth
     from prompt_toolkit.widgets import Frame, Box
-    from .terminal import clean_text, use_color, THEME
+    from .terminal import clean_text, use_color
+    from .ui_theme import ui_style
 
     color = use_color(plain=plain)
     if expanded:
@@ -1771,19 +1850,7 @@ def _panel_app(body, title: str, bindings, focused, *, completion_menu: bool = F
                       mouse_support=expanded,
                       min_redraw_interval=1 / 120, max_render_postpone_time=0,
                       color_depth=ColorDepth.DEPTH_24_BIT if color else None,
-                      style=Style.from_dict({"panel.border": THEME["violet"], "panel.label": "bold " + THEME["rose"],
-                                             "frame.border": "#675471" if expanded else THEME["violet"],
-                                             "frame.label": "bold " + THEME["rose"],
-                                             "model.accent": THEME["lilac"] + " bold",
-                                             "model.live": "#99d7bc", "model.rule": "#504957",
-                                             "model.key": "#d5c2e3 bold", "model.search": "bg:#24202b " + THEME["text"],
-                                             "model.row": "bg:#33283c " + THEME["text"],
-                                             "model.tab": "bg:#cbb2dc #221b29 bold",
-                                             "model.heading": "bg:#211a2a " + THEME["muted"],
-                                             "model.warning": "#e5bb86",
-                                             "dim": THEME["muted"], "chosen": "bg:" + THEME["selected"] + " " + THEME["text"] + " bold",
-                                             "field": "bg:" + THEME["ink"] + " " + THEME["text"],
-                                             "button.focused": "bg:" + THEME["selected"] + " " + THEME["text"] + " bold"} if color else {}))
+                      style=Style.from_dict(ui_style(theme, plain=not color)))
     return _low_latency_keys(app)
 
 

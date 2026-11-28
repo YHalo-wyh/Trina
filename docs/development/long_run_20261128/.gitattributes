@@ -1,0 +1,2 @@
+# 保留原始验证工件字节，使 artifact_hashes.json 的 SHA-256 跨平台一致。
+* -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol

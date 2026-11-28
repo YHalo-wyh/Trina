@@ -1,0 +1,4523 @@
+{
+  "method": "本地 Replay 功能/调度对照；实际 AgentRuntime、注册工具及独立验收，不代表模型解题能力",
+  "comparison_scope": "A 单 Agent 顺序执行；B 会话前调度模块；C 当前调度；D 加只读经验；所有组共用当前 AgentRuntime/适配层",
+  "fixed": {
+    "backend": "replay",
+    "model": "fixed-replay-v1",
+    "reasoning": "default",
+    "workers_limit": 4,
+    "seconds_per_task": 30,
+    "steps_per_task": 6,
+    "provider_token_budget": 0,
+    "context_window": 65536,
+    "max_output_tokens_per_request": 1024,
+    "python": "3.10.11 (tags/v3.10.11:7d4cc5a, Apr  5 2023, 00:38:17) [MSC v.1929 64 bit (AMD64)]",
+    "platform": "Windows-10-10.0.26300-SP0",
+    "memory_sha256": "c2c79fa0564a08bc22f8138cc01bb847288acb5edc831a223c1a4fc63e5b9595",
+    "fixture_version": "6ce6eb24c731659e916c8efc11554da56b6be926b9e9c4596d012e23a247de40"
+  },
+  "limitations": [
+    "固定响应不评估规划决策质量，真实供应商/竞赛对照待验证",
+    "Replay 不报告 Token，不能把未知值当真实零 Token",
+    "Worker 有效时间这里只记录执行区间，无法据此推断解题贡献",
+    "无效工具比例只包括实际失败工具，未推测无收益动作"
+  ],
+  "ablations": {
+    "D_no_priority": "只保留静态 priority，关闭动态评分",
+    "D_fixed_workers": "整批 Worker 完成后再补位，关闭停滞调整",
+    "D_poll_replanning": "每 100 ms 唤醒并重算，关闭事件增量/唤醒",
+    "D_no_memory": "关闭经验检索和写入"
+  },
+  "source_sha256": {
+    "baseline": {
+      "swarm.py": "370770847644dc921a4100219ca6fecdff9a3e6663e2c597f813dd5ac4b5f26f",
+      "coordination.py": "edc3c7d46d6db6bcb76c5d23214fa15059ce30d722b69cea33615a4e8f86a34f",
+      "intent_planner.py": "5d0d71a09ecb3c7d36fda7c77c0e51ee4e09f447493f77de70d4ffc212caa27a"
+    },
+    "current": {
+      "swarm.py": "56ed8a40e1ff52adaa2dff57d5ff5dfef80db35478433c6b3c4c705945e85057",
+      "coordination.py": "42766e40bebb6d3f2c3e18a4e45d28d1c3c0eb3eb1bf94fe20786a5562846daa",
+      "intent_planner.py": "5d0d71a09ecb3c7d36fda7c77c0e51ee4e09f447493f77de70d4ffc212caa27a"
+    }
+  },
+  "common_source_sha256": {
+    "events.py": "62a9cc595fc0ecd75df20f823d165e92961c36d7ad2b4f560f37abb264ee2a1c",
+    "strategy_memory.py": "e679b95e2f4e07a85ff4c70025e6a0125f2e1a757e74b6b1ab1458f2640ee827",
+    "completion_inbox.py": "f2515a9841a092599da6c56315d9f7dd9d850a953971ea30a3d98b14407350e5",
+    "brain/agent.py": "b638321b31b02305ad02307830082363475bc98e4e706f278cc9d8e7cb32c982",
+    "brain/runtime.py": "2be9d5bffb6f1ab1830f94249019ab6fa7ce804a729f05f5ad5ffa8f502bdb2c",
+    "tools/registry.py": "24d04d745af17830c31aa3a4c0493fab3b180e0c7e02ba8aecb3bb3c72be9209",
+    "tools/workspace.py": "1dbc6c68874b9ac2aa2489708552a6b845698ddd5a7038d73e67fd602e5e51a2",
+    "llm/replay_backend.py": "047947c51b147bc884060f32552f48af9c5f06868c67f4895e48bc3440625b51"
+  },
+  "samples": {
+    "A_single": [
+      {
+        "arm": "A_single",
+        "total_seconds": 1.8625164031982422,
+        "verified_fixture_rate": 1.0,
+        "competition_success_rate": null,
+        "first_verified_seconds": 0.2877798080444336,
+        "model_requests": 24,
+        "provider_requests": 0,
+        "total_tokens": null,
+        "token_source": "replay_unreported",
+        "tool_calls": 18,
+        "invalid_tool_ratio": 0.0,
+        "worker_active_seconds": 1.848226547241211,
+        "worker_idle_seconds": 0.010858297348022461,
+        "mean_ready_queue_seconds": 0.7331339915593466,
+        "peak_concurrency": 1,
+        "duplicate_executions": 0,
+        "context_budget_errors": 0,
+        "planner_rounds": 0,
+        "memory": {},
+        "latency": {
+          "task_queue": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "worker_to_request": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "worker_result_merge": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "user_to_request": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "request_to_connected": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.001008
+          },
+          "request_to_first_output": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.001481
+          },
+          "connected_to_first_output": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.001285
+          },
+          "request_to_first_text": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.001481
+          },
+          "request_total": {
+            "samples": 24,
+            "p50_seconds": 0.000999,
+            "p95_seconds": 0.001988
+          },
+          "model_to_tool_start": {
+            "samples": 18,
+            "p50_seconds": 0.014982,
+            "p95_seconds": 0.020018
+          },
+          "tool_queue": {
+            "samples": 18,
+            "p50_seconds": 0.011028,
+            "p95_seconds": 0.016621
+          },
+          "tool_runtime": {
+            "samples": 18,
+            "p50_seconds": 0.025466,
+            "p95_seconds": 0.157222
+          },
+          "last_tool_to_request": {
+            "samples": 18,
+            "p50_seconds": 0.00196,
+            "p95_seconds": 0.016463
+          },
+          "state_prepare": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.0
+          },
+          "context_prepare": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.0
+          },
+          "context_diagnostic": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.0
+          },
+          "result_delivery": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "background_wait": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "completion_delivery": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "new_connection": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "transport_to_headers": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "transport_to_first_event": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          }
+        },
+        "tasks": {
+          "t0": {
+            "passed": true,
+            "first_success_seconds": 0.2877798080444336,
+            "status": "success",
+            "queue_seconds": 0.003431558609008789
+          },
+          "t1": {
+            "passed": true,
+            "first_success_seconds": 0.591681718826294,
+            "status": "success",
+            "queue_seconds": 0.33518505096435547
+          },
+          "t2": {
+            "passed": true,
+            "first_success_seconds": 0.8902709484100342,
+            "status": "success",
+            "queue_seconds": 0.6327371597290039
+          },
+          "t3": {
+            "passed": true,
+            "first_success_seconds": 1.2135109901428223,
+            "status": "success",
+            "queue_seconds": 0.9524176120758057
+          },
+          "t4": {
+            "passed": true,
+            "first_success_seconds": 1.508159875869751,
+            "status": "success",
+            "queue_seconds": 0.9239094257354736
+          },
+          "t5": {
+            "passed": true,
+            "first_success_seconds": 1.810943365097046,
+            "status": "success",
+            "queue_seconds": 1.5511231422424316
+          }
+        },
+        "events_path": "C:\\Users\\WYH\\AppData\\Local\\Temp\\trina-longrun-competition-final-2\\0-A_single\\events.sqlite3",
+        "artifact_dir": "C:\\Users\\WYH\\AppData\\Local\\Temp\\trina-longrun-competition-final-2\\0-A_single",
+        "fixture_sha256": {
+          "t0": "11a65f3835563d98b658c003db3ffb14972996c41fed351b86ca9edce9342ae8",
+          "t1": "8fca1134f6f2781a713811d83bf2e40ff68b83da14230a2709b57409d51c9a5d",
+          "t2": "cf35ef9d2c4f1810dcb8851938117dd9fc865dd3ab5d894ffae9e8fb564da47c",
+          "t3": "a8a9860fd836170765c6208484a3730112e484c7465245fcc41d3cd0e3b78fa5",
+          "t4": "11a65f3835563d98b658c003db3ffb14972996c41fed351b86ca9edce9342ae8",
+          "t5": "a8a9860fd836170765c6208484a3730112e484c7465245fcc41d3cd0e3b78fa5"
+        }
+      },
+      {
+        "arm": "A_single",
+        "total_seconds": 1.7436091899871826,
+        "verified_fixture_rate": 1.0,
+        "competition_success_rate": null,
+        "first_verified_seconds": 0.2612910270690918,
+        "model_requests": 24,
+        "provider_requests": 0,
+        "total_tokens": null,
+        "token_source": "replay_unreported",
+        "tool_calls": 18,
+        "invalid_tool_ratio": 0.0,
+        "worker_active_seconds": 1.7257475852966309,
+        "worker_idle_seconds": 0.01577615737915039,
+        "mean_ready_queue_seconds": 0.6833491722742716,
+        "peak_concurrency": 1,
+        "duplicate_executions": 0,
+        "context_budget_errors": 0,
+        "planner_rounds": 0,
+        "memory": {},
+        "latency": {
+          "task_queue": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "worker_to_request": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "worker_result_merge": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "user_to_request": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "request_to_connected": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.000999
+          },
+          "request_to_first_output": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.001005
+          },
+          "connected_to_first_output": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.001005
+          },
+          "request_to_first_text": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.001005
+          },
+          "request_total": {
+            "samples": 24,
+            "p50_seconds": 0.001,
+            "p95_seconds": 0.001012
+          },
+          "model_to_tool_start": {
+            "samples": 18,
+            "p50_seconds": 0.014531,
+            "p95_seconds": 0.018201
+          },
+          "tool_queue": {
+            "samples": 18,
+            "p50_seconds": 0.011222,
+            "p95_seconds": 0.015197
+          },
+          "tool_runtime": {
+            "samples": 18,
+            "p50_seconds": 0.026273,
+            "p95_seconds": 0.145689
+          },
+          "last_tool_to_request": {
+            "samples": 18,
+            "p50_seconds": 0.001764,
+            "p95_seconds": 0.014923
+          },
+          "state_prepare": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.0
+          },
+          "context_prepare": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.0
+          },
+          "context_diagnostic": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.0
+          },
+          "result_delivery": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "background_wait": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "completion_delivery": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "new_connection": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "transport_to_headers": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "transport_to_first_event": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          }
+        },
+        "tasks": {
+          "t0": {
+            "passed": true,
+            "first_success_seconds": 0.2612910270690918,
+            "status": "success",
+            "queue_seconds": 0.002085447311401367
+          },
+          "t1": {
+            "passed": true,
+            "first_success_seconds": 0.5736262798309326,
+            "status": "success",
+            "queue_seconds": 0.3111605644226074
+          },
+          "t2": {
+            "passed": true,
+            "first_success_seconds": 0.8493220806121826,
+            "status": "success",
+            "queue_seconds": 0.6164453029632568
+          },
+          "t3": {
+            "passed": true,
+            "first_success_seconds": 1.1134121417999268,
+            "status": "success",
+            "queue_seconds": 0.8829953670501709
+          },
+          "t4": {
+            "passed": true,
+            "first_success_seconds": 1.415980339050293,
+            "status": "success",
+            "queue_seconds": 0.8369359970092773
+          },
+          "t5": {
+            "passed": true,
+            "first_success_seconds": 1.679450273513794,
+            "status": "success",
+            "queue_seconds": 1.450472354888916
+          }
+        },
+        "events_path": "C:\\Users\\WYH\\AppData\\Local\\Temp\\trina-longrun-competition-final-2\\1-A_single\\events.sqlite3",
+        "artifact_dir": "C:\\Users\\WYH\\AppData\\Local\\Temp\\trina-longrun-competition-final-2\\1-A_single",
+        "fixture_sha256": {
+          "t0": "11a65f3835563d98b658c003db3ffb14972996c41fed351b86ca9edce9342ae8",
+          "t1": "8fca1134f6f2781a713811d83bf2e40ff68b83da14230a2709b57409d51c9a5d",
+          "t2": "cf35ef9d2c4f1810dcb8851938117dd9fc865dd3ab5d894ffae9e8fb564da47c",
+          "t3": "a8a9860fd836170765c6208484a3730112e484c7465245fcc41d3cd0e3b78fa5",
+          "t4": "11a65f3835563d98b658c003db3ffb14972996c41fed351b86ca9edce9342ae8",
+          "t5": "a8a9860fd836170765c6208484a3730112e484c7465245fcc41d3cd0e3b78fa5"
+        }
+      },
+      {
+        "arm": "A_single",
+        "total_seconds": 1.6355419158935547,
+        "verified_fixture_rate": 1.0,
+        "competition_success_rate": null,
+        "first_verified_seconds": 0.25044870376586914,
+        "model_requests": 24,
+        "provider_requests": 0,
+        "total_tokens": null,
+        "token_source": "replay_unreported",
+        "tool_calls": 18,
+        "invalid_tool_ratio": 0.0,
+        "worker_active_seconds": 1.6227777004241943,
+        "worker_idle_seconds": 0.010244369506835938,
+        "mean_ready_queue_seconds": 0.6362449328104655,
+        "peak_concurrency": 1,
+        "duplicate_executions": 0,
+        "context_budget_errors": 0,
+        "planner_rounds": 0,
+        "memory": {},
+        "latency": {
+          "task_queue": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "worker_to_request": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "worker_result_merge": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "user_to_request": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "request_to_connected": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.000978
+          },
+          "request_to_first_output": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.001014
+          },
+          "connected_to_first_output": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.001006
+          },
+          "request_to_first_text": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.001014
+          },
+          "request_total": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.001014
+          },
+          "model_to_tool_start": {
+            "samples": 18,
+            "p50_seconds": 0.013258,
+            "p95_seconds": 0.016061
+          },
+          "tool_queue": {
+            "samples": 18,
+            "p50_seconds": 0.009257,
+            "p95_seconds": 0.013299
+          },
+          "tool_runtime": {
+            "samples": 18,
+            "p50_seconds": 0.021581,
+            "p95_seconds": 0.135669
+          },
+          "last_tool_to_request": {
+            "samples": 18,
+            "p50_seconds": 0.001751,
+            "p95_seconds": 0.015549
+          },
+          "state_prepare": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.0
+          },
+          "context_prepare": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.015
+          },
+          "context_diagnostic": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.0
+          },
+          "result_delivery": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "background_wait": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "completion_delivery": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "new_connection": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "transport_to_headers": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "transport_to_first_event": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          }
+        },
+        "tasks": {
+          "t0": {
+            "passed": true,
+            "first_success_seconds": 0.25044870376586914,
+            "status": "success",
+            "queue_seconds": 0.002519845962524414
+          },
+          "t1": {
+            "passed": true,
+            "first_success_seconds": 0.5123634338378906,
+            "status": "success",
+            "queue_seconds": 0.28913068771362305
+          },
+          "t2": {
+            "passed": true,
+            "first_success_seconds": 0.7798898220062256,
+            "status": "success",
+            "queue_seconds": 0.5521817207336426
+          },
+          "t3": {
+            "passed": true,
+            "first_success_seconds": 1.0450501441955566,
+            "status": "success",
+            "queue_seconds": 0.825127363204956
+          },
+          "t4": {
+            "passed": true,
+            "first_success_seconds": 1.3099641799926758,
+            "status": "success",
+            "queue_seconds": 0.7965307235717773
+          },
+          "t5": {
+            "passed": true,
+            "first_success_seconds": 1.5759272575378418,
+            "status": "success",
+            "queue_seconds": 1.3519792556762695
+          }
+        },
+        "events_path": "C:\\Users\\WYH\\AppData\\Local\\Temp\\trina-longrun-competition-final-2\\2-A_single\\events.sqlite3",
+        "artifact_dir": "C:\\Users\\WYH\\AppData\\Local\\Temp\\trina-longrun-competition-final-2\\2-A_single",
+        "fixture_sha256": {
+          "t0": "11a65f3835563d98b658c003db3ffb14972996c41fed351b86ca9edce9342ae8",
+          "t1": "8fca1134f6f2781a713811d83bf2e40ff68b83da14230a2709b57409d51c9a5d",
+          "t2": "cf35ef9d2c4f1810dcb8851938117dd9fc865dd3ab5d894ffae9e8fb564da47c",
+          "t3": "a8a9860fd836170765c6208484a3730112e484c7465245fcc41d3cd0e3b78fa5",
+          "t4": "11a65f3835563d98b658c003db3ffb14972996c41fed351b86ca9edce9342ae8",
+          "t5": "a8a9860fd836170765c6208484a3730112e484c7465245fcc41d3cd0e3b78fa5"
+        }
+      }
+    ],
+    "B_snapshot": [
+      {
+        "arm": "B_snapshot",
+        "total_seconds": 6.2313127517700195,
+        "verified_fixture_rate": 1.0,
+        "competition_success_rate": null,
+        "first_verified_seconds": 2.878060817718506,
+        "model_requests": 24,
+        "provider_requests": 0,
+        "total_tokens": null,
+        "token_source": "replay_unreported",
+        "tool_calls": 18,
+        "invalid_tool_ratio": 0.0,
+        "worker_active_seconds": 17.237574815750122,
+        "worker_idle_seconds": 6.50052809715271,
+        "mean_ready_queue_seconds": 0.9763286908467611,
+        "peak_concurrency": 4,
+        "duplicate_executions": 0,
+        "context_budget_errors": 0,
+        "planner_rounds": 5,
+        "memory": {},
+        "latency": {
+          "task_queue": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "worker_to_request": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "worker_result_merge": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "user_to_request": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "request_to_connected": {
+            "samples": 24,
+            "p50_seconds": 0.061428,
+            "p95_seconds": 0.093388
+          },
+          "request_to_first_output": {
+            "samples": 24,
+            "p50_seconds": 0.132532,
+            "p95_seconds": 0.166261
+          },
+          "connected_to_first_output": {
+            "samples": 24,
+            "p50_seconds": 0.062048,
+            "p95_seconds": 0.087889
+          },
+          "request_to_first_text": {
+            "samples": 24,
+            "p50_seconds": 0.132532,
+            "p95_seconds": 0.166261
+          },
+          "request_total": {
+            "samples": 24,
+            "p50_seconds": 0.196335,
+            "p95_seconds": 0.244935
+          },
+          "model_to_tool_start": {
+            "samples": 18,
+            "p50_seconds": 0.217588,
+            "p95_seconds": 0.286047
+          },
+          "tool_queue": {
+            "samples": 18,
+            "p50_seconds": 0.124011,
+            "p95_seconds": 0.192808
+          },
+          "tool_runtime": {
+            "samples": 18,
+            "p50_seconds": 0.097294,
+            "p95_seconds": 0.237722
+          },
+          "last_tool_to_request": {
+            "samples": 18,
+            "p50_seconds": 0.228937,
+            "p95_seconds": 0.368621
+          },
+          "state_prepare": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.016
+          },
+          "context_prepare": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.0
+          },
+          "context_diagnostic": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.0
+          },
+          "result_delivery": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "background_wait": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "completion_delivery": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "new_connection": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "transport_to_headers": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "transport_to_first_event": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          }
+        },
+        "tasks": {
+          "t0": {
+            "passed": true,
+            "first_success_seconds": 2.9731385707855225,
+            "status": "success",
+            "queue_seconds": 0.2960326671600342
+          },
+          "t1": {
+            "passed": true,
+            "first_success_seconds": 2.878060817718506,
+            "status": "success",
+            "queue_seconds": 0.2960326671600342
+          },
+          "t2": {
+            "passed": true,
+            "first_success_seconds": 2.9541056156158447,
+            "status": "success",
+            "queue_seconds": 0.29703235626220703
+          },
+          "t3": {
+            "passed": true,
+            "first_success_seconds": 2.9379942417144775,
+            "status": "success",
+            "queue_seconds": 0.2980504035949707
+          },
+          "t4": {
+            "passed": true,
+            "first_success_seconds": 5.565403699874878,
+            "status": "success",
+            "queue_seconds": 0.4403376579284668
+          },
+          "t5": {
+            "passed": true,
+            "first_success_seconds": 5.594064235687256,
+            "status": "success",
+            "queue_seconds": 4.2304863929748535
+          }
+        },
+        "events_path": "C:\\Users\\WYH\\AppData\\Local\\Temp\\trina-longrun-competition-final-2\\0-B_snapshot\\runs\\b_snapshot\\events.sqlite3",
+        "artifact_dir": "C:\\Users\\WYH\\AppData\\Local\\Temp\\trina-longrun-competition-final-2\\0-B_snapshot",
+        "fixture_sha256": {
+          "t0": "11a65f3835563d98b658c003db3ffb14972996c41fed351b86ca9edce9342ae8",
+          "t1": "8fca1134f6f2781a713811d83bf2e40ff68b83da14230a2709b57409d51c9a5d",
+          "t2": "cf35ef9d2c4f1810dcb8851938117dd9fc865dd3ab5d894ffae9e8fb564da47c",
+          "t3": "a8a9860fd836170765c6208484a3730112e484c7465245fcc41d3cd0e3b78fa5",
+          "t4": "11a65f3835563d98b658c003db3ffb14972996c41fed351b86ca9edce9342ae8",
+          "t5": "a8a9860fd836170765c6208484a3730112e484c7465245fcc41d3cd0e3b78fa5"
+        }
+      },
+      {
+        "arm": "B_snapshot",
+        "total_seconds": 6.282451868057251,
+        "verified_fixture_rate": 1.0,
+        "competition_success_rate": null,
+        "first_verified_seconds": 2.758358955383301,
+        "model_requests": 24,
+        "provider_requests": 0,
+        "total_tokens": null,
+        "token_source": "replay_unreported",
+        "tool_calls": 18,
+        "invalid_tool_ratio": 0.0,
+        "worker_active_seconds": 16.73929524421692,
+        "worker_idle_seconds": 7.168136119842529,
+        "mean_ready_queue_seconds": 0.993510882059733,
+        "peak_concurrency": 4,
+        "duplicate_executions": 0,
+        "context_budget_errors": 0,
+        "planner_rounds": 5,
+        "memory": {},
+        "latency": {
+          "task_queue": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "worker_to_request": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "worker_result_merge": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "user_to_request": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "request_to_connected": {
+            "samples": 24,
+            "p50_seconds": 0.05979,
+            "p95_seconds": 0.099046
+          },
+          "request_to_first_output": {
+            "samples": 24,
+            "p50_seconds": 0.125206,
+            "p95_seconds": 0.174947
+          },
+          "connected_to_first_output": {
+            "samples": 24,
+            "p50_seconds": 0.058743,
+            "p95_seconds": 0.107916
+          },
+          "request_to_first_text": {
+            "samples": 24,
+            "p50_seconds": 0.125206,
+            "p95_seconds": 0.174947
+          },
+          "request_total": {
+            "samples": 24,
+            "p50_seconds": 0.185003,
+            "p95_seconds": 0.25596
+          },
+          "model_to_tool_start": {
+            "samples": 18,
+            "p50_seconds": 0.204127,
+            "p95_seconds": 0.252983
+          },
+          "tool_queue": {
+            "samples": 18,
+            "p50_seconds": 0.136064,
+            "p95_seconds": 0.176643
+          },
+          "tool_runtime": {
+            "samples": 18,
+            "p50_seconds": 0.089382,
+            "p95_seconds": 0.230466
+          },
+          "last_tool_to_request": {
+            "samples": 18,
+            "p50_seconds": 0.254281,
+            "p95_seconds": 0.347894
+          },
+          "state_prepare": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.015
+          },
+          "context_prepare": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.0
+          },
+          "context_diagnostic": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.0
+          },
+          "result_delivery": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "background_wait": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "completion_delivery": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "new_connection": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "transport_to_headers": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "transport_to_first_event": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          }
+        },
+        "tasks": {
+          "t0": {
+            "passed": true,
+            "first_success_seconds": 2.758358955383301,
+            "status": "success",
+            "queue_seconds": 0.3044581413269043
+          },
+          "t1": {
+            "passed": true,
+            "first_success_seconds": 2.8090081214904785,
+            "status": "success",
+            "queue_seconds": 0.3054656982421875
+          },
+          "t2": {
+            "passed": true,
+            "first_success_seconds": 2.799994945526123,
+            "status": "success",
+            "queue_seconds": 0.3054656982421875
+          },
+          "t3": {
+            "passed": true,
+            "first_success_seconds": 2.765397071838379,
+            "status": "success",
+            "queue_seconds": 0.30698657035827637
+          },
+          "t4": {
+            "passed": true,
+            "first_success_seconds": 5.110262393951416,
+            "status": "success",
+            "queue_seconds": 0.3091881275177002
+          },
+          "t5": {
+            "passed": true,
+            "first_success_seconds": 5.812291383743286,
+            "status": "success",
+            "queue_seconds": 4.429501056671143
+          }
+        },
+        "events_path": "C:\\Users\\WYH\\AppData\\Local\\Temp\\trina-longrun-competition-final-2\\1-B_snapshot\\runs\\b_snapshot\\events.sqlite3",
+        "artifact_dir": "C:\\Users\\WYH\\AppData\\Local\\Temp\\trina-longrun-competition-final-2\\1-B_snapshot",
+        "fixture_sha256": {
+          "t0": "11a65f3835563d98b658c003db3ffb14972996c41fed351b86ca9edce9342ae8",
+          "t1": "8fca1134f6f2781a713811d83bf2e40ff68b83da14230a2709b57409d51c9a5d",
+          "t2": "cf35ef9d2c4f1810dcb8851938117dd9fc865dd3ab5d894ffae9e8fb564da47c",
+          "t3": "a8a9860fd836170765c6208484a3730112e484c7465245fcc41d3cd0e3b78fa5",
+          "t4": "11a65f3835563d98b658c003db3ffb14972996c41fed351b86ca9edce9342ae8",
+          "t5": "a8a9860fd836170765c6208484a3730112e484c7465245fcc41d3cd0e3b78fa5"
+        }
+      },
+      {
+        "arm": "B_snapshot",
+        "total_seconds": 6.354487657546997,
+        "verified_fixture_rate": 1.0,
+        "competition_success_rate": null,
+        "first_verified_seconds": 2.7594058513641357,
+        "model_requests": 24,
+        "provider_requests": 0,
+        "total_tokens": null,
+        "token_source": "replay_unreported",
+        "tool_calls": 18,
+        "invalid_tool_ratio": 0.0,
+        "worker_active_seconds": 17.275507926940918,
+        "worker_idle_seconds": 6.939141035079956,
+        "mean_ready_queue_seconds": 1.004546085993449,
+        "peak_concurrency": 4,
+        "duplicate_executions": 0,
+        "context_budget_errors": 0,
+        "planner_rounds": 5,
+        "memory": {},
+        "latency": {
+          "task_queue": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "worker_to_request": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "worker_result_merge": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "user_to_request": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "request_to_connected": {
+            "samples": 24,
+            "p50_seconds": 0.060551,
+            "p95_seconds": 0.082013
+          },
+          "request_to_first_output": {
+            "samples": 24,
+            "p50_seconds": 0.128679,
+            "p95_seconds": 0.162911
+          },
+          "connected_to_first_output": {
+            "samples": 24,
+            "p50_seconds": 0.061817,
+            "p95_seconds": 0.088184
+          },
+          "request_to_first_text": {
+            "samples": 24,
+            "p50_seconds": 0.128679,
+            "p95_seconds": 0.162911
+          },
+          "request_total": {
+            "samples": 24,
+            "p50_seconds": 0.189226,
+            "p95_seconds": 0.23774
+          },
+          "model_to_tool_start": {
+            "samples": 18,
+            "p50_seconds": 0.200501,
+            "p95_seconds": 0.252852
+          },
+          "tool_queue": {
+            "samples": 18,
+            "p50_seconds": 0.136135,
+            "p95_seconds": 0.168069
+          },
+          "tool_runtime": {
+            "samples": 18,
+            "p50_seconds": 0.096202,
+            "p95_seconds": 0.218253
+          },
+          "last_tool_to_request": {
+            "samples": 18,
+            "p50_seconds": 0.259397,
+            "p95_seconds": 0.437052
+          },
+          "state_prepare": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.016
+          },
+          "context_prepare": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.0
+          },
+          "context_diagnostic": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.0
+          },
+          "result_delivery": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "background_wait": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "completion_delivery": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "new_connection": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "transport_to_headers": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "transport_to_first_event": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          }
+        },
+        "tasks": {
+          "t0": {
+            "passed": true,
+            "first_success_seconds": 2.7955453395843506,
+            "status": "success",
+            "queue_seconds": 0.29982638359069824
+          },
+          "t1": {
+            "passed": true,
+            "first_success_seconds": 2.7594058513641357,
+            "status": "success",
+            "queue_seconds": 0.3008260726928711
+          },
+          "t2": {
+            "passed": true,
+            "first_success_seconds": 2.8000526428222656,
+            "status": "success",
+            "queue_seconds": 0.3008260726928711
+          },
+          "t3": {
+            "passed": true,
+            "first_success_seconds": 2.819748640060425,
+            "status": "success",
+            "queue_seconds": 0.30182313919067383
+          },
+          "t4": {
+            "passed": true,
+            "first_success_seconds": 5.679240703582764,
+            "status": "success",
+            "queue_seconds": 0.5308589935302734
+          },
+          "t5": {
+            "passed": true,
+            "first_success_seconds": 5.593246936798096,
+            "status": "success",
+            "queue_seconds": 4.293115854263306
+          }
+        },
+        "events_path": "C:\\Users\\WYH\\AppData\\Local\\Temp\\trina-longrun-competition-final-2\\2-B_snapshot\\runs\\b_snapshot\\events.sqlite3",
+        "artifact_dir": "C:\\Users\\WYH\\AppData\\Local\\Temp\\trina-longrun-competition-final-2\\2-B_snapshot",
+        "fixture_sha256": {
+          "t0": "11a65f3835563d98b658c003db3ffb14972996c41fed351b86ca9edce9342ae8",
+          "t1": "8fca1134f6f2781a713811d83bf2e40ff68b83da14230a2709b57409d51c9a5d",
+          "t2": "cf35ef9d2c4f1810dcb8851938117dd9fc865dd3ab5d894ffae9e8fb564da47c",
+          "t3": "a8a9860fd836170765c6208484a3730112e484c7465245fcc41d3cd0e3b78fa5",
+          "t4": "11a65f3835563d98b658c003db3ffb14972996c41fed351b86ca9edce9342ae8",
+          "t5": "a8a9860fd836170765c6208484a3730112e484c7465245fcc41d3cd0e3b78fa5"
+        }
+      }
+    ],
+    "C_upgraded": [
+      {
+        "arm": "C_upgraded",
+        "total_seconds": 1.1202771663665771,
+        "verified_fixture_rate": 1.0,
+        "competition_success_rate": null,
+        "first_verified_seconds": 0.5038728713989258,
+        "model_requests": 24,
+        "provider_requests": 0,
+        "total_tokens": null,
+        "token_source": "replay_unreported",
+        "tool_calls": 18,
+        "invalid_tool_ratio": 0.0,
+        "worker_active_seconds": 2.3454110622406006,
+        "worker_idle_seconds": 1.4960854053497314,
+        "mean_ready_queue_seconds": 0.24699040253957114,
+        "peak_concurrency": 4,
+        "duplicate_executions": 0,
+        "context_budget_errors": 0,
+        "planner_rounds": 7,
+        "memory": {
+          "queries": 0,
+          "hits": 0,
+          "stored": 0,
+          "query_seconds": 0.0,
+          "errors": 0
+        },
+        "latency": {
+          "task_queue": {
+            "samples": 6,
+            "p50_seconds": 0.169698,
+            "p95_seconds": 0.752797
+          },
+          "worker_to_request": {
+            "samples": 6,
+            "p50_seconds": 0.074036,
+            "p95_seconds": 0.090976
+          },
+          "worker_result_merge": {
+            "samples": 6,
+            "p50_seconds": 0.048585,
+            "p95_seconds": 0.096066
+          },
+          "user_to_request": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "request_to_connected": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.001008
+          },
+          "request_to_first_output": {
+            "samples": 24,
+            "p50_seconds": 0.000993,
+            "p95_seconds": 0.002004
+          },
+          "connected_to_first_output": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.001274
+          },
+          "request_to_first_text": {
+            "samples": 24,
+            "p50_seconds": 0.000993,
+            "p95_seconds": 0.002004
+          },
+          "request_total": {
+            "samples": 24,
+            "p50_seconds": 0.001055,
+            "p95_seconds": 0.002269
+          },
+          "model_to_tool_start": {
+            "samples": 18,
+            "p50_seconds": 0.024602,
+            "p95_seconds": 0.035106
+          },
+          "tool_queue": {
+            "samples": 18,
+            "p50_seconds": 0.018654,
+            "p95_seconds": 0.025735
+          },
+          "tool_runtime": {
+            "samples": 18,
+            "p50_seconds": 0.033788,
+            "p95_seconds": 0.154955
+          },
+          "last_tool_to_request": {
+            "samples": 18,
+            "p50_seconds": 0.003635,
+            "p95_seconds": 0.026978
+          },
+          "state_prepare": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.015
+          },
+          "context_prepare": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.0
+          },
+          "context_diagnostic": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.0
+          },
+          "result_delivery": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "background_wait": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "completion_delivery": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "new_connection": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "transport_to_headers": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "transport_to_first_event": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          }
+        },
+        "tasks": {
+          "t0": {
+            "passed": true,
+            "first_success_seconds": 0.5038728713989258,
+            "status": "success",
+            "queue_seconds": 0.15915179252624512
+          },
+          "t1": {
+            "passed": true,
+            "first_success_seconds": 0.5163507461547852,
+            "status": "success",
+            "queue_seconds": 0.15915179252624512
+          },
+          "t2": {
+            "passed": true,
+            "first_success_seconds": 0.518352746963501,
+            "status": "success",
+            "queue_seconds": 0.1601543426513672
+          },
+          "t3": {
+            "passed": true,
+            "first_success_seconds": 0.5193524360656738,
+            "status": "success",
+            "queue_seconds": 0.16115427017211914
+          },
+          "t4": {
+            "passed": true,
+            "first_success_seconds": 0.9437408447265625,
+            "status": "success",
+            "queue_seconds": 0.10107684135437012
+          },
+          "t5": {
+            "passed": true,
+            "first_success_seconds": 0.9990856647491455,
+            "status": "success",
+            "queue_seconds": 0.7412533760070801
+          }
+        },
+        "events_path": "C:\\Users\\WYH\\AppData\\Local\\Temp\\trina-longrun-competition-final-2\\0-C_upgraded\\runs\\c_upgraded\\events.sqlite3",
+        "artifact_dir": "C:\\Users\\WYH\\AppData\\Local\\Temp\\trina-longrun-competition-final-2\\0-C_upgraded",
+        "fixture_sha256": {
+          "t0": "11a65f3835563d98b658c003db3ffb14972996c41fed351b86ca9edce9342ae8",
+          "t1": "8fca1134f6f2781a713811d83bf2e40ff68b83da14230a2709b57409d51c9a5d",
+          "t2": "cf35ef9d2c4f1810dcb8851938117dd9fc865dd3ab5d894ffae9e8fb564da47c",
+          "t3": "a8a9860fd836170765c6208484a3730112e484c7465245fcc41d3cd0e3b78fa5",
+          "t4": "11a65f3835563d98b658c003db3ffb14972996c41fed351b86ca9edce9342ae8",
+          "t5": "a8a9860fd836170765c6208484a3730112e484c7465245fcc41d3cd0e3b78fa5"
+        }
+      },
+      {
+        "arm": "C_upgraded",
+        "total_seconds": 1.131385087966919,
+        "verified_fixture_rate": 1.0,
+        "competition_success_rate": null,
+        "first_verified_seconds": 0.5307841300964355,
+        "model_requests": 24,
+        "provider_requests": 0,
+        "total_tokens": null,
+        "token_source": "replay_unreported",
+        "tool_calls": 18,
+        "invalid_tool_ratio": 0.0,
+        "worker_active_seconds": 2.4016964435577393,
+        "worker_idle_seconds": 1.4811198711395264,
+        "mean_ready_queue_seconds": 0.2482680082321167,
+        "peak_concurrency": 4,
+        "duplicate_executions": 0,
+        "context_budget_errors": 0,
+        "planner_rounds": 6,
+        "memory": {
+          "queries": 0,
+          "hits": 0,
+          "stored": 0,
+          "query_seconds": 0.0,
+          "errors": 0
+        },
+        "latency": {
+          "task_queue": {
+            "samples": 6,
+            "p50_seconds": 0.172244,
+            "p95_seconds": 0.770358
+          },
+          "worker_to_request": {
+            "samples": 6,
+            "p50_seconds": 0.068922,
+            "p95_seconds": 0.078245
+          },
+          "worker_result_merge": {
+            "samples": 6,
+            "p50_seconds": 0.034724,
+            "p95_seconds": 0.098151
+          },
+          "user_to_request": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "request_to_connected": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.001219
+          },
+          "request_to_first_output": {
+            "samples": 24,
+            "p50_seconds": 0.001001,
+            "p95_seconds": 0.002111
+          },
+          "connected_to_first_output": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.001503
+          },
+          "request_to_first_text": {
+            "samples": 24,
+            "p50_seconds": 0.001001,
+            "p95_seconds": 0.002111
+          },
+          "request_total": {
+            "samples": 24,
+            "p50_seconds": 0.001006,
+            "p95_seconds": 0.003115
+          },
+          "model_to_tool_start": {
+            "samples": 18,
+            "p50_seconds": 0.024797,
+            "p95_seconds": 0.038804
+          },
+          "tool_queue": {
+            "samples": 18,
+            "p50_seconds": 0.018723,
+            "p95_seconds": 0.032325
+          },
+          "tool_runtime": {
+            "samples": 18,
+            "p50_seconds": 0.031978,
+            "p95_seconds": 0.175947
+          },
+          "last_tool_to_request": {
+            "samples": 18,
+            "p50_seconds": 0.002266,
+            "p95_seconds": 0.046625
+          },
+          "state_prepare": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.016
+          },
+          "context_prepare": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.0
+          },
+          "context_diagnostic": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.0
+          },
+          "result_delivery": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "background_wait": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "completion_delivery": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "new_connection": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "transport_to_headers": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "transport_to_first_event": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          }
+        },
+        "tasks": {
+          "t0": {
+            "passed": true,
+            "first_success_seconds": 0.5380303859710693,
+            "status": "success",
+            "queue_seconds": 0.15967869758605957
+          },
+          "t1": {
+            "passed": true,
+            "first_success_seconds": 0.5360293388366699,
+            "status": "success",
+            "queue_seconds": 0.16068172454833984
+          },
+          "t2": {
+            "passed": true,
+            "first_success_seconds": 0.5390362739562988,
+            "status": "success",
+            "queue_seconds": 0.16068172454833984
+          },
+          "t3": {
+            "passed": true,
+            "first_success_seconds": 0.5307841300964355,
+            "status": "success",
+            "queue_seconds": 0.1616818904876709
+          },
+          "t4": {
+            "passed": true,
+            "first_success_seconds": 1.0100767612457275,
+            "status": "success",
+            "queue_seconds": 0.1563107967376709
+          },
+          "t5": {
+            "passed": true,
+            "first_success_seconds": 0.9589388370513916,
+            "status": "success",
+            "queue_seconds": 0.6905732154846191
+          }
+        },
+        "events_path": "C:\\Users\\WYH\\AppData\\Local\\Temp\\trina-longrun-competition-final-2\\1-C_upgraded\\runs\\c_upgraded\\events.sqlite3",
+        "artifact_dir": "C:\\Users\\WYH\\AppData\\Local\\Temp\\trina-longrun-competition-final-2\\1-C_upgraded",
+        "fixture_sha256": {
+          "t0": "11a65f3835563d98b658c003db3ffb14972996c41fed351b86ca9edce9342ae8",
+          "t1": "8fca1134f6f2781a713811d83bf2e40ff68b83da14230a2709b57409d51c9a5d",
+          "t2": "cf35ef9d2c4f1810dcb8851938117dd9fc865dd3ab5d894ffae9e8fb564da47c",
+          "t3": "a8a9860fd836170765c6208484a3730112e484c7465245fcc41d3cd0e3b78fa5",
+          "t4": "11a65f3835563d98b658c003db3ffb14972996c41fed351b86ca9edce9342ae8",
+          "t5": "a8a9860fd836170765c6208484a3730112e484c7465245fcc41d3cd0e3b78fa5"
+        }
+      },
+      {
+        "arm": "C_upgraded",
+        "total_seconds": 1.2177884578704834,
+        "verified_fixture_rate": 1.0,
+        "competition_success_rate": null,
+        "first_verified_seconds": 0.5459918975830078,
+        "model_requests": 24,
+        "provider_requests": 0,
+        "total_tokens": null,
+        "token_source": "replay_unreported",
+        "tool_calls": 18,
+        "invalid_tool_ratio": 0.0,
+        "worker_active_seconds": 2.544865131378174,
+        "worker_idle_seconds": 1.6704142093658447,
+        "mean_ready_queue_seconds": 0.26025915145874023,
+        "peak_concurrency": 4,
+        "duplicate_executions": 0,
+        "context_budget_errors": 0,
+        "planner_rounds": 7,
+        "memory": {
+          "queries": 0,
+          "hits": 0,
+          "stored": 0,
+          "query_seconds": 0.0,
+          "errors": 0
+        },
+        "latency": {
+          "task_queue": {
+            "samples": 6,
+            "p50_seconds": 0.175746,
+            "p95_seconds": 0.775963
+          },
+          "worker_to_request": {
+            "samples": 6,
+            "p50_seconds": 0.079534,
+            "p95_seconds": 0.087271
+          },
+          "worker_result_merge": {
+            "samples": 6,
+            "p50_seconds": 0.048423,
+            "p95_seconds": 0.065853
+          },
+          "user_to_request": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "request_to_connected": {
+            "samples": 24,
+            "p50_seconds": 0.000498,
+            "p95_seconds": 0.001097
+          },
+          "request_to_first_output": {
+            "samples": 24,
+            "p50_seconds": 0.001004,
+            "p95_seconds": 0.00251
+          },
+          "connected_to_first_output": {
+            "samples": 24,
+            "p50_seconds": 0.000994,
+            "p95_seconds": 0.001507
+          },
+          "request_to_first_text": {
+            "samples": 24,
+            "p50_seconds": 0.001004,
+            "p95_seconds": 0.00251
+          },
+          "request_total": {
+            "samples": 24,
+            "p50_seconds": 0.001012,
+            "p95_seconds": 0.003559
+          },
+          "model_to_tool_start": {
+            "samples": 18,
+            "p50_seconds": 0.028451,
+            "p95_seconds": 0.036021
+          },
+          "tool_queue": {
+            "samples": 18,
+            "p50_seconds": 0.022893,
+            "p95_seconds": 0.030174
+          },
+          "tool_runtime": {
+            "samples": 18,
+            "p50_seconds": 0.033825,
+            "p95_seconds": 0.17925
+          },
+          "last_tool_to_request": {
+            "samples": 18,
+            "p50_seconds": 0.00458,
+            "p95_seconds": 0.021342
+          },
+          "state_prepare": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.016
+          },
+          "context_prepare": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.0
+          },
+          "context_diagnostic": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.0
+          },
+          "result_delivery": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "background_wait": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "completion_delivery": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "new_connection": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "transport_to_headers": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "transport_to_first_event": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          }
+        },
+        "tasks": {
+          "t0": {
+            "passed": true,
+            "first_success_seconds": 0.5469920635223389,
+            "status": "success",
+            "queue_seconds": 0.16297030448913574
+          },
+          "t1": {
+            "passed": true,
+            "first_success_seconds": 0.5469920635223389,
+            "status": "success",
+            "queue_seconds": 0.1639699935913086
+          },
+          "t2": {
+            "passed": true,
+            "first_success_seconds": 0.5459918975830078,
+            "status": "success",
+            "queue_seconds": 0.1649641990661621
+          },
+          "t3": {
+            "passed": true,
+            "first_success_seconds": 0.5490076541900635,
+            "status": "success",
+            "queue_seconds": 0.1639699935913086
+          },
+          "t4": {
+            "passed": true,
+            "first_success_seconds": 1.090846061706543,
+            "status": "success",
+            "queue_seconds": 0.14249300956726074
+          },
+          "t5": {
+            "passed": true,
+            "first_success_seconds": 1.0883235931396484,
+            "status": "success",
+            "queue_seconds": 0.7631874084472656
+          }
+        },
+        "events_path": "C:\\Users\\WYH\\AppData\\Local\\Temp\\trina-longrun-competition-final-2\\2-C_upgraded\\runs\\c_upgraded\\events.sqlite3",
+        "artifact_dir": "C:\\Users\\WYH\\AppData\\Local\\Temp\\trina-longrun-competition-final-2\\2-C_upgraded",
+        "fixture_sha256": {
+          "t0": "11a65f3835563d98b658c003db3ffb14972996c41fed351b86ca9edce9342ae8",
+          "t1": "8fca1134f6f2781a713811d83bf2e40ff68b83da14230a2709b57409d51c9a5d",
+          "t2": "cf35ef9d2c4f1810dcb8851938117dd9fc865dd3ab5d894ffae9e8fb564da47c",
+          "t3": "a8a9860fd836170765c6208484a3730112e484c7465245fcc41d3cd0e3b78fa5",
+          "t4": "11a65f3835563d98b658c003db3ffb14972996c41fed351b86ca9edce9342ae8",
+          "t5": "a8a9860fd836170765c6208484a3730112e484c7465245fcc41d3cd0e3b78fa5"
+        }
+      }
+    ],
+    "D_memory": [
+      {
+        "arm": "D_memory",
+        "total_seconds": 1.148768424987793,
+        "verified_fixture_rate": 1.0,
+        "competition_success_rate": null,
+        "first_verified_seconds": 0.5024664402008057,
+        "model_requests": 24,
+        "provider_requests": 0,
+        "total_tokens": null,
+        "token_source": "replay_unreported",
+        "tool_calls": 18,
+        "invalid_tool_ratio": 0.0,
+        "worker_active_seconds": 2.2311997413635254,
+        "worker_idle_seconds": 1.6080784797668457,
+        "mean_ready_queue_seconds": 0.26962681611378986,
+        "peak_concurrency": 4,
+        "duplicate_executions": 0,
+        "context_budget_errors": 0,
+        "planner_rounds": 7,
+        "memory": {
+          "queries": 6,
+          "hits": 2,
+          "stored": 0,
+          "query_seconds": 0.007972800001880387,
+          "errors": 0
+        },
+        "latency": {
+          "task_queue": {
+            "samples": 6,
+            "p50_seconds": 0.213519,
+            "p95_seconds": 0.767538
+          },
+          "worker_to_request": {
+            "samples": 6,
+            "p50_seconds": 0.06198,
+            "p95_seconds": 0.076813
+          },
+          "worker_result_merge": {
+            "samples": 6,
+            "p50_seconds": 0.054206,
+            "p95_seconds": 0.106766
+          },
+          "user_to_request": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "request_to_connected": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.001509
+          },
+          "request_to_first_output": {
+            "samples": 24,
+            "p50_seconds": 0.001002,
+            "p95_seconds": 0.001532
+          },
+          "connected_to_first_output": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.001233
+          },
+          "request_to_first_text": {
+            "samples": 24,
+            "p50_seconds": 0.001002,
+            "p95_seconds": 0.001532
+          },
+          "request_total": {
+            "samples": 24,
+            "p50_seconds": 0.00101,
+            "p95_seconds": 0.002507
+          },
+          "model_to_tool_start": {
+            "samples": 18,
+            "p50_seconds": 0.020714,
+            "p95_seconds": 0.034135
+          },
+          "tool_queue": {
+            "samples": 18,
+            "p50_seconds": 0.015559,
+            "p95_seconds": 0.028607
+          },
+          "tool_runtime": {
+            "samples": 18,
+            "p50_seconds": 0.032798,
+            "p95_seconds": 0.139707
+          },
+          "last_tool_to_request": {
+            "samples": 18,
+            "p50_seconds": 0.002999,
+            "p95_seconds": 0.04231
+          },
+          "state_prepare": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.015
+          },
+          "context_prepare": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.0
+          },
+          "context_diagnostic": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.0
+          },
+          "result_delivery": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "background_wait": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "completion_delivery": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "new_connection": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "transport_to_headers": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "transport_to_first_event": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          }
+        },
+        "tasks": {
+          "t0": {
+            "passed": true,
+            "first_success_seconds": 0.5024664402008057,
+            "status": "success",
+            "queue_seconds": 0.1729731559753418
+          },
+          "t1": {
+            "passed": true,
+            "first_success_seconds": 0.5294263362884521,
+            "status": "success",
+            "queue_seconds": 0.19458818435668945
+          },
+          "t2": {
+            "passed": true,
+            "first_success_seconds": 0.5274200439453125,
+            "status": "success",
+            "queue_seconds": 0.20522284507751465
+          },
+          "t3": {
+            "passed": true,
+            "first_success_seconds": 0.520390510559082,
+            "status": "success",
+            "queue_seconds": 0.18301129341125488
+          },
+          "t4": {
+            "passed": true,
+            "first_success_seconds": 0.9263648986816406,
+            "status": "success",
+            "queue_seconds": 0.10703444480895996
+          },
+          "t5": {
+            "passed": true,
+            "first_success_seconds": 1.0136616230010986,
+            "status": "success",
+            "queue_seconds": 0.7549309730529785
+          }
+        },
+        "events_path": "C:\\Users\\WYH\\AppData\\Local\\Temp\\trina-longrun-competition-final-2\\0-D_memory\\runs\\d_memory\\events.sqlite3",
+        "artifact_dir": "C:\\Users\\WYH\\AppData\\Local\\Temp\\trina-longrun-competition-final-2\\0-D_memory",
+        "fixture_sha256": {
+          "t0": "11a65f3835563d98b658c003db3ffb14972996c41fed351b86ca9edce9342ae8",
+          "t1": "8fca1134f6f2781a713811d83bf2e40ff68b83da14230a2709b57409d51c9a5d",
+          "t2": "cf35ef9d2c4f1810dcb8851938117dd9fc865dd3ab5d894ffae9e8fb564da47c",
+          "t3": "a8a9860fd836170765c6208484a3730112e484c7465245fcc41d3cd0e3b78fa5",
+          "t4": "11a65f3835563d98b658c003db3ffb14972996c41fed351b86ca9edce9342ae8",
+          "t5": "a8a9860fd836170765c6208484a3730112e484c7465245fcc41d3cd0e3b78fa5"
+        }
+      },
+      {
+        "arm": "D_memory",
+        "total_seconds": 1.100630283355713,
+        "verified_fixture_rate": 1.0,
+        "competition_success_rate": null,
+        "first_verified_seconds": 0.4916248321533203,
+        "model_requests": 24,
+        "provider_requests": 0,
+        "total_tokens": null,
+        "token_source": "replay_unreported",
+        "tool_calls": 18,
+        "invalid_tool_ratio": 0.0,
+        "worker_active_seconds": 2.2795135974884033,
+        "worker_idle_seconds": 1.4405467510223389,
+        "mean_ready_queue_seconds": 0.2569247881571452,
+        "peak_concurrency": 4,
+        "duplicate_executions": 0,
+        "context_budget_errors": 0,
+        "planner_rounds": 7,
+        "memory": {
+          "queries": 6,
+          "hits": 2,
+          "stored": 0,
+          "query_seconds": 0.007694600000831997,
+          "errors": 0
+        },
+        "latency": {
+          "task_queue": {
+            "samples": 6,
+            "p50_seconds": 0.190944,
+            "p95_seconds": 0.755
+          },
+          "worker_to_request": {
+            "samples": 6,
+            "p50_seconds": 0.064767,
+            "p95_seconds": 0.080271
+          },
+          "worker_result_merge": {
+            "samples": 6,
+            "p50_seconds": 0.049324,
+            "p95_seconds": 0.071649
+          },
+          "user_to_request": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "request_to_connected": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.001253
+          },
+          "request_to_first_output": {
+            "samples": 24,
+            "p50_seconds": 0.000993,
+            "p95_seconds": 0.001998
+          },
+          "connected_to_first_output": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.001001
+          },
+          "request_to_first_text": {
+            "samples": 24,
+            "p50_seconds": 0.000993,
+            "p95_seconds": 0.001998
+          },
+          "request_total": {
+            "samples": 24,
+            "p50_seconds": 0.001,
+            "p95_seconds": 0.002006
+          },
+          "model_to_tool_start": {
+            "samples": 18,
+            "p50_seconds": 0.02486,
+            "p95_seconds": 0.039901
+          },
+          "tool_queue": {
+            "samples": 18,
+            "p50_seconds": 0.019831,
+            "p95_seconds": 0.031857
+          },
+          "tool_runtime": {
+            "samples": 18,
+            "p50_seconds": 0.034515,
+            "p95_seconds": 0.140403
+          },
+          "last_tool_to_request": {
+            "samples": 18,
+            "p50_seconds": 0.003,
+            "p95_seconds": 0.035882
+          },
+          "state_prepare": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.016
+          },
+          "context_prepare": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.0
+          },
+          "context_diagnostic": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.0
+          },
+          "result_delivery": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "background_wait": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "completion_delivery": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "new_connection": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "transport_to_headers": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "transport_to_first_event": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          }
+        },
+        "tasks": {
+          "t0": {
+            "passed": true,
+            "first_success_seconds": 0.4916248321533203,
+            "status": "success",
+            "queue_seconds": 0.16033148765563965
+          },
+          "t1": {
+            "passed": true,
+            "first_success_seconds": 0.5327222347259521,
+            "status": "success",
+            "queue_seconds": 0.1814124584197998
+          },
+          "t2": {
+            "passed": true,
+            "first_success_seconds": 0.5287168025970459,
+            "status": "success",
+            "queue_seconds": 0.17337656021118164
+          },
+          "t3": {
+            "passed": true,
+            "first_success_seconds": 0.5307176113128662,
+            "status": "success",
+            "queue_seconds": 0.16734027862548828
+          },
+          "t4": {
+            "passed": true,
+            "first_success_seconds": 0.9276671409606934,
+            "status": "success",
+            "queue_seconds": 0.11664605140686035
+          },
+          "t5": {
+            "passed": true,
+            "first_success_seconds": 0.989593505859375,
+            "status": "success",
+            "queue_seconds": 0.7424418926239014
+          }
+        },
+        "events_path": "C:\\Users\\WYH\\AppData\\Local\\Temp\\trina-longrun-competition-final-2\\1-D_memory\\runs\\d_memory\\events.sqlite3",
+        "artifact_dir": "C:\\Users\\WYH\\AppData\\Local\\Temp\\trina-longrun-competition-final-2\\1-D_memory",
+        "fixture_sha256": {
+          "t0": "11a65f3835563d98b658c003db3ffb14972996c41fed351b86ca9edce9342ae8",
+          "t1": "8fca1134f6f2781a713811d83bf2e40ff68b83da14230a2709b57409d51c9a5d",
+          "t2": "cf35ef9d2c4f1810dcb8851938117dd9fc865dd3ab5d894ffae9e8fb564da47c",
+          "t3": "a8a9860fd836170765c6208484a3730112e484c7465245fcc41d3cd0e3b78fa5",
+          "t4": "11a65f3835563d98b658c003db3ffb14972996c41fed351b86ca9edce9342ae8",
+          "t5": "a8a9860fd836170765c6208484a3730112e484c7465245fcc41d3cd0e3b78fa5"
+        }
+      },
+      {
+        "arm": "D_memory",
+        "total_seconds": 1.1339383125305176,
+        "verified_fixture_rate": 1.0,
+        "competition_success_rate": null,
+        "first_verified_seconds": 0.5039715766906738,
+        "model_requests": 24,
+        "provider_requests": 0,
+        "total_tokens": null,
+        "token_source": "replay_unreported",
+        "tool_calls": 18,
+        "invalid_tool_ratio": 0.0,
+        "worker_active_seconds": 2.255629062652588,
+        "worker_idle_seconds": 1.5120809078216553,
+        "mean_ready_queue_seconds": 0.26716168721516925,
+        "peak_concurrency": 4,
+        "duplicate_executions": 0,
+        "context_budget_errors": 0,
+        "planner_rounds": 7,
+        "memory": {
+          "queries": 6,
+          "hits": 2,
+          "stored": 0,
+          "query_seconds": 0.007834299995010952,
+          "errors": 0
+        },
+        "latency": {
+          "task_queue": {
+            "samples": 6,
+            "p50_seconds": 0.213479,
+            "p95_seconds": 0.756775
+          },
+          "worker_to_request": {
+            "samples": 6,
+            "p50_seconds": 0.059146,
+            "p95_seconds": 0.072153
+          },
+          "worker_result_merge": {
+            "samples": 6,
+            "p50_seconds": 0.054612,
+            "p95_seconds": 0.075751
+          },
+          "user_to_request": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "request_to_connected": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.001005
+          },
+          "request_to_first_output": {
+            "samples": 24,
+            "p50_seconds": 0.000996,
+            "p95_seconds": 0.002046
+          },
+          "connected_to_first_output": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.001444
+          },
+          "request_to_first_text": {
+            "samples": 24,
+            "p50_seconds": 0.000996,
+            "p95_seconds": 0.002046
+          },
+          "request_total": {
+            "samples": 24,
+            "p50_seconds": 0.001006,
+            "p95_seconds": 0.00238
+          },
+          "model_to_tool_start": {
+            "samples": 18,
+            "p50_seconds": 0.023851,
+            "p95_seconds": 0.037005
+          },
+          "tool_queue": {
+            "samples": 18,
+            "p50_seconds": 0.018463,
+            "p95_seconds": 0.030079
+          },
+          "tool_runtime": {
+            "samples": 18,
+            "p50_seconds": 0.031837,
+            "p95_seconds": 0.146356
+          },
+          "last_tool_to_request": {
+            "samples": 18,
+            "p50_seconds": 0.003088,
+            "p95_seconds": 0.044521
+          },
+          "state_prepare": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.016
+          },
+          "context_prepare": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.0
+          },
+          "context_diagnostic": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.0
+          },
+          "result_delivery": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "background_wait": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "completion_delivery": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "new_connection": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "transport_to_headers": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "transport_to_first_event": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          }
+        },
+        "tasks": {
+          "t0": {
+            "passed": true,
+            "first_success_seconds": 0.5039715766906738,
+            "status": "success",
+            "queue_seconds": 0.17858409881591797
+          },
+          "t1": {
+            "passed": true,
+            "first_success_seconds": 0.5386044979095459,
+            "status": "success",
+            "queue_seconds": 0.19492244720458984
+          },
+          "t2": {
+            "passed": true,
+            "first_success_seconds": 0.5434253215789795,
+            "status": "success",
+            "queue_seconds": 0.205885648727417
+          },
+          "t3": {
+            "passed": true,
+            "first_success_seconds": 0.5424206256866455,
+            "status": "success",
+            "queue_seconds": 0.18865108489990234
+          },
+          "t4": {
+            "passed": true,
+            "first_success_seconds": 0.9282474517822266,
+            "status": "success",
+            "queue_seconds": 0.09222936630249023
+          },
+          "t5": {
+            "passed": true,
+            "first_success_seconds": 0.9975547790527344,
+            "status": "success",
+            "queue_seconds": 0.7426974773406982
+          }
+        },
+        "events_path": "C:\\Users\\WYH\\AppData\\Local\\Temp\\trina-longrun-competition-final-2\\2-D_memory\\runs\\d_memory\\events.sqlite3",
+        "artifact_dir": "C:\\Users\\WYH\\AppData\\Local\\Temp\\trina-longrun-competition-final-2\\2-D_memory",
+        "fixture_sha256": {
+          "t0": "11a65f3835563d98b658c003db3ffb14972996c41fed351b86ca9edce9342ae8",
+          "t1": "8fca1134f6f2781a713811d83bf2e40ff68b83da14230a2709b57409d51c9a5d",
+          "t2": "cf35ef9d2c4f1810dcb8851938117dd9fc865dd3ab5d894ffae9e8fb564da47c",
+          "t3": "a8a9860fd836170765c6208484a3730112e484c7465245fcc41d3cd0e3b78fa5",
+          "t4": "11a65f3835563d98b658c003db3ffb14972996c41fed351b86ca9edce9342ae8",
+          "t5": "a8a9860fd836170765c6208484a3730112e484c7465245fcc41d3cd0e3b78fa5"
+        }
+      }
+    ],
+    "D_no_priority": [
+      {
+        "arm": "D_no_priority",
+        "total_seconds": 1.102940320968628,
+        "verified_fixture_rate": 1.0,
+        "competition_success_rate": null,
+        "first_verified_seconds": 0.5039427280426025,
+        "model_requests": 24,
+        "provider_requests": 0,
+        "total_tokens": null,
+        "token_source": "replay_unreported",
+        "tool_calls": 18,
+        "invalid_tool_ratio": 0.0,
+        "worker_active_seconds": 2.2709097862243652,
+        "worker_idle_seconds": 1.4017362594604492,
+        "mean_ready_queue_seconds": 0.2643335660298665,
+        "peak_concurrency": 4,
+        "duplicate_executions": 0,
+        "context_budget_errors": 0,
+        "planner_rounds": 7,
+        "memory": {
+          "queries": 6,
+          "hits": 2,
+          "stored": 0,
+          "query_seconds": 0.009001400001579896,
+          "errors": 0
+        },
+        "latency": {
+          "task_queue": {
+            "samples": 6,
+            "p50_seconds": 0.205966,
+            "p95_seconds": 0.75273
+          },
+          "worker_to_request": {
+            "samples": 6,
+            "p50_seconds": 0.068431,
+            "p95_seconds": 0.080642
+          },
+          "worker_result_merge": {
+            "samples": 6,
+            "p50_seconds": 0.048142,
+            "p95_seconds": 0.068799
+          },
+          "user_to_request": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "request_to_connected": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.001505
+          },
+          "request_to_first_output": {
+            "samples": 24,
+            "p50_seconds": 0.001011,
+            "p95_seconds": 0.002509
+          },
+          "connected_to_first_output": {
+            "samples": 24,
+            "p50_seconds": 0.000999,
+            "p95_seconds": 0.001504
+          },
+          "request_to_first_text": {
+            "samples": 24,
+            "p50_seconds": 0.001011,
+            "p95_seconds": 0.002509
+          },
+          "request_total": {
+            "samples": 24,
+            "p50_seconds": 0.001505,
+            "p95_seconds": 0.002991
+          },
+          "model_to_tool_start": {
+            "samples": 18,
+            "p50_seconds": 0.025518,
+            "p95_seconds": 0.035905
+          },
+          "tool_queue": {
+            "samples": 18,
+            "p50_seconds": 0.018366,
+            "p95_seconds": 0.029892
+          },
+          "tool_runtime": {
+            "samples": 18,
+            "p50_seconds": 0.033451,
+            "p95_seconds": 0.146073
+          },
+          "last_tool_to_request": {
+            "samples": 18,
+            "p50_seconds": 0.003006,
+            "p95_seconds": 0.028569
+          },
+          "state_prepare": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.016
+          },
+          "context_prepare": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.0
+          },
+          "context_diagnostic": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.015
+          },
+          "result_delivery": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "background_wait": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "completion_delivery": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "new_connection": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "transport_to_headers": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "transport_to_first_event": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          }
+        },
+        "tasks": {
+          "t0": {
+            "passed": true,
+            "first_success_seconds": 0.5039427280426025,
+            "status": "success",
+            "queue_seconds": 0.17085623741149902
+          },
+          "t1": {
+            "passed": true,
+            "first_success_seconds": 0.5393843650817871,
+            "status": "success",
+            "queue_seconds": 0.19780492782592773
+          },
+          "t2": {
+            "passed": true,
+            "first_success_seconds": 0.5370228290557861,
+            "status": "success",
+            "queue_seconds": 0.18064618110656738
+          },
+          "t3": {
+            "passed": true,
+            "first_success_seconds": 0.544896125793457,
+            "status": "success",
+            "queue_seconds": 0.18980789184570312
+          },
+          "t4": {
+            "passed": true,
+            "first_success_seconds": 0.9177753925323486,
+            "status": "success",
+            "queue_seconds": 0.10631632804870605
+          },
+          "t5": {
+            "passed": true,
+            "first_success_seconds": 0.9983105659484863,
+            "status": "success",
+            "queue_seconds": 0.7405698299407959
+          }
+        },
+        "events_path": "C:\\Users\\WYH\\AppData\\Local\\Temp\\trina-longrun-competition-final-2\\0-D_no_priority\\runs\\d_no_priority\\events.sqlite3",
+        "artifact_dir": "C:\\Users\\WYH\\AppData\\Local\\Temp\\trina-longrun-competition-final-2\\0-D_no_priority",
+        "fixture_sha256": {
+          "t0": "11a65f3835563d98b658c003db3ffb14972996c41fed351b86ca9edce9342ae8",
+          "t1": "8fca1134f6f2781a713811d83bf2e40ff68b83da14230a2709b57409d51c9a5d",
+          "t2": "cf35ef9d2c4f1810dcb8851938117dd9fc865dd3ab5d894ffae9e8fb564da47c",
+          "t3": "a8a9860fd836170765c6208484a3730112e484c7465245fcc41d3cd0e3b78fa5",
+          "t4": "11a65f3835563d98b658c003db3ffb14972996c41fed351b86ca9edce9342ae8",
+          "t5": "a8a9860fd836170765c6208484a3730112e484c7465245fcc41d3cd0e3b78fa5"
+        }
+      },
+      {
+        "arm": "D_no_priority",
+        "total_seconds": 1.08994722366333,
+        "verified_fixture_rate": 1.0,
+        "competition_success_rate": null,
+        "first_verified_seconds": 0.5018455982208252,
+        "model_requests": 24,
+        "provider_requests": 0,
+        "total_tokens": null,
+        "token_source": "replay_unreported",
+        "tool_calls": 18,
+        "invalid_tool_ratio": 0.0,
+        "worker_active_seconds": 2.1891915798187256,
+        "worker_idle_seconds": 1.4646236896514893,
+        "mean_ready_queue_seconds": 0.25376419226328534,
+        "peak_concurrency": 4,
+        "duplicate_executions": 0,
+        "context_budget_errors": 0,
+        "planner_rounds": 7,
+        "memory": {
+          "queries": 6,
+          "hits": 2,
+          "stored": 0,
+          "query_seconds": 0.008252499999798601,
+          "errors": 0
+        },
+        "latency": {
+          "task_queue": {
+            "samples": 6,
+            "p50_seconds": 0.196565,
+            "p95_seconds": 0.750589
+          },
+          "worker_to_request": {
+            "samples": 6,
+            "p50_seconds": 0.068872,
+            "p95_seconds": 0.077028
+          },
+          "worker_result_merge": {
+            "samples": 6,
+            "p50_seconds": 0.062138,
+            "p95_seconds": 0.106212
+          },
+          "user_to_request": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "request_to_connected": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.001503
+          },
+          "request_to_first_output": {
+            "samples": 24,
+            "p50_seconds": 0.000754,
+            "p95_seconds": 0.002507
+          },
+          "connected_to_first_output": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.001019
+          },
+          "request_to_first_text": {
+            "samples": 24,
+            "p50_seconds": 0.000754,
+            "p95_seconds": 0.002507
+          },
+          "request_total": {
+            "samples": 24,
+            "p50_seconds": 0.001004,
+            "p95_seconds": 0.003
+          },
+          "model_to_tool_start": {
+            "samples": 18,
+            "p50_seconds": 0.022813,
+            "p95_seconds": 0.037618
+          },
+          "tool_queue": {
+            "samples": 18,
+            "p50_seconds": 0.017583,
+            "p95_seconds": 0.032087
+          },
+          "tool_runtime": {
+            "samples": 18,
+            "p50_seconds": 0.028573,
+            "p95_seconds": 0.144667
+          },
+          "last_tool_to_request": {
+            "samples": 18,
+            "p50_seconds": 0.002793,
+            "p95_seconds": 0.015539
+          },
+          "state_prepare": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.015
+          },
+          "context_prepare": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.0
+          },
+          "context_diagnostic": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.0
+          },
+          "result_delivery": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "background_wait": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "completion_delivery": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "new_connection": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "transport_to_headers": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "transport_to_first_event": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          }
+        },
+        "tasks": {
+          "t0": {
+            "passed": true,
+            "first_success_seconds": 0.5018455982208252,
+            "status": "success",
+            "queue_seconds": 0.16596460342407227
+          },
+          "t1": {
+            "passed": true,
+            "first_success_seconds": 0.5277845859527588,
+            "status": "success",
+            "queue_seconds": 0.1800220012664795
+          },
+          "t2": {
+            "passed": true,
+            "first_success_seconds": 0.5252764225006104,
+            "status": "success",
+            "queue_seconds": 0.18700742721557617
+          },
+          "t3": {
+            "passed": true,
+            "first_success_seconds": 0.5122590065002441,
+            "status": "success",
+            "queue_seconds": 0.17297959327697754
+          },
+          "t4": {
+            "passed": true,
+            "first_success_seconds": 0.8948807716369629,
+            "status": "success",
+            "queue_seconds": 0.07807302474975586
+          },
+          "t5": {
+            "passed": true,
+            "first_success_seconds": 0.9787487983703613,
+            "status": "success",
+            "queue_seconds": 0.7385385036468506
+          }
+        },
+        "events_path": "C:\\Users\\WYH\\AppData\\Local\\Temp\\trina-longrun-competition-final-2\\1-D_no_priority\\runs\\d_no_priority\\events.sqlite3",
+        "artifact_dir": "C:\\Users\\WYH\\AppData\\Local\\Temp\\trina-longrun-competition-final-2\\1-D_no_priority",
+        "fixture_sha256": {
+          "t0": "11a65f3835563d98b658c003db3ffb14972996c41fed351b86ca9edce9342ae8",
+          "t1": "8fca1134f6f2781a713811d83bf2e40ff68b83da14230a2709b57409d51c9a5d",
+          "t2": "cf35ef9d2c4f1810dcb8851938117dd9fc865dd3ab5d894ffae9e8fb564da47c",
+          "t3": "a8a9860fd836170765c6208484a3730112e484c7465245fcc41d3cd0e3b78fa5",
+          "t4": "11a65f3835563d98b658c003db3ffb14972996c41fed351b86ca9edce9342ae8",
+          "t5": "a8a9860fd836170765c6208484a3730112e484c7465245fcc41d3cd0e3b78fa5"
+        }
+      },
+      {
+        "arm": "D_no_priority",
+        "total_seconds": 1.1258575916290283,
+        "verified_fixture_rate": 1.0,
+        "competition_success_rate": null,
+        "first_verified_seconds": 0.5091099739074707,
+        "model_requests": 24,
+        "provider_requests": 0,
+        "total_tokens": null,
+        "token_source": "replay_unreported",
+        "tool_calls": 18,
+        "invalid_tool_ratio": 0.0,
+        "worker_active_seconds": 2.279402494430542,
+        "worker_idle_seconds": 1.4785213470458984,
+        "mean_ready_queue_seconds": 0.26459046204884845,
+        "peak_concurrency": 4,
+        "duplicate_executions": 0,
+        "context_budget_errors": 0,
+        "planner_rounds": 7,
+        "memory": {
+          "queries": 6,
+          "hits": 2,
+          "stored": 0,
+          "query_seconds": 0.007671399995160755,
+          "errors": 0
+        },
+        "latency": {
+          "task_queue": {
+            "samples": 6,
+            "p50_seconds": 0.209149,
+            "p95_seconds": 0.758523
+          },
+          "worker_to_request": {
+            "samples": 6,
+            "p50_seconds": 0.070186,
+            "p95_seconds": 0.080381
+          },
+          "worker_result_merge": {
+            "samples": 6,
+            "p50_seconds": 0.050456,
+            "p95_seconds": 0.071845
+          },
+          "user_to_request": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "request_to_connected": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.001012
+          },
+          "request_to_first_output": {
+            "samples": 24,
+            "p50_seconds": 0.001,
+            "p95_seconds": 0.001999
+          },
+          "connected_to_first_output": {
+            "samples": 24,
+            "p50_seconds": 0.000494,
+            "p95_seconds": 0.001509
+          },
+          "request_to_first_text": {
+            "samples": 24,
+            "p50_seconds": 0.001,
+            "p95_seconds": 0.001999
+          },
+          "request_total": {
+            "samples": 24,
+            "p50_seconds": 0.001044,
+            "p95_seconds": 0.002007
+          },
+          "model_to_tool_start": {
+            "samples": 18,
+            "p50_seconds": 0.022539,
+            "p95_seconds": 0.040007
+          },
+          "tool_queue": {
+            "samples": 18,
+            "p50_seconds": 0.016927,
+            "p95_seconds": 0.03229
+          },
+          "tool_runtime": {
+            "samples": 18,
+            "p50_seconds": 0.031915,
+            "p95_seconds": 0.143838
+          },
+          "last_tool_to_request": {
+            "samples": 18,
+            "p50_seconds": 0.002976,
+            "p95_seconds": 0.027215
+          },
+          "state_prepare": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.015
+          },
+          "context_prepare": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.0
+          },
+          "context_diagnostic": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.0
+          },
+          "result_delivery": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "background_wait": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "completion_delivery": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "new_connection": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "transport_to_headers": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "transport_to_first_event": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          }
+        },
+        "tasks": {
+          "t0": {
+            "passed": true,
+            "first_success_seconds": 0.5091099739074707,
+            "status": "success",
+            "queue_seconds": 0.17244911193847656
+          },
+          "t1": {
+            "passed": true,
+            "first_success_seconds": 0.5458869934082031,
+            "status": "success",
+            "queue_seconds": 0.1888751983642578
+          },
+          "t2": {
+            "passed": true,
+            "first_success_seconds": 0.5424234867095947,
+            "status": "success",
+            "queue_seconds": 0.20231127738952637
+          },
+          "t3": {
+            "passed": true,
+            "first_success_seconds": 0.5379147529602051,
+            "status": "success",
+            "queue_seconds": 0.1818709373474121
+          },
+          "t4": {
+            "passed": true,
+            "first_success_seconds": 0.9201366901397705,
+            "status": "success",
+            "queue_seconds": 0.09706878662109375
+          },
+          "t5": {
+            "passed": true,
+            "first_success_seconds": 0.9949908256530762,
+            "status": "success",
+            "queue_seconds": 0.7449674606323242
+          }
+        },
+        "events_path": "C:\\Users\\WYH\\AppData\\Local\\Temp\\trina-longrun-competition-final-2\\2-D_no_priority\\runs\\d_no_priority\\events.sqlite3",
+        "artifact_dir": "C:\\Users\\WYH\\AppData\\Local\\Temp\\trina-longrun-competition-final-2\\2-D_no_priority",
+        "fixture_sha256": {
+          "t0": "11a65f3835563d98b658c003db3ffb14972996c41fed351b86ca9edce9342ae8",
+          "t1": "8fca1134f6f2781a713811d83bf2e40ff68b83da14230a2709b57409d51c9a5d",
+          "t2": "cf35ef9d2c4f1810dcb8851938117dd9fc865dd3ab5d894ffae9e8fb564da47c",
+          "t3": "a8a9860fd836170765c6208484a3730112e484c7465245fcc41d3cd0e3b78fa5",
+          "t4": "11a65f3835563d98b658c003db3ffb14972996c41fed351b86ca9edce9342ae8",
+          "t5": "a8a9860fd836170765c6208484a3730112e484c7465245fcc41d3cd0e3b78fa5"
+        }
+      }
+    ],
+    "D_fixed_workers": [
+      {
+        "arm": "D_fixed_workers",
+        "total_seconds": 1.1850979328155518,
+        "verified_fixture_rate": 1.0,
+        "competition_success_rate": null,
+        "first_verified_seconds": 0.4992678165435791,
+        "model_requests": 24,
+        "provider_requests": 0,
+        "total_tokens": null,
+        "token_source": "replay_unreported",
+        "tool_calls": 18,
+        "invalid_tool_ratio": 0.0,
+        "worker_active_seconds": 2.256453037261963,
+        "worker_idle_seconds": 1.7105724811553955,
+        "mean_ready_queue_seconds": 0.2896331151326497,
+        "peak_concurrency": 4,
+        "duplicate_executions": 0,
+        "context_budget_errors": 0,
+        "planner_rounds": 3,
+        "memory": {
+          "queries": 6,
+          "hits": 2,
+          "stored": 0,
+          "query_seconds": 0.00847809999686433,
+          "errors": 0
+        },
+        "latency": {
+          "task_queue": {
+            "samples": 6,
+            "p50_seconds": 0.219416,
+            "p95_seconds": 0.776904
+          },
+          "worker_to_request": {
+            "samples": 6,
+            "p50_seconds": 0.0674,
+            "p95_seconds": 0.073281
+          },
+          "worker_result_merge": {
+            "samples": 6,
+            "p50_seconds": 0.048283,
+            "p95_seconds": 0.067094
+          },
+          "user_to_request": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "request_to_connected": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.001012
+          },
+          "request_to_first_output": {
+            "samples": 24,
+            "p50_seconds": 0.001,
+            "p95_seconds": 0.002001
+          },
+          "connected_to_first_output": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.001252
+          },
+          "request_to_first_text": {
+            "samples": 24,
+            "p50_seconds": 0.001,
+            "p95_seconds": 0.002001
+          },
+          "request_total": {
+            "samples": 24,
+            "p50_seconds": 0.001,
+            "p95_seconds": 0.002252
+          },
+          "model_to_tool_start": {
+            "samples": 18,
+            "p50_seconds": 0.023053,
+            "p95_seconds": 0.032964
+          },
+          "tool_queue": {
+            "samples": 18,
+            "p50_seconds": 0.017657,
+            "p95_seconds": 0.025907
+          },
+          "tool_runtime": {
+            "samples": 18,
+            "p50_seconds": 0.032133,
+            "p95_seconds": 0.13602
+          },
+          "last_tool_to_request": {
+            "samples": 18,
+            "p50_seconds": 0.003002,
+            "p95_seconds": 0.021948
+          },
+          "state_prepare": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.016
+          },
+          "context_prepare": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.0
+          },
+          "context_diagnostic": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.0
+          },
+          "result_delivery": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "background_wait": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "completion_delivery": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "new_connection": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "transport_to_headers": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "transport_to_first_event": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          }
+        },
+        "tasks": {
+          "t0": {
+            "passed": true,
+            "first_success_seconds": 0.4992678165435791,
+            "status": "success",
+            "queue_seconds": 0.1772477626800537
+          },
+          "t1": {
+            "passed": true,
+            "first_success_seconds": 0.5338850021362305,
+            "status": "success",
+            "queue_seconds": 0.20984315872192383
+          },
+          "t2": {
+            "passed": true,
+            "first_success_seconds": 0.5303797721862793,
+            "status": "success",
+            "queue_seconds": 0.19900131225585938
+          },
+          "t3": {
+            "passed": true,
+            "first_success_seconds": 0.5148451328277588,
+            "status": "success",
+            "queue_seconds": 0.18727397918701172
+          },
+          "t4": {
+            "passed": true,
+            "first_success_seconds": 1.05259108543396,
+            "status": "success",
+            "queue_seconds": 0.203019380569458
+          },
+          "t5": {
+            "passed": true,
+            "first_success_seconds": 1.055103063583374,
+            "status": "success",
+            "queue_seconds": 0.7614130973815918
+          }
+        },
+        "events_path": "C:\\Users\\WYH\\AppData\\Local\\Temp\\trina-longrun-competition-final-2\\0-D_fixed_workers\\runs\\d_fixed_workers\\events.sqlite3",
+        "artifact_dir": "C:\\Users\\WYH\\AppData\\Local\\Temp\\trina-longrun-competition-final-2\\0-D_fixed_workers",
+        "fixture_sha256": {
+          "t0": "11a65f3835563d98b658c003db3ffb14972996c41fed351b86ca9edce9342ae8",
+          "t1": "8fca1134f6f2781a713811d83bf2e40ff68b83da14230a2709b57409d51c9a5d",
+          "t2": "cf35ef9d2c4f1810dcb8851938117dd9fc865dd3ab5d894ffae9e8fb564da47c",
+          "t3": "a8a9860fd836170765c6208484a3730112e484c7465245fcc41d3cd0e3b78fa5",
+          "t4": "11a65f3835563d98b658c003db3ffb14972996c41fed351b86ca9edce9342ae8",
+          "t5": "a8a9860fd836170765c6208484a3730112e484c7465245fcc41d3cd0e3b78fa5"
+        }
+      },
+      {
+        "arm": "D_fixed_workers",
+        "total_seconds": 1.1389386653900146,
+        "verified_fixture_rate": 1.0,
+        "competition_success_rate": null,
+        "first_verified_seconds": 0.46235060691833496,
+        "model_requests": 24,
+        "provider_requests": 0,
+        "total_tokens": null,
+        "token_source": "replay_unreported",
+        "tool_calls": 18,
+        "invalid_tool_ratio": 0.0,
+        "worker_active_seconds": 2.140622854232788,
+        "worker_idle_seconds": 1.7109684944152832,
+        "mean_ready_queue_seconds": 0.273184855779012,
+        "peak_concurrency": 4,
+        "duplicate_executions": 0,
+        "context_budget_errors": 0,
+        "planner_rounds": 3,
+        "memory": {
+          "queries": 6,
+          "hits": 2,
+          "stored": 0,
+          "query_seconds": 0.007585499999549938,
+          "errors": 0
+        },
+        "latency": {
+          "task_queue": {
+            "samples": 6,
+            "p50_seconds": 0.197041,
+            "p95_seconds": 0.740618
+          },
+          "worker_to_request": {
+            "samples": 6,
+            "p50_seconds": 0.064025,
+            "p95_seconds": 0.076828
+          },
+          "worker_result_merge": {
+            "samples": 6,
+            "p50_seconds": 0.053732,
+            "p95_seconds": 0.076669
+          },
+          "user_to_request": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "request_to_connected": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.001015
+          },
+          "request_to_first_output": {
+            "samples": 24,
+            "p50_seconds": 0.000998,
+            "p95_seconds": 0.001015
+          },
+          "connected_to_first_output": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.001007
+          },
+          "request_to_first_text": {
+            "samples": 24,
+            "p50_seconds": 0.000998,
+            "p95_seconds": 0.001015
+          },
+          "request_total": {
+            "samples": 24,
+            "p50_seconds": 0.001008,
+            "p95_seconds": 0.002174
+          },
+          "model_to_tool_start": {
+            "samples": 18,
+            "p50_seconds": 0.020136,
+            "p95_seconds": 0.028877
+          },
+          "tool_queue": {
+            "samples": 18,
+            "p50_seconds": 0.015017,
+            "p95_seconds": 0.024873
+          },
+          "tool_runtime": {
+            "samples": 18,
+            "p50_seconds": 0.02921,
+            "p95_seconds": 0.137246
+          },
+          "last_tool_to_request": {
+            "samples": 18,
+            "p50_seconds": 0.003058,
+            "p95_seconds": 0.024513
+          },
+          "state_prepare": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.016
+          },
+          "context_prepare": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.0
+          },
+          "context_diagnostic": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.0
+          },
+          "result_delivery": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "background_wait": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "completion_delivery": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "new_connection": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "transport_to_headers": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "transport_to_first_event": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          }
+        },
+        "tasks": {
+          "t0": {
+            "passed": true,
+            "first_success_seconds": 0.46235060691833496,
+            "status": "success",
+            "queue_seconds": 0.16302156448364258
+          },
+          "t1": {
+            "passed": true,
+            "first_success_seconds": 0.4909698963165283,
+            "status": "success",
+            "queue_seconds": 0.17382311820983887
+          },
+          "t2": {
+            "passed": true,
+            "first_success_seconds": 0.4974808692932129,
+            "status": "success",
+            "queue_seconds": 0.17988991737365723
+          },
+          "t3": {
+            "passed": true,
+            "first_success_seconds": 0.504957914352417,
+            "status": "success",
+            "queue_seconds": 0.18742871284484863
+          },
+          "t4": {
+            "passed": true,
+            "first_success_seconds": 0.9897511005401611,
+            "status": "success",
+            "queue_seconds": 0.20770931243896484
+          },
+          "t5": {
+            "passed": true,
+            "first_success_seconds": 1.000303030014038,
+            "status": "success",
+            "queue_seconds": 0.7272365093231201
+          }
+        },
+        "events_path": "C:\\Users\\WYH\\AppData\\Local\\Temp\\trina-longrun-competition-final-2\\1-D_fixed_workers\\runs\\d_fixed_workers\\events.sqlite3",
+        "artifact_dir": "C:\\Users\\WYH\\AppData\\Local\\Temp\\trina-longrun-competition-final-2\\1-D_fixed_workers",
+        "fixture_sha256": {
+          "t0": "11a65f3835563d98b658c003db3ffb14972996c41fed351b86ca9edce9342ae8",
+          "t1": "8fca1134f6f2781a713811d83bf2e40ff68b83da14230a2709b57409d51c9a5d",
+          "t2": "cf35ef9d2c4f1810dcb8851938117dd9fc865dd3ab5d894ffae9e8fb564da47c",
+          "t3": "a8a9860fd836170765c6208484a3730112e484c7465245fcc41d3cd0e3b78fa5",
+          "t4": "11a65f3835563d98b658c003db3ffb14972996c41fed351b86ca9edce9342ae8",
+          "t5": "a8a9860fd836170765c6208484a3730112e484c7465245fcc41d3cd0e3b78fa5"
+        }
+      },
+      {
+        "arm": "D_fixed_workers",
+        "total_seconds": 1.141749382019043,
+        "verified_fixture_rate": 1.0,
+        "competition_success_rate": null,
+        "first_verified_seconds": 0.505378007888794,
+        "model_requests": 24,
+        "provider_requests": 0,
+        "total_tokens": null,
+        "token_source": "replay_unreported",
+        "tool_calls": 18,
+        "invalid_tool_ratio": 0.0,
+        "worker_active_seconds": 2.2021877765655518,
+        "worker_idle_seconds": 1.6159327030181885,
+        "mean_ready_queue_seconds": 0.26929227511088055,
+        "peak_concurrency": 4,
+        "duplicate_executions": 0,
+        "context_budget_errors": 0,
+        "planner_rounds": 3,
+        "memory": {
+          "queries": 6,
+          "hits": 2,
+          "stored": 0,
+          "query_seconds": 0.007268199991813162,
+          "errors": 0
+        },
+        "latency": {
+          "task_queue": {
+            "samples": 6,
+            "p50_seconds": 0.207929,
+            "p95_seconds": 0.726983
+          },
+          "worker_to_request": {
+            "samples": 6,
+            "p50_seconds": 0.061645,
+            "p95_seconds": 0.081872
+          },
+          "worker_result_merge": {
+            "samples": 6,
+            "p50_seconds": 0.037464,
+            "p95_seconds": 0.073403
+          },
+          "user_to_request": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "request_to_connected": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.001012
+          },
+          "request_to_first_output": {
+            "samples": 24,
+            "p50_seconds": 0.001002,
+            "p95_seconds": 0.002099
+          },
+          "connected_to_first_output": {
+            "samples": 24,
+            "p50_seconds": 0.000996,
+            "p95_seconds": 0.001505
+          },
+          "request_to_first_text": {
+            "samples": 24,
+            "p50_seconds": 0.001002,
+            "p95_seconds": 0.002099
+          },
+          "request_total": {
+            "samples": 24,
+            "p50_seconds": 0.001012,
+            "p95_seconds": 0.004
+          },
+          "model_to_tool_start": {
+            "samples": 18,
+            "p50_seconds": 0.022126,
+            "p95_seconds": 0.034278
+          },
+          "tool_queue": {
+            "samples": 18,
+            "p50_seconds": 0.016961,
+            "p95_seconds": 0.028062
+          },
+          "tool_runtime": {
+            "samples": 18,
+            "p50_seconds": 0.031692,
+            "p95_seconds": 0.137151
+          },
+          "last_tool_to_request": {
+            "samples": 18,
+            "p50_seconds": 0.003304,
+            "p95_seconds": 0.01406
+          },
+          "state_prepare": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.015
+          },
+          "context_prepare": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.0
+          },
+          "context_diagnostic": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.0
+          },
+          "result_delivery": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "background_wait": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "completion_delivery": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "new_connection": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "transport_to_headers": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "transport_to_first_event": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          }
+        },
+        "tasks": {
+          "t0": {
+            "passed": true,
+            "first_success_seconds": 0.505378007888794,
+            "status": "success",
+            "queue_seconds": 0.17774510383605957
+          },
+          "t1": {
+            "passed": true,
+            "first_success_seconds": 0.5129184722900391,
+            "status": "success",
+            "queue_seconds": 0.18339824676513672
+          },
+          "t2": {
+            "passed": true,
+            "first_success_seconds": 0.5325925350189209,
+            "status": "success",
+            "queue_seconds": 0.1999058723449707
+          },
+          "t3": {
+            "passed": true,
+            "first_success_seconds": 0.53106689453125,
+            "status": "success",
+            "queue_seconds": 0.18782782554626465
+          },
+          "t4": {
+            "passed": true,
+            "first_success_seconds": 0.9816808700561523,
+            "status": "success",
+            "queue_seconds": 0.15395522117614746
+          },
+          "t5": {
+            "passed": true,
+            "first_success_seconds": 0.9907405376434326,
+            "status": "success",
+            "queue_seconds": 0.7129213809967041
+          }
+        },
+        "events_path": "C:\\Users\\WYH\\AppData\\Local\\Temp\\trina-longrun-competition-final-2\\2-D_fixed_workers\\runs\\d_fixed_workers\\events.sqlite3",
+        "artifact_dir": "C:\\Users\\WYH\\AppData\\Local\\Temp\\trina-longrun-competition-final-2\\2-D_fixed_workers",
+        "fixture_sha256": {
+          "t0": "11a65f3835563d98b658c003db3ffb14972996c41fed351b86ca9edce9342ae8",
+          "t1": "8fca1134f6f2781a713811d83bf2e40ff68b83da14230a2709b57409d51c9a5d",
+          "t2": "cf35ef9d2c4f1810dcb8851938117dd9fc865dd3ab5d894ffae9e8fb564da47c",
+          "t3": "a8a9860fd836170765c6208484a3730112e484c7465245fcc41d3cd0e3b78fa5",
+          "t4": "11a65f3835563d98b658c003db3ffb14972996c41fed351b86ca9edce9342ae8",
+          "t5": "a8a9860fd836170765c6208484a3730112e484c7465245fcc41d3cd0e3b78fa5"
+        }
+      }
+    ],
+    "D_poll_replanning": [
+      {
+        "arm": "D_poll_replanning",
+        "total_seconds": 1.256934642791748,
+        "verified_fixture_rate": 1.0,
+        "competition_success_rate": null,
+        "first_verified_seconds": 0.4920659065246582,
+        "model_requests": 24,
+        "provider_requests": 0,
+        "total_tokens": null,
+        "token_source": "replay_unreported",
+        "tool_calls": 18,
+        "invalid_tool_ratio": 0.0,
+        "worker_active_seconds": 2.2249507904052734,
+        "worker_idle_seconds": 2.053615093231201,
+        "mean_ready_queue_seconds": 0.287832776705424,
+        "peak_concurrency": 4,
+        "duplicate_executions": 0,
+        "context_budget_errors": 0,
+        "planner_rounds": 6,
+        "memory": {
+          "queries": 6,
+          "hits": 2,
+          "stored": 0,
+          "query_seconds": 0.007100200004060753,
+          "errors": 0
+        },
+        "latency": {
+          "task_queue": {
+            "samples": 6,
+            "p50_seconds": 0.211056,
+            "p95_seconds": 0.770235
+          },
+          "worker_to_request": {
+            "samples": 6,
+            "p50_seconds": 0.064929,
+            "p95_seconds": 0.074821
+          },
+          "worker_result_merge": {
+            "samples": 6,
+            "p50_seconds": 0.098118,
+            "p95_seconds": 0.128457
+          },
+          "user_to_request": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "request_to_connected": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.001
+          },
+          "request_to_first_output": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.001
+          },
+          "connected_to_first_output": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.000999
+          },
+          "request_to_first_text": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.001
+          },
+          "request_total": {
+            "samples": 24,
+            "p50_seconds": 0.000494,
+            "p95_seconds": 0.001507
+          },
+          "model_to_tool_start": {
+            "samples": 18,
+            "p50_seconds": 0.024457,
+            "p95_seconds": 0.040018
+          },
+          "tool_queue": {
+            "samples": 18,
+            "p50_seconds": 0.018675,
+            "p95_seconds": 0.029744
+          },
+          "tool_runtime": {
+            "samples": 18,
+            "p50_seconds": 0.03373,
+            "p95_seconds": 0.143288
+          },
+          "last_tool_to_request": {
+            "samples": 18,
+            "p50_seconds": 0.003768,
+            "p95_seconds": 0.010246
+          },
+          "state_prepare": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.016
+          },
+          "context_prepare": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.0
+          },
+          "context_diagnostic": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.0
+          },
+          "result_delivery": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "background_wait": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "completion_delivery": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "new_connection": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "transport_to_headers": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "transport_to_first_event": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          }
+        },
+        "tasks": {
+          "t0": {
+            "passed": true,
+            "first_success_seconds": 0.4920659065246582,
+            "status": "success",
+            "queue_seconds": 0.1748335361480713
+          },
+          "t1": {
+            "passed": true,
+            "first_success_seconds": 0.5330960750579834,
+            "status": "success",
+            "queue_seconds": 0.18999218940734863
+          },
+          "t2": {
+            "passed": true,
+            "first_success_seconds": 0.5341005325317383,
+            "status": "success",
+            "queue_seconds": 0.18248271942138672
+          },
+          "t3": {
+            "passed": true,
+            "first_success_seconds": 0.5371010303497314,
+            "status": "success",
+            "queue_seconds": 0.20186424255371094
+          },
+          "t4": {
+            "passed": true,
+            "first_success_seconds": 1.0567259788513184,
+            "status": "success",
+            "queue_seconds": 0.2227168083190918
+          },
+          "t5": {
+            "passed": true,
+            "first_success_seconds": 1.0609652996063232,
+            "status": "success",
+            "queue_seconds": 0.7551071643829346
+          }
+        },
+        "events_path": "C:\\Users\\WYH\\AppData\\Local\\Temp\\trina-longrun-competition-final-2\\0-D_poll_replanning\\runs\\d_poll_replanning\\events.sqlite3",
+        "artifact_dir": "C:\\Users\\WYH\\AppData\\Local\\Temp\\trina-longrun-competition-final-2\\0-D_poll_replanning",
+        "fixture_sha256": {
+          "t0": "11a65f3835563d98b658c003db3ffb14972996c41fed351b86ca9edce9342ae8",
+          "t1": "8fca1134f6f2781a713811d83bf2e40ff68b83da14230a2709b57409d51c9a5d",
+          "t2": "cf35ef9d2c4f1810dcb8851938117dd9fc865dd3ab5d894ffae9e8fb564da47c",
+          "t3": "a8a9860fd836170765c6208484a3730112e484c7465245fcc41d3cd0e3b78fa5",
+          "t4": "11a65f3835563d98b658c003db3ffb14972996c41fed351b86ca9edce9342ae8",
+          "t5": "a8a9860fd836170765c6208484a3730112e484c7465245fcc41d3cd0e3b78fa5"
+        }
+      },
+      {
+        "arm": "D_poll_replanning",
+        "total_seconds": 1.1863000392913818,
+        "verified_fixture_rate": 1.0,
+        "competition_success_rate": null,
+        "first_verified_seconds": 0.5237088203430176,
+        "model_requests": 24,
+        "provider_requests": 0,
+        "total_tokens": null,
+        "token_source": "replay_unreported",
+        "tool_calls": 18,
+        "invalid_tool_ratio": 0.0,
+        "worker_active_seconds": 2.315122604370117,
+        "worker_idle_seconds": 1.6614866256713867,
+        "mean_ready_queue_seconds": 0.28681739171346027,
+        "peak_concurrency": 4,
+        "duplicate_executions": 0,
+        "context_budget_errors": 0,
+        "planner_rounds": 6,
+        "memory": {
+          "queries": 6,
+          "hits": 2,
+          "stored": 0,
+          "query_seconds": 0.00890820000495296,
+          "errors": 0
+        },
+        "latency": {
+          "task_queue": {
+            "samples": 6,
+            "p50_seconds": 0.216391,
+            "p95_seconds": 0.828445
+          },
+          "worker_to_request": {
+            "samples": 6,
+            "p50_seconds": 0.066737,
+            "p95_seconds": 0.082536
+          },
+          "worker_result_merge": {
+            "samples": 6,
+            "p50_seconds": 0.108148,
+            "p95_seconds": 0.126475
+          },
+          "user_to_request": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "request_to_connected": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.001511
+          },
+          "request_to_first_output": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.001511
+          },
+          "connected_to_first_output": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.001005
+          },
+          "request_to_first_text": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.001511
+          },
+          "request_total": {
+            "samples": 24,
+            "p50_seconds": 0.001001,
+            "p95_seconds": 0.001511
+          },
+          "model_to_tool_start": {
+            "samples": 18,
+            "p50_seconds": 0.024343,
+            "p95_seconds": 0.036853
+          },
+          "tool_queue": {
+            "samples": 18,
+            "p50_seconds": 0.01893,
+            "p95_seconds": 0.031842
+          },
+          "tool_runtime": {
+            "samples": 18,
+            "p50_seconds": 0.032931,
+            "p95_seconds": 0.155684
+          },
+          "last_tool_to_request": {
+            "samples": 18,
+            "p50_seconds": 0.002267,
+            "p95_seconds": 0.025864
+          },
+          "state_prepare": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.015
+          },
+          "context_prepare": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.0
+          },
+          "context_diagnostic": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.0
+          },
+          "result_delivery": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "background_wait": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "completion_delivery": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "new_connection": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "transport_to_headers": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "transport_to_first_event": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          }
+        },
+        "tasks": {
+          "t0": {
+            "passed": true,
+            "first_success_seconds": 0.5237088203430176,
+            "status": "success",
+            "queue_seconds": 0.17876958847045898
+          },
+          "t1": {
+            "passed": true,
+            "first_success_seconds": 0.557682991027832,
+            "status": "success",
+            "queue_seconds": 0.1958627700805664
+          },
+          "t2": {
+            "passed": true,
+            "first_success_seconds": 0.5566823482513428,
+            "status": "success",
+            "queue_seconds": 0.20622515678405762
+          },
+          "t3": {
+            "passed": true,
+            "first_success_seconds": 0.5546772480010986,
+            "status": "success",
+            "queue_seconds": 0.18773341178894043
+          },
+          "t4": {
+            "passed": true,
+            "first_success_seconds": 0.9991428852081299,
+            "status": "success",
+            "queue_seconds": 0.13921546936035156
+          },
+          "t5": {
+            "passed": true,
+            "first_success_seconds": 1.0701265335083008,
+            "status": "success",
+            "queue_seconds": 0.8130979537963867
+          }
+        },
+        "events_path": "C:\\Users\\WYH\\AppData\\Local\\Temp\\trina-longrun-competition-final-2\\1-D_poll_replanning\\runs\\d_poll_replanning\\events.sqlite3",
+        "artifact_dir": "C:\\Users\\WYH\\AppData\\Local\\Temp\\trina-longrun-competition-final-2\\1-D_poll_replanning",
+        "fixture_sha256": {
+          "t0": "11a65f3835563d98b658c003db3ffb14972996c41fed351b86ca9edce9342ae8",
+          "t1": "8fca1134f6f2781a713811d83bf2e40ff68b83da14230a2709b57409d51c9a5d",
+          "t2": "cf35ef9d2c4f1810dcb8851938117dd9fc865dd3ab5d894ffae9e8fb564da47c",
+          "t3": "a8a9860fd836170765c6208484a3730112e484c7465245fcc41d3cd0e3b78fa5",
+          "t4": "11a65f3835563d98b658c003db3ffb14972996c41fed351b86ca9edce9342ae8",
+          "t5": "a8a9860fd836170765c6208484a3730112e484c7465245fcc41d3cd0e3b78fa5"
+        }
+      },
+      {
+        "arm": "D_poll_replanning",
+        "total_seconds": 1.2973978519439697,
+        "verified_fixture_rate": 1.0,
+        "competition_success_rate": null,
+        "first_verified_seconds": 0.5472445487976074,
+        "model_requests": 24,
+        "provider_requests": 0,
+        "total_tokens": null,
+        "token_source": "replay_unreported",
+        "tool_calls": 18,
+        "invalid_tool_ratio": 0.0,
+        "worker_active_seconds": 2.3719682693481445,
+        "worker_idle_seconds": 2.047058343887329,
+        "mean_ready_queue_seconds": 0.2839862108230591,
+        "peak_concurrency": 4,
+        "duplicate_executions": 0,
+        "context_budget_errors": 0,
+        "planner_rounds": 7,
+        "memory": {
+          "queries": 6,
+          "hits": 2,
+          "stored": 0,
+          "query_seconds": 0.00796299999637995,
+          "errors": 0
+        },
+        "latency": {
+          "task_queue": {
+            "samples": 6,
+            "p50_seconds": 0.215117,
+            "p95_seconds": 0.787231
+          },
+          "worker_to_request": {
+            "samples": 6,
+            "p50_seconds": 0.070083,
+            "p95_seconds": 0.072397
+          },
+          "worker_result_merge": {
+            "samples": 6,
+            "p50_seconds": 0.067677,
+            "p95_seconds": 0.168415
+          },
+          "user_to_request": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "request_to_connected": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.001193
+          },
+          "request_to_first_output": {
+            "samples": 24,
+            "p50_seconds": 0.000496,
+            "p95_seconds": 0.001193
+          },
+          "connected_to_first_output": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.001003
+          },
+          "request_to_first_text": {
+            "samples": 24,
+            "p50_seconds": 0.000496,
+            "p95_seconds": 0.001193
+          },
+          "request_total": {
+            "samples": 24,
+            "p50_seconds": 0.000999,
+            "p95_seconds": 0.001504
+          },
+          "model_to_tool_start": {
+            "samples": 18,
+            "p50_seconds": 0.026907,
+            "p95_seconds": 0.034024
+          },
+          "tool_queue": {
+            "samples": 18,
+            "p50_seconds": 0.020226,
+            "p95_seconds": 0.028312
+          },
+          "tool_runtime": {
+            "samples": 18,
+            "p50_seconds": 0.029505,
+            "p95_seconds": 0.161033
+          },
+          "last_tool_to_request": {
+            "samples": 18,
+            "p50_seconds": 0.003107,
+            "p95_seconds": 0.016913
+          },
+          "state_prepare": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.016
+          },
+          "context_prepare": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.0
+          },
+          "context_diagnostic": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.0
+          },
+          "result_delivery": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "background_wait": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "completion_delivery": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "new_connection": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "transport_to_headers": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "transport_to_first_event": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          }
+        },
+        "tasks": {
+          "t0": {
+            "passed": true,
+            "first_success_seconds": 0.5531456470489502,
+            "status": "success",
+            "queue_seconds": 0.17904067039489746
+          },
+          "t1": {
+            "passed": true,
+            "first_success_seconds": 0.5615425109863281,
+            "status": "success",
+            "queue_seconds": 0.19434380531311035
+          },
+          "t2": {
+            "passed": true,
+            "first_success_seconds": 0.5472445487976074,
+            "status": "success",
+            "queue_seconds": 0.18905162811279297
+          },
+          "t3": {
+            "passed": true,
+            "first_success_seconds": 0.5593569278717041,
+            "status": "success",
+            "queue_seconds": 0.2081286907196045
+          },
+          "t4": {
+            "passed": true,
+            "first_success_seconds": 1.0664880275726318,
+            "status": "success",
+            "queue_seconds": 0.16000127792358398
+          },
+          "t5": {
+            "passed": true,
+            "first_success_seconds": 1.0689938068389893,
+            "status": "success",
+            "queue_seconds": 0.7733511924743652
+          }
+        },
+        "events_path": "C:\\Users\\WYH\\AppData\\Local\\Temp\\trina-longrun-competition-final-2\\2-D_poll_replanning\\runs\\d_poll_replanning\\events.sqlite3",
+        "artifact_dir": "C:\\Users\\WYH\\AppData\\Local\\Temp\\trina-longrun-competition-final-2\\2-D_poll_replanning",
+        "fixture_sha256": {
+          "t0": "11a65f3835563d98b658c003db3ffb14972996c41fed351b86ca9edce9342ae8",
+          "t1": "8fca1134f6f2781a713811d83bf2e40ff68b83da14230a2709b57409d51c9a5d",
+          "t2": "cf35ef9d2c4f1810dcb8851938117dd9fc865dd3ab5d894ffae9e8fb564da47c",
+          "t3": "a8a9860fd836170765c6208484a3730112e484c7465245fcc41d3cd0e3b78fa5",
+          "t4": "11a65f3835563d98b658c003db3ffb14972996c41fed351b86ca9edce9342ae8",
+          "t5": "a8a9860fd836170765c6208484a3730112e484c7465245fcc41d3cd0e3b78fa5"
+        }
+      }
+    ],
+    "D_no_memory": [
+      {
+        "arm": "D_no_memory",
+        "total_seconds": 1.1726348400115967,
+        "verified_fixture_rate": 1.0,
+        "competition_success_rate": null,
+        "first_verified_seconds": 0.5242366790771484,
+        "model_requests": 24,
+        "provider_requests": 0,
+        "total_tokens": null,
+        "token_source": "replay_unreported",
+        "tool_calls": 18,
+        "invalid_tool_ratio": 0.0,
+        "worker_active_seconds": 2.3682940006256104,
+        "worker_idle_seconds": 1.6345953941345215,
+        "mean_ready_queue_seconds": 0.26547781626383465,
+        "peak_concurrency": 4,
+        "duplicate_executions": 0,
+        "context_budget_errors": 0,
+        "planner_rounds": 7,
+        "memory": {
+          "queries": 0,
+          "hits": 0,
+          "stored": 0,
+          "query_seconds": 0.0,
+          "errors": 0
+        },
+        "latency": {
+          "task_queue": {
+            "samples": 6,
+            "p50_seconds": 0.187091,
+            "p95_seconds": 0.808389
+          },
+          "worker_to_request": {
+            "samples": 6,
+            "p50_seconds": 0.065312,
+            "p95_seconds": 0.074843
+          },
+          "worker_result_merge": {
+            "samples": 6,
+            "p50_seconds": 0.084861,
+            "p95_seconds": 0.125734
+          },
+          "user_to_request": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "request_to_connected": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.001005
+          },
+          "request_to_first_output": {
+            "samples": 24,
+            "p50_seconds": 0.001,
+            "p95_seconds": 0.002165
+          },
+          "connected_to_first_output": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.001414
+          },
+          "request_to_first_text": {
+            "samples": 24,
+            "p50_seconds": 0.001,
+            "p95_seconds": 0.002165
+          },
+          "request_total": {
+            "samples": 24,
+            "p50_seconds": 0.001001,
+            "p95_seconds": 0.003168
+          },
+          "model_to_tool_start": {
+            "samples": 18,
+            "p50_seconds": 0.02403,
+            "p95_seconds": 0.040252
+          },
+          "tool_queue": {
+            "samples": 18,
+            "p50_seconds": 0.018485,
+            "p95_seconds": 0.033233
+          },
+          "tool_runtime": {
+            "samples": 18,
+            "p50_seconds": 0.029001,
+            "p95_seconds": 0.163715
+          },
+          "last_tool_to_request": {
+            "samples": 18,
+            "p50_seconds": 0.003014,
+            "p95_seconds": 0.032789
+          },
+          "state_prepare": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.0
+          },
+          "context_prepare": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.0
+          },
+          "context_diagnostic": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.0
+          },
+          "result_delivery": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "background_wait": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "completion_delivery": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "new_connection": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "transport_to_headers": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "transport_to_first_event": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          }
+        },
+        "tasks": {
+          "t0": {
+            "passed": true,
+            "first_success_seconds": 0.5242366790771484,
+            "status": "success",
+            "queue_seconds": 0.1708087921142578
+          },
+          "t1": {
+            "passed": true,
+            "first_success_seconds": 0.5242366790771484,
+            "status": "success",
+            "queue_seconds": 0.17194271087646484
+          },
+          "t2": {
+            "passed": true,
+            "first_success_seconds": 0.5287449359893799,
+            "status": "success",
+            "queue_seconds": 0.17295575141906738
+          },
+          "t3": {
+            "passed": true,
+            "first_success_seconds": 0.5277466773986816,
+            "status": "success",
+            "queue_seconds": 0.17194271087646484
+          },
+          "t4": {
+            "passed": true,
+            "first_success_seconds": 0.9943943023681641,
+            "status": "success",
+            "queue_seconds": 0.11311030387878418
+          },
+          "t5": {
+            "passed": true,
+            "first_success_seconds": 1.049039363861084,
+            "status": "success",
+            "queue_seconds": 0.7921066284179688
+          }
+        },
+        "events_path": "C:\\Users\\WYH\\AppData\\Local\\Temp\\trina-longrun-competition-final-2\\0-D_no_memory\\runs\\d_no_memory\\events.sqlite3",
+        "artifact_dir": "C:\\Users\\WYH\\AppData\\Local\\Temp\\trina-longrun-competition-final-2\\0-D_no_memory",
+        "fixture_sha256": {
+          "t0": "11a65f3835563d98b658c003db3ffb14972996c41fed351b86ca9edce9342ae8",
+          "t1": "8fca1134f6f2781a713811d83bf2e40ff68b83da14230a2709b57409d51c9a5d",
+          "t2": "cf35ef9d2c4f1810dcb8851938117dd9fc865dd3ab5d894ffae9e8fb564da47c",
+          "t3": "a8a9860fd836170765c6208484a3730112e484c7465245fcc41d3cd0e3b78fa5",
+          "t4": "11a65f3835563d98b658c003db3ffb14972996c41fed351b86ca9edce9342ae8",
+          "t5": "a8a9860fd836170765c6208484a3730112e484c7465245fcc41d3cd0e3b78fa5"
+        }
+      },
+      {
+        "arm": "D_no_memory",
+        "total_seconds": 1.138268232345581,
+        "verified_fixture_rate": 1.0,
+        "competition_success_rate": null,
+        "first_verified_seconds": 0.5122413635253906,
+        "model_requests": 24,
+        "provider_requests": 0,
+        "total_tokens": null,
+        "token_source": "replay_unreported",
+        "tool_calls": 18,
+        "invalid_tool_ratio": 0.0,
+        "worker_active_seconds": 2.3380672931671143,
+        "worker_idle_seconds": 1.5224778652191162,
+        "mean_ready_queue_seconds": 0.25590773423512775,
+        "peak_concurrency": 4,
+        "duplicate_executions": 0,
+        "context_budget_errors": 0,
+        "planner_rounds": 7,
+        "memory": {
+          "queries": 0,
+          "hits": 0,
+          "stored": 0,
+          "query_seconds": 0.0,
+          "errors": 0
+        },
+        "latency": {
+          "task_queue": {
+            "samples": 6,
+            "p50_seconds": 0.187518,
+            "p95_seconds": 0.766058
+          },
+          "worker_to_request": {
+            "samples": 6,
+            "p50_seconds": 0.0635,
+            "p95_seconds": 0.079283
+          },
+          "worker_result_merge": {
+            "samples": 6,
+            "p50_seconds": 0.050496,
+            "p95_seconds": 0.090253
+          },
+          "user_to_request": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "request_to_connected": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.001993
+          },
+          "request_to_first_output": {
+            "samples": 24,
+            "p50_seconds": 0.001,
+            "p95_seconds": 0.002009
+          },
+          "connected_to_first_output": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.00108
+          },
+          "request_to_first_text": {
+            "samples": 24,
+            "p50_seconds": 0.001,
+            "p95_seconds": 0.002009
+          },
+          "request_total": {
+            "samples": 24,
+            "p50_seconds": 0.001007,
+            "p95_seconds": 0.004
+          },
+          "model_to_tool_start": {
+            "samples": 18,
+            "p50_seconds": 0.025305,
+            "p95_seconds": 0.033056
+          },
+          "tool_queue": {
+            "samples": 18,
+            "p50_seconds": 0.019692,
+            "p95_seconds": 0.028889
+          },
+          "tool_runtime": {
+            "samples": 18,
+            "p50_seconds": 0.039593,
+            "p95_seconds": 0.147152
+          },
+          "last_tool_to_request": {
+            "samples": 18,
+            "p50_seconds": 0.003255,
+            "p95_seconds": 0.049938
+          },
+          "state_prepare": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.015
+          },
+          "context_prepare": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.0
+          },
+          "context_diagnostic": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.0
+          },
+          "result_delivery": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "background_wait": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "completion_delivery": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "new_connection": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "transport_to_headers": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "transport_to_first_event": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          }
+        },
+        "tasks": {
+          "t0": {
+            "passed": true,
+            "first_success_seconds": 0.5122413635253906,
+            "status": "success",
+            "queue_seconds": 0.17213869094848633
+          },
+          "t1": {
+            "passed": true,
+            "first_success_seconds": 0.5383021831512451,
+            "status": "success",
+            "queue_seconds": 0.17312955856323242
+          },
+          "t2": {
+            "passed": true,
+            "first_success_seconds": 0.533836841583252,
+            "status": "success",
+            "queue_seconds": 0.17312955856323242
+          },
+          "t3": {
+            "passed": true,
+            "first_success_seconds": 0.5393195152282715,
+            "status": "success",
+            "queue_seconds": 0.17412996292114258
+          },
+          "t4": {
+            "passed": true,
+            "first_success_seconds": 0.9399139881134033,
+            "status": "success",
+            "queue_seconds": 0.09123611450195312
+          },
+          "t5": {
+            "passed": true,
+            "first_success_seconds": 1.0019190311431885,
+            "status": "success",
+            "queue_seconds": 0.7516825199127197
+          }
+        },
+        "events_path": "C:\\Users\\WYH\\AppData\\Local\\Temp\\trina-longrun-competition-final-2\\1-D_no_memory\\runs\\d_no_memory\\events.sqlite3",
+        "artifact_dir": "C:\\Users\\WYH\\AppData\\Local\\Temp\\trina-longrun-competition-final-2\\1-D_no_memory",
+        "fixture_sha256": {
+          "t0": "11a65f3835563d98b658c003db3ffb14972996c41fed351b86ca9edce9342ae8",
+          "t1": "8fca1134f6f2781a713811d83bf2e40ff68b83da14230a2709b57409d51c9a5d",
+          "t2": "cf35ef9d2c4f1810dcb8851938117dd9fc865dd3ab5d894ffae9e8fb564da47c",
+          "t3": "a8a9860fd836170765c6208484a3730112e484c7465245fcc41d3cd0e3b78fa5",
+          "t4": "11a65f3835563d98b658c003db3ffb14972996c41fed351b86ca9edce9342ae8",
+          "t5": "a8a9860fd836170765c6208484a3730112e484c7465245fcc41d3cd0e3b78fa5"
+        }
+      },
+      {
+        "arm": "D_no_memory",
+        "total_seconds": 1.1570982933044434,
+        "verified_fixture_rate": 1.0,
+        "competition_success_rate": null,
+        "first_verified_seconds": 0.5210211277008057,
+        "model_requests": 24,
+        "provider_requests": 0,
+        "total_tokens": null,
+        "token_source": "replay_unreported",
+        "tool_calls": 18,
+        "invalid_tool_ratio": 0.0,
+        "worker_active_seconds": 2.362931966781616,
+        "worker_idle_seconds": 1.5939195156097412,
+        "mean_ready_queue_seconds": 0.2543866237004598,
+        "peak_concurrency": 4,
+        "duplicate_executions": 0,
+        "context_budget_errors": 0,
+        "planner_rounds": 7,
+        "memory": {
+          "queries": 0,
+          "hits": 0,
+          "stored": 0,
+          "query_seconds": 0.0,
+          "errors": 0
+        },
+        "latency": {
+          "task_queue": {
+            "samples": 6,
+            "p50_seconds": 0.179943,
+            "p95_seconds": 0.736293
+          },
+          "worker_to_request": {
+            "samples": 6,
+            "p50_seconds": 0.071312,
+            "p95_seconds": 0.083962
+          },
+          "worker_result_merge": {
+            "samples": 6,
+            "p50_seconds": 0.043637,
+            "p95_seconds": 0.070382
+          },
+          "user_to_request": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "request_to_connected": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.001034
+          },
+          "request_to_first_output": {
+            "samples": 24,
+            "p50_seconds": 0.001,
+            "p95_seconds": 0.00208
+          },
+          "connected_to_first_output": {
+            "samples": 24,
+            "p50_seconds": 0.000997,
+            "p95_seconds": 0.001012
+          },
+          "request_to_first_text": {
+            "samples": 24,
+            "p50_seconds": 0.001,
+            "p95_seconds": 0.00208
+          },
+          "request_total": {
+            "samples": 24,
+            "p50_seconds": 0.001273,
+            "p95_seconds": 0.003
+          },
+          "model_to_tool_start": {
+            "samples": 18,
+            "p50_seconds": 0.023713,
+            "p95_seconds": 0.035518
+          },
+          "tool_queue": {
+            "samples": 18,
+            "p50_seconds": 0.018552,
+            "p95_seconds": 0.028972
+          },
+          "tool_runtime": {
+            "samples": 18,
+            "p50_seconds": 0.029461,
+            "p95_seconds": 0.159209
+          },
+          "last_tool_to_request": {
+            "samples": 18,
+            "p50_seconds": 0.0035,
+            "p95_seconds": 0.017904
+          },
+          "state_prepare": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.016
+          },
+          "context_prepare": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.0
+          },
+          "context_diagnostic": {
+            "samples": 24,
+            "p50_seconds": 0.0,
+            "p95_seconds": 0.0
+          },
+          "result_delivery": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "background_wait": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "completion_delivery": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "new_connection": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "transport_to_headers": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          },
+          "transport_to_first_event": {
+            "samples": 0,
+            "p50_seconds": null,
+            "p95_seconds": null
+          }
+        },
+        "tasks": {
+          "t0": {
+            "passed": true,
+            "first_success_seconds": 0.5295259952545166,
+            "status": "success",
+            "queue_seconds": 0.16784214973449707
+          },
+          "t1": {
+            "passed": true,
+            "first_success_seconds": 0.525019645690918,
+            "status": "success",
+            "queue_seconds": 0.16784214973449707
+          },
+          "t2": {
+            "passed": true,
+            "first_success_seconds": 0.5210211277008057,
+            "status": "success",
+            "queue_seconds": 0.16901564598083496
+          },
+          "t3": {
+            "passed": true,
+            "first_success_seconds": 0.5280179977416992,
+            "status": "success",
+            "queue_seconds": 0.16684174537658691
+          },
+          "t4": {
+            "passed": true,
+            "first_success_seconds": 1.0266945362091064,
+            "status": "success",
+            "queue_seconds": 0.1305861473083496
+          },
+          "t5": {
+            "passed": true,
+            "first_success_seconds": 1.019059181213379,
+            "status": "success",
+            "queue_seconds": 0.7241919040679932
+          }
+        },
+        "events_path": "C:\\Users\\WYH\\AppData\\Local\\Temp\\trina-longrun-competition-final-2\\2-D_no_memory\\runs\\d_no_memory\\events.sqlite3",
+        "artifact_dir": "C:\\Users\\WYH\\AppData\\Local\\Temp\\trina-longrun-competition-final-2\\2-D_no_memory",
+        "fixture_sha256": {
+          "t0": "11a65f3835563d98b658c003db3ffb14972996c41fed351b86ca9edce9342ae8",
+          "t1": "8fca1134f6f2781a713811d83bf2e40ff68b83da14230a2709b57409d51c9a5d",
+          "t2": "cf35ef9d2c4f1810dcb8851938117dd9fc865dd3ab5d894ffae9e8fb564da47c",
+          "t3": "a8a9860fd836170765c6208484a3730112e484c7465245fcc41d3cd0e3b78fa5",
+          "t4": "11a65f3835563d98b658c003db3ffb14972996c41fed351b86ca9edce9342ae8",
+          "t5": "a8a9860fd836170765c6208484a3730112e484c7465245fcc41d3cd0e3b78fa5"
+        }
+      }
+    ]
+  }
+}

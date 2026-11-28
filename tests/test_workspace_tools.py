@@ -6,16 +6,18 @@ import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from threading import Barrier
+from unittest.mock import patch
 
 from trina.audit import AuditLog
 from trina.config import TrinaConfig
 from trina.events import EventBus
-from trina.scope import ScopeGuard
+from trina.scope import ScopeGuard, execution_budget
 from trina.state import RunState
 from trina.tools import build_registry
 from trina.tools.http import HttpClient
 from trina.tools.registry import ToolContext
-from trina.tools.workspace import _is_unbounded_find
+from trina.tools.workspace import _is_unbounded_find, _read_source_lines
 
 
 class WorkspaceToolTests(unittest.TestCase):
@@ -178,6 +180,47 @@ class WorkspaceToolTests(unittest.TestCase):
             "文件不存在或不是普通文件: missing.txt",
             "文件不存在或不是普通文件: missing_again.txt",
         ])
+
+    def test_code_source_reads_preserve_lines_without_starting_native_processes(self):
+        self.ctx.extra["tool_route"] = "code"
+        (self.ctx.workspace / "values.py").write_text("first\nsecond\nthird\n", encoding="utf-8")
+        with patch("trina.tools.workspace.native_read") as native:
+            single = self.registry.execute("read", {
+                "path": "values.py", "start_line": 2, "line_count": 1, "root": "run",
+            }, self.ctx)
+            batch = self.registry.execute("workspace_read_many", {
+                "paths": ["values.py", "missing.py"], "line_count": 1, "root": "run",
+            }, self.ctx)
+        native.assert_not_called()
+        self.assertTrue(single.ok)
+        self.assertEqual(single.data["text"], "     2  second")
+        self.assertEqual(single.data["total_lines"], 3)
+        self.assertEqual(batch.errors, ["文件不存在或不是普通文件: missing.py"])
+        self.assertEqual(batch.data["text"], "## values.py\n     1  first")
+        self.assertEqual(batch.data["files"], [{"path": "values.py", "total_lines": 3, "returned_lines": 1}])
+
+    def test_code_reads_on_wsl_mount_overlap_and_keep_request_order(self):
+        self.ctx.extra["tool_route"] = "code"
+        paths = ["second.py", "first.py"]
+        for path in paths:
+            (self.ctx.workspace / path).write_text(path, encoding="utf-8")
+        simultaneous_reads = Barrier(2, timeout=3)
+
+        def read_after_both_start(path, start, count):
+            self.assertLessEqual(execution_budget(30), 8)
+            simultaneous_reads.wait()
+            return _read_source_lines(path, start, count)
+
+        with patch("trina.tools.workspace._is_wsl_windows_path", return_value=True), patch(
+                "trina.tools.workspace._read_source_lines", side_effect=read_after_both_start):
+            result = self.registry.execute("workspace_read_many", {"paths": paths, "root": "run"}, self.ctx,
+                                           timeout=8, call_id="read-batch")
+
+        self.assertTrue(result.ok, result.error)
+        self.assertEqual([file["path"] for file in result.data["files"]], paths)
+        self.assertEqual(result.data["text"], "## second.py\n     1  second.py\n\n## first.py\n     1  first.py")
+        finished = self.ctx.events.replay(kinds=("tool.finished",))
+        self.assertEqual([event.call_id for event in finished], ["read-batch"])
 
     def test_unbounded_find_is_rejected_before_process_start(self):
         self.assertTrue(_is_unbounded_find(["find", "/", "-name", "healthcheckd"]))

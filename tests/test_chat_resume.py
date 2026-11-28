@@ -58,6 +58,24 @@ class ChatResumeTests(unittest.TestCase):
         self.addCleanup(chat.close)
         return chat, backend
 
+    def test_background_completion_snapshot_resumes_without_replaying_work(self):
+        chat = self.chat()
+        chat.ask("你好")
+        chat.ctx.emit("job.started", job_id="saved-job", call_id="saved-job", status="running")
+        chat.ctx.emit("job.finished", job_id="saved-job", call_id="saved-job", status="completed", data={"stdout": "saved-output"})
+        chat.save()
+        self.assertTrue(self.store.load(chat.run_id)["completions"]["pending"])
+        chat.close()
+        backend = self.backend()
+        resumed = ChatAgent.resume(self.config, chat.run_id, registry=ToolRegistry([]), backend=backend)
+        self.addCleanup(resumed.close)
+        self.assertEqual(len(backend.inputs), 0)
+        resumed.ask("继续")
+        self.assertEqual(len(backend.inputs), 1)
+        self.assertEqual(sum("[后台任务完成" in row["content"] for row in resumed.history), 1)
+        self.assertEqual(len(resumed.events.replay(kinds=("job.started",))), 1)
+        self.assertFalse(resumed.completions.snapshot()["pending"])
+
     def test_online_title_runs_after_first_reply_and_preserves_newer_turns(self):
         started, release, saved = threading.Event(), threading.Event(), threading.Event()
         chat, main = self._online_chat(on_event=lambda event: saved.set() if event.kind == "chat.title" else None)

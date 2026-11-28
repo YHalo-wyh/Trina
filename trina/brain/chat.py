@@ -133,6 +133,9 @@ class ChatAgent:
             event_bus=event_bus,
         )
         self.events = self.ctx.events
+        from ..completion_inbox import CompletionInbox
+        self.completions = CompletionInbox(self.ctx, (resume_data or {}).get("completions"))
+        self.ctx.extra["completion_inbox"] = self.completions
         if resume_saved:
             self.events.interrupt_open_calls()
         self._event_subscription = self.events.subscribe(on_event, after=self.events.last_seq) if on_event else None
@@ -359,7 +362,10 @@ class ChatAgent:
                                request=request, execute=execute, decode_text=_parse_action_lenient,
                                native=self._native_tools_enabled, say=say, observe=observe, interrupted=interrupted,
                                start_execute=start_execute, can_parallel=can_parallel,
-                               parallel_limit=self.config.llm.tool_parallelism)
+                               parallel_limit=self.config.llm.tool_parallelism,
+                               resume=lambda **kwargs: False if completion_reply else self.completions.deliver(
+                                   self._messages, history=self.history, stop_event=self.stop_event, **kwargs),
+                               emit=self.ctx.emit)
         outcome = runtime.run()
         self.state.counters["decision_rounds"] = self.state.counters.get("decision_rounds", 0) + runtime.rounds
         if completion_reply:
@@ -446,6 +452,8 @@ class ChatAgent:
 
     def _ask_model(self, step: int = 0, *, allow_tools: bool = True,
                    final_instruction: str = ""):
+        from ..execution_timeline import phase
+        preparation_started = time.monotonic()
         registered = self.controller.registry.prompt_block(
             self.controller.registry.match_target(self.state.target).target_id  # type: ignore[union-attr]
             if self.state.target and self.controller.registry.match_target(self.state.target)
@@ -490,17 +498,23 @@ class ChatAgent:
         self._message_id = uuid.uuid4().hex
         self._visible_prefix = ""
         self._pending_stream = _VisibleStream(self._visible_update)
-        stream = ModelEventStream(self.ctx.emit, self._pending_stream.on_event)
+        self.ctx.emit("execution.phase", phase="state_prepare", status="completed",
+                      duration=time.monotonic() - preparation_started, step=step)
         try:
-            self.context.prepare(self._messages, tool_payload)
+            with phase(self.ctx.emit, "context_prepare", step=step):
+                self.context.prepare(self._messages, tool_payload)
         except ContextBudgetError as exc:
             from ..llm import LLMResponse
             self.state.context_stats = {**self.context.stats, "budget_error": str(exc)}
             self.audit.append("context.budget_error", error=str(exc))
+            # 尚未派发请求也要走现有错误展示通道；不伪造 model.started 或模型用量。
+            self.ctx.emit("model.error", request_id="context-" + uuid.uuid4().hex,
+                          error=str(exc), stage="context_prepare", dispatched=False)
             response = LLMResponse(ok=False, error=str(exc))
-            stream.finish(response)
             return response
-        diagnostic = self.context.before_request(self._messages, tool_payload)
+        with phase(self.ctx.emit, "context_diagnostic", step=step):
+            diagnostic = self.context.before_request(self._messages, tool_payload)
+        stream = ModelEventStream(self.ctx.emit, self._pending_stream.on_event)
         self.state.counters["llm_calls"] = self.state.counters.get("llm_calls", 0) + 1
         method = getattr(self.backend, "complete_messages", None)
         if method is None:  # 仅供旧测试替身
@@ -649,6 +663,7 @@ class ChatAgent:
             if self._closed or self._closing:
                 return
             self._closing = True
+        self.completions.close()
         from ..runtime_status import status_snapshot
         try:
             self.ctx.extra["background_jobs"].close()
@@ -680,6 +695,7 @@ class ChatAgent:
                              "binary_sessions": self.ctx.extra["binary_sessions"].snapshot(),
                              "browser_sessions": self.ctx.extra["browser_sessions"].snapshot(),
                              "todo": self.todo.snapshot(),
+                             "completions": self.completions.snapshot(),
                              "hypotheses": self.ledger.to_dict(), "usage": self.usage.to_dict(),
                              "usage_gaps": self.usage_gaps,
                              "controller": self._controller.coverage() if self._controller is not None else {},

@@ -181,6 +181,8 @@ class RunConfig:
     #: 记录不含敏感正文的 Agent 阶段耗时、用量与工具统计。
     profiling: bool = True
     profile_output: str = "performance.json"
+    #: 项目内经过验收的短经验卡；关闭时不检索、不写入，便于固定条件对照。
+    strategy_memory: bool = True
     #: 每 N 步把 state.json 落盘一次(供 trina watch / 外部工具实时读取;0 = 只在结束时落盘)
     flush_state_every: int = 5
     #: 假设排序里的风险厌恶系数 λ:优先级 = 置信度×价值×信息增量 / (成本 + λ·风险 + ε)
@@ -196,6 +198,8 @@ class RunConfig:
     phases: list[str] = field(default_factory=list)
 
     def validate(self) -> None:
+        if type(self.strategy_memory) is not bool:
+            raise ConfigError("run.strategy_memory 必须为布尔值")
         if type(self.profiling) is not bool or not isinstance(self.profile_output, str) or not self.profile_output.strip():
             raise ConfigError("run.profiling 必须为布尔值，run.profile_output 必须为非空字符串")
         if not isinstance(self.phases, list) or any(not isinstance(item, str) or not item for item in self.phases):
@@ -373,6 +377,7 @@ class UIConfig:
     """控制台显示配置；不影响模型权限或执行策略。"""
 
     status_line_preset: str = "default"
+    status_line_custom: str = "tokens,cache,context,git,workers,background"
     status_line_separator: str = "dot"
     context_bar: bool = True
     motion: str = "full"
@@ -382,14 +387,20 @@ class UIConfig:
     command_icons: bool = True
 
     def validate(self) -> None:
-        if self.status_line_preset not in {"default", "compact", "full"}:
-            raise ConfigError("ui.status_line_preset 必须为 default/compact/full")
+        if self.status_line_preset not in {"default", "compact", "full", "custom"}:
+            raise ConfigError("ui.status_line_preset 必须为 default/compact/full/custom")
+        allowed_fields = {"model", "provider", "tokens", "cache", "context", "session", "git", "workers", "background"}
+        if not isinstance(self.status_line_custom, str):
+            raise ConfigError("ui.status_line_custom 必须为逗号分隔的字段名")
+        fields = {item.strip() for item in self.status_line_custom.split(",") if item.strip()}
+        if not fields or not fields.issubset(allowed_fields):
+            raise ConfigError("ui.status_line_custom 包含未知字段")
         if self.status_line_separator not in {"dot", "pipe", "slash"}:
             raise ConfigError("ui.status_line_separator 必须为 dot/pipe/slash")
         if type(self.context_bar) is not bool or self.motion not in {"full", "reduced", "none"}:
             raise ConfigError("ui.context_bar 必须为布尔值，ui.motion 必须为 full/reduced/none")
-        if self.output_palette not in {"trina", "contrast", "mono"}:
-            raise ConfigError("ui.output_palette 必须为 trina/contrast/mono")
+        if self.output_palette not in {"trina", "contrast", "mono", "dark", "light", "high_contrast", "ascii"}:
+            raise ConfigError("ui.output_palette 必须为 dark/light/high_contrast/ascii（兼容 trina/contrast/mono）")
         for name in ("completion_notify", "error_notify", "command_icons"):
             if type(getattr(self, name)) is not bool:
                 raise ConfigError(f"ui.{name} 必须为布尔值")

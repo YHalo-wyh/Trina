@@ -598,6 +598,7 @@ def run_external(
     env: dict[str, str] | None = None,
     audit: bool = True,
     background: bool = False,
+    background_follow_up: bool = True,
     stream_output: bool = True,
     allow_detached_children: bool = False,
 ) -> ExternalRun:
@@ -631,11 +632,14 @@ def run_external(
         deadline = ctx.extra.get("task_deadline")
         if deadline is not None:
             budget = min(budget, max(.01, deadline - time.monotonic()))
+        # 后台回调可能晚于下一次工具调用；派发时固定归属，避免关联到新请求。
+        event_owner = {"run_id": ctx.state.run_id, "task_id": ctx.extra.get("intent_id", ""),
+                       "worker_id": ctx.extra.get("worker_id", ""),
+                       "parent_call_id": ctx.extra.get("_tool_call_id", ""), "follow_up": background_follow_up}
         def job_event(kind, **payload):
             events = getattr(ctx, "events", None)
             if events is not None:
-                events.publish(kind, run_id=ctx.state.run_id, source="background", task_id=ctx.extra.get("intent_id", ""),
-                               worker_id=ctx.extra.get("worker_id", ""), parent_call_id=ctx.extra.get("_tool_call_id", ""), **payload)
+                events.publish(kind, source="background", **event_owner, **payload)
         job_id = jobs.start(argv, cwd=cwd or str(ctx.workspace), env=env if env is not None else _mcp_environment(),
                             timeout=budget, tool=tool or binary, owner=ctx.extra.get("_execution_owner"), on_event=job_event)
         try:

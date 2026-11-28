@@ -15,20 +15,21 @@ class TerminalStart(Tool):
         category="utility", action_level="exploit",
         params={"argv": ParamSpec("list", "程序及参数数组，不经过 shell"),
                 "timeout": ParamSpec("float", "后台最长秒数", required=False, default=120),
+                "follow_up": ParamSpec("bool", "完成后自动回传并续接；仅维持服务且无需结果时设为 false", required=False, default=True),
                 "cwd": ParamSpec("str", "执行目录：run 为本次运行目录，project 为当前项目目录", required=False, default="run", enum=["run", "project"]),
                 "target": ParamSpec("str", "目标；本地分析可为空", required=False, default="")},
     )
 
-    def run(self, ctx, argv, timeout=120, cwd="run", target=""):
+    def run(self, ctx, argv, timeout=120, cwd="run", target="", follow_up=True):
         if not argv or not all(isinstance(arg, str) and arg for arg in argv) or not 0 < timeout <= 3600:
             return ToolResult(ok=False, error="argv 必须为非空字符串数组，timeout 必须在 (0,3600] 内")
         directory = Path.cwd() if cwd == "project" else ctx.workspace
         if not directory.is_dir():
             return ToolResult(ok=False, error="后台执行目录不存在或不是目录")
         call = run_external(argv, ctx, tool=self.spec.name, target=target, required_level=ctx.effective_level,
-                            timeout=timeout, cwd=str(directory), background=True)
+                            timeout=timeout, cwd=str(directory), background=True, background_follow_up=follow_up)
         return ToolResult(ok=call.ok, summary=f"后台作业已启动：{call.job_id}（运行中）" if call.ok else call.error,
-                          error=call.error, data={**call.to_dict(), "cwd": str(directory)}, command=call.command)
+                          error=call.error, data={**call.to_dict(), "cwd": str(directory), "follow_up": follow_up}, command=call.command)
 
 
 class TerminalStatus(Tool):
@@ -75,6 +76,10 @@ class TerminalStatus(Tool):
                              "output_is_tail": True})
         failed = any(row["status"] in {"failed", "timed_out", "cancelled"} for row in rows)
         ctx.audit.append("external.background.status", jobs=[{k: v for k, v in row.items() if not k.endswith("_tail")} for row in rows])
+        if inbox := ctx.extra.get("completion_inbox"):
+            for row in rows:
+                if row["status"] != "running":
+                    inbox.acknowledge(ctx.events.stream_id, row["id"])
         return ToolResult(ok=not failed, summary="；".join(f"{row['id']} {row['status']} code={row['exit_code']}" for row in rows) or "没有后台作业",
                           error="后台作业失败、超时或取消" if failed else "", data=data, evidence=evidence)
 
@@ -87,6 +92,8 @@ class TerminalStop(Tool):
         jobs = ctx.extra.get("background_jobs")
         jobs.stop(job_id)
         ctx.audit.append("external.background.stop", job_id=job_id)
+        if inbox := ctx.extra.get("completion_inbox"):
+            inbox.acknowledge(ctx.events.stream_id, job_id)
         return ToolResult(summary="后台作业已停止", data={"jobs": jobs.snapshot(job_id)})
 
 

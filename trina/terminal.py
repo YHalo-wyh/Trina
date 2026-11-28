@@ -282,10 +282,12 @@ def render_tool_call_fragments(tool: str, params: dict[str, Any], *, status: str
     else:
         arguments = visible_input if isinstance(visible_input, str) else shlex.join(visible_input)
         input_label = ""
-    title = f"{clean_text(public_tool_name(tool))} · {label}"
+    from .ui_theme import ascii_mode
+    separator = " | " if ascii_mode(palette) else " · "
+    title = separator.join((clean_text(public_tool_name(tool)), label))
     details = f"{duration:.1f}s" if status not in {"requested", "awaiting_approval", "running"} or duration else ""
     if exit_code is not None:
-        details = " · ".join(part for part in (details, f"exit {exit_code}") if part)
+        details = separator.join(part for part in (details, f"exit {exit_code}") if part)
     return _render_tool_box_fragments(title, arguments, output, stderr, error, details, record,
                                       width=width, color=color, palette=palette, status=status, input_label=input_label,
                                       is_diff=tool == "workspace_git" and params.get("action") == "diff")
@@ -353,6 +355,9 @@ def _render_tool_box_fragments(title: str, arguments: str, output: str, stderr: 
     """线性绘制工具窗口；输出增量只进行文本折行和补齐。"""
     inner = max(1, width - 4)
     palette = palette_name(palette)
+    from .ui_theme import ascii_mode
+    compatible = ascii_mode(palette)
+    vertical, horizontal = ("|", "-") if compatible else ("│", "─")
     role = ("error" if error or status in {"failed", "invalid", "interrupted"} else
             "success" if status == "completed" else "warning" if status in {"denied", "timed_out", "cancelled", "unavailable"} else "running")
     border_style = output_style(role, palette, color=color)
@@ -365,7 +370,7 @@ def _render_tool_box_fragments(title: str, arguments: str, output: str, stderr: 
 
     def row(text: str, style: str = "") -> list[tuple[str, str]]:
         pad = " " * max(0, inner - _cells(text))
-        return [(border_style, "│"), ("", " "), (style, text), ("", pad + " "), (border_style, "│")]
+        return [(border_style, vertical), ("", " "), (style, text), ("", pad + " "), (border_style, vertical)]
 
     def section(label: str, text: str, style: str, *, diff: bool = False) -> None:
         if not text.strip():
@@ -379,12 +384,13 @@ def _render_tool_box_fragments(title: str, arguments: str, output: str, stderr: 
 
     safe_title = " ".join(clean_text(title).splitlines())
     title_lines = _wrap_clean_line(safe_title, max(1, width - 5))
-    top_lead = f"╭─ {title_lines[0]} "
-    top_tail = f" {details} ─╮" if details else "╮"
+    top_lead = ("+- " if compatible else "╭─ ") + title_lines[0] + " "
+    corner = "+" if compatible else "╮"
+    top_tail = f" {details} {horizontal}{corner}" if details else corner
     details_fit = len(title_lines) == 1 and _cells(top_lead + top_tail) < width
     if not details_fit:
-        top_tail = "╮"
-    lines.append([(border_style, top_lead + "─" * max(0, width - _cells(top_lead + top_tail)) + top_tail)])
+        top_tail = corner
+    lines.append([(border_style, top_lead + horizontal * max(0, width - _cells(top_lead + top_tail)) + top_tail)])
     for title_tail in title_lines[1:]:
         for wrapped in _wrap_clean_line(title_tail, inner):
             lines.append(row(wrapped, border_style))
@@ -394,15 +400,15 @@ def _render_tool_box_fragments(title: str, arguments: str, output: str, stderr: 
     safe_input, safe_output, safe_stderr, safe_error = map(_clean_tool_text, (arguments, output, stderr, error))
     section(input_label, safe_input, input_style)
     if (not input_label and safe_input.strip()) or safe_output.strip() or safe_stderr.strip() or safe_error.strip():
-        lead, label = "├───", " Output "
-        fill = "─" * (width - _cells(lead + label) - 1)
-        lines.append([(border_style, lead), (section_style, label), (border_style, fill + "┤")])
+        lead, label = "+---" if compatible else "├───", " Output "
+        fill = horizontal * (width - _cells(lead + label) - 1)
+        lines.append([(border_style, lead), (section_style, label), (border_style, fill + ("+" if compatible else "┤"))])
     section("", safe_output, text_style, diff=is_diff)
     section("stderr" if safe_output.strip() else "", safe_stderr, stderr_style)
     if safe_error.strip() not in {safe_output.strip(), safe_stderr.strip()}:
         section("Error", safe_error, error_style)
     section("记录", clean_text(record), section_style)
-    lines.append([(border_style, "╰" + "─" * (width - 2) + "╯")])
+    lines.append([(border_style, ("+" if compatible else "╰") + horizontal * (width - 2) + ("+" if compatible else "╯"))])
     fragments: list[tuple[str, str]] = []
     for index, line in enumerate(lines):
         for style, text in line:

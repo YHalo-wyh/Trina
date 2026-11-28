@@ -27,8 +27,12 @@ class Preference:
 
 TOGGLE = (("on", "开启"), ("off", "关闭"))
 PREFERENCES = {
-    "theme": Preference("输出配色", "output_palette", (("trina", "粉紫主题"), ("contrast", "高对比"), ("mono", "单色"))),
-    "footer": Preference("底栏密度", "status_line_preset", (("default", "均衡"), ("compact", "精简"), ("full", "完整"))),
+    "theme": Preference("工作台主题", "output_palette", (("dark", "深色"), ("light", "浅色"),
+                                                        ("high_contrast", "高对比"), ("ascii", "ASCII 兼容"),
+                                                        ("trina", "兼容：粉紫"), ("contrast", "兼容：高对比"),
+                                                        ("mono", "兼容：单色"))),
+    "footer": Preference("底栏密度", "status_line_preset", (("default", "均衡"), ("compact", "精简"),
+                                                             ("full", "完整"), ("custom", "自定义字段"))),
     "separator": Preference("底栏分隔符", "status_line_separator", (("dot", "圆点"), ("pipe", "竖线"), ("slash", "斜杠"))),
     "context-bar": Preference("上下文指示条", "context_bar", TOGGLE),
     "notify": Preference("完成提醒", "completion_notify", TOGGLE),

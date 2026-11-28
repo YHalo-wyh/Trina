@@ -1,0 +1,48 @@
+.........................................................................ssssssssss........................................................................................................................................................................................................................s..........F.............................................................................................................................................................F.........................................................................................................................................................................................................................................F.........................................................................................................................................................................................................................................................
+======================================================================
+FAIL: test_current_contract_is_machine_verifiable (test_contract.MachineContractTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\WYH\Desktop\网安实训中级\tests\test_contract.py", line 18, in test_current_contract_is_machine_verifiable
+    self.assertTrue(report.ok, "\n".join(report.errors))
+AssertionError: False is not true : 规约版本与程序版本不一致: 0.6.0 != 0.6.4
+规约版本与 pyproject 版本不一致: 0.6.0 != 0.6.4
+路径不存在: evidence/README.md
+路径不存在: evidence/20261113-native-binary/README.md
+路径不存在: evidence/20261113-native-binary/native-e2e.json
+路径不存在: evidence/20261113-native-binary/contract-execute.json
+[eval] 已自动拉起 lab 靶机 127.0.0.1:50279
+D-EVIDENCE 的 evidence/**/*.json 仅 0 项，要求至少 8 项
+报告: C:\Users\WYH\AppData\Local\Temp\tmpijizmil3\saved_report.md
+报告: C:\Users\WYH\AppData\Local\Temp\tmpijizmil3\saved_report.html
+报告: C:\Users\WYH\AppData\Local\Temp\tmp_el3mp8g\sample-swarm_report.md
+报告: C:\Users\WYH\AppData\Local\Temp\tmp_el3mp8g\sample-swarm_report.html
+报告: C:\Users\WYH\AppData\Local\Temp\tmp_el3mp8g\sample-swarm_report.json
+报告: C:\Users\WYH\AppData\Local\Temp\tmp_el3mp8g\sample-swarm_report.md
+报告: C:\Users\WYH\AppData\Local\Temp\tmp_el3mp8g\sample-swarm_report.html
+报告: C:\Users\WYH\AppData\Local\Temp\tmp_el3mp8g\sample-swarm_report.json
+TR-03-R04 引用不存在的测试: tests.test_transcript.TranscriptTests.test_real_vt_wheel_uses_scroll_region_and_keeps_bottom_chrome
+
+======================================================================
+FAIL: test_context_budget_failure_is_visible_before_any_backend_request (test_interactive.TestConsole)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\WYH\Desktop\网安实训中级\tests\test_interactive.py", line 571, in test_context_budget_failure_is_visible_before_any_backend_request
+    self.assertIn("当前上下文输入上限", "\n".join(output))
+AssertionError: '当前上下文输入上限' not found in '过程  思考中…\n你  你好'
+
+======================================================================
+FAIL: test_chat_reads_running_job_at_request_tail_then_observes_completion (test_runtime_status.RuntimeStatusTests)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\WYH\Desktop\网安实训中级\tests\test_runtime_status.py", line 201, in test_chat_reads_running_job_at_request_tail_then_observes_completion
+    self.assertEqual(running[0]["status"], "running")
+AssertionError: 'completed' != 'running'
+- completed
++ running
+
+
+----------------------------------------------------------------------
+Ran 952 tests in 270.587s
+
+FAILED (failures=3, skipped=11)
